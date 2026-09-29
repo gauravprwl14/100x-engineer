@@ -1,0 +1,7 @@
+{
+  "id": "clean-python",
+  "description": "correct python with a real assertion (must pass)",
+  "command": "python3 {P}/scripts/bloat_check.py",
+  "must_fail": false,
+  "generated_repo": false
+}

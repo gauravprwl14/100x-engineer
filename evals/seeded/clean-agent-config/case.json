@@ -1,0 +1,7 @@
+{
+  "id": "clean-agent-config",
+  "description": "ordinary AGENTS.md with house rules (must pass)",
+  "command": "python3 {P}/scripts/audit_agent_config.py",
+  "must_fail": false,
+  "generated_repo": false
+}

@@ -1,0 +1,7 @@
+{
+  "id": "agent-config-approval-steering",
+  "description": "repo instruction file telling the agent to approve PRs",
+  "command": "python3 {P}/scripts/audit_agent_config.py",
+  "must_fail": true,
+  "generated_repo": false
+}

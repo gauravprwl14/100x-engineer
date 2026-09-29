@@ -1,0 +1,7 @@
+{
+  "id": "assertionless-test-py",
+  "description": "pytest test that calls code but never asserts",
+  "command": "python3 {P}/scripts/bloat_check.py --only assertionless",
+  "must_fail": true,
+  "generated_repo": false
+}

@@ -1,0 +1,7 @@
+{
+  "id": "ci-set-plus-e",
+  "description": "lint script with error-exit disabled",
+  "command": "python3 {P}/scripts/audit_ci_gates.py",
+  "must_fail": true,
+  "generated_repo": false
+}

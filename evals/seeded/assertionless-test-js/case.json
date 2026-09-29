@@ -1,0 +1,7 @@
+{
+  "id": "assertionless-test-js",
+  "description": "jest test with no expect in the block",
+  "command": "python3 {P}/scripts/bloat_check.py --only assertionless",
+  "must_fail": true,
+  "generated_repo": false
+}

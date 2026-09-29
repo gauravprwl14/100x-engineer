@@ -1,0 +1,8 @@
+{
+  "id": "gap-missing-authz-check",
+  "description": "endpoint omits the ownership check entirely \u2014 nothing in the diff looks wrong",
+  "command": "python3 {P}/scripts/bloat_check.py",
+  "must_fail": true,
+  "known_gap": true,
+  "generated_repo": false
+}

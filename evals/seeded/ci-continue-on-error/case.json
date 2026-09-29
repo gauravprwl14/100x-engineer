@@ -1,0 +1,7 @@
+{
+  "id": "ci-continue-on-error",
+  "description": "type check that cannot fail the build",
+  "command": "python3 {P}/scripts/audit_ci_gates.py",
+  "must_fail": true,
+  "generated_repo": false
+}

@@ -20,8 +20,38 @@ Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-DATA = ROOT / "scripts" / "data"
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent
+
+def project_root():
+    """Where the USER's decisions/specs live: the git root of the current directory,
+    not the plugin's own directory.
+
+    Resolving these against the plugin root meant a consumer project's records were
+    written into the installed plugin — invisible to their repo and lost on upgrade.
+    """
+    import subprocess
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        return pathlib.Path(r.stdout.strip())
+    return pathlib.Path.cwd()
+
+
+
+def rel(p):
+    """Display path, resilient to a target outside ROOT.
+
+    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
+    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
+    """
+    try:
+        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
+    except Exception:
+        return pathlib.Path(p)
+
+
+ROOT = project_root()
+DATA = PLUGIN / "scripts" / "data"
 SPECS = ROOT / "specs"
 EDGE = json.loads((DATA / "edge_cases.json").read_text())
 DECS = json.loads((DATA / "decisions_required.json").read_text())
@@ -48,7 +78,7 @@ def cmd_new(a):
         return 2
     d = SPECS / a.name
     if d.exists() and not a.force:
-        print(f"{d.relative_to(ROOT)} already exists (use --force)", file=sys.stderr)
+        print(f"{rel(d)} already exists (use --force)", file=sys.stderr)
         return 2
     d.mkdir(parents=True, exist_ok=True)
     edges, decs = gather(kinds)
@@ -230,7 +260,7 @@ def cmd_audit(a):
 
     status_ready = re.search(r"\|\s*status\s*\|\s*\*?\*?ready", text, re.I)
 
-    print(f"audit {sp.relative_to(ROOT)}")
+    print(f"audit {rel(sp)}")
     print(f"  edge cases : {len(edges)} total, {len(covered)} covered, {len(todo)} TODO")
     print(f"  decisions  : {len(ds)} total, {len(defaults)} accepted as default")
     print(f"  questions  : {len(qs)}")

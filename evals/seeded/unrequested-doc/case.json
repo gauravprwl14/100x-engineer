@@ -1,0 +1,7 @@
+{
+  "id": "unrequested-doc",
+  "description": "agent adds a design doc nobody asked for",
+  "command": "python3 {P}/scripts/bloat_check.py --only new-docs",
+  "must_fail": true,
+  "generated_repo": false
+}

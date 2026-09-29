@@ -9,6 +9,9 @@ for t in tests/test_*.sh; do
   bash "$t" || rc=1
   echo
 done
+echo "=== seeded-defect evals ==="
+python3 scripts/run_evals.py | tail -14 || rc=1
+echo
 echo "=== skill contract lint ==="
 python3 scripts/lint_skills.py || rc=1
 echo

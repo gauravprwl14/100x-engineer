@@ -94,9 +94,11 @@ def lint(path: pathlib.Path):
     if conv > MAX_CONVENTION:
         err(f"{conv} 'convention' rules exceeds the cap of {MAX_CONVENTION}")
 
-    # every numbered rule needs an enforcement tag
-    rules = re.findall(r"^\s*(\d+)\.\s", body, re.M)
-    tags = len(re.findall(r"\*Enforced by:\*", body))
+    # Every numbered rule needs an enforcement tag. Scoped to the Rules section:
+    # other sections legitimately use numbered lists that are not rules.
+    rules_sec = section(body, "## Rules")
+    rules = re.findall(r"^\s*(\d+[a-z]?)\.\s", rules_sec, re.M)
+    tags = len(re.findall(r"\*Enforced by:\*", rules_sec))
     if rules and tags < len(rules):
         err(f"{len(rules)} numbered rules but only {tags} 'Enforced by:' tags — "
             f"every rule needs one")

@@ -1,0 +1,7 @@
+{
+  "id": "design-drift-missing",
+  "description": "sequence diagram participant with no implementation",
+  "command": "python3 {P}/scripts/design_drift.py specs/f/spec.md src",
+  "must_fail": true,
+  "generated_repo": false
+}

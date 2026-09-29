@@ -1,0 +1,7 @@
+{
+  "id": "agent-config-hook",
+  "description": "third-party settings.json wiring an executable hook",
+  "command": "python3 {P}/scripts/audit_agent_config.py",
+  "must_fail": true,
+  "generated_repo": false
+}

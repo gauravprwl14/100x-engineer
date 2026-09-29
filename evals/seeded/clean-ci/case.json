@@ -1,0 +1,7 @@
+{
+  "id": "clean-ci",
+  "description": "workflow where every step can fail the build (must pass)",
+  "command": "python3 {P}/scripts/audit_ci_gates.py",
+  "must_fail": false,
+  "generated_repo": false
+}

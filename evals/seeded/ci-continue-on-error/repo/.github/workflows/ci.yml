@@ -1,0 +1,6 @@
+jobs:
+  t:
+    steps:
+      - name: types
+        continue-on-error: true
+        run: mypy src/

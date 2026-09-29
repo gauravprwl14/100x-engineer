@@ -1,0 +1,7 @@
+{
+  "id": "spec-incomplete",
+  "description": "feature spec with edge cases left TODO",
+  "command": "python3 {P}/scripts/plan_feature.py audit specs/gen",
+  "must_fail": true,
+  "generated_repo": true
+}

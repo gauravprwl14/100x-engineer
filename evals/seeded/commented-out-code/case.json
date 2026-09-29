@@ -1,0 +1,7 @@
+{
+  "id": "commented-out-code",
+  "description": "dead code left commented instead of deleted",
+  "command": "python3 {P}/scripts/bloat_check.py --only commented-code",
+  "must_fail": true,
+  "generated_repo": false
+}

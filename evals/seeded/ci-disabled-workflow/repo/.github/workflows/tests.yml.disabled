@@ -1,0 +1,4 @@
+jobs:
+  t:
+    steps:
+      - run: pytest

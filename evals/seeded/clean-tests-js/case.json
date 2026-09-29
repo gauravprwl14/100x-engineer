@@ -1,0 +1,7 @@
+{
+  "id": "clean-tests-js",
+  "description": "jest tests that all assert (must pass)",
+  "command": "python3 {P}/scripts/bloat_check.py --only assertionless,focused-tests",
+  "must_fail": false,
+  "generated_repo": false
+}

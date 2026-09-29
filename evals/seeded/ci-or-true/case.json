@@ -1,0 +1,7 @@
+{
+  "id": "ci-or-true",
+  "description": "test command whose exit code is discarded",
+  "command": "python3 {P}/scripts/audit_ci_gates.py",
+  "must_fail": true,
+  "generated_repo": false
+}

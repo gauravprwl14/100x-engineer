@@ -1,0 +1,7 @@
+{
+  "id": "assertionless-test-go",
+  "description": "Go test that exercises code without asserting",
+  "command": "python3 {P}/scripts/bloat_check.py --only assertionless",
+  "must_fail": true,
+  "generated_repo": false
+}

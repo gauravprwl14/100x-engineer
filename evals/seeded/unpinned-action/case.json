@@ -1,0 +1,7 @@
+{
+  "id": "unpinned-action",
+  "description": "third-party action pinned to a mutable tag in a secrets job",
+  "command": "python3 {P}/scripts/audit_ci_gates.py --pins",
+  "must_fail": true,
+  "generated_repo": false
+}

@@ -1,0 +1,7 @@
+{
+  "id": "bare-todo",
+  "description": "TODO with no issue reference",
+  "command": "python3 {P}/scripts/bloat_check.py --only bare-todo",
+  "must_fail": true,
+  "generated_repo": false
+}

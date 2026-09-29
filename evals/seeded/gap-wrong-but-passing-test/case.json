@@ -1,0 +1,8 @@
+{
+  "id": "gap-wrong-but-passing-test",
+  "description": "test asserts the buggy behaviour, so it passes and locks the bug in",
+  "command": "python3 {P}/scripts/bloat_check.py",
+  "must_fail": true,
+  "known_gap": true,
+  "generated_repo": false
+}

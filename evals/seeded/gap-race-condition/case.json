@@ -1,0 +1,8 @@
+{
+  "id": "gap-race-condition",
+  "description": "check-then-act race on a unique constraint",
+  "command": "python3 {P}/scripts/bloat_check.py",
+  "must_fail": true,
+  "known_gap": true,
+  "generated_repo": false
+}

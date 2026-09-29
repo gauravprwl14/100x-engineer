@@ -1,0 +1,7 @@
+{
+  "id": "ci-informational-coverage",
+  "description": "codecov status that looks like a gate but is not",
+  "command": "python3 {P}/scripts/audit_ci_gates.py",
+  "must_fail": true,
+  "generated_repo": false
+}

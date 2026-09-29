@@ -1,0 +1,8 @@
+{
+  "id": "gap-semantic-duplication",
+  "description": "same logic duplicated with renamed variables \u2014 no tool in the 46-repo survey catches this",
+  "command": "python3 {P}/scripts/bloat_check.py",
+  "must_fail": true,
+  "known_gap": true,
+  "generated_repo": false
+}

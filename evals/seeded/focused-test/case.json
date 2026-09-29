@@ -1,0 +1,7 @@
+{
+  "id": "focused-test",
+  "description": "it.only silently disables the rest of the file",
+  "command": "python3 {P}/scripts/bloat_check.py --only focused-tests",
+  "must_fail": true,
+  "generated_repo": false
+}

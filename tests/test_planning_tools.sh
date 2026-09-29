@@ -55,23 +55,32 @@ rc_is 1 $? "drift: a comment does not count as implementation"
 has "PaymentGateway"
 rm "$TMP/src/note.ts"
 
-# ---------- plan_feature ----------
-cd "$TMP"
+# ---------- plan_feature, in a CONSUMER repo ----------
+# These tools must write into the user's project, not into the installed plugin.
+CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
+git init -q; git config user.email e@e; git config user.name e
+echo x > f.txt; git add -A; git commit -qm init
+
 python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud >/tmp/pt.out 2>&1
-[ -f "$ROOT/specs/thing/spec.md" ] && ok "plan: spec created" || bad "plan: spec not created"
-python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/thing" >/tmp/pt.out 2>&1
+[ -f "$CONS/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
+  || bad "plan: spec not created in the consumer repo"
+[ ! -d "$ROOT/specs/thing" ] && ok "plan: did NOT write into the plugin dir" \
+  || bad "plan: leaked a spec into the plugin dir"
+
+python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/thing" >/tmp/pt.out 2>&1
 rc_is 1 $? "plan: fresh spec fails audit"
 has "still TODO"
 has "no recommendation"
-rm -rf "$ROOT/specs/thing"
 
+python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >/tmp/pt.out 2>&1
+rc_is 2 $? "plan: unknown kind rejected"
+
+# ---------- the plugin's own worked example ----------
+cd "$ROOT"
 python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/login" >/tmp/pt.out 2>&1
 rc_is 0 $? "plan: the completed worked spec passes audit"
 grep -q "7 accepted as default" /tmp/pt.out && ok "plan: counts defaults correctly (pipe-escaping)" \
   || bad "plan: default count wrong"
-
-python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >/tmp/pt.out 2>&1
-rc_is 2 $? "plan: unknown kind rejected"
 
 # ---------- decide ----------
 python3 "$ROOT/scripts/decide.py" index >/tmp/pt.out 2>&1
@@ -79,6 +88,9 @@ rc_is 0 $? "decide: index regenerates"
 [ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
 grep -qE "^\| \[ADR-0001\]" "$ROOT/decisions/INDEX.md" 2>/dev/null \
   && ok "decide: index table contains the ADR row" || bad "decide: ADR row missing"
+
+python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+rc_is 0 $? "decide: the real ADR passes lint"
 
 python3 "$ROOT/scripts/decide.py" verify >/tmp/pt.out 2>&1
 grep -q "unverifiable" /tmp/pt.out && ok "decide: reports unverifiable assumptions" \
@@ -88,6 +100,22 @@ python3 "$ROOT/scripts/decide.py" trace examples/login/src/auth.service.ts >/tmp
 has "ADR-0001"
 python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >/tmp/pt.out 2>&1
 has "no recorded decision"
+
+# a decision record that names a winner and nothing else must be rejected
+mkdir -p "$CONS/decisions"
+cat > "$CONS/decisions/ADR-0009-thin.md" <<'MD'
+# ADR-0009: Use Postgres
+```json meta
+{"id":"ADR-0009","title":"Use Postgres","status":"accepted",
+ "options":[{"name":"Postgres","chosen":true}],"assumptions":[]}
+```
+MD
+cd "$CONS"
+python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+rc_is 1 $? "decide: lint rejects a single-option record"
+has "not a decision"
+has "no assumptions recorded"
+cd "$ROOT"
 
 echo
 echo "planning-tools: $PASS passed, $FAIL failed"

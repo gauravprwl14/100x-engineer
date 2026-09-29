@@ -21,7 +21,37 @@ Python stdlib only.
 """
 import argparse, datetime, fnmatch, json, pathlib, re, subprocess, sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent
+
+def project_root():
+    """Where the USER's decisions/specs live: the git root of the current directory,
+    not the plugin's own directory.
+
+    Resolving these against the plugin root meant a consumer project's records were
+    written into the installed plugin — invisible to their repo and lost on upgrade.
+    """
+    import subprocess
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        return pathlib.Path(r.stdout.strip())
+    return pathlib.Path.cwd()
+
+
+
+def rel(p):
+    """Display path, resilient to a target outside ROOT.
+
+    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
+    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
+    """
+    try:
+        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
+    except Exception:
+        return pathlib.Path(p)
+
+
+ROOT = project_root()
 DIR = ROOT / "decisions"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("proposed", "accepted", "superseded", "rejected", "revisit")
@@ -127,7 +157,7 @@ def cmd_new(a):
     path = DIR / f"{did}-{re.sub(r'[^a-z0-9]+', '-', a.title.lower()).strip('-')}.md"
     path.write_text(TEMPLATE.format(id=did, title=a.title,
                                     meta=json.dumps(meta, indent=2)))
-    print(f"created {path.relative_to(ROOT)}")
+    print(f"created {rel(path)}")
     print("Fill in: assumptions (each needs a real verify command), options with "
           "concrete why_not, and the Gaps accepted table.")
     cmd_index(a)
@@ -257,9 +287,68 @@ def cmd_trace(a):
     return 0
 
 
+def cmd_lint(a):
+    """Reject a decision record that documents a choice without documenting the choosing.
+
+    The common failure is a record that names the winner and nothing else: no rejected
+    options, no reason they lost, no assumption that could later be falsified. That is
+    a conclusion, not a decision — it cannot be re-evaluated, which is the only reason
+    to write it down.
+    """
+    recs = load_all()
+    errs = 0
+    for r in recs:
+        p_ = r.get("_path")
+        name = p_.name if p_ else "?"
+        if r.get("_error"):
+            print(f"  ERROR {name}: {r['_error']}"); errs += 1; continue
+        if r.get("status") not in STATUSES:
+            print(f"  ERROR {name}: status {r.get('status')!r} not in {STATUSES}"); errs += 1
+        opts = r.get("options") or []
+        chosen = [o for o in opts if o.get("chosen")]
+        if len(opts) < 2:
+            print(f"  ERROR {name}: {len(opts)} option(s) recorded — a decision with one "
+                  f"option is not a decision"); errs += 1
+        if len(chosen) != 1:
+            print(f"  ERROR {name}: {len(chosen)} options marked chosen, expected exactly 1")
+            errs += 1
+        for o in opts:
+            if o.get("chosen"):
+                if not (o.get("why") or "").strip() or (o.get("why") or "").startswith("<"):
+                    print(f"  ERROR {name}: chosen option {o.get('name')!r} has no `why` "
+                          f"(the deciding factor)"); errs += 1
+            else:
+                if not (o.get("why_not") or "").strip() or (o.get("why_not") or "").startswith("<"):
+                    print(f"  ERROR {name}: rejected option {o.get('name')!r} has no "
+                          f"`why_not` — it was listed, not considered"); errs += 1
+        asms = r.get("assumptions") or []
+        if not asms:
+            print(f"  ERROR {name}: no assumptions recorded — every decision rests on "
+                  f"something that could stop being true"); errs += 1
+        for asm in asms:
+            if not (asm.get("claim") or "").strip() or (asm.get("claim") or "").startswith("<"):
+                print(f"  ERROR {name}: assumption {asm.get('id')} has no claim"); errs += 1
+            if not (asm.get("revisit_when") or "").strip() or \
+               (asm.get("revisit_when") or "").startswith("<"):
+                print(f"  ERROR {name}: assumption {asm.get('id')} has no `revisit_when` — "
+                      f"nothing will ever prompt a re-check"); errs += 1
+        if "## Gaps accepted" in (r.get("_body") or "") and \
+           "| gap |" in (r.get("_body") or ""):
+            body = r["_body"].split("## Gaps accepted", 1)[1]
+            rows = [l for l in body.splitlines()
+                    if l.startswith("|") and not set(l) <= set("|-: ")
+                    and "| gap |" not in l]
+            if not rows:
+                print(f"  WARN  {name}: Gaps accepted table is empty — claiming nothing "
+                      f"was left unhandled")
+    print(f"\ndecide lint: {len(recs)} record(s), {errs} error(s)")
+    return 1 if errs else 0
+
+
 def cmd_check(a):
     rc = 0
-    print("=== index ===");  rc |= cmd_index(a)
+    print("=== lint ===");   rc |= cmd_lint(a)
+    print("\n=== index ==="); rc |= cmd_index(a)
     print("\n=== drift ==="); rc |= cmd_drift(a)
     return rc
 
@@ -273,7 +362,7 @@ def main():
     n.add_argument("--by", default="claude")
     n.set_defaults(fn=cmd_new)
     for name, fn in (("index", cmd_index), ("verify", cmd_verify),
-                     ("drift", cmd_drift), ("check", cmd_check)):
+                     ("drift", cmd_drift), ("check", cmd_check), ("lint", cmd_lint)):
         p = sub.add_parser(name); p.set_defaults(fn=fn)
     t = sub.add_parser("trace"); t.add_argument("path"); t.set_defaults(fn=cmd_trace)
     a = ap.parse_args()
