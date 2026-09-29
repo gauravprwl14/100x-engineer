@@ -9,6 +9,21 @@ an opinion, and it does not belong here.
 
 ---
 
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Part A — Admission gate (ALL must pass)](#part-a--admission-gate-all-must-pass) | the 9 hard gates (stars, activity, committers, license, ships software, has a quality system) every repo must pass before anything else is checked | 18 lines |
+| 2 | [Part B — Noise exclusion (ANY match = reject)](#part-b--noise-exclusion-any-match--reject) | the name-pattern, tree-shape and category rules that reject awesome-lists, tutorials and content dumps before a deep read | 38 lines |
+| 3 | [Part C — Production-reality evidence (need >= 2 of 5)](#part-c--production-reality-evidence-need--2-of-5) | the 5 proxies (releases, distribution channel, named adopters, security posture, migration discipline) used since "real production use" can't be checked directly | 15 lines |
+| 4 | [Part D — Extraction schema (what we harvest from admitted repos)](#part-d--extraction-schema-what-we-harvest-from-admitted-repos) | the 7 dimensions (D1-D7) harvested per repo, including D1's highest-value field — the single command a contributor runs to prove a change is good | 63 lines |
+| 5 | [Part E — Scoring](#part-e--scoring) | how D1-D7 scores sum to a 0-21 signal_score, and the Tier 1/2/3 cutoffs that decide how deep a repo gets read | 15 lines |
+| 6 | [Part F — Stack allocation](#part-f--stack-allocation) | the per-cluster repo-count targets (JS/TS, Python, Go, mobile, agentic-dev, reliability) weighted to the project's stated stack | 21 lines |
+| 7 | [Part G — Anti-goals](#part-g--anti-goals) | the 6 guardrails (no cargo-culting, no advice without a command, no unsourced claims...) that govern every downstream skill | 20 lines |
+| 8 | [v2 — 2026-09-28, after first full run against 1124 repos](#v2--2026-09-28-after-first-full-run-against-1124-repos) | 4 corrections made after seeing real data (commit threshold lowered, author-count escape hatch, CI gate loosened, cluster-matching fixed), each named with the specific repos that motivated it | 44 lines |
+| 9 | [v3 — 2026-09-28, after age/velocity analysis](#v3--2026-09-28-after-agevelocity-analysis) | two new gates added — a 24-month age floor and a stars/month >15000 sanity bound — with the mature-vs-young cohort data behind the threshold | 53 lines |
+| 10 | [v4 — 2026-09-28. Mobile clustering: mechanical detection abandoned, and why](#v4--2026-09-28-mobile-clustering-mechanical-detection-abandoned-and-why) | three failed attempts at mechanically detecting "is this a mobile repo," ending in a declared 5-repo hand-list exception — the rubric's clearest self-correction | 32 lines |
+
 ## Part A — Admission gate (ALL must pass)
 
 | # | Gate | Hard threshold | How checked |

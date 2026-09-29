@@ -26,6 +26,19 @@ read directly (not summarized from READMEs). Star/push/contributor numbers pulle
 
 ---
 
+**No repo in the sample achieves end-to-end "verification-enforced agentic engineering": catalog-quality tooling and prompt-level verification discipline (Iron Law-style rules) are both solved well, but mechanical, unbypassable enforcement at the tool-call boundary is solved only narrowly, by one repo's hard-block hook — see Verdict.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Inventory](#inventory) | table of the 11 cloned repos with skill/agent/command/hook counts and a STRONG/MIXED/WEAK verdict per repo, plus why star count is untrustworthy here | 24 lines |
+| 2 | [What the good ones do right](#what-the-good-ones-do-right) | 11 concrete patterns harvested verbatim — eval-driven skill development, TDD's Iron Law ported as a skill contract, verification-before-completion, rationalization tables, the deterministic PreToolUse hard-block hook — the bulk of this file's harvestable content; start here | 178 lines |
+| 3 | [What the ecosystem gets wrong](#what-the-ecosystem-gets-wrong) | 7 named failure patterns — god-skills up to 1,576 lines, capability-list "agents" with zero verification, multi-harness duplication inflating catalog counts, a non-derivable CC BY-NC-ND license | 18 lines |
+| 4 | [SKILL.md authoring mechanics (evidence-based)](#skillmd-authoring-mechanics-evidence-based) | which frontmatter fields are actually used in the wild, description-writing patterns that trigger reliably, and measured skill-length data across repos | 49 lines |
+| 5 | [Directly reusable assets](#directly-reusable-assets) | table of specific harvestable artifacts (eval harnesses, lint rule sets, skill triads) with source repo and SPDX license for each | 19 lines |
+| 6 | [Verdict](#verdict) | the closing synthesis stated above — three non-overlapping partial solutions to verification-enforced engineering, and the gap between them | 13 lines |
+
 ## Inventory
 
 Counts are `find . -not -path '*/.git/*'` over the cloned tree: `SKILL.md` files anywhere;

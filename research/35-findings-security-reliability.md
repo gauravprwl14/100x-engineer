@@ -6,6 +6,27 @@ Scope: `research/00-signal-rubric.md` Part D5 (security) and D6 (operations), ha
 cloned (`--depth 1`, sparse where noted) and read directly; no `gh api` was used. SHAs recorded
 below are the commit each citation was read at. Absence is recorded as a finding, per Part G.6.
 
+**57.9% of external GitHub Actions refs across the corpus are SHA-pinned, sharply bimodally; and
+SQLite's real in-repo test:source ratio is ~2.5:1, not the widely-cited "600:1."**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage (corpus vs supplements)](#coverage-corpus-vs-supplements) | which of the 25 worklist repos got full-depth reads vs a fixed mechanical probe, plus 8 mandatory supplements, and how depth was allocated by signal score | 27 lines |
+| 2 | [SECURITY.md patterns (verbatim, cited)](#securitymd-patterns-verbatim-cited) | three maturity tiers of SECURITY.md quoted verbatim — from pointer-only up to Envoy's ~350-line gold-standard process — plus SQLite's notable zero-process absence | 77 lines |
+| 3 | [CI security scanning (configs quoted)](#ci-security-scanning-configs-quoted) | CodeQL/Trivy/Coverity/sanitizer-build adoption with real config snippets — CodeQL exists in only 5 of 15 lightly-probed repos despite being free | 73 lines |
+| 4 | [Supply-chain hardening, incl. action-SHA pinning counts](#supply-chain-hardening-incl-action-sha-pinning-counts) | **highest-value section**: the corpus-wide 57.9% SHA-pinning rate and its sharply bimodal distribution, plus the confirmed absence of cosign/SLSA/SBOM anywhere in the 33-repo corpus | 63 lines |
+| 5 | [Fuzzing practice and the fuzz-finding-to-regression-test loop](#fuzzing-practice-and-the-fuzz-finding-to-regression-test-loop) | OSS-Fuzz's 3-file integration contract, seeding a fuzz corpus from existing tests for free, and SQLite's committed-crash-input-as-regression-test loop | 76 lines |
+| 6 | [Dependency policy](#dependency-policy) | Dependabot vs. Renovate vs. neither adoption split, and curl's severity-scaled cooldown-day pattern for absorbing a compromised-release attack window | 43 lines |
+| 7 | [AuthZ test patterns](#authz-test-patterns) | postgres's multi-persona negative-testing pattern and redis's secure-by-default ACL tests — only 2 of 12 deeply-read repos have a dedicated authz test surface at all | 56 lines |
+| 8 | [Observability conventions](#observability-conventions) | kestra's metric-naming/cardinality-bounding style guide, the strongest in-repo observability document found in the corpus | 35 lines |
+| 9 | [SLOs and error budgets](#slos-and-error-budgets) | confirms zero of 33 repos have a numeric SLO/error-budget document — the closest analogues are security-response SLAs, not availability targets | 18 lines |
+| 10 | [Resilience patterns (quoted implementations)](#resilience-patterns-quoted-implementations) | Envoy's quoted retry-jitter, circuit-breaking and outlier-detection defaults, plus mastodon's `strong_migrations` gem as the most directly copyable zero-downtime-migration gate | 62 lines |
+| 11 | [Release, rollback, and migration safety](#release-rollback-and-migration-safety) | Envoy's per-supported-branch point-release model and redis's license-carveout backport policy — confirms no repo has a written expand/contract migration policy document | 37 lines |
+| 12 | [SQLite's testing culture: what transfers and what does not](#sqlites-testing-culture-what-transfers-and-what-does-not) | separates SQLite's real, verifiable practices (fault injection through one I/O chokepoint, the true 2.5:1 test:source ratio) from the unverifiable/non-transferable marketing claims | 80 lines |
+| 13 | [Synthesis: security baseline by scale (solo / small-team / org / high-blast-radius)](#synthesis-security-baseline-by-scale-solo--small-team--org--high-blast-radius) | four tiers of what to adopt and why, each practice tied to the scale where it starts paying for itself | 63 lines |
+
 ## Coverage (corpus vs supplements)
 
 **Worklist (25/25 read):** discourse/discourse@3b6713e, nextcloud/server@c41a913, pnpm/pnpm@15a5da5,

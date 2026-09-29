@@ -47,6 +47,18 @@ fork under the same name/star count. This is disclosed, not concealed, but it me
 Rust-language, Rust-CI-workflow evidence below describes the *current* tree, not the
 project the stars were earned under.
 
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Own-engineering scorecard](#own-engineering-scorecard) | per-repo table of stars, age, test-file counts, CI-workflow counts, coverage gates and a D1 verdict for all 25 repos — the base evidence every other section draws on | 39 lines |
+| 2 | [The popularity/discipline gap](#the-popularitydiscipline-gap) | which repos are worse (spec-kit, ruflo, graphiti, AionUi) or better (repomix, composio, haystack, vector) than their star count implies, plus a flagged Rust test-file-undercounting methodology trap | 56 lines |
+| 3 | [Agent configs harvested (verbatim, cited)](#agent-configs-harvested-verbatim-cited) | verbatim AGENTS.md excerpts on verification commands, anti-bloat/minimal-diff rules, scope discipline and style conventions, grouped by theme — the largest raw-evidence section in the file | 138 lines |
+| 4 | [Hooks: mechanical enforcement audit](#hooks-mechanical-enforcement-audit) | which of the 25 repos wire an actual blocking `PreToolUse`/`PostToolUse` hook (3 of 25), exactly what each one blocks, and the confirmed absence of any hook that runs the test suite itself | 97 lines |
+| 5 | [Skills and commands defined by these repos](#skills-and-commands-defined-by-these-repos) | skill/command counts per repo, including the one repo (mlflow) that unit-tests its own skill tooling and the one (composio) that CI-tests its skill routing | 42 lines |
+| 6 | [AI-authored code and its gates](#ai-authored-code-and-its-gates) | the `Co-Authored-By: Claude` commit share per repo (5.9% aggregate across 466k commits), and the finding that no repo runs a different CI path for AI-authored commits | 69 lines |
+| 7 | [Transferable mechanisms, ranked](#transferable-mechanisms-ranked) | **highest-value section**: 9 ranked, copyable mechanisms, each tied to the specific failure class it prevents and the team-size scale where it starts paying off | 82 lines |
+
 ---
 
 ## Own-engineering scorecard

@@ -9,6 +9,26 @@ the corpus actually configure, and is it enforced or decorative?** 46 repos were
 full where captured, short where the source gave only a short form, `HEAD` where the researching pass did not
 capture one (flagged inline — treat those citations as slightly weaker).
 
+**5 of 12 named AI-bloat failure modes have no mechanical coverage in any production repo read across two
+independent research passes.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage](#coverage) | which 46 repos were read, by language cluster, and the explicit caveat that the JS/TS sample is far deeper than the single-sweep Go/Python/Ruby/PHP/agentic sample | 23 lines |
+| 2 | [Dead-code gates: verbatim, blocking vs advisory](#dead-code-gates-verbatim-blocking-vs-advisory) | per-repo table of knip/staticcheck/Psalm configs with exact blocking-vs-advisory status — a fully-configured dead-code tool nobody wired to CI is identical to no tool at all | 20 lines |
+| 3 | [Size budgets with real numbers](#size-budgets-with-real-numbers) | among 8 size-sensitive UI/editor libraries, not one has a byte budget wired into required CI — the one real example (react-hook-form, 15.0kB) plus several configured-but-unwired near-misses | 21 lines |
+| 4 | [API-surface control](#api-surface-control) | committed API golden-file diffing found in exactly 1 of 9 repos checked (backstage) — everything else is weaker export-shape linting that can't catch an unwanted new export | 33 lines |
+| 5 | [Dependency-addition friction: policy text + enforcement](#dependency-addition-friction-policy-text--enforcement) | zero repos have prose dependency-addition policy; grafana's per-dependency-owner `go.mod` gate and teleport's binary-size-driven depguard denylist are the strongest mechanisms found | 72 lines |
+| 6 | [Architectural boundary rules (verbatim)](#architectural-boundary-rules-verbatim) | real boundary enforcement is almost always hand-rolled (dependency-cruiser, no-restricted-imports, depguard), never the purpose-built `eslint-plugin-boundaries` — verbatim rulesets from Ghost, backstage, nuxt, cherry-studio | 73 lines |
+| 7 | [Diff hygiene mechanisms](#diff-hygiene-mechanisms) | `.git-blame-ignore-revs`, generated-file freshness checks, and the single rarest/most valuable gate found in the whole document — angular's diff-scoped format check, present in only 1 of 8 repos checked | 63 lines |
+| 8 | [Complexity thresholds actually used (numbers)](#complexity-thresholds-actually-used-numbers) | most production repos don't configure a numeric complexity threshold at all, and several explicitly turn the rule off rather than leaving it at default | 32 lines |
+| 9 | [Test-quality gates](#test-quality-gates) | zero mutation testing and zero patch-coverage gates across 18 repos checked; the only near-universal test-quality gate bans focused/skipped tests, not weak assertions | 50 lines |
+| 10 | [Blocking vs advisory: the counts](#blocking-vs-advisory-the-counts) | the corpus-wide tally (~69% blocking, ~31% advisory) across every mechanism found, with the caveat that this says nothing about the much larger set of anti-bloat questions where no mechanism exists at all | 30 lines |
+| 11 | [Coverage of the 12 AI-bloat failure modes: what real repos catch, what NOTHING catches](#coverage-of-the-12-ai-bloat-failure-modes-what-real-repos-catch-what-nothing-catches) | **highest-value section**: which of the 12 named AI-bloat failure modes have any real production coverage — 5 of 12 have none at all | 31 lines |
+| 12 | [Recommended tiered stack for a small team](#recommended-tiered-stack-for-a-small-team) | a concrete pre-commit/pre-PR/nightly tiered stack built only from mechanisms actually found running in production, plus an explicit list of what nothing solves yet | 58 lines |
+
 ---
 
 ## Coverage

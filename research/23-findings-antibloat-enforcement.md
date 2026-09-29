@@ -13,6 +13,20 @@ docs.
 
 ---
 
+**5 of the 12 cataloged AI-bloat failure modes — new-file duplication of existing logic, unnecessary-but-used dependencies, single-use abstractions, semantic/renamed-variable duplication, and comments that restate the code — have no tool that mechanically judges the actual question; each is covered only by a proxy that makes the issue visible for a human or LLM reviewer, not a check that resolves it on its own.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Tool matrix](#tool-matrix) | one row per tool (knip, ts-prune, depcheck, vulture, ruff, staticcheck, size-limit, api-extractor...) across JS/TS, Python, Go, Universal — what it catches, what it misses, install command, CI-failing command, false-positive rate | 39 lines |
+| 2 | [The 12 AI-bloat failure modes and their mechanical checks](#the-12-ai-bloat-failure-modes-and-their-mechanical-checks) | the core of the document — each of the 12 failure modes named above with a TESTED/UNTESTED/PARTIALLY-TESTED runnable command and an honest note on what it misses; start here | 439 lines |
+| 3 | [Real configs from major repos (verbatim, cited)](#real-configs-from-major-repos-verbatim-cited) | actual CI configs copied verbatim from flagship repos (Traefik, Prometheus, pandas, TanStack, Grafana, clerk...) proving each tool pattern is live in production, not a design sketch | 319 lines |
+| 4 | [Diff-scoped enforcement](#diff-scoped-enforcement) | why whole-repo gates fail on existing codebases, and the advisory-mode + diff-intersection pattern that lets a legacy repo adopt every check as a ratchet on new code only | 46 lines |
+| 5 | [Mutation testing: the assertion-free-test killer](#mutation-testing-the-assertion-free-test-killer) | how mutation testing proves a test can actually fail (vs. line coverage, which only proves a line executed) — a real mutmut run showing 25% mutation score despite 100% line coverage | 50 lines |
+| 6 | [Recommended layered stack](#recommended-layered-stack) | the 3-tier CI architecture (pre-commit <5s, pre-PR/CI <2min diff-scoped, nightly/weekly whole-repo) with the exact command for every tier — the answer if you just want commands to paste into CI | 60 lines |
+| 7 | [Honest limitations](#honest-limitations) | the specific things no tool in this survey catches at all, restated as a checklist — ties directly to the finding above | 28 lines |
+
 ## Tool matrix
 
 | Tool | Lang | Catches | Misses | Install | CI-failing command | FP rate in practice | Maturity |

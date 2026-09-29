@@ -4,6 +4,26 @@ Scope per `research/00-signal-rubric.md` Part D1/D2/D6 and `research/01-skill-co
 someone competent in another language who is new to Go. Every claim carries `owner/repo@sha:path`.
 Absence is recorded, not papered over (Part G rule 6).
 
+**Codegen-drift detection is the most consistent practice in the corpus, and a plain
+`git diff --exit-code` misses newly created untracked files — you need `git add -N .` first.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage](#coverage) | which of the 40 repos got a full 8-field deep-read vs a 6-field breadth-read, the clone-based no-API extraction method, and the microsoft/TypeScript-is-actually-a-Go-repo correction | 57 lines |
+| 2 | [The prove-it command, per repo (complete table)](#the-prove-it-command-per-repo-complete-table) | the exact command per repo, plus the `make verify`/`hack/verify-*.sh` chained-check pattern (Kubernetes lineage) found in 14 of 40 repos — the most copyable structural pattern in the file | 83 lines |
+| 3 | [golangci-lint configs verbatim (cited)](#golangci-lint-configs-verbatim-cited) | linter counts and complexity-gate presence per repo — only 1 of 40 repos (grafana/k6) enforces a complexity linter as a blocking gate | 82 lines |
+| 4 | [Banned-import (`depguard`) rules and their rationale](#banned-import-depguard-rules-and-their-rationale) | quoted YAML for the `pkg/errors` ban across 6 repos, a full table of other ban families, and a same-corpus contradiction (uber/atomic banned by one repo, mandated by another) | 65 lines |
+| 5 | [Test layers and fuzz adoption (counts)](#test-layers-and-fuzz-adoption-counts) | per-repo counts of test files, fuzz targets, golden files and benchmarks — 58% of repos have zero native fuzz targets, and where fuzzing exists it targets parsers/decoders specifically | 65 lines |
+| 6 | [Race detector and CI matrix practice](#race-detector-and-ci-matrix-practice) | which repos run `-race` on every PR vs have a defined-but-dead race target never invoked by CI, and how rare real Go-version matrices are (4/40) | 60 lines |
+| 7 | [Error-handling conventions (quoted)](#error-handling-conventions-quoted) | verbatim wrap/log-or-return/typed-sentinel conventions from 6 repos plus per-repo `errors.Is`/`As`/`%w` counts — the convention is almost always lint-enforced, rarely written down | 61 lines |
+| 8 | [Concurrency and reliability patterns](#concurrency-and-reliability-patterns) | four copyable mechanisms — wrapped `goleak`, homegrown leak/lock tooling, hand-rolled retry/backoff, enforced ctx-propagation — including netdata's quoted rule against adding resilience machinery speculatively | 116 lines |
+| 9 | [Generated-code drift detection](#generated-code-drift-detection) | **highest-value section, per the doc's own claim**: the regenerate-then-diff primitive present in 20+/25 deep-read repos, and the 4 refinements that separate a naive `git diff --exit-code` (misses new untracked files) from a real gate | 127 lines |
+| 10 | [Dependency hygiene](#dependency-hygiene) | `go mod tidy`+diff gate adoption, vendoring practice, and tailscale's `depaware` transitive-dependency allowlist — the strongest supply-chain gate found in the corpus | 51 lines |
+| 11 | [Synthesis: minimum viable vs strongest justified Go stack](#synthesis-minimum-viable-vs-strongest-justified-go-stack) | two runnable command sequences (solo/small-team vs org-scale) plus an explicit "what NOT to copy at small scale" list | 88 lines |
+| 12 | [What Go gives free vs what JS/Python must bolt on](#what-go-gives-free-vs-what-jspython-must-bolt-on) | a capability-by-capability table (formatter, vet, race detector, dependency-tidy, fuzzing, ...) showing what ships free in Go's toolchain vs needs a separate install elsewhere | 26 lines |
+
 ## Coverage
 
 40/40 repos on `research/worklists/go.txt` were read: 25 deep-read (full 8-field extraction), 15

@@ -4,6 +4,23 @@ Deep-read of the JS/TS worklist (`research/worklists/js.txt`, 72 repos) for D1
 (verification stack), D2 (anti-bloat), D4 (correctness ratchets). All 72 repos were
 reached — 0 unreachable. Method below. No repo was `git clone`d.
 
+**Across all 72 repos: mutation testing 0/72, property-based testing 0/72, and a
+real blocking patch-scoped coverage gate in exactly 1 of 72.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage (what was actually read vs skipped, honestly)](#coverage-what-was-actually-read-vs-skipped-honestly) | which of the 72 repos were fetched directly vs pulled in by a sub-agent, and why CI-workflow-discovery gaps mean every `merge_group`/CI count later in the doc is a floor, not a true population figure | 39 lines |
+| 2 | [The prove-it command, per repo](#the-prove-it-command-per-repo) | the exact test/lint/typecheck command copied from each repo's root `package.json` (or CONTRIBUTING/AGENTS.md) — the single most useful table in this file, and the only place showing that 5 repos have no root command at all | 91 lines |
+| 3 | [Tooling distribution (counts)](#tooling-distribution-counts) | which test runner, linter, formatter, package manager and monorepo tool actually won this cohort (vitest 40/72, pnpm 53%), and confirms mutation/property-based testing appear in zero repos | 57 lines |
+| 4 | [Typecheck strictness spectrum](#typecheck-strictness-spectrum) | who sets `strict: true` vs who explicitly turns it off, the strictest and weakest root tsconfigs found verbatim, and that `isolatedDeclarations` is unused in all 72 | 50 lines |
+| 5 | [Coverage and diff-coverage gates (blocking vs advisory)](#coverage-and-diff-coverage-gates-blocking-vs-advisory) | **highest-value section**: only 1 of 72 repos has a real blocking patch-scoped coverage gate — the rest have no codecov.yml, a whole-repo-only target, or an advisory/informational patch check | 31 lines |
+| 6 | [CI architecture patterns](#ci-architecture-patterns) | merge-queue, sharding and cost-aware-runner adoption among the repos whose CI workflow could actually be found | 55 lines |
+| 7 | [Anti-bloat configs verbatim](#anti-bloat-configs-verbatim) | knip/size-limit/api-extractor adoption rates with real config snippets — bundle-size budgets exist in only 2/72 repos | 77 lines |
+| 8 | [Monorepo affected-only patterns](#monorepo-affected-only-patterns) | Turborepo/Nx/Lerna task-graph configs and the cache-correctness idioms (self-edges, env allowlists) that keep affected-only builds correct | 60 lines |
+| 9 | [Synthesis: minimum viable vs strongest justified stack](#synthesis-minimum-viable-vs-strongest-justified-stack) | two runnable command sequences — the modal floor everyone actually runs, and the strongest stack assembled from real T1 practices — each line tied to the failure class it blocks | 79 lines |
+
 ## Coverage (what was actually read vs skipped, honestly)
 
 - **72/72 repos reached.** 54 via my own scripted `curl -sf --max-time 6

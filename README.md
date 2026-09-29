@@ -3,73 +3,73 @@
 A Claude Code plugin of **verification-enforced** engineering skills for backend,
 frontend and mobile across TypeScript, Python and Go.
 
-Every rule ships a runnable check. Rules that cannot be checked are labelled as
-such, capped at three per skill, or deleted.
+Every rule ships a runnable check. Rules that cannot be checked are labelled as such,
+capped at three per skill, or deleted.
+
+## Contents
+
+| # | section | what it answers |
+|---|---------|-----------------|
+| 1 | [Why this exists](#why-this-exists) | the two failure modes it targets, and how the corpus was built |
+| 2 | [Does it actually work?](#does-it-actually-work) | the measured numbers, and the claim I explicitly do **not** make |
+| 3 | [Install](#install) | one command, plus the per-project opt-in for the commit gate |
+| 4 | [The verification receipt](#the-verification-receipt) | the mechanism nobody else had |
+| 5 | [Skills](#skills) | all 29, in pipeline order, with what each rejects |
+| 6 | [Stack reviewers](#stack-reviewers) | framework-specific failure modes |
+| 7 | [Tools](#tools) | the 30 checkers and what they catch |
+| 8 | [Index discipline](#index-discipline) | how this stays navigable at hundreds of records |
+| 9 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
+| 10 | [Research](#research) | the evidence every skill cites |
 
 ## Why this exists
 
-AI agents do not mostly write wrong code. They write **too much** code — extra
-files, extra layers, extra docs, tests that cannot fail — and then report success
-without evidence. Both problems are mechanical, so both get mechanical answers.
+AI agents do not mostly write wrong code. They write **too much** code — extra files,
+extra layers, extra docs, tests that cannot fail — and then report success without
+evidence. Both problems are mechanical, so both get mechanical answers.
 
-This plugin was built from measurement, not opinion. 1,431 GitHub repositories were
-screened down to a 223-repo corpus of production software (≥20k stars, ≥250
-commits/year, ≥2 years old, licensed, tested, with converging evidence of real
-users). Their actual CI, test, lint, type, security and agent configurations were
-read and counted. The screening contract, every revision to it, and the full funnel
-are in [`research/`](research/).
+Built from measurement, not opinion. **1,431 repositories screened to a 223-repo
+corpus** of production software (≥20k stars, ≥250 commits/year, ≥2 years old, licensed,
+tested, with converging evidence of real users). Their actual CI, test, lint, type,
+security and agent configurations were read and counted. The screening contract, all
+four revisions to it, and the full funnel are in [`research/`](research/INDEX.md).
 
-## The gap this fills
+**The gap it fills.** Surveying the Claude Code skills ecosystem and 61 production
+agent-instruction files produced one clear result: skill-catalogue quality is well
+solved, verification discipline is well *written*, and mechanical enforcement at the
+moment of the claim existed nowhere. Of 25 agentic-development repositories, 3 wire any
+hook at all and **none** block a completion on test results.
 
-Surveying the Claude Code skills ecosystem and 61 production agent-instruction
-files produced one clear result:
-
-- **Skill-catalog quality** is well solved — several projects lint and eval their
-  skills in CI.
-- **Verification discipline in prose** is well written — "always verify before
-  claiming done" appears in many good instruction files.
-- **Mechanical enforcement at the moment of the claim** existed nowhere. Of 25
-  agentic-development repositories, 3 wire any hook at all, and **none** block a
-  completion on test results.
-
-So the centrepiece here is the part nobody had: a gate the model cannot talk itself
-past.
-
-## Does this actually work?
+## Does it actually work?
 
 Two separate questions, answered separately.
 
-**Do the checks catch what they claim to?** Yes, measured:
+**Do the checks catch what they claim?** Measured:
 
 ```bash
 python3 scripts/run_evals.py
 ```
 
-19 seeded defects, one per class the plugin claims to catch — **19/19 caught**.
-4 clean controls — **0 false positives**. The cases live in `evals/seeded/`, so the
-number is reproducible and regressions are visible.
+19 seeded defects, one per class the plugin claims to catch — **19/19 caught**. 4 clean
+controls — **0 false positives**. The same harness records **6 defect classes it does
+not catch**, as eval cases, so the scope claim is testable rather than rhetorical.
 
 **Does using this make someone dramatically more productive?** Unknown. Nothing here
-measures that, no benchmark in this repo supports it, and "100x" is a name, not a
-claim. What is defensible is narrower and more useful: the gaps this catches are gaps
-that would otherwise reach review or production, and the eval says exactly which ones.
+measures that and "100x" is a name, not a claim. The defensible version is narrower:
+these defect classes get caught before review, and the eval says exactly which.
 
-The same harness also records **6 defect classes it does not catch** — semantic
-duplication, redundant comments, unnecessary dependencies, tests that assert the bug,
-missing authorization checks, and check-then-act races. They are eval cases too, so the
-scope claim is testable rather than rhetorical. Those six route to `scoped-review`,
-which turns them into nine attributed questions instead of "please review carefully".
+Skill routing is measured too — `scripts/skill_triggers.py`, gated on top-3 ≥85%.
+Top-1 is reported as a diagnostic and deliberately not gated; the reasoning, and four
+failed attempts to improve it, are in [`evals/GRADER-CHANGELOG.md`](evals/GRADER-CHANGELOG.md).
 
 ## Install
 
 ```bash
-claude plugin marketplace add /path/to/100x-engineer-research
+claude plugin marketplace add ./100x-engineer
 claude plugin install 100x-engineer@100x-local
 ```
 
-The skills are available immediately. **The commit gate is opt-in per project** —
-the plugin installs at user scope, so it deliberately does nothing until a project
-asks for it. Opt in by creating a policy file:
+Skills are available immediately. **The commit gate is opt-in per project** — the plugin
+installs at user scope, so it deliberately does nothing until a project asks:
 
 ```bash
 mkdir -p .claude
@@ -79,158 +79,180 @@ JSON
 echo ".claude/verification-receipt.json" >> .gitignore
 ```
 
-With no policy file the hook passes every command through untouched. `required_checks`
-may be `[]` to require only that *something* passed against the current content.
+With no policy file the hook passes every command through untouched.
 
 ## The verification receipt
 
-Run your real checks through a wrapper that records the result **bound to a hash of
-the exact file content it verified**:
+Run your real checks through a wrapper that records the result **bound to a hash of the
+exact file content it verified**:
 
 ```bash
 python3 scripts/verified.py --name test -- npm test
 ```
 
-A `PreToolUse` hook then blocks `git commit`, `git push`, `gh pr create`, `git tag`
-and `npm publish` unless a receipt exists, covers the required checks, passed, and
-matches the current content.
+A `PreToolUse` hook then blocks `git commit`, `git push`, `gh pr create`, `git tag` and
+`npm publish` unless a receipt exists, covers the required checks, passed, and matches
+current content.
 
-This is what makes it different from an instruction: the classic failure is *run
-tests → edit a file → commit*. The tests passed, the sentence "tests pass" is true,
-and the committed code was never tested. Editing anything — tracked, staged, or a
-stray untracked file — invalidates the receipt.
+This is what separates it from an instruction. The classic failure is *run tests → edit
+a file → commit*: the tests passed, "tests pass" is true, and the committed code was
+never tested. Editing anything — tracked, staged, or a stray untracked file —
+invalidates the receipt.
 
-`git commit --no-verify` is **denied**, not honoured: it silently skips git's own
-hooks, so it is an evasion signal. To bypass deliberately, put `[skip-verify]` in
-the commit message; that is recorded in the transcript where a reviewer can see it.
+`git commit --no-verify` is **denied**, not honoured: it silently skips git's own hooks,
+so it is an evasion signal. To bypass deliberately, put `[skip-verify]` in the commit
+message, where a reviewer can see it.
 
-Independent convergence worth noting: `bluesky-social/social-app` fingerprints its
-native modules and refuses an over-the-air update when they drift. Same mechanism,
-found in production, for the same reason.
+Independent convergence: `bluesky-social/social-app` fingerprints its native modules and
+refuses an over-the-air update when they drift. Same mechanism, found in production, for
+the same reason.
 
 ## Skills
 
-The pipeline runs in order. Planning first, because a gap found in a spec costs
-minutes and the same gap found in review costs a day.
+29 skills in pipeline order — full table with triggers in
+[`skills/INDEX.md`](skills/INDEX.md).
 
 **Before code**
 
 | skill | what it rejects |
 |---|---|
-| `feature-planning` | code before a spec; edge cases left TODO; "covered" with no test; a verification plan with no commands |
-| `approach-selection` | a choice with one option recorded; a rejected option with no reason; choosing for unstated scale |
-| `decision-log` | a decision with no falsifiable assumption; an assumption with no revisit trigger; an empty gaps table |
+| `solution-architecture` | a PRD with no measurable success metric; options analysis with no do-nothing option |
+| `feature-planning` | code before a spec; edge cases left TODO; "covered" with no test |
+| `approach-selection` | a choice with one option recorded; a rejected option with no reason |
+| `decision-log` | a decision with no falsifiable assumption; no revisit trigger |
+| `data-modeling` | float money; invariants only in application code; a tenant-scoped index missing its tenant column |
+| `api-contract` | a breaking change shipped as a minor; errors a client must parse from a string |
 
 **While writing**
 
 | skill | what it rejects |
 |---|---|
-| `minimal-diff` | new files that should be edits; dead and commented-out code; assertion-free and focused tests; single-use abstractions; unrequested docs |
-| `stack-reviewer` | generic review on framework-specific code; deriving a choice the reviewer already defaults |
-| `typescript-verification` | loose `tsconfig`; whole-repo coverage gates that get disabled; `eslint` without `--max-warnings=0` |
-| `python-verification` | type checkers configured but never gating; `select=["ALL"]`; coverage offered as proof |
-| `go-verification` | codegen drift gates that miss new files; tests without `-race`; dependency bans that live only in prose |
-| `mobile-release-safety` | schema changes with no migration test; OTA pushes after native drift; 100% releases with no staged rollout |
+| `code-craft` | flag parameters; swallowed errors; vague names; Demeter chains; primitive-obsessed money |
+| `minimal-diff` | new files that should be edits; assertion-free and focused tests; unrequested docs |
+| `test-design` | tests chosen by vibe rather than boundary analysis; mocking what you don't own |
+| `distributed-correctness` | "exactly-once"; dual writes; retries with no budget; unstated timeouts |
+| `performance-budgets` | N+1 shapes; unbounded queries; missing timeouts; optimising without a measurement |
+| `diagramming` | the wrong diagram type; a diagram past its node budget; L3 with no step table |
+| `observability-design` | a user id in a metric label; alerts with no action |
+| `legacy-change` | refactor and behaviour change in one commit; changing untested code with no characterization test |
+| `stack-reviewer` | generic review on framework-specific code |
+| `typescript-verification` / `python-verification` / `go-verification` | type checkers configured but never gating; codegen drift gates that miss new files |
+| `mobile-release-safety` | schema changes with no migration test; OTA pushes after native drift |
 
 **Before shipping**
 
 | skill | what it rejects |
 |---|---|
-| `verification-gate` | "done" with no evidence; verify-then-edit-then-commit; `--no-verify` as an escape |
-| `scoped-review` | "looks good" with in-scope questions unanswered; tests that assert the bug; missing authorization checks |
-| `review-gates` | PR checkboxes nobody parses; one-line CODEOWNERS; a `merge_group:` trigger that does not work |
-| `security-baseline` | public repos with no private reporting channel; tag-pinned actions in secrets-bearing workflows |
+| `verification-gate` | "done" with no evidence; verify-then-edit-then-commit; `--no-verify` |
+| `scoped-review` | "looks good" with in-scope questions unanswered |
+| `reviewing-others-code` | critique before understanding intent; unlabelled findings |
+| `review-gates` | PR checkboxes nobody parses; a `merge_group:` trigger that does not work |
+| `security-baseline` | tag-pinned actions in secrets-bearing workflows; a fixed bug with no regression test |
 
-**Meta**
+**When broken, and meta**
 
 | skill | what it rejects |
 |---|---|
-| `agent-instructions` | instruction files with no named prove-it command; `CLAUDE.md` as a second document |
+| `bug-fix` | a fix before a reproduction; the repro not kept as a permanent test |
+| `root-cause-analysis` | a root cause identical to the symptom; no regression test named |
+| `codebase-comprehension` | inferred claims presented as verified |
+| `engineering-ledger` | a spec with no decision behind it; 40+ records in one flat directory |
+| `agent-instructions` | an instruction file with no named prove-it command |
 | `untrusted-agent-config` | third-party agent configs and hooks auto-loading unreviewed |
 
 ## Stack reviewers
 
-Framework-specific failure modes, grounded in cloned production code — including
-defects found in official reference apps.
+Framework-specific failure modes grounded in cloned production code — including defects
+found in official reference apps. Catalogue: [`reviewers/INDEX.md`](reviewers/INDEX.md).
 
-| file | covers |
-|---|---|
-| `reviewers/nestjs.md` | NestJS + TypeScript backend |
-| `reviewers/nextjs-react.md` | Next.js App Router + React |
-| `reviewers/react-native-expo.md` | React Native + Expo |
-| `reviewers/flutter.md` | Flutter + Dart |
-| `reviewers/native-mobile.md` | native Android + iOS |
-| `reviewers/kubernetes.md` | Kubernetes manifests, Helm, Kustomize |
-| `reviewers/cloud-iac.md` | AWS, GCP, Terraform |
+NestJS · Next.js/React · React Native + Expo · Flutter · native Android/iOS ·
+Kubernetes · AWS/GCP/Terraform, plus shared references for evidence labels, diagram
+levels, code craft and latency numbers.
 
-Each carries blocking rules, the AI failure modes specific to that stack, edge cases
-that stack routinely misses, and a **default recommendation** for every recurring
-architectural choice — so the agent proceeds without interrogating you.
+Each carries blocking rules, the AI failure modes specific to that stack, edge cases it
+routinely misses, and a **default recommendation** for every recurring architectural
+choice — so the agent proceeds without interrogating you.
 
 ## Tools
 
 Python standard library and git only — no install step, no dependencies.
 
-| tool | purpose | tests |
-|---|---|---|
-| `scripts/verified.py` + `hooks/require_verification.py` | run a check, write a content-bound receipt, block completion without one | 25 |
-| `scripts/bloat_check.py` | 7 diff-scoped AI-bloat checks; 4 cover failure modes no production repo catches | 16 |
-| `scripts/audit_agent_config.py` | treat a repo's agent config as untrusted input | 15 |
-| `scripts/audit_ci_gates.py` | find checks that look like gates but cannot fail; audit action SHA-pinning | 11 |
-| `scripts/stack_audit.py` | project layers vs the measured corpus baseline | — |
-| `scripts/check_agents_md.py` | check an AGENTS.md against 12 measured corpus patterns | — |
-| `scripts/plan_feature.py` | scaffold a spec seeding 60 edge cases + 24 pre-answered decisions; audit it | 32 |
-| `scripts/decide.py` | decision log: verifiable assumptions, revisit triggers, drift, trace, lint | (same) |
-| `scripts/design_drift.py` | mermaid sequence diagram vs implementation, both directions | (same) |
-| `scripts/review_scope.py` | the 9 review questions no tool can answer, attributed per file | (same) |
-| `scripts/run_evals.py` | score the checks against seeded defects; list what they miss | 23 cases |
-| `scripts/lint_skills.py` | enforce the skill contract on this plugin's own skills | — |
+| tool | purpose |
+|---|---|
+| `verified.py` + `hooks/require_verification.py` | content-bound receipt; block completion without one |
+| `plan_feature.py` | scaffold a spec seeding **140 edge cases across 19 kinds**; audit it |
+| `decide.py` | decision log: verifiable assumptions, revisit triggers, drift, trace, lint |
+| `rca.py` | RCA records; rejects a root cause equal to the symptom |
+| `prd.py` | PRD scaffold, audit, and PRD↔spec alignment |
+| `ledger.py` | index, traceability matrix, linkage gaps, date sharding, search |
+| `diagram_from_code.py` | mermaid **from** code at 3 detail levels; round-trips with `design_drift.py` |
+| `design_drift.py` / `check_diagrams.py` | diagram↔code drift; diagram type and budget validation |
+| `bloat_check.py` / `craft_check.py` | AI bloat; code shape |
+| `schema_check.py` / `perf_check.py` / `test_design_check.py` | data modelling; N+1 and budgets; test quality |
+| `audit_ci_gates.py` | checks that look like gates but cannot fail; action SHA-pinning |
+| `audit_agent_config.py` | a repo's agent config as untrusted input |
+| `repo_map.py` / `check_index.py` / `check_claims.py` | orientation; index discipline; evidence labels |
+| `run_evals.py` / `skill_triggers.py` / `lint_skills.py` | the measurements, and the contract on our own skills |
 
 ```bash
-bash tests/run_all.sh    # 99 assertions across 5 suites + 23 eval cases + the skill lint
+bash tests/run_all.sh    # 462 assertions across 16 suites + 23 eval cases + lints
 ```
 
-Footprint when installed: **~1,533 tokens always-on** (about 170 per skill), with each
-skill costing ~2.2-3.2k only when it fires. The hook is harness-only and costs no
-model context.
+## Index discipline
+
+Two failures appear once a project has more than a handful of records, and both are
+enforced:
+
+- **Collection level** — hundreds of specs with no file listing them. Every collection
+  carries a generated `INDEX.md`; `ledger.py map` adds a feature × record-type matrix
+  answering *"is there a decision behind this spec?"*
+- **Document level** — a 500-line findings file with 13 sections and no map, so
+  answering "is the answer in here?" costs a full read. Every traversable document over
+  150 lines opens with a `## Contents` table saying what each section **answers**.
+
+```bash
+python3 scripts/check_index.py                     # audit both levels
+python3 scripts/check_index.py --fix-stubs         # scaffold a Contents table
+python3 scripts/check_index.py --gen-collections   # regenerate catalogues
+python3 scripts/ledger.py check                    # records + traceability + gaps
+```
+
+Deliberately **not** applied to files under 150 lines or fixed-structure files like
+`SKILL.md` — an index on a short file is ceremony, and ceremony is what gets a
+convention abandoned.
 
 ## Honest limitations
 
-- **Presence is not quality.** The corpus scores measure whether verification
-  machinery exists, not whether it is used well. A tier-1 score licenses a deep
-  read; it certifies nothing.
+- **Presence is not quality.** Corpus scores measure whether verification machinery
+  exists, not whether it is used well.
 - **Production adoption is inferred.** No repo was verified to have real users; we
   verified it has the artifacts of a project that does.
-- **The receipt proves a command exited zero against specific content.** It cannot
-  prove the command was worth running. Mutation testing or a deliberate break is
-  the only real answer, and mutation testing was confirmed absent in 0 of 50 Python
-  repos — the whole corpus shares this blind spot.
-- **Five bloat failure modes have no mechanical coverage in any production repo**,
-  confirmed by two independent research passes: new-file-instead-of-edit, single-use
-  abstractions, semantic duplication with renamed variables, redundant comments, and
-  assertion-free tests. `bloat_check.py` covers four of the five (two as advisory
-  signals, since they need judgement). Semantic duplication remains uncovered here
-  too, along with whether a dependency was necessary and cumulative cross-PR growth.
-  Route those to a human or an LLM pass scoped to exactly those questions.
-- **Mobile evidence is thinner.** Mobile repos meeting the star and activity bars
-  are genuinely scarce (11 of a 30 target), so mobile findings lean on 20 named
-  below-gate supplements.
-- **The corpus is a snapshot**, screened 2026-09-28. Re-run `scripts/01_harvest_candidates.py`
-  through `scripts/04_corpus_doc.py` to refresh it.
+- **The receipt proves a command exited zero against specific content.** It cannot prove
+  the command was worth running. Mutation testing is the real answer and was confirmed
+  absent in 0/72 JS and 0/50 Python corpus repos — the whole corpus shares this blind spot.
+- **Six defect classes have no mechanical detection anywhere**: semantic duplication with
+  renamed variables, redundant comments, unnecessary dependencies, tests that assert the
+  bug, missing authorization, check-then-act races. `review_scope.py` turns them into
+  nine attributed questions.
+- **Mobile evidence is thinner** — 11 of a 30 target; supplemented by 20 named
+  below-gate repos.
+- **Trigger routing is a lexical proxy**, gated on top-3 not top-1. See the changelog.
+- **The corpus is a snapshot**, screened 2026-09-28. Re-run
+  `scripts/01_harvest_candidates.py` → `04_corpus_doc.py` to refresh.
 
 ## Research
 
-| document | contents |
-|---|---|
-| `research/00-signal-rubric.md` | the screening contract and all four revisions, with the repos that forced each |
-| `research/01-skill-contract.md` | what every SKILL.md must satisfy |
-| `research/10-repo-corpus.md` | the 223 repos, the funnel, and per-dimension scores |
-| `research/2x-findings-*.md` | skills ecosystem, agent-instruction corpus, agent-tool internals, anti-bloat tooling |
-| `research/3x-findings-*.md` | per-cluster deep reads: JS, Python, Go, mobile, agentic, security, anti-bloat, governance |
+16 documents, 8,026 lines — [`research/INDEX.md`](research/INDEX.md). Each carries its
+own `## Contents` table.
+
+`00` the screening contract and its four revisions · `01` the skill contract ·
+`10` the 223-repo corpus and funnel · `2x` skills ecosystem, agent-instruction corpus,
+agent-tool internals, anti-bloat tooling · `3x` per-cluster deep reads: JS, Python, Go,
+mobile, agentic, security, anti-bloat, governance.
 
 ## Licence
 
-MIT. Adapted material is attributed per-skill under `## Sources`, with upstream
-licences recorded in `research/20-findings-ecosystem-skills.md`. Note that
-`hesreallyhim/awesome-claude-code` is CC BY-NC-ND and therefore **not** adapted here
-— it is referenced as a discovery index only.
+MIT. Adapted material is attributed per-skill under `## Sources`, with upstream licences
+recorded in `research/20-findings-ecosystem-skills.md`. Note that
+`hesreallyhim/awesome-claude-code` is CC BY-NC-ND and therefore **not** adapted here — it
+is referenced as a discovery index only.

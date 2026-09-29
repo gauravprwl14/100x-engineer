@@ -3,6 +3,19 @@
 Contract: every rule below is either a runnable check or a precise review question a
 human can answer yes/no. No adjectives. No "follow best practices".
 
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Applies when](#applies-when) | the file/dependency signals that put this reviewer in scope | 4 lines |
+| 2 | [Blocking rules](#blocking-rules) | the rules that must hold, each with how it is checked | 9 lines |
+| 3 | [Common AI failure modes in this stack](#common-ai-failure-modes-in-this-stack) | **start here** — what LLMs specifically get wrong here, with a detection method for each | 15 lines |
+| 4 | [Edge cases routinely missed](#edge-cases-routinely-missed) | the scenarios this stack forgets, and the test that catches each | 13 lines |
+| 5 | [Approach selection](#approach-selection) | the recurring architectural choices, each with a DEFAULT so you are not asked | 12 lines |
+| 6 | [Verify](#verify) | the runnable commands, diff-scoped where possible | 91 lines |
+| 7 | [Sources](#sources) | the repos every claim is grounded in | 27 lines |
+
 ## Applies when
 - `package.json` has `@nestjs/core` as a direct dependency.
 - `nest-cli.json` or `.nest-cli.json` exists at the workspace root.

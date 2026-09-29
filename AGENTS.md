@@ -45,6 +45,7 @@ Work goes through it in order; skipping a stage is how gaps reach review.
 | assumptions | `decide.py verify && decide.py drift` | blocks |
 | scoped review | `review_scope.py --base origin/main` | questions must be answered |
 | commit | the `PreToolUse` gate requires a fresh receipt | blocks |
+| index | `check_index.py` + `check_index.py --gen-collections` | blocks |
 
 ## Rules
 
@@ -98,7 +99,26 @@ Work goes through it in order; skipping a stage is how gaps reach review.
     mention discarded alternatives, intermediate edits, tool usage, or this
     conversation in commit messages, PR bodies, or comments. `[review]`
 
-15. **Numeric budgets:** SKILL.md ≤ 250 lines. Findings documents ≤ 1000 lines. A
+15. **Every traversable document carries its own index.** Any markdown file over 150
+    lines with 4+ sections, in `research/`, `docs/`, `reviewers/`, `specs/`, `prds/`,
+    `rca/` or `reviews/`, opens with a `## Contents` table: one row per section, saying
+    what that section **answers** — not restating its heading — plus its approximate
+    size. A reader must be able to decide what to open without reading the file.
+    `[lint: check_index.py]`
+
+16. **Every collection carries a catalogue.** A directory of records has an `INDEX.md`
+    listing them. These are generated, never hand-written:
+    `check_index.py --gen-collections` for `research/`, `reviewers/`, `skills/`;
+    `ledger.py index` and `ledger.py map` for `prds/`, `specs/`, `decisions/`, `rca/`.
+    Hundreds of specs with no listing file is the failure this prevents.
+    `[lint: check_index.py]`
+
+17. **Do not index what is trivial.** A file under 150 lines, a fixed-structure file
+    (`SKILL.md`), or a generated index does not get a Contents table. An index on a
+    short file is ceremony, and ceremony is what gets the whole convention abandoned.
+    `[review]`
+
+18. **Numeric budgets:** SKILL.md ≤ 250 lines. Findings documents ≤ 1000 lines. A
     single commit should not exceed ~10 files without a stated reason.
     `[lint: lint_skills.py]`
 

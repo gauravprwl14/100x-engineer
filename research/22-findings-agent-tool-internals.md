@@ -8,6 +8,21 @@ of this session; every other claim is a file:line citation against the cloned tr
 
 ---
 
+**SWE-agent is the only tool in this set whose verification fails closed — a bad edit is lint-checked and rolled back before it ever lands on disk; every other agent here (cline, opencode, aider, OpenHands) fails open, writing the bad edit first and merely flagging it on the next turn.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Scorecard](#scorecard) | one row per tool (cline, Roo-Code, OpenHands, aider, SWE-agent, codex, gemini-cli, plandex...) with test count, CI setup, verification-loop type, edit mode and sandbox — the reference table for the whole file | 28 lines |
+| 2 | [Verification loops, compared](#verification-loops-compared) | which tools verify before vs. after writing to disk, why SWE-agent's pre-flight lint-and-rollback is the strongest design found, and which tools have no loop at all | 63 lines |
+| 3 | [Edit mechanics, compared](#edit-mechanics-compared) | exact-match vs. fuzzy-match strategy per tool, and why exact-match-first resists bloat better than cline's always-fuzzy tiers | 29 lines |
+| 4 | [Context selection / repo-map algorithms](#context-selection--repo-map-algorithms) | how aider's PageRank-based repo-map actually works (parse, build symbol graph, rank, fit token budget) — the only tool in the set with a real graph-ranking algorithm | 46 lines |
+| 5 | [Harvested system prompts (verbatim)](#harvested-system-prompts-verbatim) | actual system-prompt text on verification, minimality/anti-bloat, file creation, scope discipline and code style, copied from 5+ tools — the largest section, direct quotable source material | 154 lines |
+| 6 | [SWE-bench verification model](#swe-bench-verification-model) | how FAIL_TO_PASS/PASS_TO_PASS before/after test diffing proves a patch is correct without trusting the agent's own claim | 30 lines |
+| 7 | [Transferable mechanisms](#transferable-mechanisms) | 10 ranked, reusable mechanisms, each tied to the specific failure class it prevents — the actionable takeaway list; start here for the synthesis | 51 lines |
+| 8 | [Notes on category and absence findings](#notes-on-category-and-absence-findings) | which tools were rejected or excluded and why — dead repos, HTTP 404s, wrong shape for this study's Q1-Q4 | 14 lines |
+
 ## Scorecard
 
 | tool | stars (approx.) | D1 (0-3) | tests | CI | verification loop? | edit mode | sandbox | verdict |

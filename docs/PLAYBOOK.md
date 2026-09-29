@@ -8,6 +8,22 @@ are gates that exit non-zero.
 
 ---
 
+## Contents
+
+| # | task | what it gives you | size |
+|---|---|---|---|
+| 1 | [1. Build a feature](#1-build-a-feature) | the full sequence from PRD to commit, with every gate named | 37 lines |
+| 2 | [2. Feature into a codebase whose PRD, spec and code have diverged](#2-feature-into-a-codebase-whose-prd-spec-and-code-have-diverged) | **the common real case** — establish ground truth first, then record which of the three you treated as authoritative | 28 lines |
+| 3 | [3. Fix a bug](#3-fix-a-bug) | repro-first; the permanent test is the deliverable, the fix is incidental | 22 lines |
+| 4 | [4. Review your own code](#4-review-your-own-code) | mechanical checks, then the 9 questions no tool answers | 12 lines |
+| 5 | [5. Review someone else's code](#5-review-someone-elses-code) | how this differs — infer intent, rank by blast radius, label every finding | 17 lines |
+| 6 | [6. Understand someone else's logic, or a past feature](#6-understand-someone-elses-logic-or-a-past-feature) | the order of operations, and the stop condition so you don't read everything | 16 lines |
+| 7 | [7. Root cause analysis](#7-root-cause-analysis) | timeline, hypotheses with falsifying evidence, and the regression test that would have caught it | 16 lines |
+| 8 | [8. Write a PRD or architecture proposal](#8-write-a-prd-or-architecture-proposal) | options analysis with the scoring rubric, including the do-nothing option | 16 lines |
+| 9 | [9. Audit: is the reasoning recorded?](#9-audit-is-the-reasoning-recorded) | the traceability matrix — which features have which records | 10 lines |
+| 10 | [Diagram detail levels](#diagram-detail-levels) | which of the three levels to use, and their node budgets | 11 lines |
+| 11 | [What still needs a human](#what-still-needs-a-human) | the six defect classes no tool detects anywhere | 7 lines |
+
 ## 1. Build a feature
 
 Greenfield or a new feature in an existing codebase.

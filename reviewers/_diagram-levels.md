@@ -16,6 +16,17 @@ is allowed — the level is inferred from node count and reported — but an inf
 diagram big enough to be L3 still owes L3's step table and branch, whether anyone
 declared it or not.
 
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [L1 — orientation](#l1--orientation) | l1 — orientation | 15 lines |
+| 2 | [L2 — implementer](#l2--implementer) | l2 — implementer | 36 lines |
+| 3 | [L3 — debugging / unambiguous spec](#l3--debugging--unambiguous-spec) | l3 — debugging / unambiguous spec | 73 lines |
+| 4 | [What changed between the three](#what-changed-between-the-three) | what changed between the three | 10 lines |
+| 5 | [Sources](#sources) | the repos every claim is grounded in | 10 lines |
+
 ## L1 — orientation
 
 Three boxes. A reviewer approving "should we build first-party login" needs exactly

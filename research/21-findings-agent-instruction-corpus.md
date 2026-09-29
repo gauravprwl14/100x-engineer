@@ -8,6 +8,21 @@ via `gh api graphql`. 89 raw files saved to scratchpad `agentfiles/`. `.cursor/r
 enumeration was blocked by GitHub API rate limiting shared across concurrent research sessions and
 was not completed — this is a gap, not a null result, and is called out below.
 
+**CLAUDE.md is converging into a pointer to AGENTS.md, not an independent file: 23 of 28 CLAUDE.md files found are pure redirects (git symlink, `@AGENTS.md` import, or byte-identical duplicate) — the single strongest structural finding in this corpus.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Corpus](#corpus) | the 61-repo probe results — which repos have AGENTS.md/CLAUDE.md/etc., file sizes and last-modified dates, the 13 not-found repos, and the corrected anomalies (two files initially misread as prompt injection, now retracted) | 127 lines |
+| 2 | [Adoption statistics](#adoption-statistics) | file-type breakdown (AGENTS.md 79%, CLAUDE.md 46%, copilot-instructions 18%...) and the CLAUDE.md-as-pointer finding stated above | 32 lines |
+| 3 | [Verification demands (the highest-value section)](#verification-demands-the-highest-value-section) | verbatim "prove it" commands harvested per stack (JS/TS, Python, Rust, Go, other) — the exact command each repo makes a contributor run before a PR; author-flagged highest-value section | 59 lines |
+| 4 | [Prohibitions and anti-bloat rules](#prohibitions-and-anti-bloat-rules) | verbatim "don't" rules grouped by category — no new files, no new dependencies, no touching generated code, no comments, no reformatting, PR-size budgets, no AI attribution | 73 lines |
+| 5 | [Context-scoping techniques](#context-scoping-techniques) | how the best files tell an agent what to read and when — conditional read-tables, nested AGENTS.md overrides, task-triggered skill loading | 37 lines |
+| 6 | [Structural patterns of the best files](#structural-patterns-of-the-best-files) | what the 5 highest rule-density files do that weak files don't — enforcement tags, good/bad code pairs, a meta-rule for editing the rules file itself | 37 lines |
+| 7 | [Length vs quality](#length-vs-quality) | the length-bucket breakdown showing no linear correlation between file length and quality — what actually correlates is structure and specificity | 20 lines |
+| 8 | [Synthesis: the 15 rules that recur most across serious repos](#synthesis-the-15-rules-that-recur-most-across-serious-repos) | ranked table of the most common rules with two citations each — the single table most likely to be cited elsewhere in this project | 28 lines |
+
 ## Corpus
 
 48 of 61 repos (79%) had at least one target file. Stars and dates as of 2026-09-28.

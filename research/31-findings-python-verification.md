@@ -8,6 +8,24 @@ checklist) on repos ranked 31-50. Repos 31-40 received a single, faster extracti
 fields there are marked *unconfirmed* rather than guessed — absence of confirmation is recorded as
 such, not silently upgraded to a finding.
 
+**Static type checking is configured in some form in 36/50 repos, actually gates CI in only 27/50,
+and runs in a documented strict/maximal mode in 8/50.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage](#coverage) | the sparse git-clone extraction method used across all 50 repos, and which of the 5 extraction batches got full-depth vs targeted (faster, less-confirmed) treatment | 16 lines |
+| 2 | [The prove-it command, per repo](#the-prove-it-command-per-repo) | the exact command a contributor runs before opening a PR, for all 50 repos, including the ones with no command at all or a disabled test workflow — the most useful table in this file | 59 lines |
+| 3 | [Tooling distribution (counts, n=50)](#tooling-distribution-counts-n50) | corpus-wide adoption rates for ruff, type checkers, pre-commit, lockfiles, hypothesis, fuzzing, snapshot testing and mutation testing (0/50) — includes a documented correction of an earlier draft's wrong absence claims | 39 lines |
+| 4 | [Ruff rule-family adoption](#ruff-rule-family-adoption) | how much of ruff's rule set each repo actually turns on, from `select=["ALL"]` down to rule sets loosened below ruff's own defaults, with three verbatim comment-justified ignores | 51 lines |
+| 5 | [Type-checking enforcement reality](#type-checking-enforcement-reality) | **highest-value section**: the gap between configured (72%), CI-gating (54%) and strict (16%) type checking, with a named 6-repo table of configs that exist but don't actually gate anything, and why | 66 lines |
+| 6 | [Test layer inventory](#test-layer-inventory) | which repos have integration/e2e/property-based/fuzz/snapshot/mutation/benchmark/doctest layers beyond plain unit tests, with the property-based and mutation-testing gaps stated as exact counts | 24 lines |
+| 7 | [pyproject.toml configs verbatim (cited)](#pyprojecttoml-configs-verbatim-cited) | real ruff/mypy/pyrefly config blocks quoted with their rationale comments — the largest raw-evidence section in the file | 135 lines |
+| 8 | [Pre-commit hook patterns](#pre-commit-hook-patterns) | the largest and most idiosyncratic hook sets found (vllm, deepspeed, lerobot, superset), approximate hook counts per repo, and the 13 repos with no pre-commit config at all | 42 lines |
+| 9 | [Packaging and lockfile discipline](#packaging-and-lockfile-discipline) | uv/poetry/pdm/hatch adoption and lockfile-commit rates, and why published libraries systematically don't commit one while applications do | 29 lines |
+| 10 | [Synthesis: minimum viable vs. strongest justified Python stack](#synthesis-minimum-viable-vs-strongest-justified-python-stack) | two runnable stacks (4-line minimum viable vs. strongest-justified), the restated configured/gating/strict gap, and the property-based/mutation-testing gap named as the single largest unclaimed opportunity in the corpus | 61 lines |
+
 ## Coverage
 
 Method: `git clone --depth 1 --filter=blob:none --no-checkout --branch <default-branch>`, then

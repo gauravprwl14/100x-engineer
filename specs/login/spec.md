@@ -12,6 +12,21 @@ feature everyone thinks they already understand, and to be the fixture the eval
 harness scores against. Every table below is machine-audited by
 `python3 scripts/plan_feature.py audit specs/login`.
 
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [1. Outcome](#1-outcome) | what a user can do after this ships that they cannot do now | 6 lines |
+| 2 | [2. In scope / out of scope](#2-in-scope--out-of-scope) | the boundary — out-of-scope is what turns a gap into a decision | 12 lines |
+| 3 | [3. Interfaces touched](#3-interfaces-touched) | every surface changed, and whether the change is backward compatible | 10 lines |
+| 4 | [4. Sequence](#4-sequence) | the mermaid diagram that `design_drift.py` checks the code against | 25 lines |
+| 5 | [5. Decisions required](#5-decisions-required) | 10 choices, each pre-answered with a default; 7 accepted as-is | 17 lines |
+| 6 | [6. Open questions](#6-open-questions) | the 3 questions that do not block work, each with a recommendation | 9 lines |
+| 7 | [7. Edge cases](#7-edge-cases) | **the point of the document** — 31 seeded cases, each covered, accepted or deferred | 38 lines |
+| 8 | [8. Verification plan](#8-verification-plan) | the command per check and the gate it runs at | 19 lines |
+| 9 | [9. Rollout and reversal](#9-rollout-and-reversal) | the flag, the migration shape, and the exact rollback step | 9 lines |
+
 ## 1. Outcome
 
 A returning user signs in with email and password and receives a session that the

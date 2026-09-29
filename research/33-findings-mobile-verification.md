@@ -9,6 +9,25 @@ below is `owner/repo@sha:path`. Absence is recorded as a finding, not silently d
 plus 20 named below-gate supplements. All clones were shallow (`--depth 1 --filter=blob:none`,
 or `--shallow-since` for commit-velocity counts on supplements), extracted, and deleted.
 
+**0 of 31 mobile repos have a hard, failing binary-size gate in CI; per-schema-version migration
+tests are the most consistent practice found anywhere in the study.**
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage](#coverage) | why the true corpus is 11 repos, not 30 (the admission-gate definition problem), plus 20 below-gate supplement repos probed and reported honestly against the star/commit thresholds | 76 lines |
+| 2 | [The prove-it command, per repo/platform](#the-prove-it-command-per-repoplatform) | the literal command per repo/platform, plus the finding that 7 of 31 repos run real CI on something other than GitHub Actions — a probe reading only `.github/workflows` misjudges a quarter of this corpus | 46 lines |
+| 3 | [On-device test strategy: what runs when](#on-device-test-strategy-what-runs-when) | the four recurring patterns for splitting fast host tests from slow device/emulator tests, and why real third-party device farms are rarer than CI presence would suggest | 69 lines |
+| 4 | [Release safety: staged rollout, kill switches, crash gates — THE CENTREPIECE](#release-safety-staged-rollout-kill-switches-crash-gates--the-centrepiece) | **the document's own flagged centrepiece**: staged-rollout percentages and kill-switch mechanisms, plus the finding that a hard numeric crash-rate CI gate exists in zero of 31 repos — it's always delegated to the store's own vitals system | 96 lines |
+| 5 | [Binary size budgets (verbatim configs)](#binary-size-budgets-verbatim-configs) | headline: nobody enforces a hard byte budget in CI across all 31 repos — measurement tooling is common, a failing gate is not | 47 lines |
+| 6 | [Startup and perf regression gates](#startup-and-perf-regression-gates) | the same measured-not-gated pattern for startup/jank regressions: benchmarking tooling exists widely but is kept off the PR-blocking path | 46 lines |
+| 7 | [Offline/sync/local-migration correctness](#offlinesynclocal-migration-correctness) | **the study's most consistent finding**: one test file per numbered schema migration, converged on independently by 4 repos, plus the single confirmed gap (ProtonMail, no migration test harness) | 90 lines |
+| 8 | [Cross-platform bridge safety and OTA discipline](#cross-platform-bridge-safety-and-ota-discipline) | Expo's and Bluesky's anti-bricking OTA mechanisms (fingerprint gating, rollback-only-before-`CONTENT_APPEARED`) against Flutter/NativeScript/Ionic's structurally different or absent equivalents | 71 lines |
+| 9 | [Agent instruction files in mobile repos](#agent-instruction-files-in-mobile-repos) | corrects the brief's own hypothesis — 21 of 31 repos have an AI-agent instruction file, including a mechanically CI-enforced AI-authorship policy (nextcloud/android) and several verbatim human-in-the-loop rules | 96 lines |
+| 10 | [Synthesis: three stacks](#synthesis-three-stacks) | minimum-viable vs. strongest-justified practices, split by native Android / native iOS / cross-platform, each tagged to the team size where it starts paying for itself | 87 lines |
+| 11 | [What mobile needs that web does not](#what-mobile-needs-that-web-does-not) | seven itemized mobile-specific requirements, each paired with the exact failure mode it prevents — the "so what" summary for a web engineer new to mobile | 47 lines |
+
 ---
 
 ## Coverage

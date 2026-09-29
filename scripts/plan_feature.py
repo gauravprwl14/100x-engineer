@@ -54,6 +54,22 @@ ROOT = project_root()
 DATA = PLUGIN / "scripts" / "data"
 SPECS = ROOT / "specs"
 EDGE = json.loads((DATA / "edge_cases.json").read_text())
+
+# Component-keyed failure modes (cache, queue, cron, webhook, ...) live in a
+# separate catalogue so the two can be maintained independently -- merged here
+# so `--kind` accepts either without the caller needing to know which file a
+# kind came from. Optional: a repo without the infra catalogue still works.
+INFRA_PATH = DATA / "edge_cases_infra.json"
+if INFRA_PATH.exists():
+    EDGE_INFRA = json.loads(INFRA_PATH.read_text())
+    for k, v in EDGE_INFRA.items():
+        if k.startswith("_"):
+            continue
+        if k in EDGE:
+            print(f"warning: kind '{k}' defined in both edge_cases.json and "
+                  f"edge_cases_infra.json; the infra catalogue wins", file=sys.stderr)
+        EDGE[k] = v
+
 DECS = json.loads((DATA / "decisions_required.json").read_text())
 KINDS = [k for k in EDGE if not k.startswith("_")]
 

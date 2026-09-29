@@ -9,6 +9,26 @@ Status: IN PROGRESS — batch 3/4 (16 repos) landed and appended below. Batches
 1, 2, 4 (47 repos) still running in background; will be appended as they land,
 then all sections re-synthesized into final form.
 
+**Roughly 90% of surveyed PR-template checkboxes are unverifiable — honour-system prose, not a
+CI-backed gate.** (Figures below are from batch 3/4, 16 of 63 repos; see Coverage.)
+
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Coverage](#coverage) | which 16 of 63 repos (batch 3) have landed so far, and which 47 are still pending across batches 1/2/4 — the whole document is a partial, in-progress read | 10 lines |
+| 2 | [PR templates verbatim](#pr-templates-verbatim) | per-repo checklist items tagged CI-enforced vs. honour-system; the running tally shows ~90% of surveyed checkbox items are honour-system | 73 lines |
+| 3 | [CODEOWNERS granularity](#codeowners-granularity) | a line-count comparison across 16 repos showing most CODEOWNERS files are a single catch-all, not real path-based review routing | 28 lines |
+| 4 | [Merge discipline adoption](#merge-discipline-adoption) | merge-queue (`merge_group`) adoption (5/16 confirmed active), including qwen-code's documented broken-but-present trigger that let a real production incident through | 45 lines |
+| 5 | [ADR/RFC templates and when required](#adrrfc-templates-and-when-required) | only 2 of 16 repos have a discoverable formal design-doc process at all | 17 lines |
+| 6 | [CONTRIBUTING verification contracts](#contributing-verification-contracts) | the exact runnable test/lint/build commands quoted per repo — the one section the doc itself calls "close to 100% verifiable by construction" | 52 lines |
+| 7 | [AI-contribution policies](#ai-contribution-policies) | the taxonomy of AI-disclosure stances found (outright ban, CI-enforced disclosure, honour-system disclosure, outcome-based judging), with nextcloud as the only CI-enforced example | 80 lines |
+| 8 | [Release governance and deprecation windows](#release-governance-and-deprecation-windows) | changesets vs. conventional-commits vs. manual release process per repo, and the 3 of 16 repos with an actual numeric deprecation/support window | 43 lines |
+| 9 | [Bug intake and repro requirements](#bug-intake-and-repro-requirements) | which repos mechanically require a minimal reproduction in the issue-form schema (only 2 of 16) vs. merely ask for one in prose | 57 lines |
+| 10 | [Load-bearing vs ceremony: the split](#load-bearing-vs-ceremony-the-split) | the document's own sort of every mechanism found so far into mechanically-enforced vs. unverifiable ceremony — marked partial, pending the remaining batches | 29 lines |
+| 11 | [Minimum change control by team size](#minimum-change-control-by-team-size) | provisional, scale-tagged recommendations from solo through high-blast-radius — explicitly marked provisional pending the full corpus | 25 lines |
+| 12 | [A fully-verifiable PR template](#a-fully-verifiable-pr-template) | **highest-value section**: a draft PR template built only from items independently re-verified by CI, using the ~90%-honour-system finding to justify every exclusion | 36 lines |
+
 ## Coverage
 
 - Batch 3 landed: mochajs/mocha, mui/material-ui, nextcloud/server, nrwl/nx,

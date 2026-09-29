@@ -2,6 +2,17 @@
 
 Screen date **2026-09-28**. Gates and scoring per [`00-signal-rubric.md`](00-signal-rubric.md) (as revised through v4).
 
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Screening funnel](#screening-funnel) | how many repos survived each filtering stage, from 1431 GitHub candidates down to the 223 admitted | 9 lines |
+| 2 | [Gate failure attribution](#gate-failure-attribution) | which specific gate (A3/A4/C/A10/A8/A9/A11) rejected the most repos, and how many | 14 lines |
+| 3 | [Corpus by cluster](#corpus-by-cluster) | selected vs. eligible vs. target repo count per cluster, and which two clusters (js-infra, mobile) fell short of target | 13 lines |
+| 4 | [Headline finding: AI-agent instruction-file adoption](#headline-finding-ai-agent-instruction-file-adoption) | the most-quoted number in this project — 48.0% of all 1124 active 20k-star repos carry some AI-agent instruction file, broken down by file type | 16 lines |
+| 5 | [The corpus](#the-corpus) | the full repo-by-repo table — 223 rows with per-dimension D1-D7 scores, tier, and which agent files each repo has — the reference table cited throughout this project; largest section, start here for a specific repo | 264 lines |
+| 6 | [Known limitations of this screen](#known-limitations-of-this-screen) | five explicit caveats on what the screen can't see (directory-probe blind spots, proxy-only production evidence, undercounted mobile cluster) | 14 lines |
+
 ## Screening funnel
 
 | stage | in | out | remaining |
