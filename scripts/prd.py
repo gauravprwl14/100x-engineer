@@ -25,7 +25,8 @@ Design constraints, matching plan_feature.py:
 
 Python stdlib only.
 """
-import argparse, datetime, pathlib, re, sys
+import argparse, datetime, json, pathlib, re, sys
+import _mutation_guard as mg
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -36,13 +37,15 @@ def project_root():
 
     Resolving these against the plugin root meant a consumer project's records were
     written into the installed plugin — invisible to their repo and lost on upgrade.
+
+    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
     """
     import subprocess
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                        capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip())
-    return pathlib.Path.cwd()
+        return pathlib.Path(r.stdout.strip()), True
+    return pathlib.Path.cwd(), False
 
 
 def rel(p):
@@ -57,9 +60,14 @@ def rel(p):
         return pathlib.Path(p)
 
 
-ROOT = project_root()
+ROOT, IN_GIT_REPO = project_root()
 PRDS = ROOT / "prds"
 SPECS = ROOT / "specs"
+DATA = PLUGIN / "scripts" / "data"
+
+TIERS = json.loads((DATA / "scale_tiers.json").read_text())
+TIER_ORDER = TIERS.get("_order", [k for k in TIERS if not k.startswith("_")])
+DEFAULT_TIER = TIERS.get("_default", TIER_ORDER[0] if TIER_ORDER else "small")
 
 STACK_HINT = ("NestJS | Next.js/React | React Native/Expo | Flutter | native "
               "(Swift/Kotlin) | Kubernetes | AWS | GCP | Python")
@@ -140,11 +148,21 @@ def esc(x):
 # ---------------------------------------------------------------------------
 
 def cmd_new(a):
+    if mg.safe_record_name(a.name, "prd.py new") is None:
+        return 2
+    tier_name = (a.scale or DEFAULT_TIER).strip()
+    if tier_name not in TIER_ORDER:
+        print(f"unknown --scale tier '{tier_name}'. available: {TIER_ORDER} "
+              f"(see skills/scale-appropriateness/SKILL.md)", file=sys.stderr)
+        return 2
+    tier = TIERS[tier_name]
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "prd.py new", ROOT):
+        return 2
     d = PRDS / a.name
     if d.exists() and not a.force:
         print(f"{rel(d)} already exists (use --force)", file=sys.stderr)
         return 2
-    d.mkdir(parents=True, exist_ok=True)
     today = datetime.date.today().isoformat()
     stack = a.stack or f"<!-- one of: {STACK_HINT}, or a combination -->"
     spec_guess = f"specs/{a.name}/spec.md (run `plan_feature.py new {a.name} --kind ...` for it)"
@@ -153,12 +171,20 @@ def cmd_new(a):
          "| field | value |", "|---|---|",
          f"| kind | {esc(a.kind)} |",
          f"| stack | {esc(stack)} |",
+         f"| scale tier | {tier_name} |",
          f"| linked spec | {spec_guess} |",
          f"| created | {today} |",
          "| status | **draft — not ready to hand to a spec** |", "",
          "Status becomes `ready` only when `prd.py audit` passes. A PRD that has not "
          "passed audit has no business seeding a spec — the spec would inherit its gaps.",
          "",
+         f"**Scale tier: `{tier_name}`** ({esc(tier['users_requests'])}) — declared, "
+         "not asked, with a sane default; see `skills/scale-appropriateness/SKILL.md`. "
+         f"The spec this PRD seeds (`plan_feature.py new {a.name} --scale {tier_name} "
+         "--kind ...`) should carry the SAME tier — `prd.py align` flags it if they "
+         "diverge. Full derived requirements (p95 budget, required / not-required) "
+         "live in the spec's 'Non-functional requirements' section, not duplicated "
+         "here.", "",
 
          "## 1. Problem", "",
          "Problem framing comes before solutions. If nobody can say who has this "
@@ -269,7 +295,16 @@ def cmd_new(a):
          "the code drove each requirement above — a requirement with no code and no "
          "stated reason is speculative, not reverse-engineered. -->", "",
          ]
-    (d / "prd.md").write_text("\n".join(s) + "\n")
+    new_text = "\n".join(s) + "\n"
+
+    if dry:
+        old_text = (d / "prd.md").read_text() if (d / "prd.md").exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, str(rel(d / "prd.md")))
+        print(f"[dry-run] would also regenerate prds/INDEX.md; nothing written")
+        return 0
+
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "prd.md").write_text(new_text)
     print(f"created {rel(d / 'prd.md')}")
     print("  1 option pre-answered (do-nothing), 3 risks seeded, rest to fill")
     print(f"\nNext: fill sections 1-7 and 9-10, then `prd.py audit prds/{a.name}`")
@@ -297,6 +332,21 @@ def cmd_audit(a):
     if unfilled:
         errs.append(f"{len(unfilled)} table cell(s) still contain a placeholder "
                     f"comment (first: {unfilled[0]})")
+
+    # 1b. scale tier, if declared, must be one of the four known ones. A PRD written
+    # before this mechanism existed has no tier field at all -- legacy, warn only.
+    def field(n):
+        m = re.search(rf"\|\s*{n}\s*\|\s*(.+?)\s*\|", text, re.I)
+        return m.group(1).strip() if m else ""
+    tier_val = field("scale tier")
+    if tier_val:
+        if tier_val not in TIER_ORDER:
+            errs.append(f"scale tier {tier_val!r} is not one of the four declared "
+                        f"tiers {TIER_ORDER} (scripts/data/scale_tiers.json)")
+    else:
+        warns.append("no 'scale tier' field — this PRD predates scale-tier "
+                     "declaration; add one before treating scale as considered "
+                     "(skills/scale-appropriateness/SKILL.md)")
 
     # 2. success metrics: each needs a number in the target, and a measurement method
     metrics = rows_of(text, "| # | metric |")
@@ -357,6 +407,7 @@ def cmd_audit(a):
     status_ready = re.search(r"\|\s*status\s*\|\s*\*?\*?ready", text, re.I)
 
     print(f"audit {rel(p)}")
+    print(f"  scale tier      : {tier_val or '(none declared)'}")
     print(f"  success metrics : {len(real_metrics)}")
     print(f"  options         : {len(real_opts)}")
     print(f"  risks           : {len(risks)}")
@@ -431,6 +482,28 @@ def cmd_align(a):
         return 0
 
     spec_text = spec_path.read_text()
+
+    # 0. scale tier: the PRD's declared tier vs the spec's declared tier. A tier
+    # change after planning invalidates decisions made under the old one -- it is
+    # a re-plan, not a patch (skills/scale-appropriateness/SKILL.md).
+    def tier_of(t):
+        m = re.search(r"\|\s*scale tier\s*\|\s*(.+?)\s*\|", t, re.I)
+        return m.group(1).strip() if m else ""
+    prd_tier = tier_of(prd_text)
+    spec_tier = tier_of(spec_text)
+    tier_mismatch = bool(prd_tier and spec_tier and prd_tier != spec_tier)
+    print("Scale tier: PRD <-> spec:")
+    if not prd_tier or not spec_tier:
+        print(f"  (skipped — PRD tier: {prd_tier or 'none declared'}, "
+              f"spec tier: {spec_tier or 'none declared'})")
+    elif tier_mismatch:
+        print(f"  MISMATCH  PRD declares '{prd_tier}', spec declares '{spec_tier}' — "
+              f"a tier change after planning is a re-plan, not a patch "
+              f"(skills/scale-appropriateness/SKILL.md)")
+    else:
+        print(f"  OK    both declare '{prd_tier}'")
+    print()
+
     prd_kw = keywords(prd_text)
     spec_kw = keywords(spec_text)
 
@@ -492,10 +565,11 @@ def cmd_align(a):
                   f"verification plan")
     print()
 
-    total = len(missing_reqs) + len(missing_scope) + len(missing_metrics)
+    total = len(missing_reqs) + len(missing_scope) + len(missing_metrics) + (1 if tier_mismatch else 0)
     print(f"{len(missing_reqs)} requirement(s) with no spec coverage, "
           f"{len(missing_scope)} spec item(s) implementing nothing in the PRD, "
-          f"{len(missing_metrics)} metric(s) with no verification step")
+          f"{len(missing_metrics)} metric(s) with no verification step"
+          f"{', scale tier mismatch' if tier_mismatch else ''}")
     return 1 if total else 0
 
 
@@ -504,7 +578,11 @@ def cmd_align(a):
 # ---------------------------------------------------------------------------
 
 def cmd_index(a):
-    PRDS.mkdir(parents=True, exist_ok=True)
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "prd.py index", ROOT):
+        return 2
+    if not dry:
+        PRDS.mkdir(parents=True, exist_ok=True)
     rows = []
     for p in sorted(PRDS.glob("*/prd.md")):
         t = p.read_text()
@@ -528,7 +606,12 @@ def cmd_index(a):
     out += ["", "A PRD with `spec exists = yes` should pass "
             "`python3 scripts/prd.py align prds/<name> specs/<name>` before either "
             "document is trusted.", ""]
-    (PRDS / "INDEX.md").write_text("\n".join(out))
+    new_text = "\n".join(out)
+    if dry:
+        old_text = (PRDS / "INDEX.md").read_text() if (PRDS / "INDEX.md").exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, "prds/INDEX.md")
+        return 0
+    (PRDS / "INDEX.md").write_text(new_text)
     print(f"wrote prds/INDEX.md ({len(rows)} PRDs)")
     return 0
 
@@ -539,13 +622,21 @@ def main():
     n = sub.add_parser("new"); n.add_argument("name")
     n.add_argument("--kind", default="product")
     n.add_argument("--stack", default=None)
+    n.add_argument("--scale", default=None,
+                    help=f"scale tier, default '{DEFAULT_TIER}': {'|'.join(TIER_ORDER)} "
+                         f"(see skills/scale-appropriateness/SKILL.md)")
     n.add_argument("--force", action="store_true")
+    n.add_argument("--dry-run", action="store_true",
+                    help="print what would be created; write nothing")
     n.set_defaults(fn=cmd_new)
     au = sub.add_parser("audit"); au.add_argument("dir"); au.set_defaults(fn=cmd_audit)
     al = sub.add_parser("align")
     al.add_argument("prd_dir"); al.add_argument("spec_dir")
     al.set_defaults(fn=cmd_align)
-    ix = sub.add_parser("index"); ix.set_defaults(fn=cmd_index)
+    ix = sub.add_parser("index")
+    ix.add_argument("--dry-run", action="store_true",
+                     help="print the index diff; write nothing")
+    ix.set_defaults(fn=cmd_index)
     a = ap.parse_args()
     return a.fn(a)
 

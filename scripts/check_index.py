@@ -271,7 +271,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path", nargs="?", default=".")
     ap.add_argument("--fix-stubs", action="store_true",
-                    help="insert a Contents skeleton into files that lack one")
+                    help="insert a Contents skeleton into files that lack one "
+                         "(rewrites files in place; needs --yes)")
+    ap.add_argument("--yes", action="store_true",
+                    help="confirm an in-place rewrite; without it --fix-stubs only "
+                         "lists what it would touch")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--gen-collections", action="store_true",
                     help="generate the catalogue file for each collection")
@@ -281,15 +285,18 @@ def main():
             print(f"wrote {w}")
     base = (ROOT / a.path) if not pathlib.Path(a.path).is_absolute() else pathlib.Path(a.path)
 
-    docs, fixed = [], 0
+    docs, fixed, pending = [], 0, []
     for p in sorted(base.rglob("*.md")):
         if any(x in p.parts for x in (".git", "node_modules", "raw")):
             continue
         r = audit_doc(p)
         if r:
-            if a.fix_stubs and not r["has_contents"] and insert_stub(p):
-                fixed += 1
-                r = audit_doc(p)
+            if a.fix_stubs and not r["has_contents"]:
+                if not a.yes:
+                    pending.append(r["path"])
+                elif insert_stub(p):
+                    fixed += 1
+                    r = audit_doc(p)
             docs.append(r)
 
     missing_coll = []
@@ -311,6 +318,11 @@ def main():
           f"(>= {MIN_LINES} lines, >= {MIN_SECTIONS} sections, in {'/'.join(INDEXED_DIRS[:4])}/...)")
     if fixed:
         print(f"  inserted {fixed} Contents skeleton(s) — fill in the 'what it answers' cells")
+    if pending:
+        print(f"  --fix-stubs would REWRITE {len(pending)} file(s) in place. Nothing has "
+              f"changed. Re-run with --yes to proceed:")
+        for x in pending[:12]:
+            print(f"      {x}")
     ok = [d for d in docs if d["has_contents"] and not d["missing"]]
     print(f"  complete index   : {len(ok)}")
     print(f"  partial index    : {len(partial)}")

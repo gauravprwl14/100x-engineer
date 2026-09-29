@@ -32,6 +32,7 @@ decision whose assumption silently stopped holding is a classic root cause, and
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, subprocess, sys
+import _mutation_guard as mg
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -42,13 +43,15 @@ def project_root():
 
     Resolving these against the plugin root meant a consumer project's records were
     written into the installed plugin — invisible to their repo and lost on upgrade.
+
+    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
     """
     import subprocess
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                        capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip())
-    return pathlib.Path.cwd()
+        return pathlib.Path(r.stdout.strip()), True
+    return pathlib.Path.cwd(), False
 
 
 def rel(p):
@@ -63,7 +66,7 @@ def rel(p):
         return pathlib.Path(p)
 
 
-ROOT = project_root()
+ROOT, IN_GIT_REPO = project_root()
 DIR = ROOT / "rca"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("open", "root-caused", "fixed", "closed", "wontfix")
@@ -184,7 +187,11 @@ TEMPLATE = '''# {id}: {title}
 
 
 def cmd_new(a):
-    DIR.mkdir(parents=True, exist_ok=True)
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py new", ROOT):
+        return 2
+    if not dry:
+        DIR.mkdir(parents=True, exist_ok=True)
     rid = next_id()
     meta = {
         "id": rid,
@@ -229,7 +236,13 @@ def cmd_new(a):
         "revisit_by": None,
     }
     path = DIR / f"{rid}-{re.sub(r'[^a-z0-9]+', '-', a.title.lower()).strip('-')}.md"
-    path.write_text(TEMPLATE.format(id=rid, title=a.title, meta=json.dumps(meta, indent=2)))
+    new_text = TEMPLATE.format(id=rid, title=a.title, meta=json.dumps(meta, indent=2))
+    if dry:
+        old_text = path.read_text() if path.exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
+        print(f"[dry-run] would also regenerate rca/INDEX.md; nothing written")
+        return 0
+    path.write_text(new_text)
     print(f"created {rel(path)}")
     print("Reproduce first, and see it fail, before reading code. Then fill: timeline, "
           ">=1 falsifiable hypothesis, five whys (>=2 real levels), contributing factors, "
@@ -240,8 +253,12 @@ def cmd_new(a):
 
 
 def cmd_index(a):
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py index", ROOT):
+        return 2
     recs = load_all()
-    DIR.mkdir(parents=True, exist_ok=True)
+    if not dry:
+        DIR.mkdir(parents=True, exist_ok=True)
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -276,7 +293,12 @@ def cmd_index(a):
             "decision's assumption was checked against this incident — a decision whose "
             "assumption silently stopped holding is a classic root cause.",
             "- Cross-check the timeline against `python3 scripts/decide.py drift`.", ""]
-    (DIR / "INDEX.md").write_text("\n".join(out))
+    new_text = "\n".join(out)
+    if dry:
+        old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, "rca/INDEX.md")
+        return 1 if bad else 0
+    (DIR / "INDEX.md").write_text(new_text)
     print(f"wrote rca/INDEX.md ({len(rows)} record(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -375,6 +397,12 @@ def cmd_link(a):
     meta.setdefault("decision_links", []).append(entry)
     new_block = "```json meta\n" + json.dumps(meta, indent=2) + "\n```"
     new_text = text[:m.start()] + new_block + text[m.end():]
+
+    if getattr(a, "dry_run", False):
+        mg.print_diff_or_noop(text, new_text, str(rel(path)))
+        return 0
+    if mg.require_git_root(IN_GIT_REPO, "rca.py link", ROOT):
+        return 2
     path.write_text(new_text)
 
     adr_dir = ROOT / "decisions"
@@ -396,14 +424,21 @@ def main():
     n.add_argument("--severity", choices=["low", "medium", "high", "critical"], default="medium")
     n.add_argument("--tag", action="append")
     n.add_argument("--by", default="claude")
+    n.add_argument("--dry-run", action="store_true",
+                    help="print what would be created; write nothing")
     n.set_defaults(fn=cmd_new)
-    for name, fn in (("index", cmd_index), ("lint", cmd_lint)):
-        p = sub.add_parser(name); p.set_defaults(fn=fn)
+    p = sub.add_parser("lint"); p.set_defaults(fn=cmd_lint)
+    ix = sub.add_parser("index")
+    ix.add_argument("--dry-run", action="store_true",
+                     help="print the index diff; write nothing")
+    ix.set_defaults(fn=cmd_index)
     l = sub.add_parser("link"); l.add_argument("id")
     l.add_argument("--decision", required=True, help="ADR id, e.g. ADR-0001")
     l.add_argument("--assumption", default=None, help="assumption id within that ADR, e.g. A1")
     l.add_argument("--status", choices=["violated", "held", "unknown"], default="violated")
     l.add_argument("--note", default="")
+    l.add_argument("--dry-run", action="store_true",
+                    help="print the diff that would be written; write nothing")
     l.set_defaults(fn=cmd_link)
     a = ap.parse_args()
     return a.fn(a)

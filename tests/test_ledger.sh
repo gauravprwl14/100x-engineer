@@ -79,7 +79,13 @@ for i in $(seq 2 45); do mk_adr "$i" "2026-0$(( (i % 3) + 1 ))-15" "src/a$((i%4)
 git add -A >/dev/null 2>&1; git commit -qm bulk >/dev/null 2>&1
 python3 "$L" gaps >/tmp/lg.out 2>&1
 has "run \`ledger.py shard\`"
-python3 "$L" shard >/tmp/lg.out 2>&1; rc_is 0 $? "shard: runs at volume"
+# shard MOVES FILES, so it must do nothing without --yes
+python3 "$L" shard >/tmp/lg.out 2>&1; rc_is 0 $? "shard: prints a plan at volume"
+has "would move 45 record"
+has "Nothing has changed"
+[ ! -d "$C/decisions/2026" ] && ok "shard: moved nothing without --yes" \
+  || bad "shard: moved files without consent"
+python3 "$L" shard --yes >/tmp/lg.out 2>&1; rc_is 0 $? "shard: --yes performs the move"
 has "moved 45 record"
 [ -d "$C/decisions/2026" ] && ok "shard: created year/quarter dirs" || bad "shard: no shards"
 SHARDED=$(find "$C/decisions" -name 'ADR-*.md' | wc -l | tr -d ' ')
@@ -92,7 +98,7 @@ python3 "$L" index >/tmp/lg.out 2>&1
 has "46 records"
 python3 "$L" find "ADR-0033" >/tmp/lg.out 2>&1
 has "2026/Q"
-python3 "$L" shard >/tmp/lg.out 2>&1
+python3 "$L" shard --yes >/tmp/lg.out 2>&1
 has "nothing to shard"
 
 cd "$ROOT"

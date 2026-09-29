@@ -1,0 +1,119 @@
+{
+  "_doc": "Four named scale tiers, each pre-answered with concrete numbers so a feature spec or PRD can DECLARE a tier instead of being interrogated about scale nobody stated. `_default` is what `plan_feature.py new` / `prd.py new` apply when `--scale` is omitted. `required` is what that tier's design must do; `not_required` is the more valuable half -- it is what licenses an agent to keep things simple, and is what research/00-signal-rubric.md Part G (rule 4, 'scale-appropriate') and skills/approach-selection/SKILL.md ('do not choose for a requirement nobody stated') were missing a mechanism for. Latency-budget REASONING is owned by skills/performance-budgets/SKILL.md; this file supplies only the default p95 number each tier starts from -- it does not repeat that skill's rules.",
+  "_default": "small",
+  "_order": ["prototype", "small", "growth", "scale"],
+  "_alignment": "These four map onto research/35-findings-security-reliability.md's 'security baseline by scale' synthesis so the plugin has ONE scale vocabulary, not two: prototype ~ its 'solo / hobby project with external users', small ~ its 'small team (2-10)', growth ~ its 'org (10+, multiple maintainers, sustained external adoption)', scale ~ its 'high-blast-radius (CNCF-tier infrastructure ... or anything a large number of downstream systems build on)'. Consult that synthesis for the security-specific half of each tier; this file covers capacity, latency, and architecture.",
+  "prototype": {
+    "label": "Prototype",
+    "users_requests": "< 100 total users (or pre-launch/internal only); < 1 req/s sustained, bursts don't matter",
+    "data_volume": "< 10k rows per table / < 1 GB total",
+    "instances": "single instance, no replica, no failover",
+    "availability_target": "best-effort, no SLA -- downtime during iteration is expected and acceptable",
+    "p95_budget_ms": 1000,
+    "p95_note": "deliberately generous: correctness over speed. A number is still stated (performance-budgets rule 1 requires one), it just isn't a tight one.",
+    "required": [
+      "input validation at the boundary",
+      "one documented rollback step per change",
+      "a single, honestly-scoped pre-commit verification command"
+    ],
+    "not_required": [
+      "a caching layer",
+      "deliberate connection-pool sizing beyond the framework default",
+      "horizontal or automatic scaling",
+      "multi-region or multi-AZ deployment",
+      "a dedicated search index",
+      "load, soak, or spike testing",
+      "HA/failover automation",
+      "rate-limiting infrastructure beyond a basic per-account counter"
+    ],
+    "sources": [
+      "research/35-findings-security-reliability.md synthesis, 'Solo / hobby project with external users' (one documented pre-commit command, commit crash inputs as they happen)",
+      "scripts/data/decisions_required.json 'search' kind default ('database full-text first; a dedicated index only once a measured limit is hit') -- applies a fortiori below that limit",
+      "SOURCE: original for the p95 number itself"
+    ]
+  },
+  "small": {
+    "label": "Small",
+    "users_requests": "< 10,000 users; low tens of requests/sec at peak",
+    "data_volume": "up to low millions of rows per table / tens of GB total",
+    "instances": "one primary instance (plus an optional standby); vertical scaling (a bigger box) is an acceptable answer to growth",
+    "availability_target": "single-region uptime; manual or semi-automated failover is fine, not automatic",
+    "p95_budget_ms": 300,
+    "p95_note": "the worked save-action budget in reviewers/_latency-numbers.md (browser -> gateway -> app -> DB, one or two same-DC round trips) -- realistic without any exotic infra.",
+    "required": [
+      "indexes on the query paths actually used; EXPLAIN before merging a new query against a non-trivial table",
+      "bounded/paginated list queries (unbounded pagination is a correctness bug at any size, not a growth-tier nicety)",
+      "a deliberately sized connection pool, not the driver default",
+      "a stated p95 budget split across hops",
+      "basic uptime/error-rate monitoring"
+    ],
+    "not_required": [
+      "multi-region deployment",
+      "a dedicated cache layer (Redis/Memcached) unless a measured hot path needs it",
+      "horizontal autoscaling or Kubernetes",
+      "a dedicated search index (OpenSearch/Meilisearch/Typesense)",
+      "a 24/7 on-call rotation",
+      "a capacity or soak-testing regime"
+    ],
+    "sources": [
+      "reviewers/_latency-numbers.md 'A worked budget example' (300ms p95 save action) and its HikariCP connection-pool-sizing citation (brettwooldridge/HikariCP.wiki:About-Pool-Sizing.md)",
+      "skills/performance-budgets/SKILL.md rules 1, 5, 6, 7, 'Scale' section (solo tier: rules 4/6/8/9 free/near-free; small-team adds 3, 5)",
+      "research/35-findings-security-reliability.md synthesis, 'Small team (2-10)'"
+    ]
+  },
+  "growth": {
+    "label": "Growth",
+    "users_requests": "< 1,000,000 users; hundreds to low thousands of requests/sec at peak",
+    "data_volume": "up to roughly 100M+ rows in a hot table; write-heavy paths need explicit index-cost discipline",
+    "instances": "multiple instances behind a load balancer; HA and automatic failover expected",
+    "availability_target": "automatic failover within one region; a numeric target (e.g. 99.9%) stated and tracked",
+    "p95_budget_ms": 250,
+    "p95_note": "tighter than 'small' because a multi-instance, multi-dependency call chain has more places for tail latency to hide (performance-budgets rule 2: reason in p95/p99, never the mean).",
+    "required": [
+      "multi-instance deployment with HA/failover",
+      "a cache with a stated hit-rate assumption AND a stated answer for 0% hit rate (cold start / post-deploy)",
+      "capacity headroom: name which resource saturates first as load grows 10x",
+      "load, soak, and spike testing before a capacity-relevant release",
+      "rate limiting at the gateway",
+      "cost-per-request tracked next to latency in any capacity review"
+    ],
+    "not_required": [
+      "multi-region active-active deployment",
+      "per-query cost accounting on every single query in the system",
+      "a dedicated security team with a rotating fix lead",
+      "sharding or partitioning -- read replicas are enough until a measured ceiling is actually hit"
+    ],
+    "sources": [
+      "skills/performance-budgets/SKILL.md rules 11, 12, 14, 15 and 'Scale' section ('org / high-blast-radius: add 7, 11, 12, 14, 15, 16')",
+      "research/35-findings-security-reliability.md synthesis, 'Org (10+, multiple maintainers, sustained external adoption)'",
+      "kubernetes/community@master:sig-scalability/configs-and-limits/thresholds.md -- illustrates the discipline this tier adopts: explicit numeric ceilings per resource (e.g. 3000 pods/namespace, 250 endpoints/service), not adjectives"
+    ]
+  },
+  "scale": {
+    "label": "Scale",
+    "users_requests": "> 1,000,000 users, OR any regulated / high-blast-radius data regardless of user count",
+    "data_volume": "unbounded by design; partitioning/sharding planned before a table hits its measured ceiling, not after",
+    "instances": "multi-region, multiple instances per region, automated failover across regions",
+    "availability_target": "a numeric SLO with an error budget (e.g. 99.95%+), tracked and alerted on by percentile",
+    "p95_budget_ms": 150,
+    "p95_note": "same-region target; a cross-region hop adds ~150ms WAN RTT on top (reviewers/_latency-numbers.md, colin-scott/interactive_latencies) and must be budgeted for explicitly wherever a request crosses regions.",
+    "required": [
+      "multi-region topology, budgeted explicitly around cross-region RTT",
+      "every new query/endpoint costed: rows scanned and $/request tracked, not just latency",
+      "capacity planning against a stated numeric threshold, not an adjective -- the way kubernetes' own scalability-thresholds doc states hard numbers per resource",
+      "an explicit availability target/SLO with an error budget",
+      "a documented sharding/partitioning strategy",
+      "the org / high-blast-radius security baseline in full (research/35-findings-security-reliability.md synthesis)"
+    ],
+    "not_required": [
+      "adopting a larger company's practice with no failure class named for it -- cargo-culting is rejected at every tier, this one included (research/00-signal-rubric.md Part G rule 1)",
+      "rewriting a boring, working component because a checklist mentions a fancier option",
+      "an exotic consistency model nobody's workload actually requires"
+    ],
+    "sources": [
+      "research/35-findings-security-reliability.md synthesis, 'High-blast-radius (CNCF-tier infrastructure, browser/OS-adjacent, or anything a large number of downstream systems build on)'",
+      "kubernetes/community@master:sig-scalability/configs-and-limits/thresholds.md (numeric per-resource thresholds, e.g. 5000 nodes/cluster, 150000 pods/cluster -- the pattern this tier imitates: a number, not a vibe)",
+      "reviewers/_latency-numbers.md network section (WAN RTT ~150ms, colin-scott/interactive_latencies@master:interactive_latency.html) and rule 15 of skills/performance-budgets/SKILL.md (cost-per-request next to latency)"
+    ]
+  }
+}

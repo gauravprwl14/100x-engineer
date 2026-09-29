@@ -20,6 +20,7 @@ a revisit trigger. The index is a table, regenerated from the files.
 Python stdlib only.
 """
 import argparse, datetime, fnmatch, json, pathlib, re, subprocess, sys
+import _mutation_guard as mg
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -29,13 +30,15 @@ def project_root():
 
     Resolving these against the plugin root meant a consumer project's records were
     written into the installed plugin — invisible to their repo and lost on upgrade.
+
+    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
     """
     import subprocess
     r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                        capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip())
-    return pathlib.Path.cwd()
+        return pathlib.Path(r.stdout.strip()), True
+    return pathlib.Path.cwd(), False
 
 
 
@@ -51,7 +54,7 @@ def rel(p):
         return pathlib.Path(p)
 
 
-ROOT = project_root()
+ROOT, IN_GIT_REPO = project_root()
 DIR = ROOT / "decisions"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("proposed", "accepted", "superseded", "rejected", "revisit")
@@ -130,7 +133,11 @@ TEMPLATE = '''# {id}: {title}
 
 
 def cmd_new(a):
-    DIR.mkdir(parents=True, exist_ok=True)
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py new", ROOT):
+        return 2
+    if not dry:
+        DIR.mkdir(parents=True, exist_ok=True)
     did = next_id()
     meta = {
         "id": did,
@@ -155,8 +162,13 @@ def cmd_new(a):
         "revisit_by": None,
     }
     path = DIR / f"{did}-{re.sub(r'[^a-z0-9]+', '-', a.title.lower()).strip('-')}.md"
-    path.write_text(TEMPLATE.format(id=did, title=a.title,
-                                    meta=json.dumps(meta, indent=2)))
+    new_text = TEMPLATE.format(id=did, title=a.title, meta=json.dumps(meta, indent=2))
+    if dry:
+        old_text = path.read_text() if path.exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
+        print(f"[dry-run] would also regenerate decisions/INDEX.md; nothing written")
+        return 0
+    path.write_text(new_text)
     print(f"created {rel(path)}")
     print("Fill in: assumptions (each needs a real verify command), options with "
           "concrete why_not, and the Gaps accepted table.")
@@ -165,8 +177,12 @@ def cmd_new(a):
 
 
 def cmd_index(a):
+    dry = getattr(a, "dry_run", False)
+    if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py index", ROOT):
+        return 2
     recs = load_all()
-    DIR.mkdir(parents=True, exist_ok=True)
+    if not dry:
+        DIR.mkdir(parents=True, exist_ok=True)
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -196,7 +212,12 @@ def cmd_index(a):
             "- `decide.py trace <path>` says which decisions govern a file.",
             "- A decision is never edited in place once `accepted`; supersede it with a "
             "new record and set `supersedes`.", ""]
-    (DIR / "INDEX.md").write_text("\n".join(out))
+    new_text = "\n".join(out)
+    if dry:
+        old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
+        mg.print_diff_or_noop(old_text, new_text, "decisions/INDEX.md")
+        return 1 if bad else 0
+    (DIR / "INDEX.md").write_text(new_text)
     print(f"wrote decisions/INDEX.md ({len(rows)} decisions"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -360,10 +381,16 @@ def main():
     n.add_argument("--affects", action="append", help="glob of code this governs (repeatable)")
     n.add_argument("--tag", action="append")
     n.add_argument("--by", default="claude")
+    n.add_argument("--dry-run", action="store_true",
+                    help="print what would be created; write nothing")
     n.set_defaults(fn=cmd_new)
-    for name, fn in (("index", cmd_index), ("verify", cmd_verify),
+    for name, fn in (("verify", cmd_verify),
                      ("drift", cmd_drift), ("check", cmd_check), ("lint", cmd_lint)):
         p = sub.add_parser(name); p.set_defaults(fn=fn)
+    ix = sub.add_parser("index")
+    ix.add_argument("--dry-run", action="store_true",
+                     help="print the index diff; write nothing")
+    ix.set_defaults(fn=cmd_index)
     t = sub.add_parser("trace"); t.add_argument("path"); t.set_defaults(fn=cmd_trace)
     a = ap.parse_args()
     return a.fn(a)
