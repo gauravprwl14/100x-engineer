@@ -1,13 +1,14 @@
 ---
 name: feature-planning
 description: >
-  Use BEFORE writing code for any feature, change, or bug fix bigger than a one-line
-  edit — building login, adding an endpoint, a payment flow, an upload, a migration,
-  a screen. Produces a spec that seeds the edge cases and decisions this feature type
-  always has, pre-answers every choice with a recommended default so work proceeds
-  without interrogating the user, and mechanically blocks implementation until the
-  gaps are resolved or explicitly accepted. Use PROACTIVELY when asked to build,
-  implement, or add a feature.
+  Use BEFORE writing code for any new feature, endpoint, screen, payment flow,
+  upload, migration, or integration — scaffolds a spec that seeds the edge cases
+  and decisions that feature kind always has, pre-answers each with a recommended
+  default, and mechanically blocks implementation until gaps are resolved or
+  explicitly accepted. Use PROACTIVELY when asked to build, implement, or add a
+  feature. Not for fixing something broken (bug-fix) and not for choosing between
+  competing implementation approaches inside an already-planned feature
+  (approach-selection, called from within this skill's decision points).
 ---
 
 # Feature planning
@@ -19,11 +20,16 @@ the same ones every engineer misses.
 
 ## Trigger
 
-**Fire when:** asked to build, implement, add, or fix anything beyond a trivial edit.
+**Fire when:** asked to build, implement, or add new behavior — a feature, an
+endpoint, a screen, a flow — beyond a trivial edit.
 
 **Do not fire when:** the change is a typo, a version bump, a rename, or a one-line
-fix with an obvious blast radius of zero. Planning overhead on a trivial change is
-the fastest way to get planning abandoned.
+fix with an obvious blast radius of zero (planning overhead on a trivial change is
+the fastest way to get planning abandoned); the work is *correcting* something
+broken rather than adding new behavior — that's `bug-fix`, or `root-cause-analysis`
+first if the cause isn't obvious; or the codebase already has a spec for this
+feature and code has drifted from it — that's `codebase-comprehension` +
+`design_drift.py` to re-establish ground truth before re-planning.
 
 ## How this avoids interrogating you
 
@@ -44,19 +50,24 @@ Three rules, because a process that asks twenty questions is worse than no proce
    *Enforced by:* `python3 scripts/plan_feature.py new <name> --kind <kinds>`
 
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
-   or `deferred` with a follow-up reference. `TODO` is not a terminal state.
-   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>`
+   or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
+   implementation starts only once this audit passes. That gate is the whole
+   mechanism: without it "we'll decide later" silently becomes "nobody decided".
+   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>` exits non-zero
 
 3. State what is explicitly out of scope. Out-of-scope is what turns a gap into a
    decision — and it is where the edge cases you are deliberately not handling go.
    *Enforced by:* the audit rejects placeholder cells in the scope table
 
 4. Any decision that departs from the recommended default needs an ADR. Accepting a
-   default is also recorded, as `default`.
+   default is also recorded, as `default`, so a later reader can tell "we chose this
+   deliberately" from "nobody looked at it."
    *Enforced by:* `python3 scripts/decide.py new` + the audit's ADR-reference check
 
-5. Draw the sequence diagram before implementing, and keep it as the design of record.
-   *Enforced by:* `python3 scripts/design_drift.py specs/<name>/spec.md <code-dir>`
+5. Generate a level-2 sequence diagram (≤30 nodes, implementer detail) of the planned
+   flow before implementing, and keep it in the spec as the design of record — prose
+   describing a multi-step flow hides exactly the branch that turns out to matter.
+   *Enforced by:* `test -f scripts/diagram_from_code.py && python3 scripts/diagram_from_code.py <analogous-existing-code-or-skip> --kind sequence --level 2 || echo "diagram_from_code.py not built in this checkout yet -- hand-sketch the sequence in the spec and say plainly no diagram was generated"`
 
 6. Name the verification command per check, with the gate it runs at. A verification
    plan with no commands is a wish.
@@ -65,10 +76,6 @@ Three rules, because a process that asks twenty questions is worse than no proce
 7. State the rollback before the rollout. If you cannot say how to undo it, you do not
    understand the blast radius.
    *Enforced by:* review
-
-8. Implementation starts only after the audit passes. This is the whole mechanism —
-   without it "we'll decide later" silently becomes "nobody decided".
-   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>` exits non-zero
 
 ## Verify
 
@@ -83,6 +90,11 @@ python3 scripts/plan_feature.py audit specs/login      # exits 1 until complete
 
 # 3. record decisions that depart from the default
 python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
+
+# 3b. embed the level-2 flow diagram in the spec before writing code
+test -f scripts/diagram_from_code.py \
+  && python3 scripts/diagram_from_code.py src/auth --kind sequence --level 2 \
+  || echo "not built in this checkout yet -- hand-sketch and say so in the spec"
 
 # 4. during and after implementation
 python3 scripts/design_drift.py specs/login/spec.md src/auth   # design vs code
@@ -122,6 +134,13 @@ This skill rejects:
 - Six defect classes are not detectable by any check here — see
   `python3 scripts/run_evals.py`, which lists them explicitly. Route those to a
   scoped review pass.
+
+## Next
+
+Once the audit passes: read `stack-reviewer` for the framework's failure modes
+before writing code. While implementing, `bloat_check.py` and `design_drift.py` run
+continuously (Verify step 4). Before opening the PR, run `scoped-review` on the
+diff. Before commit, `verification-gate`.
 
 ## Scale
 

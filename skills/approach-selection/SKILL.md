@@ -3,10 +3,13 @@ name: approach-selection
 description: >
   Use when a problem has several defensible solutions and one must be chosen — which
   database, session strategy, state manager, queue, deployment model, sync vs async,
-  library vs hand-rolled, monolith vs service. Gives a weighted scoring method, a
-  default bias toward reversible choices, and a rule for the rare case worth escalating
-  to a human. Use PROACTIVELY whenever you notice you are picking between options
-  rather than implementing a known one.
+  library vs hand-rolled, monolith vs service. Gives a weighted scoring method (not
+  a record format), a default bias toward reversible choices, and a rule for the
+  rare case worth escalating to a human. Use PROACTIVELY whenever you notice you
+  are picking between options rather than implementing a known one. Not for writing
+  up a choice already made (that's decision-log, which this skill hands off to) and
+  not for a feature-kind decision already pre-answered in
+  `scripts/data/decisions_required.json` — check there first.
 ---
 
 # Approach selection
@@ -125,6 +128,19 @@ This skill rejects:
 engineers will score the same options differently and both be defensible. What the
 method guarantees is that the reasoning is *written down and falsifiable* — not that
 it is optimal. The enforcement is on the record's completeness, never on the choice.
+
+**No diagram step here, deliberately.** A choice between options is compared on the
+scoring table, not a flow — a sequence diagram of "call Redis vs call Postgres" adds
+nothing a table row doesn't already say. If the *chosen* approach turns out to have
+a non-obvious flow worth drawing, that happens downstream in `feature-planning`
+(rule 5) or `codebase-comprehension`, once there is code or a planned flow to diagram.
+
+## Next
+
+Record the winner with `decision-log` (`decide.py new` already opened the record —
+fill it in). If the choice was made mid-feature-plan, return to `feature-planning`'s
+edge-case table. Implementation then follows the normal path to `scoped-review` and
+`verification-gate`.
 
 ## Scale
 

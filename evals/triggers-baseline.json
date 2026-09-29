@@ -1,0 +1,470 @@
+{
+  "top1": 0.64,
+  "top3": 0.72,
+  "reject_violations": 3,
+  "never_wins": [
+    "agent-instructions",
+    "approach-selection",
+    "bug-fix",
+    "decision-log",
+    "scoped-review"
+  ],
+  "cases": [
+    {
+      "prompt": "build a login feature with email and password",
+      "expect": "feature-planning",
+      "top3": [
+        "feature-planning",
+        "scoped-review",
+        "minimal-diff"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "feature-planning": 7.88,
+        "scoped-review": 1.79,
+        "minimal-diff": 1.79
+      }
+    },
+    {
+      "prompt": "add a checkout flow that charges a card",
+      "expect": "feature-planning",
+      "top3": [
+        "feature-planning",
+        "codebase-comprehension",
+        "untrusted-agent-config"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "feature-planning": 4.43,
+        "codebase-comprehension": 2.4,
+        "untrusted-agent-config": 2.04
+      }
+    },
+    {
+      "prompt": "I need to decide between Prisma and TypeORM",
+      "expect": "approach-selection",
+      "top3": [
+        "verification-gate",
+        "untrusted-agent-config",
+        "typescript-verification"
+      ],
+      "rank": 19,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "verification-gate": 0,
+        "untrusted-agent-config": 0,
+        "typescript-verification": 0
+      }
+    },
+    {
+      "prompt": "why did we choose redis for sessions six months ago",
+      "expect": "decision-log",
+      "top3": [
+        "verification-gate",
+        "untrusted-agent-config",
+        "typescript-verification"
+      ],
+      "rank": 16,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "verification-gate": 0,
+        "untrusted-agent-config": 0,
+        "typescript-verification": 0
+      }
+    },
+    {
+      "prompt": "record that we assumed sessions fit in one redis instance",
+      "expect": "decision-log",
+      "top3": [
+        "codebase-comprehension",
+        "approach-selection",
+        "verification-gate"
+      ],
+      "rank": 18,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "codebase-comprehension": 2.4,
+        "approach-selection": 2.4,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "our decisions folder has 300 files and nobody can find anything",
+      "expect": "engineering-ledger",
+      "top3": [
+        "feature-planning",
+        "engineering-ledger",
+        "minimal-diff"
+      ],
+      "rank": 2,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "feature-planning": 4.07,
+        "engineering-ledger": 4.07,
+        "minimal-diff": 3.04
+      }
+    },
+    {
+      "prompt": "is there a decision record behind this spec",
+      "expect": "engineering-ledger",
+      "top3": [
+        "engineering-ledger",
+        "feature-planning",
+        "root-cause-analysis"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "engineering-ledger": 7.48,
+        "feature-planning": 2.4,
+        "root-cause-analysis": 2.04
+      }
+    },
+    {
+      "prompt": "review my diff before I open a pull request",
+      "expect": "scoped-review",
+      "top3": [
+        "reviewing-others-code",
+        "review-gates",
+        "verification-gate"
+      ],
+      "rank": 5,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [
+        "reviewing-others-code"
+      ],
+      "scores": {
+        "reviewing-others-code": 9.88,
+        "review-gates": 4.8,
+        "verification-gate": 3.04
+      }
+    },
+    {
+      "prompt": "review this pull request a contractor sent us",
+      "expect": "reviewing-others-code",
+      "top3": [
+        "reviewing-others-code",
+        "review-gates",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "reviewing-others-code": 7.84,
+        "review-gates": 4.8,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "explain how the payment retry logic works in this repo",
+      "expect": "codebase-comprehension",
+      "top3": [
+        "codebase-comprehension",
+        "scoped-review",
+        "feature-planning"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "codebase-comprehension": 5.08,
+        "scoped-review": 3.04,
+        "feature-planning": 3.04
+      }
+    },
+    {
+      "prompt": "sessions started dropping after yesterday's deploy, find the cause",
+      "expect": "root-cause-analysis",
+      "top3": [
+        "root-cause-analysis",
+        "bug-fix",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "root-cause-analysis": 3.04,
+        "bug-fix": 3.04,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "fix this bug where the total is off by one cent",
+      "expect": "bug-fix",
+      "top3": [
+        "codebase-comprehension",
+        "minimal-diff",
+        "feature-planning"
+      ],
+      "rank": 4,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "codebase-comprehension": 3.75,
+        "minimal-diff": 3.39,
+        "feature-planning": 3.39
+      }
+    },
+    {
+      "prompt": "write a PRD and compare three implementation approaches",
+      "expect": "solution-architecture",
+      "top3": [
+        "feature-planning",
+        "bug-fix",
+        "untrusted-agent-config"
+      ],
+      "rank": null,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [
+        "feature-planning"
+      ],
+      "scores": {
+        "feature-planning": 2.4,
+        "bug-fix": 2.4,
+        "untrusted-agent-config": 1.79
+      }
+    },
+    {
+      "prompt": "I finished the work, commit it",
+      "expect": "verification-gate",
+      "top3": [
+        "verification-gate",
+        "bug-fix",
+        "reviewing-others-code"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "verification-gate": 4.01,
+        "bug-fix": 4.01,
+        "reviewing-others-code": 1.61
+      }
+    },
+    {
+      "prompt": "this agent created eight files when one would do",
+      "expect": "minimal-diff",
+      "top3": [
+        "minimal-diff",
+        "codebase-comprehension",
+        "approach-selection"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "minimal-diff": 3.04,
+        "codebase-comprehension": 2.4,
+        "approach-selection": 2.4
+      }
+    },
+    {
+      "prompt": "set up strict tsconfig and a coverage gate for our Next app",
+      "expect": "typescript-verification",
+      "top3": [
+        "typescript-verification",
+        "python-verification",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "typescript-verification": 5.44,
+        "python-verification": 2.4,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "configure ruff and mypy for this django project",
+      "expect": "python-verification",
+      "top3": [
+        "python-verification",
+        "verification-gate",
+        "security-baseline"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "python-verification": 6.09,
+        "verification-gate": 5.44,
+        "security-baseline": 2.4
+      }
+    },
+    {
+      "prompt": "add golangci-lint and a codegen drift check",
+      "expect": "go-verification",
+      "top3": [
+        "go-verification",
+        "root-cause-analysis",
+        "untrusted-agent-config"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "go-verification": 6.09,
+        "root-cause-analysis": 3.04,
+        "untrusted-agent-config": 2.04
+      }
+    },
+    {
+      "prompt": "we are shipping an Expo app to the app store next week",
+      "expect": "mobile-release-safety",
+      "top3": [
+        "mobile-release-safety",
+        "stack-reviewer",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "mobile-release-safety": 5.44,
+        "stack-reviewer": 2.4,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "what should our SECURITY.md and dependabot setup look like",
+      "expect": "security-baseline",
+      "top3": [
+        "security-baseline",
+        "review-gates",
+        "engineering-ledger"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "security-baseline": 3.04,
+        "review-gates": 2.4,
+        "engineering-ledger": 2.4
+      }
+    },
+    {
+      "prompt": "write a PR template and CODEOWNERS for the team",
+      "expect": "review-gates",
+      "top3": [
+        "review-gates",
+        "untrusted-agent-config",
+        "reviewing-others-code"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "review-gates": 6.09,
+        "untrusted-agent-config": 1.79,
+        "reviewing-others-code": 1.79
+      }
+    },
+    {
+      "prompt": "write an AGENTS.md for this repository",
+      "expect": "agent-instructions",
+      "top3": [
+        "untrusted-agent-config",
+        "agent-instructions",
+        "security-baseline"
+      ],
+      "rank": 2,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [
+        "untrusted-agent-config"
+      ],
+      "scores": {
+        "untrusted-agent-config": 6.23,
+        "agent-instructions": 6.23,
+        "security-baseline": 2.04
+      }
+    },
+    {
+      "prompt": "I cloned a third party repo, is its claude config safe to run",
+      "expect": "untrusted-agent-config",
+      "top3": [
+        "untrusted-agent-config",
+        "codebase-comprehension",
+        "agent-instructions"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "untrusted-agent-config": 5.08,
+        "codebase-comprehension": 2.04,
+        "agent-instructions": 2.04
+      }
+    },
+    {
+      "prompt": "what are the NestJS specific mistakes to watch for here",
+      "expect": "stack-reviewer",
+      "top3": [
+        "stack-reviewer",
+        "verification-gate",
+        "untrusted-agent-config"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "stack-reviewer": 6.09,
+        "verification-gate": 0,
+        "untrusted-agent-config": 0
+      }
+    },
+    {
+      "prompt": "check the module boundaries in our nest services",
+      "expect": "stack-reviewer",
+      "top3": [
+        "codebase-comprehension",
+        "root-cause-analysis",
+        "verification-gate"
+      ],
+      "rank": 6,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "codebase-comprehension": 6.09,
+        "root-cause-analysis": 3.04,
+        "verification-gate": 0
+      }
+    }
+  ]
+}
