@@ -1,0 +1,43 @@
+{
+  "_doc": "Choices that must be made EXPLICITLY per feature kind, each with a default so the agent proceeds without interrogating the user. Format: [decision, options, deciding factor, DEFAULT].",
+  "auth": [
+    ["Session mechanism", "opaque server session | stateless JWT | JWT+refresh rotation", "does revocation need to be immediate?", "opaque server session in an httpOnly cookie — immediate revocation, simplest correct option for a first-party app"],
+    ["Password hashing", "argon2id | bcrypt | scrypt", "is a modern KDF library available on the runtime?", "argon2id; bcrypt (cost>=12) if argon2 is unavailable"],
+    ["MFA", "none | TOTP | WebAuthn | SMS", "what does the threat model require?", "TOTP, behind a feature flag, shipped after core login works"],
+    ["Rate limiting location", "app middleware | gateway/WAF | both", "is there a gateway already?", "gateway if one exists, plus a per-account app-level counter for lockout"],
+    ["Identity source", "local credentials | OAuth/OIDC only | both", "who are the users?", "both, with local as the fallback; OAuth added as a second ADR not a rewrite"],
+    ["Session storage", "redis | database table | signed cookie only", "is a shared store available in the deploy target?", "redis if present, otherwise a database table; never a signed cookie alone if A1 requires revocation"]
+  ],
+  "crud": [
+    ["Concurrency control", "none | optimistic (version/etag) | pessimistic locks", "can two users edit the same record?", "optimistic with a version column — cheap, and it surfaces conflicts instead of losing writes"],
+    ["Delete semantics", "hard delete | soft delete | archive table", "is there an audit or undo requirement?", "soft delete with a partial index excluding deleted rows"],
+    ["Pagination", "offset | cursor | keyset", "can data change between pages?", "cursor/keyset — offset silently duplicates and skips rows under concurrent writes"],
+    ["Validation boundary", "controller DTO | service | database constraints", "where can invalid data enter?", "all three: DTO at the edge, invariants in the service, constraints in the schema as the backstop"]
+  ],
+  "payment": [
+    ["Money representation", "integer minor units | decimal type | float", "any arithmetic at all?", "integer minor units; float is never acceptable"],
+    ["Idempotency", "client-supplied key | server-derived key | none", "can the client retry?", "client-supplied idempotency key, stored with the result"],
+    ["Provider state reconciliation", "trust webhooks | poll | webhooks + scheduled reconcile", "what happens if a webhook is lost?", "webhooks plus a scheduled reconcile — webhooks alone lose events"]
+  ],
+  "upload": [
+    ["Transport", "direct-to-storage presigned | through the app server", "file size and app memory budget", "presigned direct-to-storage; the app never buffers the bytes"],
+    ["Type validation", "extension | client MIME | content sniff", "can a user upload anything?", "content sniff on the server, with an allowlist"],
+    ["Orphan cleanup", "none | reaper job | transactional two-phase", "can an upload outlive its record?", "reaper job on a TTL — simplest thing that actually converges"]
+  ],
+  "search": [
+    ["Engine", "database LIKE/FTS | dedicated index (OpenSearch/Meili/Typesense) | vector", "corpus size and relevance needs", "database full-text first; a dedicated index only once a measured limit is hit"],
+    ["Index freshness", "synchronous | async with stated lag | read-through", "can a user not see their own write?", "async with an explicitly documented lag, plus read-your-own-writes for the author"]
+  ],
+  "realtime": [
+    ["Transport", "WebSocket | SSE | long-poll | managed service", "direction and infrastructure constraints", "SSE for server-to-client only; WebSocket when the client must push"],
+    ["Delivery guarantee", "at-most-once | at-least-once + idempotent apply | exactly-once", "what does a lost or duplicated message cost?", "at-least-once with idempotent application — exactly-once is usually a mirage"]
+  ],
+  "migration": [
+    ["Deploy coupling", "schema-then-code | expand/contract | single atomic deploy", "is there more than one running instance?", "expand/contract — old and new code must both work against the intermediate schema"],
+    ["Backfill", "inline in migration | separate idempotent job", "row count and lock duration", "separate idempotent, resumable job; never inline on a large table"]
+  ],
+  "integration": [
+    ["Failure mode", "fail closed | fail open | degrade to cached", "what is worse: wrong answer or no answer?", "fail closed for writes and authorization, degrade to cached for reads"],
+    ["Retry policy", "none | fixed | exponential with jitter and cap", "is the operation idempotent?", "exponential with jitter and a cap, retrying only 5xx/429/timeouts"]
+  ]
+}

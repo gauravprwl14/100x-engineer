@@ -1,0 +1,81 @@
+{
+  "_doc": "Edge-case catalogue by feature kind. Seeds a spec so gaps are surfaced before code. Each entry: what, why missed, and the test that would catch it.",
+  "universal": [
+    ["Concurrent duplicate request (double-click, retried POST)", "happy path is single-threaded in the author's head", "two parallel requests with the same idempotency key produce one effect"],
+    ["Partial failure mid-operation", "multi-step writes are written as if atomic", "inject a failure between step 2 and 3; assert no partial state remains"],
+    ["Downstream dependency times out", "local dev is always fast", "stub the dependency with a delay beyond the timeout; assert a bounded error, not a hang"],
+    ["Downstream returns malformed or unexpected shape", "the type says it cannot happen", "feed a response that violates the schema; assert it is rejected at the boundary"],
+    ["Empty, single-item, and very large collections", "examples always have 3 items", "tests at 0, 1, and a size past the pagination limit"],
+    ["Unauthorized and wrong-tenant access", "only the authorized path is exercised", "role A cannot read role B's record; assert 403/404, not 200"],
+    ["Clock skew, DST boundary, timezone of the caller", "the author's machine is UTC", "freeze time at a DST transition and at 23:59 local"],
+    ["Input at boundary sizes and with unicode/emoji/RTL", "tests use ascii names", "max-length, over-max, and multibyte input"],
+    ["Rate limit or quota exhausted", "quota is never hit in dev", "drive past the limit; assert a typed error and no data loss"],
+    ["Rollback path actually works", "rollback is written, never run", "execute the down/rollback and assert the prior state is restored"]
+  ],
+  "auth": [
+    ["Session revocation is immediate on logout, password change, and admin ban", "revocation is assumed to follow from token expiry", "revoke, then assert the next request with the old credential fails"],
+    ["Concurrent logins from multiple devices, and logout scope", "single-device mental model", "two sessions; logging out one does not kill the other unless specified"],
+    ["Credential stuffing / brute force on the login endpoint", "rate limiting is 'infra's job'", "N failed attempts triggers lockout or backoff; assert it"],
+    ["Timing difference between unknown-user and wrong-password", "both return 401 so it looks fine", "measure both paths; they must not be distinguishable"],
+    ["Password reset token reuse, expiry, and single-use", "token is generated and forgotten", "reuse a consumed token; assert rejection"],
+    ["Email enumeration via signup, reset, or login errors", "error messages are written for humans", "responses for existing vs non-existing accounts are identical"],
+    ["Session fixation on privilege change", "the session id is kept across login", "assert the session id rotates on authentication and on role elevation"],
+    ["Open redirect in the post-login return URL", "the redirect param is trusted", "pass an external URL; assert it is rejected or allowlisted"],
+    ["CSRF on state-changing auth routes", "SPA assumed immune", "cross-origin POST without the token is rejected"],
+    ["Cookie flags: httpOnly, Secure, SameSite, correct domain and path", "defaults are assumed safe", "assert the Set-Cookie header attributes explicitly"],
+    ["Account lockout is not itself a denial-of-service on the real user", "lockout is added for safety", "attacker-triggered lockout must not permanently lock a victim"],
+    ["MFA enrolment, recovery codes, and the lost-device path", "MFA is added as a happy path", "recovery flow works and recovery codes are single-use"],
+    ["OAuth: state parameter, PKCE, and mismatched redirect_uri", "the provider is trusted to handle it", "missing/replayed state is rejected"],
+    ["Token or session leakage in logs, URLs, or error messages", "logging is added for debugging", "grep logs for the credential after a full login flow"],
+    ["Password storage uses a slow KDF with per-user salt, and the cost is tuned", "any hash looks like hashing", "assert the algorithm and cost factor, not just that a hash exists"]
+  ],
+  "crud": [
+    ["Optimistic concurrency: two writers on the same record", "last-write-wins is invisible", "version/etag conflict returns 409 rather than silently overwriting"],
+    ["Soft delete vs hard delete, and reads that must exclude deleted rows", "delete is treated as one operation", "a deleted record is absent from list, search, and aggregate counts"],
+    ["Cascade behaviour on parent delete", "the FK is declared and forgotten", "delete a parent with children; assert the intended cascade or block"],
+    ["Mass assignment: client sets a field it should not own", "the DTO is spread into the model", "post an extra privileged field; assert it is ignored or rejected"],
+    ["Pagination stability while data changes underneath", "offset pagination looks fine", "insert during pagination; assert no duplicate or skipped row with cursor paging"],
+    ["Uniqueness enforced in the database, not only in application code", "the app checks first", "two concurrent inserts of the same unique value; one must fail"]
+  ],
+  "payment": [
+    ["Idempotency on charge retries", "network retry duplicates the charge", "same idempotency key twice charges once"],
+    ["Webhook arrives before the local record is committed", "webhooks are assumed to be slower", "process a webhook for an unknown local id without losing it"],
+    ["Webhook replay and out-of-order delivery", "webhooks are trusted as once-and-ordered", "replay an old event; assert state does not regress"],
+    ["Webhook signature verification", "the endpoint is 'secret'", "unsigned or wrongly-signed payload is rejected"],
+    ["Currency, rounding, and minor units", "floats are used for money", "assert integer minor units end to end; no float arithmetic"],
+    ["Partial refund, over-refund, and refund after dispute", "refund is modelled as the inverse of charge", "over-refund is rejected"],
+    ["Reconciliation when the provider and local state disagree", "provider is assumed authoritative and reachable", "a scheduled reconcile detects and reports drift"]
+  ],
+  "upload": [
+    ["File type validated by content, not extension or client MIME", "the extension is checked", "rename a script to .png; assert rejection on content sniff"],
+    ["Size limit enforced before buffering the whole file", "the framework default is assumed sane", "stream a file past the limit; assert early rejection without memory blowup"],
+    ["Filename path traversal and unicode normalisation", "the name is used as given", "a name containing ../ cannot escape the target directory"],
+    ["Virus/content scanning decision recorded (even if the decision is 'no')", "scanning is out of scope silently", "the decision exists in the decision log"],
+    ["Orphaned uploads when the referencing record fails to save", "upload and record are treated as one step", "fail the record write; assert the blob is cleaned up or reaped"],
+    ["Resumable/interrupted upload and duplicate finalisation", "uploads are assumed to complete", "interrupt and resume; assert one object, not two"]
+  ],
+  "search": [
+    ["Query with zero results, and with pathological input (very long, regex-like, wildcards)", "queries are assumed reasonable", "assert bounded time and a clean empty state"],
+    ["Injection into the query DSL", "the client library is assumed to escape", "a query containing DSL syntax is treated as a literal"],
+    ["Relevance changes are visible and reviewable", "ranking is tuned ad hoc", "a golden set of query -> expected top-N, asserted in CI"],
+    ["Index staleness after a write", "search is assumed synchronous with the DB", "assert the staleness window explicitly, or read-through"]
+  ],
+  "realtime": [
+    ["Reconnect with backoff, and state resync after reconnect", "the socket is assumed stable", "drop the connection; assert resync without duplicate application of events"],
+    ["Message ordering and duplicate delivery", "at-most-once is assumed", "deliver out of order and twice; assert idempotent application"],
+    ["Backpressure when the consumer is slower than the producer", "the queue is assumed to drain", "flood the channel; assert bounded memory and a shed/park policy"],
+    ["Authorization re-checked per message, not only at connect", "auth at handshake is assumed sufficient", "revoke mid-connection; assert subsequent messages are rejected"]
+  ],
+  "migration": [
+    ["Rollback tested, not just written", "down migrations are never executed", "run up then down then up; assert the schema and data survive"],
+    ["Expand/contract so old and new code can run simultaneously", "deploys are assumed atomic", "old code against the new schema passes its tests"],
+    ["Long-running migration on production-sized data, and lock duration", "tested on an empty dev table", "measure lock time on a realistic row count"],
+    ["Backfill is idempotent and resumable", "backfill is assumed to run once cleanly", "interrupt the backfill and rerun; assert no double-application"]
+  ],
+  "integration": [
+    ["Third-party outage, and the degraded mode", "the vendor is assumed up", "stub a 503; assert the documented degraded behaviour"],
+    ["Retry policy with jitter and a cap, plus which errors are retryable", "retries are added without classification", "a 400 is not retried; a 503 is, with a bound"],
+    ["Secret rotation without downtime", "credentials are set once", "rotate; assert both old and new work during the overlap"],
+    ["Contract drift when the vendor changes a response", "the integration is written once", "a recorded contract test that fails when the shape changes"]
+  ]
+}
