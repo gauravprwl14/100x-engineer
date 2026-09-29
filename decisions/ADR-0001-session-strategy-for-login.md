@@ -14,7 +14,7 @@
   "affects": [
     "examples/login/**"
   ],
-  "commit": null,
+  "commit": "ecbb361",
   "assumptions": [
     {
       "id": "A1",
