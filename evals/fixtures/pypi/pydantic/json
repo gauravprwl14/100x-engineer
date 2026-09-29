@@ -1,0 +1,359 @@
+{
+ "info": {
+  "name": "pydantic",
+  "version": "2.13.5",
+  "license": null,
+  "license_expression": "MIT",
+  "classifiers": [
+   "Development Status :: 5 - Production/Stable",
+   "Framework :: Hypothesis",
+   "Framework :: Pydantic",
+   "Intended Audience :: Developers",
+   "Intended Audience :: Information Technology",
+   "Operating System :: OS Independent",
+   "Programming Language :: Python",
+   "Programming Language :: Python :: 3",
+   "Programming Language :: Python :: 3 :: Only",
+   "Programming Language :: Python :: 3.10",
+   "Programming Language :: Python :: 3.11",
+   "Programming Language :: Python :: 3.12",
+   "Programming Language :: Python :: 3.13",
+   "Programming Language :: Python :: 3.14",
+   "Programming Language :: Python :: 3.9",
+   "Programming Language :: Python :: Implementation :: CPython",
+   "Programming Language :: Python :: Implementation :: PyPy",
+   "Topic :: Internet",
+   "Topic :: Software Development :: Libraries :: Python Modules"
+  ],
+  "requires_dist": [
+   "annotated-types>=0.6.0",
+   "pydantic-core==2.46.5",
+   "typing-extensions>=4.14.1",
+   "typing-inspection>=0.4.2",
+   "email-validator>=2.0.0; extra == \"email\"",
+   "tzdata; (python_version >= \"3.9\" and platform_system == \"Windows\") and extra == \"timezone\""
+  ],
+  "project_urls": {
+   "Changelog": "https://docs.pydantic.dev/latest/changelog/",
+   "Documentation": "https://docs.pydantic.dev",
+   "Funding": "https://github.com/sponsors/samuelcolvin",
+   "Homepage": "https://github.com/pydantic/pydantic",
+   "Source": "https://github.com/pydantic/pydantic"
+  },
+  "author_email": "Samuel Colvin <s@muelcolvin.com>, Eric Jolibois <em.jolibois@gmail.com>, Hasan Ramezani <hasan.r67@gmail.com>, Adrian Garcia Badaracco <1755071+adriangb@users.noreply.github.com>, Terrence Dorsey <terry@pydantic.dev>, David Montague <david@pydantic.dev>, Serge Matveenko <lig@countzero.co>, Marcelo Trylesinski <marcelotryle@gmail.com>, Sydney Runkle <sydneymarierunkle@gmail.com>, David Hewitt <mail@davidhewitt.dev>, Alex Hall <alex.mojaki@gmail.com>, Victorien Plot <contact@vctrn.dev>",
+  "maintainer": null,
+  "maintainer_email": null,
+  "summary": "Data validation using Python type hints",
+  "yanked": false
+ },
+ "releases": {
+  "2.9.0b1": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "670143289e95c55de32e64e7073dbde813793f2b48147abdbfc43ae36e8095cd"
+    },
+    "digests": {
+     "blake2b_256": "c0fa294b2e75fba17e6917f346984f2421279ca39a5f49280f528044054472d5",
+     "md5": "a26578c018a26e825c86d5fdb3250c57",
+     "sha256": "7e7171d13425d10975008195d6733c6824489f359aba3ea5772fed4f5f6875ef"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.9.0b1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "a26578c018a26e825c86d5fdb3250c57",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 433453,
+    "upload_time": "2024-08-26T17:12:50",
+    "upload_time_iso_8601": "2024-08-26T17:12:50.353718Z",
+    "url": "https://files.pythonhosted.org/packages/c0/fa/294b2e75fba17e6917f346984f2421279ca39a5f49280f528044054472d5/pydantic-2.9.0b1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.0.2": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "32c0290563af38bd859409d7e7d545e09dc048dc25598452bb8faecc7d91d323"
+    },
+    "digests": {
+     "blake2b_256": "01d94811d9083c1e35b051802a087af1a6eca25899696ce6c4be938b8c383acd",
+     "md5": "58223c22239fdab885d9225b92391ddf",
+     "sha256": "fbedbd1fdac2f59c2d0cbdc080cdba3a8b9ca02b40554b17c1447909c2182093"
+    },
+    "downloads": -1,
+    "filename": "pydantic-0.0.2-py36-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "58223c22239fdab885d9225b92391ddf",
+    "packagetype": "bdist_wheel",
+    "python_version": "py36",
+    "requires_python": null,
+    "size": 14595,
+    "upload_time": "2017-05-06T14:53:18",
+    "upload_time_iso_8601": "2017-05-06T14:53:18.249584Z",
+    "url": "https://files.pythonhosted.org/packages/01/d9/4811d9083c1e35b051802a087af1a6eca25899696ce6c4be938b8c383acd/pydantic-0.0.2-py36-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.0.1": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "920478478812080f061f0c5482030022e1d2bdb0f966dd7802d4df2f6f43b5a0"
+    },
+    "digests": {
+     "blake2b_256": "fe1c82ccdb995e5951cc6b86593a5ffc527e4435432514ce3f74cf4af2c19cd5",
+     "md5": "8df5a937906cf609452d7811bc4d77cf",
+     "sha256": "1dd9831ccd048e3219e7e31317ad20106564b6cc96784e9ecd247fc21a0f15a4"
+    },
+    "downloads": -1,
+    "filename": "pydantic-0.0.1-py35.py36-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "8df5a937906cf609452d7811bc4d77cf",
+    "packagetype": "bdist_wheel",
+    "python_version": "3.6",
+    "requires_python": null,
+    "size": 7508,
+    "upload_time": "2017-05-03T20:58:46",
+    "upload_time_iso_8601": "2017-05-03T20:58:46.547771Z",
+    "url": "https://files.pythonhosted.org/packages/fe/1c/82ccdb995e5951cc6b86593a5ffc527e4435432514ce3f74cf4af2c19cd5/pydantic-0.0.1-py35.py36-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "0.0.3": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "a07f3e8fa8dc6651360fcf1170f5efb93d40b251004818d8364cc41a0db2a2ed"
+    },
+    "digests": {
+     "blake2b_256": "5faeebdd66264d68ee886280560027bd546534f0c77cbb37627b7aba02827a42",
+     "md5": "b871cde33d72f0821d1016300c660484",
+     "sha256": "cd70bde67d6fd550224430c918a89246b446ea138e5222d323882244afe93634"
+    },
+    "downloads": -1,
+    "filename": "pydantic-0.0.3-py36-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "b871cde33d72f0821d1016300c660484",
+    "packagetype": "bdist_wheel",
+    "python_version": "py36",
+    "requires_python": null,
+    "size": 14741,
+    "upload_time": "2017-05-09T16:02:26",
+    "upload_time_iso_8601": "2017-05-09T16:02:26.057678Z",
+    "url": "https://files.pythonhosted.org/packages/5f/ae/ebdd66264d68ee886280560027bd546534f0c77cbb37627b7aba02827a42/pydantic-0.0.3-py36-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.8.2": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "1fc20f9fa977df1368dd247ec490ded4d844633c44b02225d82d9192142886ee"
+    },
+    "digests": {
+     "blake2b_256": "1ffab7f815b8c9ad021c07f88875b601222ef5e70619391ade4a49234d12d278",
+     "md5": "97e6cd9452281e7d33943fdd8c0b1d1e",
+     "sha256": "73ee9fddd406dc318b885c7a2eab8a6472b68b8fb5ba8150949fc3db939f23c8"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.8.2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "97e6cd9452281e7d33943fdd8c0b1d1e",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 423875,
+    "upload_time": "2024-07-04T02:59:45",
+    "upload_time_iso_8601": "2024-07-04T02:59:45.330287Z",
+    "url": "https://files.pythonhosted.org/packages/1f/fa/b7f815b8c9ad021c07f88875b601222ef5e70619391ade4a49234d12d278/pydantic-2.8.2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.9.0b2": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "cb4304edcfcd407d23869b731b91559678432756a0fc7720ab15640adcbd7a70"
+    },
+    "digests": {
+     "blake2b_256": "38b607bcfb2cb976cec975e2a463d18f14a3d9a5363b1b36c46d4bae330ba63e",
+     "md5": "1fcf049544ed15d42e919f275573bbaa",
+     "sha256": "622eb51c75ed670de8f53f2706cfd8f06e01f65ec71b699472a52f32fcab09dd"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.9.0b2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "1fcf049544ed15d42e919f275573bbaa",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 434221,
+    "upload_time": "2024-08-31T01:46:21",
+    "upload_time_iso_8601": "2024-08-31T01:46:21.161828Z",
+    "url": "https://files.pythonhosted.org/packages/38/b6/07bcfb2cb976cec975e2a463d18f14a3d9a5363b1b36c46d4bae330ba63e/pydantic-2.9.0b2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.9.2": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "65044230b81c3164a00f407a379a58e651908515ea565896ec5b6ca0c95ee2d8"
+    },
+    "digests": {
+     "blake2b_256": "dfe4ba44652d562cbf0bf320e0f3810206149c8a4e99cdbf66da82e97ab53a15",
+     "md5": "fabf720ee977eea4594fd50db459ecce",
+     "sha256": "f048cec7b26778210e28a0459867920654d48e5e62db0958433636cde4254f12"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.9.2-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "fabf720ee977eea4594fd50db459ecce",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 434928,
+    "upload_time": "2024-09-17T15:59:51",
+    "upload_time_iso_8601": "2024-09-17T15:59:51.827231Z",
+    "url": "https://files.pythonhosted.org/packages/df/e4/ba44652d562cbf0bf320e0f3810206149c8a4e99cdbf66da82e97ab53a15/pydantic-2.9.2-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.9.0": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "db401543c112e274984f38fe29616ee0b67880b3a0595a88dc1234156e2dda7c"
+    },
+    "digests": {
+     "blake2b_256": "543895bdb5dfcebad2c11c88f7aa2d635fe53a0b7405ef39a6850c8bced455d4",
+     "md5": "e5cfb95755337990a2c1948df71411bf",
+     "sha256": "f66a7073abd93214a20c5f7b32d56843137a7a2e70d02111f3be287035c45370"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.9.0-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "e5cfb95755337990a2c1948df71411bf",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 434325,
+    "upload_time": "2024-09-05T16:23:47",
+    "upload_time_iso_8601": "2024-09-05T16:23:47.683058Z",
+    "url": "https://files.pythonhosted.org/packages/54/38/95bdb5dfcebad2c11c88f7aa2d635fe53a0b7405ef39a6850c8bced455d4/pydantic-2.9.0-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.13.5": [
+   {
+    "comment_text": null,
+    "core-metadata": {
+     "sha256": "0685830d13647bd6f3f05526043d32a8b2a221d86b53773053d6c52bb17a9c07"
+    },
+    "digests": {
+     "blake2b_256": "eb47c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464",
+     "md5": "40d43f06ec754228362bd1b1a616a1c7",
+     "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.13.5-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "40d43f06ec754228362bd1b1a616a1c7",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.9",
+    "size": 472589,
+    "upload_time": "2026-08-28T14:03:59",
+    "upload_time_iso_8601": "2026-08-28T14:03:59.136157Z",
+    "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ],
+  "2.9.1": [
+   {
+    "comment_text": "",
+    "core-metadata": {
+     "sha256": "81816e5dd58e520e16ca49b28ba52a6c10dcdc6f2a531958dde2f37f65bfec7b"
+    },
+    "digests": {
+     "blake2b_256": "e428fff23284071bc1ba419635c7e86561c8b9b8cf62a5bcb459b92d7625fd38",
+     "md5": "2cd233927d31f23ff09b39e204608972",
+     "sha256": "7aff4db5fdf3cf573d4b3c30926a510a10e19a0774d38fc4967f78beb6deb612"
+    },
+    "downloads": -1,
+    "filename": "pydantic-2.9.1-py3-none-any.whl",
+    "has_sig": false,
+    "md5_digest": "2cd233927d31f23ff09b39e204608972",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.8",
+    "size": 434363,
+    "upload_time": "2024-09-09T09:12:47",
+    "upload_time_iso_8601": "2024-09-09T09:12:47.597045Z",
+    "url": "https://files.pythonhosted.org/packages/e4/28/fff23284071bc1ba419635c7e86561c8b9b8cf62a5bcb459b92d7625fd38/pydantic-2.9.1-py3-none-any.whl",
+    "yanked": false,
+    "yanked_reason": null
+   }
+  ]
+ },
+ "urls": [
+  {
+   "comment_text": null,
+   "core-metadata": {
+    "sha256": "0685830d13647bd6f3f05526043d32a8b2a221d86b53773053d6c52bb17a9c07"
+   },
+   "digests": {
+    "blake2b_256": "eb47c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464",
+    "md5": "40d43f06ec754228362bd1b1a616a1c7",
+    "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
+   },
+   "downloads": -1,
+   "filename": "pydantic-2.13.5-py3-none-any.whl",
+   "has_sig": false,
+   "md5_digest": "40d43f06ec754228362bd1b1a616a1c7",
+   "packagetype": "bdist_wheel",
+   "python_version": "py3",
+   "requires_python": ">=3.9",
+   "size": 472589,
+   "upload_time": "2026-08-28T14:03:59",
+   "upload_time_iso_8601": "2026-08-28T14:03:59.136157Z",
+   "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl",
+   "yanked": false,
+   "yanked_reason": null
+  },
+  {
+   "comment_text": null,
+   "core-metadata": false,
+   "digests": {
+    "blake2b_256": "53effc4f868f4e2cee79f863883abffceff107875f569b848507319842d2a681",
+    "md5": "38980d18ae9c2e8d54a2cdd46a46d40a",
+    "sha256": "51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08"
+   },
+   "downloads": -1,
+   "filename": "pydantic-2.13.5.tar.gz",
+   "has_sig": false,
+   "md5_digest": "38980d18ae9c2e8d54a2cdd46a46d40a",
+   "packagetype": "sdist",
+   "python_version": "source",
+   "requires_python": ">=3.9",
+   "size": 845750,
+   "upload_time": "2026-08-28T14:04:00",
+   "upload_time_iso_8601": "2026-08-28T14:04:00.916255Z",
+   "url": "https://files.pythonhosted.org/packages/53/ef/fc4f868f4e2cee79f863883abffceff107875f569b848507319842d2a681/pydantic-2.13.5.tar.gz",
+   "yanked": false,
+   "yanked_reason": null
+  }
+ ]
+}

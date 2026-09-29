@@ -182,6 +182,8 @@ def gen_collections():
             "approach-selection": "1 before code", "decision-log": "1 before code",
             "data-modeling": "1 before code", "api-contract": "1 before code",
             "code-craft": "2 while writing", "minimal-diff": "2 while writing",
+            "frontend-architecture": "2 while writing",
+            "dependency-vetting": "2 while writing",
             "stack-reviewer": "2 while writing", "typescript-verification": "2 while writing",
             "python-verification": "2 while writing", "go-verification": "2 while writing",
             "mobile-release-safety": "2 while writing", "test-design": "2 while writing",

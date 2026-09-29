@@ -1,6 +1,6 @@
 # Reviewer index
 
-11 reviewer files. Stack-specific failure modes, edge cases and default architectural choices. Files prefixed `_` are shared references, not stack reviewers.
+12 reviewer files. Stack-specific failure modes, edge cases and default architectural choices. Files prefixed `_` are shared references, not stack reviewers.
 
 | file | covers | applies when | lines |
 |---|---|---|--:|
@@ -14,6 +14,7 @@
 | [_code-craft.md](_code-craft.md) | Code-craft shapes | A before/after reference for `skills/code-craft/SKILL.md`. Each shape is a | 317 |
 | [_diagram-levels.md](_diagram-levels.md) | The three detail levels | One page, one flow, three drawings, so the difference is visible instead of | 177 |
 | [_evidence-labels.md](_evidence-labels.md) | Evidence labels | A shared vocabulary for marking where a statement came from. Used by | 67 |
+| [_frontend-layers.md](_frontend-layers.md) | Frontend layers: the same component, badly layered then correctly layered | A before/after reference for `skills/frontend-architecture/SKILL.md`. Same | 211 |
 | [_latency-numbers.md](_latency-numbers.md) | Latency numbers every engineer should reason from | The back-of-envelope table every senior engineer has half-memorized. It exists so | 121 |
 
 Read only the one matching the diff — see the `stack-reviewer` skill.
