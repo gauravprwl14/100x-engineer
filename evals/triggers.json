@@ -1,30 +1,230 @@
 {
   "_doc": "Trigger-accuracy fixtures. Each prompt is phrased as a user would actually type it. `expect` is the skill that should load; `reject` names neighbours that must NOT outrank it. Lexical overlap is an approximation of the model's choice, not a simulation of it -- but two descriptions that are lexically indistinguishable for a prompt are descriptions the model will also struggle to separate.",
   "cases": [
-    {"prompt": "build a login feature with email and password", "expect": "feature-planning", "reject": ["solution-architecture", "typescript-verification"]},
-    {"prompt": "add a checkout flow that charges a card", "expect": "feature-planning", "reject": ["security-baseline"]},
-    {"prompt": "I need to decide between Prisma and TypeORM", "expect": "approach-selection", "reject": ["typescript-verification", "feature-planning"]},
-    {"prompt": "why did we choose redis for sessions six months ago", "expect": "decision-log", "reject": ["engineering-ledger", "codebase-comprehension"]},
-    {"prompt": "record that we assumed sessions fit in one redis instance", "expect": "decision-log", "reject": ["engineering-ledger"]},
-    {"prompt": "our decisions folder has 300 files and nobody can find anything", "expect": "engineering-ledger", "reject": ["decision-log"]},
-    {"prompt": "is there a decision record behind this spec", "expect": "engineering-ledger", "reject": ["decision-log", "feature-planning"]},
-    {"prompt": "review my diff before I open a pull request", "expect": "scoped-review", "reject": ["reviewing-others-code", "review-gates"]},
-    {"prompt": "review this pull request a contractor sent us", "expect": "reviewing-others-code", "reject": ["scoped-review", "review-gates"]},
-    {"prompt": "explain how the payment retry logic works in this repo", "expect": "codebase-comprehension", "reject": ["reviewing-others-code", "decision-log"]},
-    {"prompt": "sessions started dropping after yesterday's deploy, find the cause", "expect": "root-cause-analysis", "reject": ["bug-fix", "verification-gate"]},
-    {"prompt": "fix this bug where the total is off by one cent", "expect": "bug-fix", "reject": ["root-cause-analysis", "minimal-diff"]},
-    {"prompt": "write a PRD and compare three implementation approaches", "expect": "solution-architecture", "reject": ["feature-planning", "approach-selection"]},
-    {"prompt": "I finished the work, commit it", "expect": "verification-gate", "reject": ["review-gates", "scoped-review"]},
-    {"prompt": "this agent created eight files when one would do", "expect": "minimal-diff", "reject": ["scoped-review"]},
-    {"prompt": "set up strict tsconfig and a coverage gate for our Next app", "expect": "typescript-verification", "reject": ["stack-reviewer", "feature-planning"]},
-    {"prompt": "configure ruff and mypy for this django project", "expect": "python-verification", "reject": ["typescript-verification", "stack-reviewer"]},
-    {"prompt": "add golangci-lint and a codegen drift check", "expect": "go-verification", "reject": ["python-verification", "stack-reviewer"]},
-    {"prompt": "we are shipping an Expo app to the app store next week", "expect": "mobile-release-safety", "reject": ["stack-reviewer", "review-gates"]},
-    {"prompt": "what should our SECURITY.md and dependabot setup look like", "expect": "security-baseline", "reject": ["untrusted-agent-config", "review-gates"]},
-    {"prompt": "write a PR template and CODEOWNERS for the team", "expect": "review-gates", "reject": ["agent-instructions", "scoped-review"]},
-    {"prompt": "write an AGENTS.md for this repository", "expect": "agent-instructions", "reject": ["review-gates", "untrusted-agent-config"]},
-    {"prompt": "I cloned a third party repo, is its claude config safe to run", "expect": "untrusted-agent-config", "reject": ["security-baseline", "agent-instructions"]},
-    {"prompt": "what are the NestJS specific mistakes to watch for here", "expect": "stack-reviewer", "reject": ["typescript-verification", "scoped-review"]},
-    {"prompt": "check the module boundaries in our nest services", "expect": "stack-reviewer", "reject": ["typescript-verification"]}
+    {
+      "prompt": "build a login feature with email and password",
+      "expect": "feature-planning",
+      "reject": [
+        "solution-architecture",
+        "typescript-verification"
+      ]
+    },
+    {
+      "prompt": "add a checkout flow that charges a card",
+      "expect": "feature-planning",
+      "reject": [
+        "security-baseline"
+      ]
+    },
+    {
+      "prompt": "I need to decide between Prisma and TypeORM",
+      "expect": "approach-selection",
+      "reject": [
+        "typescript-verification",
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "why did we choose redis for sessions six months ago",
+      "expect": "decision-log",
+      "reject": [
+        "engineering-ledger",
+        "codebase-comprehension"
+      ]
+    },
+    {
+      "prompt": "record that we assumed sessions fit in one redis instance",
+      "expect": "decision-log",
+      "reject": [
+        "engineering-ledger"
+      ]
+    },
+    {
+      "prompt": "our decisions folder has 300 files and nobody can find anything",
+      "expect": "engineering-ledger",
+      "reject": [
+        "decision-log"
+      ]
+    },
+    {
+      "prompt": "is there a decision record behind this spec",
+      "expect": "engineering-ledger",
+      "reject": [
+        "decision-log",
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "review my diff before I open a pull request",
+      "expect": "scoped-review",
+      "reject": [
+        "reviewing-others-code",
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "review this pull request a contractor sent us",
+      "expect": "reviewing-others-code",
+      "reject": [
+        "scoped-review",
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "explain how the payment retry logic works in this repo",
+      "expect": "codebase-comprehension",
+      "reject": [
+        "reviewing-others-code",
+        "decision-log"
+      ]
+    },
+    {
+      "prompt": "sessions started dropping after yesterday's deploy, find the cause",
+      "expect": "root-cause-analysis",
+      "reject": [
+        "bug-fix",
+        "verification-gate"
+      ]
+    },
+    {
+      "prompt": "fix this bug where the total is off by one cent",
+      "expect": "bug-fix",
+      "reject": [
+        "root-cause-analysis",
+        "minimal-diff"
+      ]
+    },
+    {
+      "prompt": "write a PRD and compare three implementation approaches",
+      "expect": "solution-architecture",
+      "reject": [
+        "feature-planning",
+        "approach-selection"
+      ]
+    },
+    {
+      "prompt": "I finished the work, commit it",
+      "expect": "verification-gate",
+      "reject": [
+        "review-gates",
+        "scoped-review"
+      ]
+    },
+    {
+      "prompt": "this agent created eight files when one would do",
+      "expect": "minimal-diff",
+      "reject": [
+        "scoped-review"
+      ]
+    },
+    {
+      "prompt": "set up strict tsconfig and a coverage gate for our Next app",
+      "expect": "typescript-verification",
+      "reject": [
+        "stack-reviewer",
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "configure ruff and mypy for this django project",
+      "expect": "python-verification",
+      "reject": [
+        "typescript-verification",
+        "stack-reviewer"
+      ]
+    },
+    {
+      "prompt": "add golangci-lint and a codegen drift check",
+      "expect": "go-verification",
+      "reject": [
+        "python-verification",
+        "stack-reviewer"
+      ]
+    },
+    {
+      "prompt": "we are shipping an Expo app to the app store next week",
+      "expect": "mobile-release-safety",
+      "reject": [
+        "stack-reviewer",
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "what should our SECURITY.md and dependabot setup look like",
+      "expect": "security-baseline",
+      "reject": [
+        "untrusted-agent-config",
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "write a PR template and CODEOWNERS for the team",
+      "expect": "review-gates",
+      "reject": [
+        "agent-instructions",
+        "scoped-review"
+      ]
+    },
+    {
+      "prompt": "write an AGENTS.md for this repository",
+      "expect": "agent-instructions",
+      "reject": [
+        "review-gates",
+        "untrusted-agent-config"
+      ]
+    },
+    {
+      "prompt": "I cloned a third party repo, is its claude config safe to run",
+      "expect": "untrusted-agent-config",
+      "reject": [
+        "security-baseline",
+        "agent-instructions"
+      ]
+    },
+    {
+      "prompt": "what are the NestJS specific mistakes to watch for here",
+      "expect": "stack-reviewer",
+      "reject": [
+        "typescript-verification",
+        "scoped-review"
+      ]
+    },
+    {
+      "prompt": "check the module boundaries in our nest services",
+      "expect": "stack-reviewer",
+      "reject": [
+        "typescript-verification"
+      ]
+    },
+    {
+      "prompt": "draw a sequence diagram for the payment flow",
+      "expect": "diagramming",
+      "reject": [
+        "codebase-comprehension",
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "I need a high level architecture picture for the exec review",
+      "expect": "diagramming",
+      "reject": [
+        "solution-architecture"
+      ]
+    },
+    {
+      "prompt": "this mermaid diagram has too many boxes to read",
+      "expect": "diagramming",
+      "reject": [
+        "codebase-comprehension"
+      ]
+    },
+    {
+      "prompt": "should we rewrite this service or extend it",
+      "expect": "solution-architecture",
+      "reject": [
+        "approach-selection",
+        "feature-planning"
+      ]
+    }
   ]
 }

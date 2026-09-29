@@ -1,12 +1,15 @@
 ---
 name: review-gates
 description: >
-  Use when setting up or reviewing how changes get merged — PR templates, CODEOWNERS,
-  merge queues, required checks, DCO or sign-off requirements, AI-contribution
-  disclosure policy, ADR/RFC process, or release governance. Distinguishes review
-  gates that mechanically block bad merges from ceremony that only looks like a gate.
-  Use PROACTIVELY when adding a PR template or CODEOWNERS file, or when asked how to
-  review AI-authored pull requests.
+  Use when setting up or reviewing how changes get merged — PR templates, CODEOWNERS
+  path ownership, merge queues, required status checks, DCO or sign-off requirements,
+  AI-contribution disclosure trailers, or ADR/release governance. Distinguishes
+  checks CI mechanically re-verifies from checkbox ceremony nobody parses. Not for
+  the content of a specific diff (see code-review or scoped-review) and not for the
+  words inside an AGENTS.md or CLAUDE.md file (see agent-instructions) — this is the
+  surrounding merge machinery, not the instructions or the diff itself. Use
+  PROACTIVELY when adding a PR template or CODEOWNERS file, or deciding policy on
+  AI-authored pull requests.
 ---
 
 # Review gates
@@ -83,7 +86,9 @@ working merge queue would have caught. The YAML was present. The gate was not.
    bugs; one that does not accumulates unactionable issues.
    *Enforced by:* a required repro field in the issue template
 
-9. Record rejected proposals, not just accepted ones. An ADR directory containing
+9. Record rejected proposals, not just accepted ones — and prefer this plugin's own
+   `python3 scripts/decide.py new` over a bespoke ADR template, since a rejected
+   option is exactly what `decide.py trace` needs later. An ADR directory containing
    only approved decisions loses the reasoning that matters most.
    *Enforced by:* convention
 
@@ -151,6 +156,14 @@ This skill rejects:
 - Policy text has proliferated faster than the behaviour it asks for: AI-disclosure
   policies are now common while disclosure trailers remain rare.
 
+## Next
+
+For the decision log this rule 9 points at, retrieval is `python3 scripts/ledger.py
+find "<term>"` or `python3 scripts/decide.py trace <path>`. Once merge mechanics are
+in place, `verification-gate` is what actually blocks a bad merge at commit time;
+this skill only builds the surrounding process. Writing the instruction file itself
+is `agent-instructions`, a different skill.
+
 ## Scale
 
 `solo`: rule 8 only. A PR template reviewed by nobody is pure overhead; a bug repro
@@ -175,3 +188,6 @@ in this sample, all of them larger projects.
 - `ray-project/ray`, `vllm-project/vllm` — verbatim shared policy banning pure-agent
   PRs; an org-scale position, recorded in
   `research/21-findings-agent-instruction-corpus.md`.
+- Rejected-proposal retention (rule 9): no repo in `research/37` was found recording
+  rejected ADRs specifically — `SOURCE: original`, inferred from ADR practice
+  generally rather than measured in this corpus.

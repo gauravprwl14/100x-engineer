@@ -382,7 +382,7 @@ def py_resolve_call(call_node, comp, known_names):
                        resolved=comp.name if comp else None, internal=True)
         if isinstance(func.value, ast.Name):
             base, method = func.value.id, func.attr
-            if base in IGNORE_ATTR_BASES:
+            if base in IGNORE_ATTR_BASES or base in BUILTIN_IGNORE:
                 return None
             if base in known_names:
                 return mk(text=f"{base}.{method}({args_text})", method=method,
@@ -596,7 +596,7 @@ TS_CALL_RE = re.compile(
     r"\bthis\.(?P<attr>\w+)\.(?P<m1>\w+)\s*\("
     r"|\bthis\.(?P<selfm>\w+)\s*\("
     r"|\bnew\s+(?P<ctor>\w+)\s*\("
-    r"|\b(?P<base>[A-Z]\w*)\.(?P<m2>\w+)\s*\("
+    r"|\b(?P<base>[A-Za-z_]\w*)\.(?P<m2>\w+)\s*\("
     r"|\b(?P<fn>[a-zA-Z_]\w*)\s*\("
 )
 
@@ -668,8 +668,16 @@ def ts_get_steps(comp, method_name, known_names, body_orig_full, body_masked_ful
                 steps.append(Step("call", sanitize_label(f"new {cname}(...)"), method="constructor",
                                    resolved=cname, is_construct=True, branch=branch,
                                    line=orig.count("\n", 0, pos) + 1))
+            elif cname not in TS_CTOR_IGNORE:
+                # constructing a type we can't resolve (e.g. a framework exception
+                # class) -- emit it rather than silently dropping the call.
+                steps.append(Step("call", sanitize_label(f"new {cname}(...)"), method="new",
+                                   attr=cname, unresolved=True, branch=branch,
+                                   line=orig.count("\n", 0, pos) + 1))
         elif m.group("base"):
             base, method = m.group("base"), m.group("m2")
+            if base in IGNORE_ATTR_BASES or base in BUILTIN_IGNORE:
+                continue
             resolved = base if base in known_names else None
             steps.append(Step("call", sanitize_label(f"{base}.{method}(...)"), method=method,
                                attr=base, resolved=resolved, unresolved=resolved is None,

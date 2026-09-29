@@ -1,12 +1,14 @@
 ---
 name: security-baseline
 description: >
-  Use when setting up or reviewing a project's security posture — SECURITY.md and
-  disclosure policy, CI scanning with CodeQL or Semgrep, dependency update policy,
-  GitHub Actions SHA-pinning, supply-chain hardening, fuzzing, or authorization
-  tests. Also use when a bug or crash is found, to convert it into a permanent
-  regression test. Use PROACTIVELY before publishing a repository, adding a
-  dependency, or handling a vulnerability report.
+  Use when setting up or reviewing a project's own security posture — SECURITY.md
+  and disclosure policy, CodeQL or Semgrep CI scanning, dependency-update cooldowns,
+  GitHub Actions SHA-pinning, authorization tests across personas, or converting a
+  bug or crash into a permanent regression test. Not for auditing a third-party
+  repo's agent instruction files or hooks before running an agent in it (see
+  untrusted-agent-config) — that is a different threat model, their config attacking
+  you rather than your code's own exposure. Use PROACTIVELY before publishing a
+  repository, adding a dependency, or handling a vulnerability report.
 ---
 
 # Security baseline
@@ -64,21 +66,19 @@ for CNCF-tier infrastructure.
    *Enforced by:* a CodeQL workflow whose job is required, not `continue-on-error`
 
 7. Test authorization with multiple personas, not one. Assert that role A **cannot**
-   reach role B's data — a negative assertion, not just a positive one.
+   reach role B's data — a negative assertion, not just a positive one. For a
+   nontrivial permission model, draw it before you write the tests:
+   `python3 scripts/diagram_from_code.py <dir> --kind flow --level 2` shows who can
+   reach what without inferring it from scattered middleware.
    *Enforced by:* per-role test cases in the test suite
 
-8. Route external-effect calls (HTTP client, DB layer) through a single wrapper. This
-   is the precondition for fault injection and for auditing egress, and it pays for
-   itself in testability regardless of security posture.
-   *Enforced by:* review
-
-9. Lint database migrations for unsafe operations instead of writing a policy nobody
+8. Lint database migrations for unsafe operations instead of writing a policy nobody
    re-reads.
    *Enforced by:* `strong_migrations` or the equivalent for your ORM, in CI
 
-10. Verify your security checks actually gate. A scanner behind
-    `continue-on-error: true` is a reporting tool, not a control.
-    *Enforced by:* `python3 scripts/audit_ci_gates.py`
+9. Verify your security checks actually gate. A scanner behind
+   `continue-on-error: true` is a reporting tool, not a control.
+   *Enforced by:* `python3 scripts/audit_ci_gates.py`
 
 ## Verify
 
@@ -115,7 +115,7 @@ This skill rejects:
   (`ClickHouse` 0/534, `discourse` 0/43, `postgres`, `grpc`, `selenium` all 0).
   There is no middle; projects either adopted this or did not.
 - **A fixed bug with no regression test.** The fix survives until someone refactors.
-- **A scanner that cannot fail the build** (rule 10).
+- **A scanner that cannot fail the build** (rule 9).
 - **Authorization tested only from the happy path** — one admin persona asserting it
   *can* do things, with nothing asserting a lower-privilege persona *cannot*.
 
@@ -134,12 +134,27 @@ This skill rejects:
   genuine CNCF-scale process and **would sink a small team**. Listed under Scale, not
   as a default.
 
+## Next
+
+Bind the scan/audit commands to the code being shipped with `verification-gate`.
+If you're auditing a repo you did not write rather than your own,
+`untrusted-agent-config` is the matching skill — different threat model, same
+"trust nothing that auto-loads" instinct. Log any threshold you picked rather than
+inherited (cooldown length, SAST rule set, disclosure SLA) with
+`python3 scripts/decide.py new "<the choice>" --affects "<glob>"`.
+
+Deleted since the last pass: a rule requiring external-effect calls to route
+through a single wrapper. Real testability advice, but it is not a security
+practice specifically, it was unsourced to any of the 33 repos in `research/35`,
+and its own Failure modes section never named the bad output it rejected —
+exactly the deletion test in `research/01-skill-contract.md`.
+
 ## Scale
 
 `solo`: rules 1, 4, 5, plus rule 3 only for secrets-bearing workflows.
-`small-team (2-10)`: add 2, 6, 8, 9 — the threat-model paragraph and dependency
+`small-team (2-10)`: add 2, 6, 8 — the threat-model paragraph and dependency
 cooldown are near-free and remove whole categories of noise and risk.
-`org (10+)`: add 7, 10, numeric disclosure SLAs (2 business days is a reasonable
+`org (10+)`: add 7, 9, numeric disclosure SLAs (2 business days is a reasonable
 floor; 1 day is near the ceiling without a dedicated security team), OSS-Fuzz if you
 parse untrusted input in a memory-unsafe language, and a metrics-naming convention
 before cardinality bites.
