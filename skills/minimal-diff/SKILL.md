@@ -4,9 +4,12 @@ description: >
   Use when writing or changing code, and especially before committing, to keep the
   change as small as the problem requires. Catches AI-generated bloat: new files
   that should have been edits, dead and commented-out code, tests that assert
-  nothing, speculative interfaces used once, unrequested documentation, dependency
-  creep, and cosmetic reformatting that inflates a diff. Use PROACTIVELY when asked
-  to add a feature, refactor, fix a bug, or clean up a codebase.
+  nothing, speculative single-use abstractions, unrequested documentation,
+  dependency creep, focused or silently-skipped tests, and cosmetic reformatting
+  that inflates a diff. Not a merge-policy or CODEOWNERS skill (see review-gates)
+  and not about proving a check passed (see verification-gate) — this is about the
+  shape and size of the diff itself, before it is ever submitted. Use PROACTIVELY
+  when asked to add a feature, refactor, fix a bug, or clean up a codebase.
 ---
 
 # Minimal diff
@@ -31,7 +34,8 @@ document, or dependency.
    *Enforced by:* `python3 scripts/bloat_check.py --only file-creation-ratio` (advisory)
 
 2. Never add a dependency without first checking the stdlib and the existing
-   dependency list. State what you checked.
+   dependency list. State what you checked, and if you add one anyway, log why:
+   `python3 scripts/decide.py new "Add <package>" --affects "package.json"`.
    *Enforced by:* `git diff HEAD -- package.json pyproject.toml go.mod` reviewed in the
    diff; `depcheck` / `deptry .` / `go mod tidy && git diff --exit-code` in CI
 
@@ -141,6 +145,14 @@ reimplementing them.
 
 Route those four to a human or to an LLM review pass scoped *only* to those
 questions — not asked to re-derive what the mechanical checks already settled.
+
+## Next
+
+Once the diff is small, run `verification-gate` to bind a real check to it, then
+the matching language skill (`typescript-verification`, `python-verification`,
+`go-verification`) for what "real" means on this stack. If the diff touches a
+framework with known LLM failure shapes, `stack-reviewer` catches what bloat
+checking cannot.
 
 ## Scale
 

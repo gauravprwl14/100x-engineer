@@ -2,11 +2,14 @@
 name: typescript-verification
 description: >
   Use when writing, reviewing, or setting up verification for JavaScript or
-  TypeScript — choosing a test runner, configuring tsconfig strictness, eslint or
-  biome, coverage gates, monorepo task graphs with Turborepo or Nx, bundle-size
-  budgets, dead-code detection with knip, or deciding what must pass before a JS/TS
-  change ships. Covers the measured practice of 72 production repositories. Use
-  PROACTIVELY when adding package.json scripts, tsconfig.json, or CI workflows.
+  TypeScript code specifically — tsconfig strictness, ESLint/Biome rule curation,
+  vitest/jest, pnpm/Turborepo/Nx monorepo task graphs, knip dead-code detection,
+  size-limit bundle budgets, or patch-scoped coverage gates. Covers the measured
+  practice of 72 production JS/TS repositories. Not for Python or Go toolchains
+  (see python-verification, go-verification), and not for framework-specific code
+  idioms like a NestJS pipe or a React list key (see stack-reviewer). Use
+  PROACTIVELY when adding package.json scripts, tsconfig.json, or a JS/TS CI
+  workflow.
 ---
 
 # TypeScript verification
@@ -158,6 +161,15 @@ This skill rejects:
 repos (and from all 50 Python repos measured separately). So the ecosystem has no
 standard answer to "can these tests actually fail?", and neither does this skill
 beyond `bloat_check.py --only assertionless`.
+
+## Next
+
+Bind whichever commands you chose to the code being shipped with
+`verification-gate`. If a rule here (patch-coverage threshold, a banned `any`
+exception, a bundle-size number) departs from the corpus baseline, log it:
+`python3 scripts/decide.py new "<the choice>" --affects "<glob>"`. If the diff is
+inside NestJS, Next.js, React Native, or another tracked framework, apply
+`stack-reviewer` too — this skill covers the toolchain, not the code shape.
 
 ## Scale
 

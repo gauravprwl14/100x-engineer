@@ -1,11 +1,13 @@
 ---
 name: go-verification
 description: >
-  Use when writing, reviewing, or setting up verification for Go code — configuring
-  golangci-lint, running tests with the race detector, gating generated-code drift,
-  banning imports with depguard, or deciding what must pass before a Go change
-  ships. Covers the measured practice of 40 production Go repositories including
-  Kubernetes-lineage distributed systems. Use PROACTIVELY when adding go.mod,
+  Use when writing, reviewing, or setting up verification for Go code specifically —
+  golangci-lint linter selection, the race detector, go:generate drift gates,
+  depguard import bans, or goroutine-leak detection with goleak. Covers the measured
+  practice of 40 production Go repositories including Kubernetes-lineage distributed
+  systems. Not for JavaScript/TypeScript or Python toolchains (see
+  typescript-verification, python-verification), and not for Kubernetes manifest or
+  Terraform code review (see stack-reviewer). Use PROACTIVELY when adding go.mod,
   .golangci.yml, a Makefile verify target, or go:generate directives.
 ---
 
@@ -72,7 +74,9 @@ from other ecosystems. `make verify` chaining independent sub-checks appears in
    *Enforced by:* `golangci-lint run` with an `enable:` list in `.golangci.yml`
 
 6. If your project has a house rule about which packages may be imported, encode it
-   in `depguard` rather than a CONTRIBUTING paragraph.
+   in `depguard` rather than a CONTRIBUTING paragraph, and log the ban as a decision
+   so the next person knows it was chosen, not defaulted:
+   `python3 scripts/decide.py new "Ban <import path>" --affects ".golangci.yml"`.
    *Enforced by:* `depguard` rules in `.golangci.yml`
 
 7. Wrap errors with `%w` and compare with `errors.Is`/`errors.As`. Do not compare
@@ -84,10 +88,6 @@ from other ecosystems. `make verify` chaining independent sub-checks appears in
 
 9. Scan dependencies for known vulnerabilities.
    *Enforced by:* `govulncheck ./...`
-
-10. Split CI into independent jobs so one failure does not mask others, rather than
-    chaining everything behind `&&` in a single step.
-    *Enforced by:* review
 
 ## Verify
 
@@ -131,10 +131,10 @@ This skill rejects:
 - **Stale `go.mod`** merged because nothing checks tidiness.
 - **Error comparison by string** instead of `errors.Is`.
 - **A dependency ban that lives only in prose.** `github.com/pkg/errors` is
-  depguard-banned in 6 of 40 repos (`prometheus`, `traefik`, `gitea`, `dapr`,
-  `argo-cd`, `helm`) — and used freely in others (`loki`, `tailscale`, `teleport`,
-  `trufflehog`). The lesson is not "ban pkg/errors"; it is that repos which decided
-  encoded the decision.
+  depguard-banned in 6 of the 25 deep-read repos with a depguard block
+  (`prometheus`, `traefik`, `gitea`, `dapr`, `argo-cd`, `helm`) — and used freely in
+  others (`loki`, `tailscale`, `teleport`, `trufflehog`). The lesson is not "ban
+  pkg/errors"; it is that repos which decided encoded the decision.
 - **Zero verification presented as Go simplicity** — `wavetermdev/waveterm` is in the
   corpus and runs no Go verification in CI at all.
 
@@ -144,13 +144,24 @@ This skill rejects:
 - `netdata/netdata` documents having no single verify command *by design*, for a
   polyglot repo. A monolithic `make verify` is not universally correct.
 
+## Next
+
+Bind the commands to the code being shipped with `verification-gate`. If the diff
+touches Kubernetes manifests or Terraform, `stack-reviewer` covers that code shape;
+this skill only covers the Go toolchain.
+
+Deleted since the last pass: a "split CI into independent jobs" rule — real advice,
+but generic to any CI system, not Go-specific, and unsourced to any repo in
+`research/32`. It diluted a skill whose value is measured Go practice, not general
+CI hygiene.
+
 ## Scale
 
 `solo`: rules 1, 4 — both are one line and the toolchain already ships them.
 `small-team (2-10)`: add 2, 3, 5, 7 — the codegen gate earns its keep the first time
 a generator output is committed stale.
-`org` / `high-blast-radius`: add 6, 8, 9, 10, plus a `make verify` chaining
-independent sub-checks (the Kubernetes-lineage pattern, 14/40).
+`org` / `high-blast-radius`: add 6, 8, 9, plus a `make verify` chaining independent
+sub-checks (the Kubernetes-lineage pattern, 14/40).
 
 ## Sources
 

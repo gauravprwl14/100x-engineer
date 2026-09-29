@@ -2,11 +2,14 @@
 name: verification-gate
 description: >
   Use when about to claim work is done, commit, push, open a PR, tag a release, or
-  publish a package — or when setting up how a project proves a change is correct.
-  Covers running the project's real checks, binding the result to the exact code
-  being shipped, and the receipt mechanism that makes "tests pass" auditable
-  instead of asserted. Use PROACTIVELY before any completion-shaped action, and
-  whenever asked to configure required checks, pre-commit gates, or CI blocking.
+  publish a package — or when setting up the mechanism that proves a change is
+  correct before it ships. Covers binding a check's result to the exact code
+  content via a receipt, so "tests pass" is evidence, not an assertion, and cannot
+  survive a post-verify edit. Not for choosing which language-specific commands to
+  run (see typescript-verification, python-verification, go-verification) — this is
+  the wrapper and policy file around whichever commands you already chose. Use
+  PROACTIVELY before any completion-shaped action, and whenever asked to configure
+  required checks, pre-commit gates, or CI blocking.
 ---
 
 # Verification gate
@@ -51,7 +54,9 @@ never tested. Nothing in a normal setup notices.
 4. Declare which checks are mandatory for the repo, so "I ran something" cannot
    substitute for "I ran what matters". This file is also the opt-in switch: without
    it the gate is inactive, which is why installing the plugin does not disrupt
-   unrelated repositories.
+   unrelated repositories. If the list departs from the relevant language skill's
+   baseline (`typescript-verification`, `python-verification`, `go-verification`),
+   record why: `python3 scripts/decide.py new "Required checks for <repo>" --affects ".claude/**"`.
    *Enforced by:* `.claude/verification-policy.json` `required_checks`
 
 5. A check that cannot fail is not a check. Before trusting a suite, confirm it
@@ -114,6 +119,14 @@ This skill rejects:
 Known gap, stated plainly: the gate proves *a command exited zero against this
 exact content*. It does not prove the command was worth running. Pair it with
 `test-that-can-fail` for that half of the problem.
+
+## Next
+
+Pick the commands to run *before* this gate: `typescript-verification`,
+`python-verification`, or `go-verification` for the language's real baseline.
+Wrap them with `verified.py` here, then hand off to `review-gates` for how the
+result gets merged. A diagram is ceremony for this skill — there is no flow to
+orient on, only a pass/fail receipt — so none is included.
 
 ## Scale
 

@@ -1,12 +1,14 @@
 ---
 name: python-verification
 description: >
-  Use when writing, reviewing, or setting up verification for Python code — choosing
-  a test/lint/typecheck stack, configuring ruff or mypy, adding coverage or
-  pre-commit gates, or deciding what must pass before a Python change ships. Covers
-  the measured practice of 50 production Python repositories, including which gates
-  actually block CI versus only appear to. Use PROACTIVELY when adding pytest, ruff,
-  mypy, pyright, uv, or poetry configuration.
+  Use when writing, reviewing, or setting up verification for Python code
+  specifically — ruff/mypy/pyright configuration, uv or poetry lockfiles, pytest
+  strictness flags, property-based testing with hypothesis, or which type-checker
+  actually gates CI versus merely exists. Covers the measured practice of 50
+  production Python repositories. Not for JavaScript/TypeScript or Go toolchains
+  (see typescript-verification, go-verification), and not for framework-specific
+  code idioms (see stack-reviewer). Use PROACTIVELY when adding pytest, ruff, mypy,
+  pyright, uv, or poetry configuration.
 ---
 
 # Python verification
@@ -62,21 +64,19 @@ Twelve repos have no type-checker config at all — including `django/django` an
    *Enforced by:* `addopts = "--strict-markers --strict-config"` and
    `xfail_strict = true` in `[tool.pytest.ini_options]`
 
-6. Scope type checking honestly. Blocking on a subset you name beats claiming
-   repo-wide coverage behind a 90-path ignore list (the `PrefectHQ/prefect` pattern).
+6. Scope type checking honestly, and log the scope as a decision. Blocking on a
+   named subset beats claiming repo-wide coverage behind a 90-path ignore list (the
+   `PrefectHQ/prefect` pattern): `python3 scripts/decide.py new "mypy --strict scope"
+   --affects "<package>/**"`.
    *Enforced by:* `uv run mypy --strict <package>/` on named packages, in CI
 
-7. Validate data at the process boundary, not in the middle. Parse into a typed
-   model on the way in.
-   *Enforced by:* review
-
-8. For parser, schema, or numeric libraries, add property-based tests. This is the
+7. For parser, schema, or numeric libraries, add property-based tests. This is the
    corpus's largest unclaimed gap: `pandas`, `scikit-learn` and `jax` all ship
    numerical code and none of them use `hypothesis`.
    *Enforced by:* `uv run pytest tests/property/` once written
 
-9. Do not trust a coverage percentage as proof tests can fail. Mutation testing is
-   confirmed absent in 0/50 repos — so the whole corpus shares this blind spot.
+8. Do not trust a coverage percentage as proof tests can fail. Mutation testing is
+   confirmed absent from all 50 repos — so the whole corpus shares this blind spot.
    *Enforced by:* `python3 scripts/bloat_check.py --only assertionless`
 
 ## Verify
@@ -127,11 +127,19 @@ This skill rejects:
 - **`select = ["ALL"]`** followed by an unmaintained ignore list.
 - **A coverage number offered as proof the tests are good.**
 
+## Next
+
+Bind the commands you chose with `verification-gate`. If the diff is inside a
+framework this plugin tracks, `stack-reviewer` catches code-shape bugs this skill
+does not. Deleted since the last pass: a "validate at the process boundary" rule —
+generic software-design advice, unsourced to any repo in `research/31`, and not
+specific to what makes a Python *verification* setup real versus advisory.
+
 ## Scale
 
 `solo`: rules 1, 4, 5 — minutes to adopt, immediate return.
 `small-team (2-10)`: add 2 and 6 — one gated type checker on named packages.
-`org`: add 3, 8, 9 and a coverage floor.
+`org`: add 3, 7, 8 and a coverage floor.
 The `vllm`/`pandas`-style 30-hook pre-commit setup with per-CUDA lockfile
 regeneration is years of accreted institutional memory. A three-person team copying
 it wholesale is cargo-culting, which Part G of the rubric forbids.

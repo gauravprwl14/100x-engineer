@@ -1,12 +1,16 @@
 ---
 name: engineering-ledger
 description: >
-  Use when recording or retrieving engineering history — finding why something was
-  built a certain way, checking whether a spec has a decision behind it, locating a
-  past RCA, or organising records that have grown too numerous to browse. Covers the
-  directory scheme, id conventions, date sharding, generated indexes and the
-  traceability matrix across PRDs, specs, decisions, RCAs and reviews. Use PROACTIVELY
-  before asking "why is this like this", and after adding any record.
+  Use for cross-record retrieval and upkeep across the WHOLE ledger — searching by
+  keyword when you don't know which record type or id you need, checking whether a
+  spec has any decision behind it, locating a past RCA, sharding a directory that
+  has grown too numerous to browse, or regenerating the index/traceability matrix.
+  Covers the directory scheme, id conventions, date sharding and the feature ×
+  record-type grid across PRDs, specs, decisions, RCAs and reviews. Not for writing
+  or verifying one decision record (that's decision-log — `decide.py new/verify/
+  trace`) and not for choosing between options (approach-selection). Use PROACTIVELY
+  before asking "why is this like this" when you don't already know which record to
+  check, and after adding any record.
 ---
 
 # Engineering ledger
@@ -123,6 +127,17 @@ This skill rejects:
 - **Nothing forces a record to exist.** The gate is on quality and linkage, not
   existence. The mitigation is upstream: `plan_feature.py` generates the decision table
   with the choices already listed, so not recording one is a visible omission.
+
+No diagram step here — this skill indexes and searches text records, it does not
+represent a flow. If `find` surfaces a spec or decision whose flow is unclear, the
+diagram is generated where that flow lives (`codebase-comprehension`, `feature-planning`).
+
+## Next
+
+For creating or checking one record, hand off to the skill that owns it:
+`decision-log` (ADRs), `root-cause-analysis` (RCAs), `feature-planning` (specs/PRDs).
+This skill is where you come back to after, to confirm linkage (`ledger.py check`)
+or to search before re-deriving an answer (`ledger.py find`).
 
 ## Scale
 

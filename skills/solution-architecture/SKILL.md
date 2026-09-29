@@ -5,9 +5,12 @@ description: >
   approach" for something bigger than one feature — a new system, a build-vs-buy
   call, a migration, or any request to "think like a solution architect" before
   a spec exists. Sits ABOVE feature-planning: this frames the problem, weighs
-  options, and recommends; feature-planning then turns the recommendation into
-  edge cases and a sequence diagram. Also use to reverse-engineer a PRD from code
-  that already exists and was never documented.
+  options at the system level, and recommends; feature-planning then turns the
+  recommendation into edge cases and a diagram for a single feature. Not for
+  scoring a single already-framed technical choice — that's approach-selection,
+  which this skill calls for its own options table rather than re-deriving it.
+  Also use to reverse-engineer a PRD from code that already exists and was never
+  documented.
 ---
 
 # Solution architecture
@@ -65,6 +68,12 @@ warns about, one layer up.
    assumption — not the smallest slice of the full feature.
    *Enforced by:* review — `prd.py audit` checks the table is filled, not that the
    phase is actually the risky slice
+
+6b. Include a level-1 diagram (≤12 nodes) of the recommended system shape — a
+   reviewer deciding whether to approve the PRD was not in the room when the
+   options were scored, and a paragraph describing three boxes and two arrows is
+   slower to check than the picture.
+   *Enforced by:* `python3 scripts/check_diagrams.py prds/<name>/prd.md`
 
 7. State what is explicitly out of scope, same discipline as `feature-planning`
    rule 3: out-of-scope is what turns a gap into a decision.
@@ -134,11 +143,24 @@ python3 scripts/prd.py audit prds/login
 python3 scripts/plan_feature.py new login --kind auth,crud --stack nestjs
 python3 scripts/prd.py align prds/login specs/login       # both directions, ~5s
 
+# a level-1 diagram (<=12 nodes) of the recommended shape — orientation for a
+# reviewer who was not in the room when the options were scored
+test -f scripts/diagram_from_code.py \
+  && python3 scripts/diagram_from_code.py <closest-existing-analog> --kind deps --level 1 \
+  || echo "not built in this checkout yet -- hand-sketch the system boundary and say so"
+
+# gate: does the PRD actually contain that diagram, not just describe one in prose
+python3 scripts/check_diagrams.py prds/login/prd.md
+
 # feature-level choices inside the recommendation still need their own record
 python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
 
 python3 scripts/prd.py index    # prds/INDEX.md
 ```
+
+Reverse-engineering an existing system: `repo_map.py` plus
+`diagram_from_code.py --level 1` (same guard as above) give you the current-state
+picture to write down, before proposing what changes.
 
 A complete worked example is `examples/login/prd.md`, audited clean and aligned
 0/0/0 against `specs/login/spec.md`.
@@ -164,6 +186,8 @@ This skill rejects:
 - **A PRD nobody checked against its spec** — `align` catches a requirement like
   "supports hardware security keys" that never made it into the spec's in-scope
   table, and a spec route that implements something the PRD never asked for.
+- **A recommendation described only in prose**, with no diagram a reviewer who
+  wasn't in the room can check the options table against.
 
 **Honest limitations:**
 - `prd.py align` is **name-level, not semantic** — it matches shared significant
@@ -178,6 +202,14 @@ This skill rejects:
 - Rule 9's rewrite criteria are a judgement call codified as a checklist, not a
   formula. The check forces the criteria to be named; it cannot verify they are
   true.
+
+## Next
+
+Once the PRD audits clean and aligns with a spec (or there isn't one yet): hand the
+recommendation to `feature-planning` to scaffold that spec. Record the recommendation
+itself with `decision-log` if it departs from an existing choice
+(`decide.py trace` first). Implementation then follows the normal path through
+`stack-reviewer`, `scoped-review`, and `verification-gate`.
 
 ## Scale
 
@@ -207,3 +239,6 @@ the original context has moved to a different team.
   <-> spec alignment check as a distinct mechanism from spec <-> code drift
   (`scripts/design_drift.py`) or decision staleness (`scripts/decide.py drift`):
   `SOURCE: original`.
+- `diagram_from_code.py`/`check_diagrams.py` and the level-1/2/3 detail scale:
+  built by a sibling effort in this plugin, referenced here rather than duplicated
+  — same convention `skills/codebase-comprehension/SKILL.md` uses.

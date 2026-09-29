@@ -1,11 +1,14 @@
 ---
 name: decision-log
 description: >
-  Use when a non-obvious choice or assumption is made, and when returning to code
-  whose reasoning is unclear — recording an ADR, checking whether past assumptions
-  still hold, tracing which decision governs a file, or auditing decisions that have
-  gone stale. Use PROACTIVELY after choosing an approach, and before changing code
-  that an existing decision governs.
+  Use to record, verify, or trace a SINGLE decision or assumption — writing an ADR
+  for a choice just made, checking whether a past assumption still holds, finding
+  which decision governs a file before changing it, or auditing one record for
+  staleness. This owns the record's structure and lifecycle, not the choosing method
+  (that's approach-selection) and not browsing or indexing across many records, ids,
+  or record types (that's engineering-ledger — `find`/`shard`/the traceability
+  matrix). Use PROACTIVELY after choosing an approach, and before changing code that
+  an existing decision governs.
 ---
 
 # Decision log
@@ -124,6 +127,18 @@ This skill rejects:
   in this design: the gate is on record *quality*, not record *existence*. The
   practical mitigation is rule 1 in `feature-planning`, where the spec's decision table
   is generated with the choices already listed.
+
+No diagram step here, deliberately — a decision record is a table of options and an
+assumption with a falsification command, not a flow. If the decision concerns a
+flow worth drawing, the diagram lives where the flow does (`feature-planning`,
+`codebase-comprehension`), and the record's `affects` glob points at it.
+
+## Next
+
+Once recorded: continue whatever triggered this (`feature-planning`,
+`approach-selection`, `bug-fix`, `root-cause-analysis`). Periodically, or before a
+release, `engineering-ledger`'s `check`/`gaps` catch records this skill's per-record
+lint cannot — an orphaned decision, or a spec with none behind it.
 
 ## Scale
 
