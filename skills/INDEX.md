@@ -10,6 +10,7 @@
 | 1 before code | [decision-log](decision-log/SKILL.md) | record, verify, or trace a SINGLE decision or assumption — writing an ADR for a choice just made, checking whether a past assumption still holds, find | 155 |
 | 1 before code | [feature-planning](feature-planning/SKILL.md) | writing code for any new feature, endpoint, screen, payment flow, upload, migration, or integration — scaffolds a spec that seeds the edge cases and d | 166 |
 | 1 before code | [solution-architecture](solution-architecture/SKILL.md) | asked to write a PRD, a solution proposal, or "the implementation approach" for something bigger than one feature — a new system, a build-vs-buy call, | 249 |
+| 2 while writing | [accessibility](accessibility/SKILL.md) | building or reviewing any interactive UI component — a button, a form field, a modal, a card with a click handler, a custom dropdown, an icon-only con | 216 |
 | 2 while writing | [code-craft](code-craft/SKILL.md) | writing or reviewing a function, class, or module and deciding its SHAPE — naming, function length, parameter count, nesting depth, error handling, co | 184 |
 | 2 while writing | [dependency-vetting](dependency-vetting/SKILL.md) | running npm install, pnpm add, pip install, uv add, or poetry add for any new package, and when reviewing a diff that touches package.json, pyproject. | 217 |
 | 2 while writing | [diagramming](diagramming/SKILL.md) | drawing any architecture picture, and BEFORE trusting one already in a spec, PR, or design doc: which diagram type (sequence, flowchart, state, ER/cla | 223 |
@@ -25,6 +26,7 @@
 | 2 while writing | [stack-reviewer](stack-reviewer/SKILL.md) | writing or reviewing code in a specific application framework — NestJS, Next.js, React, React Native, Expo, Flutter, native Android or iOS, Kubernetes | 140 |
 | 2 while writing | [test-design](test-design/SKILL.md) | choosing WHICH test cases to write, for new code or a diff that adds tests — equivalence partitioning and boundary values, pairwise coverage for combi | 250 |
 | 2 while writing | [typescript-verification](typescript-verification/SKILL.md) | writing, reviewing, or setting up verification for JavaScript or TypeScript code specifically — tsconfig strictness, ESLint/Biome rule curation, vites | 193 |
+| 2 while writing | [web-vitals](web-vitals/SKILL.md) | building or reviewing any component that renders above the fold, adds a web font, ships client JS, adds an image, or wires up a new route — to keep Co | 215 |
 | 3 before shipping | [review-gates](review-gates/SKILL.md) | setting up or reviewing how changes get merged — PR templates, CODEOWNERS path ownership, merge queues, required status checks, DCO or sign-off requir | 193 |
 | 3 before shipping | [reviewing-others-code](reviewing-others-code/SKILL.md) | reviewing a pull request, diff, or change someone else wrote — a teammate, an external contributor, or another agent's output you did not produce. Cov | 192 |
 | 3 before shipping | [scoped-review](scoped-review/SKILL.md) | Use on YOUR OWN diff before opening a PR, or right after implementing a feature — to audit the defect classes no tool detects: speculative abstraction | 157 |
@@ -36,9 +38,7 @@
 | 6 meta | [agent-instructions](agent-instructions/SKILL.md) | creating or improving the actual content of an AGENTS.md, CLAUDE.md, .cursorrules, or copilot-instructions file for a repository you maintain — what t | 166 |
 | 6 meta | [engineering-ledger](engineering-ledger/SKILL.md) | Use for cross-record retrieval and upkeep across the WHOLE ledger — searching by keyword when you don't know which record type or id you need, checkin | 159 |
 | 6 meta | [untrusted-agent-config](untrusted-agent-config/SKILL.md) | cloning, opening, reviewing, or running an agent inside a repository you did not write — including dependencies, forks, plugins, marketplace skills, a | 140 |
-| 9 unclassified | [accessibility](accessibility/SKILL.md) | building or reviewing any interactive UI component — a button, a form field, a modal, a card with a click handler, a custom dropdown, an icon-only con | 216 |
 | 9 unclassified | [project-learning](project-learning/SKILL.md) | a mistake cost time, a non-obvious convention was discovered, or a failure mode was hit that will recur — recording it as a project lesson that outliv | 136 |
 | 9 unclassified | [scale-appropriateness](scale-appropriateness/SKILL.md) | designing anything, to state the expected scale tier and derive what the design must and must not include — user and request volume, data growth, late | 144 |
-| 9 unclassified | [web-vitals](web-vitals/SKILL.md) | building or reviewing any component that renders above the fold, adds a web font, ships client JS, adds an image, or wires up a new route — to keep Co | 215 |
 
 Phase order is the order work moves through them; see `docs/PLAYBOOK.md` for the command sequence per task.

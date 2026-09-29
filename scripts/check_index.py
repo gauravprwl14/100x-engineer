@@ -189,6 +189,7 @@ def gen_collections():
             "mobile-release-safety": "2 while writing", "test-design": "2 while writing",
             "distributed-correctness": "2 while writing",
             "performance-budgets": "2 while writing", "diagramming": "2 while writing",
+            "accessibility": "2 while writing", "web-vitals": "2 while writing",
             "observability-design": "2 while writing", "legacy-change": "2 while writing",
             "verification-gate": "3 before shipping", "scoped-review": "3 before shipping",
             "reviewing-others-code": "3 before shipping", "review-gates": "3 before shipping",
