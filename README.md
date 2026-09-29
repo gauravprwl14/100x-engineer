@@ -35,6 +35,31 @@ files produced one clear result:
 So the centrepiece here is the part nobody had: a gate the model cannot talk itself
 past.
 
+## Does this actually work?
+
+Two separate questions, answered separately.
+
+**Do the checks catch what they claim to?** Yes, measured:
+
+```bash
+python3 scripts/run_evals.py
+```
+
+19 seeded defects, one per class the plugin claims to catch — **19/19 caught**.
+4 clean controls — **0 false positives**. The cases live in `evals/seeded/`, so the
+number is reproducible and regressions are visible.
+
+**Does using this make someone dramatically more productive?** Unknown. Nothing here
+measures that, no benchmark in this repo supports it, and "100x" is a name, not a
+claim. What is defensible is narrower and more useful: the gaps this catches are gaps
+that would otherwise reach review or production, and the eval says exactly which ones.
+
+The same harness also records **6 defect classes it does not catch** — semantic
+duplication, redundant comments, unnecessary dependencies, tests that assert the bug,
+missing authorization checks, and check-then-act races. They are eval cases too, so the
+scope claim is testable rather than rhetorical. Those six route to `scoped-review`,
+which turns them into nine attributed questions instead of "please review carefully".
+
 ## Install
 
 ```bash
@@ -85,18 +110,62 @@ found in production, for the same reason.
 
 ## Skills
 
+The pipeline runs in order. Planning first, because a gap found in a spec costs
+minutes and the same gap found in review costs a day.
+
+**Before code**
+
 | skill | what it rejects |
 |---|---|
-| `verification-gate` | "done" with no evidence; verify-then-edit-then-commit; failing or missing required checks |
+| `feature-planning` | code before a spec; edge cases left TODO; "covered" with no test; a verification plan with no commands |
+| `approach-selection` | a choice with one option recorded; a rejected option with no reason; choosing for unstated scale |
+| `decision-log` | a decision with no falsifiable assumption; an assumption with no revisit trigger; an empty gaps table |
+
+**While writing**
+
+| skill | what it rejects |
+|---|---|
 | `minimal-diff` | new files that should be edits; dead and commented-out code; assertion-free and focused tests; single-use abstractions; unrequested docs |
-| `untrusted-agent-config` | third-party agent configs and hooks auto-loading unreviewed; approval-steering and instruction-override text |
-| `typescript-verification` | loose `tsconfig`; whole-repo coverage gates that get disabled; `eslint` without `--max-warnings=0`; unbounded bundle growth |
+| `stack-reviewer` | generic review on framework-specific code; deriving a choice the reviewer already defaults |
+| `typescript-verification` | loose `tsconfig`; whole-repo coverage gates that get disabled; `eslint` without `--max-warnings=0` |
 | `python-verification` | type checkers configured but never gating; `select=["ALL"]`; coverage offered as proof |
-| `go-verification` | codegen drift gates that miss new files; tests without `-race`; stale `go.mod`; dependency bans that live only in prose |
+| `go-verification` | codegen drift gates that miss new files; tests without `-race`; dependency bans that live only in prose |
 | `mobile-release-safety` | schema changes with no migration test; OTA pushes after native drift; 100% releases with no staged rollout |
-| `security-baseline` | public repos with no private reporting channel; tag-pinned actions in secrets-bearing workflows; fixed bugs with no regression test |
-| `review-gates` | PR checkboxes nobody parses; one-line CODEOWNERS; a `merge_group:` trigger that does not work; AI policies with no parser |
-| `agent-instructions` | instruction files with no named prove-it command; `CLAUDE.md` as a second document; "keep it small" with no number |
+
+**Before shipping**
+
+| skill | what it rejects |
+|---|---|
+| `verification-gate` | "done" with no evidence; verify-then-edit-then-commit; `--no-verify` as an escape |
+| `scoped-review` | "looks good" with in-scope questions unanswered; tests that assert the bug; missing authorization checks |
+| `review-gates` | PR checkboxes nobody parses; one-line CODEOWNERS; a `merge_group:` trigger that does not work |
+| `security-baseline` | public repos with no private reporting channel; tag-pinned actions in secrets-bearing workflows |
+
+**Meta**
+
+| skill | what it rejects |
+|---|---|
+| `agent-instructions` | instruction files with no named prove-it command; `CLAUDE.md` as a second document |
+| `untrusted-agent-config` | third-party agent configs and hooks auto-loading unreviewed |
+
+## Stack reviewers
+
+Framework-specific failure modes, grounded in cloned production code — including
+defects found in official reference apps.
+
+| file | covers |
+|---|---|
+| `reviewers/nestjs.md` | NestJS + TypeScript backend |
+| `reviewers/nextjs-react.md` | Next.js App Router + React |
+| `reviewers/react-native-expo.md` | React Native + Expo |
+| `reviewers/flutter.md` | Flutter + Dart |
+| `reviewers/native-mobile.md` | native Android + iOS |
+| `reviewers/kubernetes.md` | Kubernetes manifests, Helm, Kustomize |
+| `reviewers/cloud-iac.md` | AWS, GCP, Terraform |
+
+Each carries blocking rules, the AI failure modes specific to that stack, edge cases
+that stack routinely misses, and a **default recommendation** for every recurring
+architectural choice — so the agent proceeds without interrogating you.
 
 ## Tools
 
@@ -110,10 +179,15 @@ Python standard library and git only — no install step, no dependencies.
 | `scripts/audit_ci_gates.py` | find checks that look like gates but cannot fail; audit action SHA-pinning | 11 |
 | `scripts/stack_audit.py` | project layers vs the measured corpus baseline | — |
 | `scripts/check_agents_md.py` | check an AGENTS.md against 12 measured corpus patterns | — |
+| `scripts/plan_feature.py` | scaffold a spec seeding 60 edge cases + 24 pre-answered decisions; audit it | 32 |
+| `scripts/decide.py` | decision log: verifiable assumptions, revisit triggers, drift, trace, lint | (same) |
+| `scripts/design_drift.py` | mermaid sequence diagram vs implementation, both directions | (same) |
+| `scripts/review_scope.py` | the 9 review questions no tool can answer, attributed per file | (same) |
+| `scripts/run_evals.py` | score the checks against seeded defects; list what they miss | 23 cases |
 | `scripts/lint_skills.py` | enforce the skill contract on this plugin's own skills | — |
 
 ```bash
-bash tests/run_all.sh    # 67 assertions across 4 suites, plus the skill-contract lint
+bash tests/run_all.sh    # 99 assertions across 5 suites + 23 eval cases + the skill lint
 ```
 
 Footprint when installed: **~1,533 tokens always-on** (about 170 per skill), with each

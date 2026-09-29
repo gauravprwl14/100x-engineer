@@ -30,6 +30,22 @@ bash tests/test_verification_gate.sh      # ~5s, after touching hooks/ or verifi
 bash tests/run_all.sh                     # ~15s, before committing
 ```
 
+## The pipeline
+
+Work goes through it in order; skipping a stage is how gaps reach review.
+
+| stage | command | gate |
+|---|---|---|
+| plan | `plan_feature.py new <name> --kind <kinds>` | — |
+| audit the plan | `plan_feature.py audit specs/<name>` | blocks implementation |
+| record choices | `decide.py new` then `decide.py lint` | blocks a decision with one option |
+| implement | — | — |
+| bloat check | `bloat_check.py --base origin/main` | blocks |
+| design drift | `design_drift.py specs/<n>/spec.md <dir>` | blocks |
+| assumptions | `decide.py verify && decide.py drift` | blocks |
+| scoped review | `review_scope.py --base origin/main` | questions must be answered |
+| commit | the `PreToolUse` gate requires a fresh receipt | blocks |
+
 ## Rules
 
 1. **Every claim in a skill needs a citation** — `owner/repo@ref:path`, or the label

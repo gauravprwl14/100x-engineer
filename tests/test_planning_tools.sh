@@ -117,6 +117,41 @@ has "not a decision"
 has "no assumptions recorded"
 cd "$ROOT"
 
+# ---------- review_scope ----------
+cd "$CONS"
+mkdir -p src
+cat > src/orders.ts <<'TS'
+export interface OrderSink { send(o: unknown): void; }
+export async function getInvoice(id: string) {
+  return db.invoices.findOne(id);
+}
+export async function register(email: string) {
+  if (await db.users.findOne(email)) throw new Error('taken');
+  return db.users.insert(email);
+}
+TS
+python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
+rc_is 0 $? "review_scope: runs on a diff"
+has "R1"
+has "R6"
+has "R7"
+grep -q "src/orders.ts" /tmp/pt.out && ok "review_scope: attributes the question to the file" \
+  || bad "review_scope: file attribution missing"
+
+# non-code and fixture files must not be attributed to code questions
+printf '# notes\n' > README_EXTRA.md
+python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
+grep -q "README_EXTRA.md" /tmp/pt.out && bad "review_scope: attributed a markdown file to a code question" \
+  || ok "review_scope: excludes non-code files"
+rm -f README_EXTRA.md
+
+# a clean repo with no changes must say so
+git add -A >/dev/null 2>&1; git commit -qm x >/dev/null 2>&1
+python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
+grep -q "no changes to review" /tmp/pt.out && ok "review_scope: quiet with no changes" \
+  || bad "review_scope: noisy with no changes"
+cd "$ROOT"
+
 echo
 echo "planning-tools: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
