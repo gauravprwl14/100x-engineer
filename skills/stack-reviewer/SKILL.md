@@ -1,12 +1,16 @@
 ---
 name: stack-reviewer
 description: >
-  Use when writing or reviewing code in a specific framework — NestJS, Next.js, React,
-  React Native, Expo, Flutter, native Android or iOS, Kubernetes, Terraform, AWS or GCP.
-  Routes to the reviewer file for that stack, which carries the failure modes LLMs
-  specifically produce there, the edge cases that stack routinely misses, and a default
-  recommendation for each recurring architectural choice. Use PROACTIVELY when a diff
-  touches any of these stacks.
+  Use when writing or reviewing code in a specific application framework — NestJS,
+  Next.js, React, React Native, Expo, Flutter, native Android or iOS, Kubernetes
+  manifests, Terraform, or cloud IaC. Routes to the reviewer file for that framework,
+  which carries the failure modes LLMs specifically produce there (a missing NestJS
+  `whitelist: true`, a React `key={index}`, a Flutter `BuildContext` used after an
+  async gap), the edge cases that framework routinely misses, and a default for each
+  recurring architectural choice. Not for language-level test/lint/typecheck setup
+  (see typescript-verification, python-verification, go-verification) — this is
+  framework code shape, not the toolchain that checks it. Use PROACTIVELY when a
+  diff touches any of these stacks, especially one you don't know well.
 ---
 
 # Stack reviewer
@@ -46,7 +50,10 @@ in the diff.
 ## Rules
 
 1. Identify the stack from repo signals, then read that reviewer's
-   `## Common AI failure modes` section before writing code in it.
+   `## Common AI failure modes` section before writing code in it. If the diff is
+   in a stack you don't know well, orient first:
+   `python3 scripts/diagram_from_code.py <dir> --kind sequence --level 1` (≤12
+   nodes) before reading source linearly.
    *Enforced by:* `python3 scripts/stack_audit.py .` (reports the detected stacks)
 
 2. Apply the reviewer's `## Blocking rules`. Each is a runnable check or a yes/no
@@ -73,6 +80,11 @@ in the diff.
 ```bash
 # what stacks are actually here?
 python3 scripts/stack_audit.py .
+
+# orient before reviewing an unfamiliar diff (rule 1): L1 first, L2 if you'll
+# actually touch the code, not just review it
+python3 scripts/diagram_from_code.py <dir> --kind sequence --level 1
+python3 scripts/diagram_from_code.py <dir> --kind sequence --level 2
 
 # read only the relevant reviewer's failure modes
 ls reviewers/
@@ -104,6 +116,13 @@ This skill rejects:
 conventions, Riverpod versus Bloc, Kubernetes API deprecations — so a reviewer more than
 a few months old should be re-grounded against current code rather than trusted. Each
 file carries its sources so that is checkable.
+
+## Next
+
+Once the stack is identified, the language toolchain is a separate skill:
+`typescript-verification`, `python-verification`, or `go-verification`. For a mobile
+release specifically, add `mobile-release-safety`. Bind whatever you ran with
+`verification-gate` before claiming the review is done.
 
 ## Scale
 

@@ -124,6 +124,14 @@ which you chose.
 shows what repos ask for; only a hook shows what happened. That is what
 `verification-gate` is for.
 
+## Next
+
+Once the file names its commands, wire them through `verification-gate` so
+"passes lint" is a receipt, not a claim. CODEOWNERS, merge queues and PR templates
+are `review-gates`, a separate file with a separate audience. Before publishing the
+repo, run this file itself through `untrusted-agent-config`'s auditor — it is
+exactly the check someone cloning you would run, so run it first.
+
 ## Scale
 
 `solo`: rules 1, 2, 4 — one command, scoped diffs, one number. A 20-line file

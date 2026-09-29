@@ -80,11 +80,32 @@ def extract_description(body):
     return ""
 
 
-def score(prompt_toks, desc_toks, idf):
-    """Weighted overlap: a term shared with few descriptions discriminates more than one
-    shared with all of them."""
-    dset = set(desc_toks)
-    return sum(idf.get(t, 1.0) for t in set(prompt_toks) if t in dset)
+NEG_CLAUSE = re.compile(
+    r"(?:\bnot for\b|\bnot\s+(?:when|used for)\b|\bdo not use\b|\brather than\b)"
+    r"[^.;]*[.;]?", re.I)
+
+
+def split_polarity(desc):
+    """Separate a description into what it claims and what it disclaims.
+
+    Descriptions now carry negative signals like "Not for Python or Go toolchains (see
+    python-verification)". Those help a model that understands negation and actively
+    mislead a bag-of-words scorer, which counts the disclaimed language as a match. A
+    term inside a negative clause must subtract, not add -- that is the whole point of
+    writing it.
+    """
+    neg = " ".join(NEG_CLAUSE.findall(desc))
+    pos = NEG_CLAUSE.sub(" ", desc)
+    return pos, neg
+
+
+def score(prompt_toks, pos_toks, neg_toks, idf):
+    """Weighted overlap, minus the weight of anything the description disclaims."""
+    pset, nset = set(pos_toks), set(neg_toks) - set(pos_toks)
+    q = set(prompt_toks)
+    gain = sum(idf.get(t, 1.0) for t in q if t in pset)
+    loss = sum(idf.get(t, 1.0) for t in q if t in nset)
+    return gain - loss
 
 
 def main():
@@ -97,7 +118,9 @@ def main():
     descs = load_skills(a.from_git)
     if not descs:
         print("no skills found", file=sys.stderr); return 2
-    dtoks = {n: toks(d) for n, d in descs.items()}
+    pol = {n: split_polarity(d) for n, d in descs.items()}
+    dtoks = {n: toks(pol[n][0]) for n in descs}          # positive span only
+    ntoks = {n: toks(pol[n][1]) for n in descs}          # disclaimed span
 
     # idf over descriptions: rare terms carry the discrimination
     df = collections.Counter()
@@ -112,7 +135,8 @@ def main():
     top1 = top3 = rejviol = 0
     for c in cases:
         pt = toks(c["prompt"])
-        ranked = sorted(((score(pt, dtoks[n], idf), n) for n in dtoks), reverse=True)
+        ranked = sorted(((score(pt, dtoks[n], ntoks[n], idf), n) for n in dtoks),
+                        reverse=True)
         names = [n for _, n in ranked]
         exp = c["expect"]
         r1 = names[0] == exp

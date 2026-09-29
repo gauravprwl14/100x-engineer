@@ -1,12 +1,15 @@
 ---
 name: mobile-release-safety
 description: >
-  Use when building, testing, or shipping mobile apps — native Android/iOS, React
-  Native, Expo, or Flutter. Covers on-device test strategy, staged rollout and kill
-  switches, local database migration testing, binary size budgets, and OTA update
-  safety. Use PROACTIVELY before any mobile release, when changing a local DB
-  schema, when adding an OTA/CodePush/EAS update, or when a mobile change touches
-  the JS-to-native boundary.
+  Use when shipping a mobile release — native Android/iOS, React Native, Expo, or
+  Flutter. Covers staged rollout percentages and kill switches, local database
+  migration testing per schema version, OTA/CodePush/EAS update safety across the
+  JS-native boundary, and binary size budgets — the release-pipeline failure modes
+  that only exist because mobile cannot be hotfixed. Not for React Native/Flutter
+  code-shape bugs during development, like a `BuildContext` used after an async gap
+  (see stack-reviewer's flutter or react-native-expo reviewer). Use PROACTIVELY
+  before any mobile release, when changing a local DB schema, when adding an
+  OTA/CodePush/EAS update, or when a change touches the JS-to-native boundary.
 ---
 
 # Mobile release safety
@@ -35,6 +38,8 @@ editing docs/config with no shipped binary impact.
    `./gradlew test` / `xcodebuild test`
 
 2. Never ship to 100% at once. Use a staged rollout and let store vitals halt it.
+   Whatever percentage ladder you pick is a real decision, not a default — log it:
+   `python3 scripts/decide.py new "Rollout ladder for <app>" --affects "fastlane/**"`.
    *Enforced by:* `phased_release: true` in fastlane deliver (iOS — one line, free);
    a staged `rollout:` fraction in Play publishing (Android)
 
@@ -44,7 +49,10 @@ editing docs/config with no shipped binary impact.
 
 4. Before any OTA/EAS/CodePush push, fingerprint the native boundary. If native code
    changed, an OTA is invalid — ship a full build instead. A JS bundle against
-   mismatched native modules crashes on launch.
+   mismatched native modules crashes on launch. If the OTA/rollback control flow
+   itself is not obvious from the code, draw it first:
+   `python3 scripts/diagram_from_code.py <dir> --kind flow --level 2` (implementer
+   detail, ≤30 nodes) — cheaper than re-deriving the branches from prose each time.
    *Enforced by:*
    `find android ios -type f \( -name '*.gradle' -o -name '*.gradle.kts' -o -name 'Podfile.lock' -o -name '*.podspec' -o -name 'AndroidManifest.xml' \) 2>/dev/null | sort | xargs shasum | shasum`
    — compare against the value recorded for the currently-deployed bundle
@@ -94,6 +102,9 @@ find android ios -type f \( -name '*.gradle' -o -name '*.gradle.kts' \
   2>/dev/null | sort | xargs shasum | shasum
 # differs from the deployed bundle's recorded value => full build, NOT an OTA
 
+# --- orient on the OTA/rollout control flow before touching it (rule 4) ---
+python3 scripts/diagram_from_code.py <dir> --kind flow --level 2
+
 # --- what this project is missing vs the corpus ---
 python3 scripts/stack_audit.py .
 python3 scripts/audit_ci_gates.py .       # mobile CI is where advisory gates hide
@@ -128,6 +139,14 @@ This skill rejects:
 - **Startup/perf budgets are measured, not enforced**, in essentially every repo.
 - Mobile agent-instruction-file adoption lags web; there is less prior art to copy
   for AI-assisted mobile work than for backend or frontend.
+
+## Next
+
+Bind the release checks with `verification-gate` before tagging. Privacy/permission
+manifests (rule 9) and the store's data-safety declaration overlap with
+`security-baseline`'s disclosure posture — run both before a first public release.
+For the JS/native code itself, not the release process, `stack-reviewer` routes to
+the `react-native-expo` or `flutter` reviewer.
 
 ## Scale
 

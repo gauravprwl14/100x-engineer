@@ -101,6 +101,9 @@ BUILTIN_IGNORE = {
     "String", "Boolean", "parseInt", "parseFloat",
 }
 IGNORE_ATTR_BASES = {"logger", "log", "logging", "console"}
+TS_CTOR_IGNORE = {"Error", "TypeError", "RangeError", "SyntaxError", "EvalError",
+                   "ReferenceError", "URIError", "Date", "Map", "Set", "RegExp",
+                   "Promise", "Array", "Object"}
 
 ROUTE_DECORATORS = {"get", "post", "put", "delete", "patch", "route",
                      "options", "head"}
@@ -816,7 +819,11 @@ def build_sequence_trace(proj, entry_comp, entry_method, max_steps=300, max_dept
                 walk(target_comp, s.method, depth + 1)
                 continue
             if s.unresolved:
-                messages.append({"src": comp.name, "dst": f"Unresolved_{s.attr or s.method}",
+                # Plain, code-derived name (not "Unresolved_X") so the participant's
+                # displayed label still contains a real token from the source --
+                # design_drift.py name-matches on the label, and this node is also
+                # marked `%% external` so an unknown target is never reported as drift.
+                messages.append({"src": comp.name, "dst": s.attr or s.method,
                                   "method": s.method, "text": s.text, "branch": s.branch,
                                   "is_error": s.is_error, "unresolved": True, "internal": False})
                 continue
@@ -899,6 +906,7 @@ def render_sequence(proj, entry_comp, entry_method, level, entry_spec_label):
         if is_unresolved:
             lines.append(f"  participant {alias} as {sanitize_label(name, 30)}")
             lines.append(f"  %% unresolved: {sanitize_label(name, 40)} -- call target could not be resolved statically")
+            lines.append(f"  %% external: {alias}")
         elif is_external:
             lines.append(f"  participant {alias} as {sanitize_label(name, 30)}")
             lines.append(f"  %% external: {alias}")
@@ -956,9 +964,15 @@ def deps_scan(proj, level):
 
     def resolve_relative(from_file, spec):
         base = (from_file.parent / spec).resolve()
-        for cand in (base, base.with_suffix(".ts"), base.with_suffix(".tsx"),
-                     base.with_suffix(".js"), base / "index.ts", base / "index.js",
-                     base.with_suffix(".py"), base / "__init__.py"):
+        # NOTE: don't use Path.with_suffix here -- module stems with a literal
+        # dot (e.g. "user.repository.ts") make with_suffix() chop at the wrong
+        # dot. Append the extension to the full name instead.
+        stem = base.parent / base.name
+        for cand in (base,
+                     stem.parent / (base.name + ".ts"), stem.parent / (base.name + ".tsx"),
+                     stem.parent / (base.name + ".js"), stem.parent / (base.name + ".jsx"),
+                     stem.parent / (base.name + ".py"),
+                     base / "index.ts", base / "index.js", base / "__init__.py"):
             if cand.exists():
                 return cand
         return None
@@ -1007,14 +1021,14 @@ def deps_scan(proj, level):
 
 def render_deps(proj, level):
     edges = deps_scan(proj, level)
-    root = proj.root if proj.root.is_dir() else proj.root.parent
+    root = (proj.root if proj.root.is_dir() else proj.root.parent).resolve()
     taken = {}
     lines = ["flowchart LR", f"  %% diagram_from_code: kind=deps level={level}"]
 
     def node_key(path_or_pkg, is_file):
         if not is_file:
             return f"pkg:{path_or_pkg}"
-        p = pathlib.Path(path_or_pkg)
+        p = pathlib.Path(path_or_pkg).resolve()
         if level == 1:
             try:
                 rel = p.relative_to(root)

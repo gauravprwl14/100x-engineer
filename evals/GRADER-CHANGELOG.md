@@ -13,6 +13,7 @@ grader fixes across two rounds (`local: vlg-benchmark-round2/GRADER_CHANGELOG.md
 | 2 | 2026-09-28 | `run_evals.py`: dropped the spec-relocation hack in `prepare()` | `plan_feature.py` began resolving to the consumer git root, so the fixture no longer needed moving — the hack would have masked a regression in that resolution |
 | 3 | 2026-09-29 | `skill_triggers.py`: replaced the regex description extractor with a line-based parser | a `re.M`-anchored regex captured only `>` from YAML block scalars, scoring every prompt at zero. The measurement was silently meaningless rather than visibly broken; the recorded baseline was taken **after** this fix |
 | 4 | 2026-09-29 | `test_prd.sh`: assert the specific leaked file, not the existence of `prds/` | the plugin legitimately holds its own worked-example records, so a directory check produced a false failure |
+| 5 | 2026-09-29 | `skill_triggers.py`: negation-aware scoring — terms inside a "Not for X" clause now subtract instead of adding | descriptions gained explicit negative signals ("Not for Python or Go toolchains, see …"). Those help a model that understands negation and actively mislead a bag-of-words scorer, which counted the disclaimed language as a match. The metric reported the improvement pass as a **regression** (64% → 55%); with negation handled the same files score 66%. The skills had improved the whole time — the measurement was wrong. **This is why entry 3's rule exists: a score movement is meaningless until you know the grader is measuring the thing you changed.** |
 
 ## Rules
 
