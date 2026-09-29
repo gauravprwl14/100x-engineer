@@ -100,6 +100,39 @@ BUILTIN_IGNORE = {
     "console", "JSON", "Object", "Array", "Promise", "Math", "Number",
     "String", "Boolean", "parseInt", "parseFloat",
 }
+
+# Framework-supplied locals are not architectural participants. An Express `res` or a
+# Django `request` appearing as a lifeline makes the diagram read as though the
+# response object were a collaborating service, which is worse than omitting it: the
+# reader draws a wrong boundary. Filtered as noise, like BUILTIN_IGNORE, rather than
+# reported as unresolved.
+FRAMEWORK_LOCAL_IGNORE = {
+    "res", "req", "request", "response", "ctx", "context", "next", "err", "error",
+    "reply", "socket", "session", "cookies", "headers", "params", "query", "body",
+    "self", "cls", "this", "e", "ex", "exc", "args", "kwargs", "options", "opts",
+    "config", "logger", "log", "console",
+}
+
+
+def is_component_name(name):
+    """A sequence-diagram participant is a COMPONENT, not a method.
+
+    A bare lowercase identifier that resolves to nothing in the scanned code is a free
+    function or a chained method whose receiver was lost (`res.status(204).send()`
+    attributes `send` to no base). Drawing it as a lifeline invents a collaborator and
+    makes the reader draw a wrong boundary -- worse than omitting it. Components are
+    capitalised, or carry a module path.
+    """
+    if not name:
+        return False
+    return name[0].isupper() or "." in name or "/" in name or "_" in name
+
+
+def is_noise_receiver(name):
+    """True when a call receiver is a builtin or a framework-supplied local."""
+    base = (name or "").split(".")[0]
+    return base in BUILTIN_IGNORE or base in FRAMEWORK_LOCAL_IGNORE
+
 IGNORE_ATTR_BASES = {"logger", "log", "logging", "console"}
 TS_CTOR_IGNORE = {"Error", "TypeError", "RangeError", "SyntaxError", "EvalError",
                    "ReferenceError", "URIError", "Date", "Map", "Set", "RegExp",
@@ -385,7 +418,7 @@ def py_resolve_call(call_node, comp, known_names):
                        resolved=comp.name if comp else None, internal=True)
         if isinstance(func.value, ast.Name):
             base, method = func.value.id, func.attr
-            if base in IGNORE_ATTR_BASES or base in BUILTIN_IGNORE:
+            if base in IGNORE_ATTR_BASES or is_noise_receiver(base):
                 return None
             if base in known_names:
                 return mk(text=f"{base}.{method}({args_text})", method=method,
@@ -396,11 +429,13 @@ def py_resolve_call(call_node, comp, known_names):
                    method=getattr(func, "attr", "?"), unresolved=True)
     if isinstance(func, ast.Name):
         name = func.id
-        if name in BUILTIN_IGNORE:
+        if is_noise_receiver(name):
             return None
         if name in known_names:
             return mk(text=f"{name}({args_text})", method="__init__", resolved=name,
                        is_construct=True)
+        if not is_component_name(name):
+            return None          # free function / lost receiver, not a participant
         return mk(text=f"{name}({args_text})", method=name, unresolved=True)
     return mk(text=sanitize_label(f"{_unparse(func)}({args_text})"), method="?", unresolved=True)
 
@@ -679,7 +714,7 @@ def ts_get_steps(comp, method_name, known_names, body_orig_full, body_masked_ful
                                    line=orig.count("\n", 0, pos) + 1))
         elif m.group("base"):
             base, method = m.group("base"), m.group("m2")
-            if base in IGNORE_ATTR_BASES or base in BUILTIN_IGNORE:
+            if base in IGNORE_ATTR_BASES or is_noise_receiver(base):
                 continue
             resolved = base if base in known_names else None
             steps.append(Step("call", sanitize_label(f"{base}.{method}(...)"), method=method,
@@ -687,10 +722,13 @@ def ts_get_steps(comp, method_name, known_names, body_orig_full, body_masked_ful
                                branch=branch, line=orig.count("\n", 0, pos) + 1))
         else:
             fn = m.group("fn")
-            if fn in RESERVED_TS or fn in BUILTIN_IGNORE or fn in IGNORE_ATTR_BASES:
+            if fn in RESERVED_TS or is_noise_receiver(fn) or fn in IGNORE_ATTR_BASES:
                 continue
             if fn in known_names:
                 continue  # bare uppercase-less constructor-style call, rare; skip noise
+            if not is_component_name(fn):
+                continue  # free function, or a chained tail call whose receiver was
+                          # lost (res.status(204).send()); not a participant
             steps.append(Step("call", sanitize_label(f"{fn}(...)"), method=fn, unresolved=True,
                                branch=branch, line=orig.count("\n", 0, pos) + 1))
     for tm in re.finditer(r"\bthrow\s+([^;]{1,60})", masked):

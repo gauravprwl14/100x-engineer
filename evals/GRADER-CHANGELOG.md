@@ -15,6 +15,8 @@ grader fixes across two rounds (`local: vlg-benchmark-round2/GRADER_CHANGELOG.md
 | 4 | 2026-09-29 | `test_prd.sh`: assert the specific leaked file, not the existence of `prds/` | the plugin legitimately holds its own worked-example records, so a directory check produced a false failure |
 | 5 | 2026-09-29 | `skill_triggers.py`: negation-aware scoring — terms inside a "Not for X" clause now subtract instead of adding | descriptions gained explicit negative signals ("Not for Python or Go toolchains, see …"). Those help a model that understands negation and actively mislead a bag-of-words scorer, which counted the disclaimed language as a match. The metric reported the improvement pass as a **regression** (64% → 55%); with negation handled the same files score 66%. The skills had improved the whole time — the measurement was wrong. **This is why entry 3's rule exists: a score movement is meaningless until you know the grader is measuring the thing you changed.** |
 
+| 6 | 2026-09-29 | `diagram_from_code.py`: filter framework locals (`res`, `req`, `ctx`) and non-component bare calls from participants | an Express `res`, and the tail of a chained `res.status(204).send()`, were drawn as lifelines. A fake participant makes the reader draw a wrong component boundary, which is worse than omitting the edge. Filtered as noise like builtins, not reported as unresolved |
+
 ## Rules
 
 1. Never change a grader and a score in the same commit without an entry here.
