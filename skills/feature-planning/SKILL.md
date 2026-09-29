@@ -67,7 +67,7 @@ Three rules, because a process that asks twenty questions is worse than no proce
 5. Generate a level-2 sequence diagram (≤30 nodes, implementer detail) of the planned
    flow before implementing, and keep it in the spec as the design of record — prose
    describing a multi-step flow hides exactly the branch that turns out to matter.
-   *Enforced by:* `test -f scripts/diagram_from_code.py && python3 scripts/diagram_from_code.py <analogous-existing-code-or-skip> --kind sequence --level 2 || echo "diagram_from_code.py not built in this checkout yet -- hand-sketch the sequence in the spec and say plainly no diagram was generated"`
+   *Enforced by:* `python3 scripts/diagram_from_code.py <analogous-existing-code> --kind sequence --level 2` for an existing analog to model the flow on, or a hand-authored `mermaid` block validated by `python3 scripts/check_diagrams.py specs/<name>/spec.md` when there is no code yet to generate from
 
 6. Name the verification command per check, with the gate it runs at. A verification
    plan with no commands is a wish.
@@ -91,10 +91,12 @@ python3 scripts/plan_feature.py audit specs/login      # exits 1 until complete
 # 3. record decisions that depart from the default
 python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
 
-# 3b. embed the level-2 flow diagram in the spec before writing code
-test -f scripts/diagram_from_code.py \
-  && python3 scripts/diagram_from_code.py src/auth --kind sequence --level 2 \
-  || echo "not built in this checkout yet -- hand-sketch and say so in the spec"
+# 3b. embed the level-2 flow diagram in the spec before writing code -- generate
+#     from an analogous existing flow if one exists (there is no new code yet to
+#     generate this feature's own diagram from); example login/auth flow:
+python3 scripts/diagram_from_code.py examples/login/src --kind sequence --level 2
+#     no analog: hand-author the mermaid block instead, then validate it
+python3 scripts/check_diagrams.py specs/login/spec.md
 
 # 4. during and after implementation
 python3 scripts/design_drift.py specs/login/spec.md src/auth   # design vs code

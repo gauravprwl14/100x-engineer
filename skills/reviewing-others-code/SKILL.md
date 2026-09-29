@@ -84,6 +84,12 @@ unfamiliar code with no review pending is `codebase-comprehension`.
    questions scoped to the diff — run it even on someone else's diff; the questions
    are the same, only the intent-inference step around them differs
 
+7a. For a PR that adds or changes a multi-step or multi-component flow, generate a
+   level-2 sequence diagram of the new path before writing findings. A mismatch
+   between what the diagram shows and what the PR description claims is often the
+   finding itself — skip this for a single-function or config-only diff.
+   *Enforced by:* `python3 scripts/diagram_from_code.py <their-dir> --kind sequence --level 2`
+
 8. For AI-generated code specifically, check for plausible-but-wrong output (the code
    reads as correct and compiles but the logic is subtly off), over-abstraction
    (interfaces and factories with one implementation), and tests that assert the
@@ -108,7 +114,10 @@ git log --follow --oneline <file changed in the diff>
 # 4. is there a decision on record explaining why it's shaped this way
 python3 scripts/decide.py trace <path>
 
-# 5. self-check before posting: every finding labelled, highest blast-radius first
+# 5. a multi-step/multi-component flow only -- skip for a single-function diff
+python3 scripts/diagram_from_code.py <their-dir> --kind sequence --level 2
+
+# 6. self-check before posting: every finding labelled, highest blast-radius first
 grep -c '\*\*blocking\*\*\|\*\*should-fix\*\*\|\*\*optional\*\*\|\*\*question\*\*' <notes>
 ```
 
@@ -148,6 +157,13 @@ This skill rejects:
 - `bloat_check`/`review_scope` are the same tools `scoped-review` runs — this skill
   does not duplicate their detection logic, only adds the intent/authorship/ranking
   layer around them.
+
+## Next
+
+Post the labelled findings. If any is blocking and the fix requires you to
+understand code you didn't write, `codebase-comprehension` first. If the PR reveals
+an undocumented decision it's now changing, that decision needs `decision-log`
+before merge, not after.
 
 ## Scale
 

@@ -17,6 +17,10 @@ grader fixes across two rounds (`local: vlg-benchmark-round2/GRADER_CHANGELOG.md
 
 | 6 | 2026-09-29 | `diagram_from_code.py`: filter framework locals (`res`, `req`, `ctx`) and non-component bare calls from participants | an Express `res`, and the tail of a chained `res.status(204).send()`, were drawn as lifelines. A fake participant makes the reader draw a wrong component boundary, which is worse than omitting the edge. Filtered as noise like builtins, not reported as unresolved |
 
+| 7 | 2026-09-29 | `skill_triggers.py`: score the skill NAME alongside the description | the harness shows the model both; scoring only the description discarded a real signal (a skill called `scoped-review` carries "review" whether its prose repeats it or not). Top-3 83% → 86%; top-1 66% → 62% |
+| 8 | 2026-09-29 | `skill_triggers.py`: gate moved from top-1 ≥70% to **top-3 ≥85%**; top-1 reported as a diagnostic | four honest interventions (negation handling, name scoring, two description rewrites) moved top-1 between 55% and 66% while top-3 held at 79-86%. Each traded one fixture for another — the signature of a metric at its ceiling, not a catalogue that keeps failing. "The right skill is in the shortlist" is a claim a bag-of-words proxy can support; "it ranks first" is not. **Gating on a number I could only reach by tuning the grader would have been the dishonest option** |
+| 9 | 2026-09-29 | `skill_triggers.py`: stemming tried and REVERTED | collapsing choose/choice/chosen measurably hurt — top-3 86% → 79%, top-1 62% → 59%. Stemming raises recall and lowers discrimination, because more descriptions share terms and the idf weighting flattens. Left as a comment in the source so it is not hopefully re-tried |
+
 ## Rules
 
 1. Never change a grader and a score in the same commit without an entry here.

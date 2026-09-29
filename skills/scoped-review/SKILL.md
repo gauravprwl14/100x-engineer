@@ -1,12 +1,14 @@
 ---
 name: scoped-review
 description: >
-  Use when reviewing a diff, before opening a PR, or after implementing a feature —
+  Use on YOUR OWN diff before opening a PR, or right after implementing a feature —
   to audit the defect classes no tool detects: speculative abstractions, semantically
   duplicated logic, comments that restate code, unnecessary dependencies, tests that
   assert the bug, missing authorization checks, and check-then-act races. Use
   PROACTIVELY after the mechanical checks pass, because passing them is not the same
-  as being correct.
+  as being correct. Not for a PR or diff someone ELSE wrote — that intent-inference
+  and blast-radius-ranking layer is `reviewing-others-code`, which calls this
+  skill's questions internally rather than duplicating them.
 ---
 
 # Scoped review
@@ -25,7 +27,9 @@ measured rather than asserted.
 a spec. Run it **after** the mechanical checks, not instead of them.
 
 **Do not fire when:** the mechanical checks are still failing — fix those first, or this
-review is spent re-finding what a tool already reported.
+review is spent re-finding what a tool already reported; or the diff was authored by
+someone else — that's `reviewing-others-code`, which adds the intent-inference and
+blast-radius ranking this skill deliberately skips because you already know the intent.
 
 ## The questions nothing else answers
 
@@ -65,7 +69,14 @@ review is spent re-finding what a tool already reported.
    implementation. Reading the code first is how a test ends up asserting the bug.
    *Enforced by:* review
 
-7. Re-check the spec's edge-case table after implementing. Implementation reveals cases
+7. For R7 (races) or R6 (authorization) on a multi-step flow, generate a level-3
+   diagram (every branch, numbered steps) of the sequence instead of tracing
+   concurrency in your head — a check-then-act gap is a missing arrow, easy to spot
+   drawn and easy to miss read top-to-bottom as text. Skip this for a diff with no
+   multi-step or concurrent flow; a diagram of a single function is ceremony.
+   *Enforced by:* `python3 scripts/diagram_from_code.py <dir> --kind sequence --level 3`
+
+8. Re-check the spec's edge-case table after implementing. Implementation reveals cases
    planning missed.
    *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>`
 
@@ -88,7 +99,10 @@ grep -A20 "Common AI failure modes" reviewers/<stack>.md
 python3 scripts/plan_feature.py audit specs/<feature>
 python3 scripts/design_drift.py specs/<feature>/spec.md <code-dir>
 
-# 5. confirm the uncovered list has not changed under you
+# 5. R7/R6 on a multi-step or concurrent flow only — skip for a single-function diff
+python3 scripts/diagram_from_code.py <code-dir> --kind sequence --level 3
+
+# 6. confirm the uncovered list has not changed under you
 python3 scripts/run_evals.py | sed -n '/KNOWN GAPS/,$p'
 ```
 
@@ -115,6 +129,13 @@ This skill rejects:
   checklist; it does not produce diligence.
 - The nine questions come from defect classes measured as uncovered in this research.
   They are not a complete taxonomy of what tools miss.
+
+## Next
+
+If every question passes: `verification-gate` before commit. If any `no` needed an
+accepted gap recorded (rule 4), that record lives under `decision-log`'s rules from
+here on. If the diff touches a known framework: run `stack-reviewer` alongside this,
+not after — the nine questions here are generic and miss what's framework-specific.
 
 ## Scale
 

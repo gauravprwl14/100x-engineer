@@ -28,9 +28,13 @@ onboarding to a new repo or subsystem.
 **Do not fire when:** reviewing a diff someone wrote — that is `reviewing-others-code`
 (intent + risk, not comprehension) or `scoped-review` (defect classes) or
 `stack-reviewer` (framework failure modes). Writing new code from a spec is
-`feature-planning`. Recording a decision after the fact is `engineering-ledger`. A
-file under ~100 lines with no unfamiliar imports — just read it; process overhead on
-a trivial read is how process gets abandoned.
+`feature-planning`. Recording a decision after the fact is `decision-log`, searching
+across many past records is `engineering-ledger`. Something is actually broken and
+you need a causal chain to production — that's `root-cause-analysis`, which adds
+timeline reconstruction and a regression-test gate this skill has neither of; use
+this skill first only to build the mental model `root-cause-analysis` then reasons
+over. A file under ~100 lines with no unfamiliar imports — just read it; process
+overhead on a trivial read is how process gets abandoned.
 
 ## Order of operations
 
@@ -111,7 +115,7 @@ picture. Do not hand-build a second diagramming path in this skill; that tool ow
 
 5. Generate the diagram rather than writing a prose walkthrough, once the rough flow
    is known.
-   *Enforced by:* `test -f scripts/diagram_from_code.py && python3 scripts/diagram_from_code.py <path> --kind sequence --level 1 || echo "diagram_from_code.py not present in this checkout yet -- fall back to the written data-flow trace from step 2, and say plainly that no diagram was generated"`
+   *Enforced by:* `python3 scripts/diagram_from_code.py <path> --kind sequence --level 1`
 
 6. Stop when you can state the inputs, outputs, failure modes, and the one thing most
    likely to break — not when you have read every file the flow touches.
@@ -141,9 +145,7 @@ python3 scripts/decide.py trace <path>
 python3 scripts/ledger.py find "<topic>"
 
 # 5. the primary comprehension artifact, once the rough flow is known
-test -f scripts/diagram_from_code.py \
-  && python3 scripts/diagram_from_code.py <path> --kind sequence --level 1 \
-  || echo "not built in this checkout yet -- state that no diagram was generated"
+python3 scripts/diagram_from_code.py <path> --kind sequence --level 1
 ```
 
 ## Failure modes
@@ -179,6 +181,14 @@ This skill rejects:
 - Step 4 (the "one hot file") is a heuristic, not a guarantee — a flow can have two
   equally load-bearing files. If `repo_map.py`'s ranking gives no clear single
   answer, read the top two rather than forcing a single pick.
+
+## Next
+
+Now that you understand it: modifying it goes to `feature-planning` (new behavior)
+or `bug-fix` (something's broken and the cause is now obvious) or
+`root-cause-analysis` (broken and the cause is still not obvious). Reviewing someone
+else's change to it is `reviewing-others-code`. Either way, record what you learned
+if it was non-obvious (rule 7) before it's lost again.
 
 ## Scale
 

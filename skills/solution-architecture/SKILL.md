@@ -72,8 +72,11 @@ warns about, one layer up.
 6b. Include a level-1 diagram (≤12 nodes) of the recommended system shape — a
    reviewer deciding whether to approve the PRD was not in the room when the
    options were scored, and a paragraph describing three boxes and two arrows is
-   slower to check than the picture.
-   *Enforced by:* `python3 scripts/check_diagrams.py prds/<name>/prd.md`
+   slower to check than the picture. `check_diagrams.py` validates a diagram that
+   is there (right type, level budget respected, no placeholder content) — it
+   does not fail a PRD for having none; presence is on the reviewer.
+   *Enforced by:* `python3 scripts/check_diagrams.py prds/<name>/prd.md` (validates
+   content) + review (presence)
 
 7. State what is explicitly out of scope, same discipline as `feature-planning`
    rule 3: out-of-scope is what turns a gap into a decision.
@@ -144,10 +147,9 @@ python3 scripts/plan_feature.py new login --kind auth,crud --stack nestjs
 python3 scripts/prd.py align prds/login specs/login       # both directions, ~5s
 
 # a level-1 diagram (<=12 nodes) of the recommended shape — orientation for a
-# reviewer who was not in the room when the options were scored
-test -f scripts/diagram_from_code.py \
-  && python3 scripts/diagram_from_code.py <closest-existing-analog> --kind deps --level 1 \
-  || echo "not built in this checkout yet -- hand-sketch the system boundary and say so"
+# reviewer who was not in the room when the options were scored; generate from
+# the closest existing analog, or hand-author + check_diagrams.py if none exists
+python3 scripts/diagram_from_code.py examples/login/src --kind deps --level 1
 
 # gate: does the PRD actually contain that diagram, not just describe one in prose
 python3 scripts/check_diagrams.py prds/login/prd.md
@@ -199,6 +201,9 @@ This skill rejects:
   production, only whether the spec names a verification step for it. A metric can
   pass `align` and still have no real telemetry behind it — see
   `examples/login/prd.md` §11, which records exactly that gap rather than hiding it.
+- `check_diagrams.py` exits 0 on a PRD with no diagram at all ("no mermaid blocks
+  found" is not an error) — it validates content, not presence. Rule 6b's presence
+  requirement is enforced by review only; a clean run is not proof one was included.
 - Rule 9's rewrite criteria are a judgement call codified as a checklist, not a
   formula. The check forces the criteria to be named; it cannot verify they are
   true.

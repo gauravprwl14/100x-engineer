@@ -42,22 +42,28 @@ you are just doing step 2 onward, with the mechanism already known.
    *Enforced by:* `git stash && <single-test-runner> <new-test-path>` must exit
    non-zero with the fix stashed away; `git stash pop` restores it. See Verify.
 
-3. Only then find the cause. Fix the narrowest change that makes the failing test
+3. Before theorizing about a new cause, check whether the bug is a violated
+   assumption — one of the most common root causes there is, and the cheapest to
+   check: something already on record said "this holds until X" and X happened.
+   *Enforced by:* `python3 scripts/decide.py trace <file>` then
+   `python3 scripts/decide.py verify`
+
+4. Only then find the cause. Fix the narrowest change that makes the failing test
    pass — one root cause, one diff.
    *Enforced by:* `python3 scripts/bloat_check.py` — flags a diff that grew past the
    fix (new files, new abstractions, unrelated hunks)
 
-4. Do not fix adjacent things you noticed while in there. A second defect gets its
+5. Do not fix adjacent things you noticed while in there. A second defect gets its
    own reproduction, its own failing test, and its own diff — bundling it here hides
    both changes from review.
    *Enforced by:* review
 
-5. Ask what class of bug this is, and grep the codebase for the same pattern. A
+6. Ask what class of bug this is, and grep the codebase for the same pattern. A
    sibling of this bug is still live until it is checked, not until this one is
    fixed.
    *Enforced by:* `grep -rn "<the specific pattern>" --include="*.<ext>" .`
 
-6. The test stays forever. Never delete it, skip it, or mark it `.only`/`.skip` —
+7. The test stays forever. Never delete it, skip it, or mark it `.only`/`.skip` —
    it is the actual deliverable of the fix, not scratch work that outlived its use.
    *Enforced by:* `python3 scripts/bloat_check.py --only focused-tests`
 
@@ -75,15 +81,20 @@ echo "expect non-zero: $?"
 git stash pop
 #   ~seconds to a minute, one test only — never the whole suite here
 
-# 3. after the fix: the same test now passes, and the diff stayed narrow
+# 3. is this a violated assumption? cheapest thing to check before theorizing
+python3 scripts/decide.py trace <file>       # which decision, if any, governs this
+python3 scripts/decide.py verify             # does its assumption still hold?
+#   ~1s each
+
+# 4. after the fix: the same test now passes, and the diff stayed narrow
 pytest tests/test_bug.py::test_repro -x      # now exits 0
 python3 scripts/bloat_check.py               # diff-scoped: scope creep, focused/skipped tests
 #   ~1-3s, diff-scoped
 
-# 4. sibling check — same class of bug elsewhere in the codebase
+# 5. sibling check — same class of bug elsewhere in the codebase
 grep -rn "<pattern that caused this>" --include="*.ts" .
 
-# 5. if the cause isn't obvious from inspection, bisect for it
+# 6. if the cause isn't obvious from inspection, bisect for it
 git bisect start
 git bisect bad HEAD
 git bisect good <last-known-good-sha>
@@ -124,12 +135,23 @@ This skill rejects:
   timeline reconstruction and hypothesis discipline that this skill deliberately
   keeps light for the common case.
 
+No diagram step here, deliberately — this skill exists for the case where the
+mechanism is understood after one reproduction. If drawing the flow is what it
+takes to understand it, the "narrowest fix" premise no longer holds and
+`root-cause-analysis` (which does generate one, at level 3) is the better fit.
+
+## Next
+
+Test passing, diff narrow, sibling grep clear: `scoped-review` before opening the
+PR, then `verification-gate` before commit. If rule 3 found a violated assumption,
+supersede that decision record — do not edit it in place.
+
 ## Scale
 
 `solo` and up, and the value does not really scale with team size — a committed
 regression test is exactly as valuable to a solo maintainer as to a 200-person org,
 which is why the research names it the single cheapest, most scale-independent
-practice found in the whole study. What *does* scale with team size is rule 5 (the
+practice found in the whole study. What *does* scale with team size is rule 6 (the
 sibling grep): at `org` size the same bug class often exists in five services nobody
 has looked at yet.
 
@@ -148,3 +170,5 @@ has looked at yet.
   `SOURCE: original`.
 - Rule ordering (reproduce, commit a failing test, narrowest fix, sibling grep,
   permanent test) is this skill's own synthesis of the above sources: `SOURCE: original`.
+- The violated-assumption check (rule 3) reuses `decide.py trace`/`verify` from
+  `skills/decision-log/SKILL.md` rather than reimplementing assumption tracking here.

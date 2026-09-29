@@ -62,6 +62,12 @@ abandoned.
    conditions acting together. That is what rule 6 is for.
    *Enforced by:* `python3 scripts/rca.py lint` rejects fewer than 2 real levels
 
+5b. Once the mechanism is hypothesized, draw it as a level-3 diagram — every branch,
+   numbered steps, the actual path including the one that failed — instead of
+   describing it in prose. "It calls A then B" hides exactly the branch where B was
+   skipped; a diagram with a missing arrow does not.
+   *Enforced by:* `python3 scripts/diagram_from_code.py <affected-dir> --kind sequence --level 3`
+
 6. Record contributing factors distinct from the root cause. An empty section here
    claims the root cause acted completely alone, which is rarely true — the "why
    did this reach production" conditions (missing test coverage, a reviewer
@@ -92,6 +98,9 @@ python3 scripts/rca.py new "Sessions dropped after deploy" --affects "src/auth/*
 git log --oneline --since="2026-09-28" -- src/auth
 git bisect start; git bisect bad HEAD; git bisect good <last-known-good-sha>
 python3 scripts/decide.py drift          # decisions whose governed code moved since recorded
+
+# draw the real path once the mechanism is hypothesized
+python3 scripts/diagram_from_code.py src/auth --kind sequence --level 3
 
 # completeness gate — the point of this skill
 python3 scripts/rca.py lint
@@ -140,6 +149,13 @@ This skill rejects:
   reviewer missed the SSO interaction" (blame) from "no check exists for
   cookie-attribute changes against the SSO flow" (process finding) — the second is
   what this skill is for, and only a human or a review pass can tell them apart.
+
+## Next
+
+Once `rca.py lint` passes and the record names a regression test: `bug-fix` for the
+actual patch, using that regression test as the failing test it commits first. If
+the fix is broader than a patch (the root cause needs a redesign, not a correction),
+`feature-planning` or `solution-architecture` instead.
 
 ## Scale
 
