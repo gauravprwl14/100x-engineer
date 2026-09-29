@@ -6,6 +6,15 @@ Applies Part B1 name-pattern rejection immediately to cut noise at the source.
 """
 import json, re, subprocess, sys, time, datetime, pathlib
 
+# One-shot research-pipeline scripts with module-level execution: importing them, or
+# passing --help, would otherwise start a live GitHub harvest. Answer --help from the
+# docstring before any of that runs.
+import sys as _sys
+if __name__ != "__main__" or any(a in ("--help", "-h") for a in _sys.argv[1:]):
+    print(__doc__ or __file__)
+    raise SystemExit(0)
+
+
 OUT = pathlib.Path("research/raw")
 OUT.mkdir(parents=True, exist_ok=True)
 

@@ -16,7 +16,30 @@ from verify_fingerprint import fingerprint, repo_root
 RECEIPT = ".claude/verification-receipt.json"
 
 
+USAGE = """verified.py -- run a check and write a content-bound receipt
+
+    verified.py [--name LABEL] -- COMMAND [ARGS...]
+
+    --name LABEL   label for this check (default: "verify"); the receipt records one
+                   entry per label, so `test`, `typecheck` and `lint` coexist
+
+Writes .claude/verification-receipt.json binding the command's exit code to a
+fingerprint of the exact working-tree content that was verified. The receipt becomes
+invalid the moment any tracked, staged or untracked file changes, which is what stops
+a passing result being reused after an edit.
+
+Examples:
+    verified.py --name test      -- npm test
+    verified.py --name typecheck -- npx tsc --noEmit
+    verified.py -- pytest -q
+
+Exits with the wrapped command's exit code."""
+
+
 def main(argv):
+    if not argv or any(a in ("--help", "-h") for a in argv):
+        print(USAGE)
+        return 0
     name = "verify"
     if "--name" in argv:
         i = argv.index("--name"); name = argv[i + 1]; del argv[i:i + 2]

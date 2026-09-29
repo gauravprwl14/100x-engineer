@@ -2,6 +2,15 @@
 """Stage D: gates (A3,A4,A8,A9,B2,C) + D1-D7 scoring + cluster allocation."""
 import json, re, pathlib, datetime, collections, sys
 
+# One-shot research-pipeline scripts with module-level execution: importing them, or
+# passing --help, would otherwise start a live GitHub harvest. Answer --help from the
+# docstring before any of that runs.
+import sys as _sys
+if __name__ != "__main__" or any(a in ("--help", "-h") for a in _sys.argv[1:]):
+    print(__doc__ or __file__)
+    raise SystemExit(0)
+
+
 OUT = pathlib.Path("research/raw")
 src = OUT / ("enriched.json" if (OUT / "enriched.json").exists() else "gql_partial.json")
 rows = json.loads(src.read_text())

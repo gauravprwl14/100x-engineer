@@ -7,6 +7,15 @@ import json, os, re, sys, time, datetime, pathlib, threading
 import urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# One-shot research-pipeline scripts with module-level execution: importing them, or
+# passing --help, would otherwise start a live GitHub harvest. Answer --help from the
+# docstring before any of that runs.
+import sys as _sys
+if __name__ != "__main__" or any(a in ("--help", "-h") for a in _sys.argv[1:]):
+    print(__doc__ or __file__)
+    raise SystemExit(0)
+
+
 TOKEN = os.popen("gh auth token").read().strip()
 assert TOKEN, "no gh token"
 OUT = pathlib.Path("research/raw")
