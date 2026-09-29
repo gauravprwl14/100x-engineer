@@ -1,0 +1,43 @@
+# worklist: go  (40 repos, ordered by signal score desc)
+# cols: repo | stars | lang | score | tier | D1..D7 | agent-files | default_branch
+
+vitessio/vitess | 21358 | Go | 16 | T1 | 3/0/3/2/3/2/3 | agents_dir,agents_md,claude_md,copilot | main
+gravitational/teleport | 20950 | Go | 16 | T1 | 3/2/2/3/2/1/3 | agents_dir,agents_md,claude_dir | master
+prometheus/prometheus | 66290 | Go | 14 | T2 | 2/0/2/2/3/2/3 | agents_md,claude_md | main
+go-gitea/gitea | 58204 | Go | 14 | T2 | 3/1/1/3/2/2/2 | agents_md | main
+mudler/LocalAI | 49305 | Go | 14 | T2 | 3/0/2/2/3/2/2 | agents_dir,agents_md,claude_md | master
+k3s-io/k3s | 34051 | Go | 14 | T2 | 3/0/1/2/3/2/3 | agents_dir | main
+jaegertracing/jaeger | 23248 | Go | 14 | T2 | 2/0/2/2/3/2/3 | agents_md,claude_md,copilot | main
+pulumi/pulumi | 25737 | Go | 13 | T2 | 3/0/2/2/2/1/3 | agents_md,claude_dir,claude_md | master
+argoproj/argo-cd | 24262 | Go | 13 | T2 | 2/0/2/1/3/2/3 | agents_md,claude_md | master
+netdata/netdata | 80676 | Go | 12 | T2 | 2/1/3/0/2/2/2 | agents_dir,agents_md,claude_md,other_rules | master
+traefik/traefik | 64987 | Go | 12 | T2 | 2/0/2/1/2/2/3 | agents_md,claude_dir,claude_md | master
+gofiber/fiber | 40187 | Go | 12 | T2 | 2/1/2/2/2/1/2 | agents_md,copilot | main
+grafana/k6 | 31684 | Go | 12 | T2 | 2/0/2/2/2/2/2 | agents_md,claude_md | master
+grafana/loki | 28963 | Go | 12 | T2 | 2/1/1/2/2/1/3 | agents_md | main
+trufflesecurity/trufflehog | 28159 | Go | 12 | T2 | 2/0/1/2/2/2/3 | claude_dir | main
+redis/go-redis | 22255 | Go | 12 | T2 | 2/0/2/2/2/2/2 | agents_md,claude_dir,claude_md | master
+microsoft/TypeScript | 111253 | Go | 11 | T2 | 1/1/1/2/3/1/2 | copilot | main
+moby/moby | 72146 | Go | 11 | T2 | 2/0/2/2/2/1/2 | agents_md,claude_md,copilot | master
+etcd-io/etcd | 52314 | Go | 11 | T2 | 3/0/0/1/3/2/2 | none | main
+tailscale/tailscale | 36960 | Go | 11 | T2 | 2/1/0/2/2/2/2 | none | main
+dapr/dapr | 26118 | Go | 11 | T2 | 3/0/1/1/2/1/3 | copilot | master
+cilium/cilium | 25568 | Go | 11 | T2 | 3/0/0/2/2/1/3 | none | main
+temporalio/temporal | 23334 | Go | 11 | T2 | 2/0/3/2/0/1/3 | agents_md,claude_dir,copilot,cursor | main
+wavetermdev/waveterm | 22378 | Go | 11 | T2 | 2/0/2/3/2/1/1 | claude_md,copilot | main
+containerd/containerd | 21347 | Go | 11 | T2 | 3/0/2/2/2/1/1 | agents_md,claude_md | main
+infiniflow/ragflow | 91423 | Go | 10 | T2 | 3/0/2/1/1/2/1 | agents_dir,agents_md,copilot | main
+caddyserver/caddy | 76138 | Go | 10 | T2 | 2/0/1/2/2/1/2 | agents_md | master
+rclone/rclone | 59985 | Go | 10 | T2 | 1/0/2/1/1/2/3 | agents_md,claude_md | master
+milvus-io/milvus | 46270 | Go | 10 | T2 | 3/0/2/2/0/2/1 | agents_md,claude_md | master
+aquasecurity/trivy | 38105 | Go | 10 | T2 | 2/0/0/1/2/2/3 | none | main
+podman-container-tools/podman | 32960 | Go | 10 | T2 | 2/0/1/2/2/1/2 | agents_md | main
+opentofu/opentofu | 30312 | Go | 10 | T2 | 2/0/1/1/1/2/3 | agents_md | main
+helm/helm | 30288 | Go | 10 | T2 | 1/0/1/2/3/1/2 | agents_md | main
+goharbor/harbor | 29467 | Go | 10 | T2 | 2/0/0/1/3/1/3 | none | main
+MHSanaei/3x-ui | 47093 | Go | 9 | T3 | 1/0/1/1/2/2/2 | claude_md | main
+dokku/dokku | 32162 | Go | 9 | T3 | 2/0/0/2/2/2/1 | none | master
+kubernetes/minikube | 32161 | Go | 9 | T3 | 3/0/0/2/2/0/2 | none | master
+authelia/authelia | 29117 | Go | 9 | T3 | 1/0/0/2/3/1/2 | none | master
+lima-vm/lima | 21985 | Go | 9 | T3 | 1/0/2/2/2/1/1 | agents_md,claude_md | master
+QuantumNous/new-api | 49007 | Go | 8 | T3 | 2/0/2/0/1/2/1 | agents_dir,agents_md,claude_md | main

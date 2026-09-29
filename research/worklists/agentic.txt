@@ -1,0 +1,28 @@
+# worklist: agentic  (25 repos, ordered by signal score desc)
+# cols: repo | stars | lang | score | tier | D1..D7 | agent-files | default_branch
+
+CherryHQ/cherry-studio | 52208 | TypeScript | 17 | T1 | 3/2/3/3/2/1/3 | agents_dir,agents_md,claude_dir,claude_md | main
+QwenLM/qwen-code | 28192 | TypeScript | 17 | T1 | 3/2/2/2/3/2/3 | agents_md,claude_md | main
+ComposioHQ/composio | 30348 | TypeScript | 16 | T1 | 3/2/3/2/2/1/3 | agents_dir,agents_md,claude_dir,claude_md | next
+promptfoo/promptfoo | 25526 | TypeScript | 16 | T1 | 3/2/2/3/2/2/2 | agents_dir,agents_md,claude_dir | main
+mlflow/mlflow | 28160 | Python | 15 | T1 | 3/1/3/1/3/2/2 | agents_dir,agents_md,claude_dir,claude_md | master
+langflow-ai/langflow | 155326 | Python | 14 | T2 | 3/1/3/2/3/1/1 | agents_dir,agents_md,claude_md,cursor | main
+CopilotKit/CopilotKit | 37580 | TypeScript | 14 | T2 | 2/2/3/1/2/1/3 | agents_md,claude_md,cursor,mcp | main
+simstudioai/sim | 29746 | TypeScript | 14 | T2 | 2/2/3/1/2/2/2 | agents_dir,agents_md,claude_dir,claude_md,cursor | main
+yamadashy/repomix | 28517 | TypeScript | 14 | T2 | 3/0/3/2/2/2/2 | agents_dir,agents_md,claude_dir,claude_md,copilot,cursor | main
+Kilo-Org/kilocode | 27429 | TypeScript | 14 | T2 | 2/2/1/2/3/1/3 | agents_md | main
+vectordotdev/vector | 22631 | Rust | 14 | T2 | 3/0/2/2/2/2/3 | agents_md,claude_md | master
+github/spec-kit | 139218 | Python | 13 | T2 | 2/1/1/2/3/1/3 | agents_md | main
+pingcap/tidb | 40597 | Go | 13 | T2 | 3/0/3/2/2/1/2 | agents_dir,agents_md,claude_dir,claude_md | master
+ruvnet/ruflo | 73421 | TypeScript | 12 | T2 | 2/0/3/1/3/1/2 | agents_dir,agents_md,claude_dir,claude_md | main
+crewAIInc/crewAI | 59132 | Python | 12 | T2 | 2/1/1/2/3/1/2 | agents_md | main
+AstrBotDevs/AstrBot | 41145 | Python | 12 | T2 | 2/0/2/2/2/2/2 | agents_md,copilot | master
+HKUDS/LightRAG | 39898 | Python | 12 | T2 | 2/0/3/1/2/2/2 | agents_md,claude_dir,claude_md,other_rules | main
+continuedev/continue | 36052 | TypeScript | 12 | T2 | 2/1/1/2/3/1/2 | claude_dir | main
+iOfficeAI/AionUi | 33182 | TypeScript | 12 | T2 | 3/1/2/1/0/2/3 | agents_md,claude_dir,claude_md | main
+deepset-ai/haystack | 26623 | Python | 12 | T2 | 3/0/2/1/3/1/2 | agents_md,claude_md | main
+comet-ml/opik | 22271 | Python | 12 | T2 | 2/0/2/2/3/1/2 | agents_dir,agents_md,copilot | main
+OpenHands/OpenHands | 89363 | TypeScript | 11 | T2 | 3/0/2/2/1/1/2 | agents_dir,agents_md | main
+openinterpreter/openinterpreter | 68462 | Rust | 11 | T2 | 1/2/1/2/2/1/2 | agents_md | main
+getzep/graphiti | 31250 | Python | 11 | T2 | 2/0/2/1/2/2/2 | agents_md,claude_md | main
+pydantic/pydantic-ai | 20233 | Python | 11 | T2 | 3/0/3/0/2/1/2 | agents_dir,agents_md,claude_dir,claude_md | main

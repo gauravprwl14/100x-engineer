@@ -1,0 +1,14 @@
+{
+  "name": "100x-local",
+  "owner": {
+    "name": "gauravprwl14"
+  },
+  "plugins": [
+    {
+      "name": "100x-engineer",
+      "source": "./",
+      "description": "Verification-enforced engineering skills derived from 20k+ star production repositories."
+    }
+  ],
+  "description": "Verification-enforced engineering skills derived from a measured 223-repo corpus of production software. Every rule ships a runnable check."
+}

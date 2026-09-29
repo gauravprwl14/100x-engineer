@@ -1,0 +1,8 @@
+{
+  "name": "100x-engineer",
+  "version": "0.1.0",
+  "description": "Verification-enforced engineering skills for backend, frontend, and mobile across TypeScript, Python, and Go. Every rule ships a runnable check. Derived from the measured practices of production repositories with 20k+ stars.",
+  "author": { "name": "gauravprwl14" },
+  "keywords": ["verification", "anti-bloat", "testing", "security", "typescript", "python", "go", "mobile", "code-review"],
+  "license": "MIT"
+}
