@@ -24,7 +24,6 @@ Exit 1 if any blocking (non-advisory) check finds a violation.
 import argparse, ast, os, re, subprocess, sys, pathlib
 
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs"}
-JS_EXT = {".ts", ".tsx", ".js", ".jsx", ".mjs"}
 DEP_FILES = {"package.json", "requirements.txt", "pyproject.toml", "Pipfile"}
 
 # ---------------------------------------------------------------------------
