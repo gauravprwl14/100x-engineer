@@ -16,11 +16,37 @@ information, never short ones or fixed-structure files like SKILL.md.
     check_index.py research/             # one tree
     check_index.py --fix-stubs           # insert a Contents skeleton to fill in
     check_index.py --json
+    check_index.py --gen-terms           # write TERMS.md, the back-of-book term index
+    check_index.py --check-terms         # exit 1 if TERMS.md is stale
+    check_index.py --register docs/engineering/architecture/auth.md
+                                         # add/update its row in docs/engineering/INDEX.md
+
+The term index (docs/OPERATING-MODEL.md section 8) maps each term to every file#anchor
+where it is defined or used as a section title. A term is any of:
+  - a bold term in definition position: `**term** —`, `**term**:`, `**term:**`,
+    `**term** is ...`;
+  - the first-column entry of a table under a heading containing "glossary",
+    "terms" or "definitions";
+  - a level-2 or level-3 heading.
+Anchors follow GitHub's slug rule (lowercase, drop punctuation except `-` and `_`,
+spaces to `-`, `-1`/`-2` suffixes for repeated headings), so every link resolves on
+GitHub. Terms are deduplicated case-insensitively. Too-generic terms are dropped:
+  - GENERIC_TERMS below (structural headings such as "Contents", "Rules", "Verify",
+    "Sources", "Overview", "Next"), compared case-insensitively;
+  - a heading that appears in more than MAX_HEADING_FILES files and is never
+    bold-defined: it is document scaffolding (every SKILL.md has "Failure modes"),
+    not vocabulary;
+  - anything under 3 or over 60 characters, over 6 words (5 for a bold term), with
+    no letter, starting with a digit, ending in "?" (a question is not a term), or
+    containing code or reference punctuation (quotes, braces, `=`, `:`, `@`, `#`):
+    those are examples and citations, not vocabulary.
+A trailing parenthetical is dropped before comparison, so "Worklist (25/25 read)" and
+"Worklist" are one term.
 
 Exit 1 if a document that needs an index lacks one.
 Python stdlib only.
 """
-import argparse, json, pathlib, re, subprocess, sys
+import argparse, json, os, pathlib, re, subprocess, sys
 
 MIN_LINES = 150          # below this, a reader just reads it
 MIN_SECTIONS = 4         # fewer sections than this needs no map
@@ -170,6 +196,198 @@ def frontmatter_field(text, key):
     return ""
 
 
+TERM_ROOTS = ("docs", "research", "reviewers", "skills")
+TERMS_FILE = "TERMS.md"
+MAX_HEADING_FILES = 8
+GENERIC_TERMS = {
+    "contents", "table of contents", "index", "at a glance", "overview", "summary",
+    "introduction", "intro", "background", "context", "notes", "note", "examples",
+    "example", "usage", "references", "see also", "sources", "source", "next",
+    "next steps", "trigger", "rules", "verify", "failure modes", "scale", "why",
+    "how", "what", "when", "method", "methods", "results", "findings", "status",
+    "appendix", "changelog", "todo", "misc", "other", "details", "setup",
+    "honest limitations", "limitations", "open questions", "glossary", "terms",
+    "definitions", "the rule", "the problem", "the fix", "the gap", "conclusion",
+    "description", "purpose", "scope", "goals", "non-goals", "options", "decision",
+    "consequences", "what it does", "what this is", "how to use this", "faq",
+    "applies when", "exact command", "why it works", "what it misses",
+}
+_FENCE = ("```", "~~~")
+
+
+def strip_md(s):
+    s = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", s)
+    s = s.replace("`", "")
+    s = re.sub(r"(\*\*|__|\*)", "", s)
+    s = re.sub(r"<[^>]+>", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def gh_slug(heading):
+    """GitHub's heading anchor: lowercase, keep word chars, '-' and ' ', spaces -> '-'."""
+    s = strip_md(heading).lower()
+    s = re.sub(r"[^\w\- ]", "", s)
+    return s.replace(" ", "-")
+
+
+def clean_term(raw):
+    s = strip_md(raw)
+    s = re.sub(r"^(§\s*)?\d+[a-z]?[.)]?\s+", "", s)       # "1. Roles", "§ 3 ..."
+    s = re.sub(r"^[A-Z]\d+[.:]\s+", "", s)                # "R5. ...", "A1: ..."
+    s = re.sub(r"\s*\([^()]*\)$", "", s)                  # "Worklist (25/25 read)"
+    return s.strip(" .:;,—–-")
+
+
+CODE_CHARS_RX = re.compile(r"[\"{}\[\]=<>|\\:@#]")
+
+
+def generic(term, kind="heading"):
+    k = term.casefold()
+    return (len(term) < 3 or len(term) > 60
+            or len(term.split()) > (6 if kind == "heading" else 5)
+            or not re.search(r"[^\W\d_]", term) or term.endswith("?")
+            or CODE_CHARS_RX.search(term) or re.match(r"^\d", term)
+            or k in GENERIC_TERMS)
+
+
+BOLD_DEF_RX = re.compile(
+    r"\*\*([^*\n]{2,80}?)\*\*(?=\s*(?:—|–|:|\s-\s|is\b|are\b|means\b))"
+    r"|\*\*([^*\n]{2,80}?)[:.]\*\*")
+GLOSSARY_HEADING_RX = re.compile(r"glossary|terms|definitions", re.I)
+
+
+def extract_terms(path, relname):
+    """[(term, anchor, kind)] for one markdown file; kind is 'defined' or 'heading'."""
+    out, seen_slugs = [], {}
+    anchor, glossary, fence = "", False, False
+    for line in path.read_text(errors="replace").splitlines():
+        st = line.lstrip()
+        if st.startswith(_FENCE):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        m = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if m:
+            level, text = len(m.group(1)), m.group(2)
+            base = gh_slug(text)
+            n = seen_slugs.get(base, 0)
+            seen_slugs[base] = n + 1
+            anchor = base if n == 0 else f"{base}-{n}"
+            if level in (2, 3):
+                glossary = bool(GLOSSARY_HEADING_RX.search(text))
+                out.append((clean_term(text), anchor, "heading"))
+            continue
+        for bm in BOLD_DEF_RX.finditer(line):
+            out.append((clean_term(bm.group(1) or bm.group(2)), anchor, "defined"))
+        if glossary and st.startswith("|") and not re.match(r"^\|[\s:|-]+\|?$", st):
+            cells = [c.strip() for c in st.strip("|").split("|")]
+            if cells and cells[0]:
+                out.append((clean_term(cells[0]), anchor, "defined"))
+    return out
+
+
+def gen_terms_text(roots=None, out_rel=TERMS_FILE):
+    roots = [r for r in (roots or TERM_ROOTS) if (ROOT / r).exists()]
+    out_path = ROOT / out_rel
+    refs = {}            # casefold key -> {(file, anchor, kind)}
+    forms = {}           # casefold key -> Counter of display forms (defined forms weigh more)
+    heading_files = {}   # casefold key -> files where it is a heading
+    defined = set()
+    files = []
+    for r in roots:
+        for f in sorted((ROOT / r).rglob("*.md")):
+            if f.name in ("INDEX.md", TERMS_FILE, "MAP.md") or \
+                    any(x in f.parts for x in (".git", "node_modules", "raw")):
+                continue
+            files.append(f)
+    for f in files:
+        relname = f.relative_to(ROOT).as_posix()
+        for term, anchor, kind in extract_terms(f, relname):
+            if not term or generic(term, kind):
+                continue
+            k = term.casefold()
+            refs.setdefault(k, set()).add((relname, anchor, kind))
+            forms.setdefault(k, {})
+            forms[k][term] = forms[k].get(term, 0) + (10 if kind == "defined" else 1)
+            if kind == "defined":
+                defined.add(k)
+            else:
+                heading_files.setdefault(k, set()).add(relname)
+    keep = {k for k in refs
+            if k in defined or len(heading_files.get(k, ())) <= MAX_HEADING_FILES}
+    base_dir = out_path.parent
+
+    def display(k):
+        return sorted(forms[k].items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+    def letter(k):
+        c = display(k)[0].upper()
+        return c if "A" <= c <= "Z" else "#"
+
+    groups = {}
+    for k in sorted(keep, key=lambda k: (display(k).casefold(), display(k))):
+        groups.setdefault(letter(k), []).append(k)
+    order = sorted(groups, key=lambda g: (g != "#", g))
+    name = {g: ("Symbols and numbers" if g == "#" else g) for g in order}
+    o = ["# Terms", "",
+         "Back-of-book index: every term defined in bold (`**term** —`), listed in a "
+         "glossary table, or used as a level-2/3 heading, and each place it appears that "
+         "way. Generated by `100x check_index --gen-terms`; do not edit by hand. "
+         "`100x check_index --check-terms` fails when it is stale.", "",
+         f"{len(keep)} terms from {len(files)} files under "
+         + ", ".join(f"`{r}/`" for r in roots) + ". *defined* marks a definition; "
+         f"other links are section headings. Generic and scaffolding headings are "
+         f"filtered (see `scripts/check_index.py`).", "",
+         " · ".join(f"[{name[g]}](#{gh_slug(name[g])})" for g in order), ""]
+    for g in order:
+        o += [f"## {name[g]}", ""]
+        for k in groups[g]:
+            items = sorted(refs[k], key=lambda x: (x[2] != "defined", x[0], x[1]))
+            links = []
+            for relname, anchor, kind in items:
+                target = os.path.relpath(ROOT / relname, base_dir).replace(os.sep, "/")
+                href = f"{target}#{anchor}" if anchor else target
+                label = f"{relname}#{anchor}" if anchor else relname
+                links.append(f"[{label}]({href})" + (" *defined*" if kind == "defined" else ""))
+            o.append(f"- **{display(k)}** — " + ", ".join(links))
+        o.append("")
+    return "\n".join(o)
+
+
+def register(note, index_rel):
+    """Add or update the catalogue row for one durable note."""
+    p = (ROOT / note) if not pathlib.Path(note).is_absolute() else pathlib.Path(note)
+    if not p.is_file():
+        print(f"check_index --register: no such file: {note}", file=sys.stderr)
+        return 2
+    idx = ROOT / index_rel
+    text = p.read_text(errors="replace")
+    title = (re.search(r"^#\s+(.+)$", text, re.M) or [None, p.stem])[1].strip()
+    href = os.path.relpath(p, idx.parent).replace(os.sep, "/")
+    row = f"| [{title}]({href}) | {p.parent.name} | {first_para(text)[:120]} |"
+    if idx.exists():
+        lines = idx.read_text().splitlines()
+    else:
+        lines = ["# Engineering docs", "",
+                 "Catalogue of the durable engineering notes under this directory. Rows "
+                 "are added by `100x check_index --register <file>`.", "",
+                 "| note | kind | what it covers |", "|---|---|---|"]
+    hit = next((i for i, l in enumerate(lines) if f"]({href})" in l), None)
+    if hit is not None:
+        lines[hit] = row
+    else:
+        last = max((i for i, l in enumerate(lines) if l.startswith("|")), default=None)
+        if last is None:
+            lines += ["", "| note | kind | what it covers |", "|---|---|---|", row]
+        else:
+            lines.insert(last + 1, row)
+    idx.parent.mkdir(parents=True, exist_ok=True)
+    idx.write_text("\n".join(lines) + "\n")
+    print(f"{'updated' if hit is not None else 'registered'} {href} in {index_rel}")
+    return 0
+
+
 def gen_collections():
     """Write the catalogue file for each collection that lacks one."""
     written = []
@@ -282,10 +500,46 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--gen-collections", action="store_true",
                     help="generate the catalogue file for each collection")
+    ap.add_argument("--gen-terms", action="store_true",
+                    help=f"write the back-of-book term index ({TERMS_FILE})")
+    ap.add_argument("--check-terms", action="store_true",
+                    help="exit 1 if the term index differs from a fresh regeneration")
+    ap.add_argument("--terms-root", action="append", default=None,
+                    help=f"directory to index for terms (repeatable; default: "
+                         f"{', '.join(TERM_ROOTS)})")
+    ap.add_argument("--terms-out", default=TERMS_FILE,
+                    help=f"where the term index lives (default: {TERMS_FILE} at the root)")
+    ap.add_argument("--register", metavar="FILE",
+                    help="add or update FILE's row in the --index catalogue")
+    ap.add_argument("--index", default="docs/engineering/INDEX.md",
+                    help="catalogue that --register writes (default: docs/engineering/INDEX.md)")
     a = ap.parse_args()
+    terms_rc = 0
+    if a.register:
+        terms_rc = register(a.register, a.index)
+        if terms_rc:
+            return terms_rc
     if a.gen_collections:
         for w in gen_collections():
             print(f"wrote {w}")
+    if a.gen_terms:
+        txt = gen_terms_text(a.terms_root, a.terms_out)
+        (ROOT / a.terms_out).parent.mkdir(parents=True, exist_ok=True)
+        (ROOT / a.terms_out).write_text(txt)
+        print(f"wrote {a.terms_out} ({txt.count(chr(10) + '- **')} terms)")
+    if a.check_terms:
+        want = gen_terms_text(a.terms_root, a.terms_out)
+        have_p = ROOT / a.terms_out
+        have = have_p.read_text() if have_p.exists() else None
+        if have != want:
+            why = "missing" if have is None else "stale"
+            print(f"check_index: {a.terms_out} is {why} — regenerate with "
+                  f"`100x check_index --gen-terms`" + (
+                      "".join(f" --terms-root {r}" for r in a.terms_root or [])) + (
+                      f" --terms-out {a.terms_out}" if a.terms_out != TERMS_FILE else ""))
+            terms_rc = 1
+        else:
+            print(f"check_index: {a.terms_out} is current")
     base = (ROOT / a.path) if not pathlib.Path(a.path).is_absolute() else pathlib.Path(a.path)
 
     docs, fixed, pending = [], 0, []
@@ -315,7 +569,7 @@ def main():
         print(json.dumps({"docs": docs, "missing_collection_indexes": missing_coll,
                           "without_contents": len(no_contents),
                           "partial": len(partial)}, indent=2))
-        return 0 if not (no_contents or missing_coll) else 1
+        return 0 if not (no_contents or missing_coll or terms_rc) else 1
 
     print(f"check_index: {len(docs)} document(s) need an index "
           f"(>= {MIN_LINES} lines, >= {MIN_SECTIONS} sections, in {'/'.join(INDEXED_DIRS[:4])}/...)")
@@ -343,7 +597,7 @@ def main():
     else:
         print("\n  A document you read to extract information needs a map at the top; "
               "a collection needs a catalogue. `--fix-stubs` scaffolds the former.")
-    return 0 if not (no_contents or missing_coll) else 1
+    return 0 if not (no_contents or missing_coll or terms_rc) else 1
 
 
 if __name__ == "__main__":
