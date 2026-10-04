@@ -245,8 +245,8 @@ python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >$OUT/pt.out 2>&1
 has "no recorded decision"
 
 # a decision record that names a winner and nothing else must be rejected
-mkdir -p "$CONS/decisions"
-cat > "$CONS/decisions/ADR-0009-thin.md" <<'MD'
+mkdir -p "$CONS/docs/engineering/decisions"
+cat > "$CONS/docs/engineering/decisions/ADR-0009-thin.md" <<'MD'
 # ADR-0009: Use Postgres
 ```json meta
 {"id":"ADR-0009","title":"Use Postgres","status":"accepted",
@@ -258,6 +258,40 @@ python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
 rc_is 1 $? "decide: lint rejects a single-option record"
 has "not a decision"
 has "no assumptions recorded"
+rm -f "$CONS/docs/engineering/decisions/ADR-0009-thin.md"
+
+# fit is a pass/fail filter applied before any weighted comparison (same rule as prd.py)
+adr() { # adr <options-json> [extra top-level json]
+  printf '# ADR-0010: Queue\n```json meta\n{"id":"ADR-0010","title":"Queue","status":"accepted","options":%s,"assumptions":[{"id":"A1","claim":"c","verify":"true","revisit_when":"w"}]%s}\n```\n' \
+    "$1" "${2:-}" > "$CONS/docs/engineering/decisions/ADR-0010-queue.md"
+  python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
+}
+SC='"scores":{"reversibility":%s,"blast radius":%s,"moving parts":%s,"already-in-use":%s,"exit cost":%s}'
+sc() { printf "$SC" "$@"; }
+adr '[{"name":"SQS","fit":"pass","chosen":true,"why":"managed"},{"name":"cron","fit":"fail","chosen":false,"why_not":"misses the 1s latency need"}]'
+rc_is 0 $? "decide: fit-passing chosen option passes lint (no false positive)"
+adr '[{"name":"SQS","chosen":true,"why":"managed"},{"name":"cron","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: options without fit rejected"
+has "set \"fit\": \"pass\" or \"fail\""
+adr '[{"name":"SQS","fit":"fail","chosen":true,"why":"managed"},{"name":"cron","fit":"pass","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: a chosen option that fails fit rejected"
+has "fails the fit filter"
+adr '[{"name":"SQS","fit":"fail","chosen":true,"why":"managed"},{"name":"cron","fit":"fail","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: no fit-passing option rejected"
+has "no option passes the fit filter"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 1 $? "decide: chosen below the top fit-passing score without override rejected"
+has "is not the top fit-passing score"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]" ',"override_reason":"team already runs SQS"'
+rc_is 0 $? "decide: an override_reason allows a lower score"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"fail\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 0 $? "decide: a higher score that FAILS fit does not outrank the chosen option"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 9 2 2)},{\"name\":\"cron\",\"fit\":\"fail\",\"chosen\":false,\"why_not\":\"slow\"}]"
+rc_is 1 $? "decide: a score outside 1-5 rejected"
+has "integer 1-5"
+rm -f "$CONS/docs/engineering/decisions/ADR-0010-queue.md"
+python3 -c "import sys; sys.path.insert(0, '$ROOT/scripts'); import decide, prd; sys.exit(0 if prd.WEIGHTS is decide.WEIGHTS else 1)" >/dev/null 2>&1
+rc_is 0 $? "decide and prd score with one shared weight table"
 cd "$ROOT"
 
 # ---------- review_scope ----------

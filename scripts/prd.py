@@ -156,8 +156,9 @@ DESIGN_SECTIONS = ["Goals", "Design overview", "Security", "Privacy", "Observabi
                    "Open questions / assumptions", "Approvers"]
 NA_BARE = re.compile(r"^n/?a\.?$", re.I)
 # approach-selection weights, fit excluded: fit is a pass/fail filter applied first.
-WEIGHTS = [("reversibility", 3), ("blast radius", 3), ("moving parts", 2),
-           ("already-in-use", 2), ("exit cost", 1)]
+# Defined once in decide.py so a PRD's options table and the ADR recording the same
+# choice cannot score it differently.
+from decide import WEIGHTS
 OPT_HEADER = ("| # | option | pros | cons | reversibility x3 | blast radius x3 | "
               "moving parts x2 | already-in-use x2 | exit cost x1 | fit (pass/fail) | "
               "weighted score |")
