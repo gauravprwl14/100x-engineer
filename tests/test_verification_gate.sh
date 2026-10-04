@@ -5,12 +5,13 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HUNDREDX_KEY_FILE="$TMP/key/receipt.key"
-unset VERIFY_SKIP
+unset VERIFY_SKIP PYTEST_ADDOPTS PYTEST_PLUGINS NODE_OPTIONS GOFLAGS LD_PRELOAD DYLD_INSERT_LIBRARIES
 HOOK="$ROOT/hooks/require_verification.py"
 VERIFIED="$ROOT/scripts/verified.py"
 R="$TMP/repo"; OTHER="$TMP/elsewhere"; mkdir -p "$R/.claude" "$OTHER"
 cd "$R"
 git init -q; git config user.email t@t; git config user.name t
+git symbolic-ref HEAD refs/heads/main     # independent of init.defaultBranch
 echo 'print("ok")' > pass_test.py
 echo 'import sys; sys.exit(1)' > fail_test.py
 echo 'x = 1' > app.py
@@ -166,15 +167,76 @@ expect deny   "cd <repo> && git commit gated"       "cd $R && git commit -m x" "
 expect deny   "--git-dir commit gated"              "git --git-dir=$R/.git --work-tree=$R commit -m x" "$OTHER"
 expect deny   "env/command wrappers gated"          'env FOO=1 command git commit -m x'
 expect deny   "unbalanced quotes still gated"       'git commit -m "unterminated'
+
+echo "--- every natural phrasing reaches a decision (no receipt: denied)"
+REGRESS=('timeout 60 git commit -am x' 'timeout -s KILL 60 git commit -m x'
+  'nice -n 5 git commit -m x' 'eval git commit -m x' 'eval "git commit -m x"'
+  'echo x | xargs git commit -m' 'xargs -I{} git commit -m {} < /dev/null'
+  'cd "$PWD" && git commit -m x' 'git -C "$PWD" commit -m x' '{ git push; }'
+  'if true; then git push; fi' 'for i in 1; do git push; done'
+  'while false; do :; done; until git push; do :; done' '! git commit -m x'
+  'env -u FOO git push' 'env -S "git commit -m x"' 'sudo -u me git push'
+  'doas -u me git push' 'stdbuf -oL git commit -m x' 'watch -n 5 git push'
+  'find . -exec git commit -m x \;' 'docker run img git push'
+  'G=git; $G commit -m x' '$(echo git) commit -m x' '`echo git` commit -m x'
+  'X=$(echo git); $X push' '$UNSET_PROGRAM commit -m x'
+  'git -c alias.ci=commit ci -m x'
+  'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x'
+  "export GIT_DIR=$R/.git; git commit -m x"
+  "export GIT_DIR=$R/.git GIT_WORK_TREE=$R; cd $OTHER; git commit -m x"
+  '(cd /); git commit -m x' 'bash -c "cd /"; git commit -m x'
+  'git commit-tree HEAD^{tree} -m x' 'git update-ref refs/heads/main HEAD'
+  'git send-pack origin main' 'git merge feature' 'git merge --continue'
+  'gh pr merge 3' 'gh api repos/o/r/pulls/1/merge -X PUT'
+  'echo "git push origin main" | bash' 'git commit -m "$(cat msg.txt)"'
+  "$(printf 'bash <<EOF\ngit commit -m x\nEOF')"
+  "$(printf 'cat <<EOF\n$(git push)\nEOF')")
+for c in "${REGRESS[@]}"; do expect deny "gated: ${c//$'\n'/ | }" "$c"; done
+expect deny   "an abbreviated long option is still the evasion" 'git commit --no-veri -m x' "$R" "skips git"
+expect deny   "core.hooksPath via GIT_CONFIG_* is evasion" \
+  'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x' "$R" "hooks"
+
+echo "--- no false positives on look-alikes"
+QUIET=('echo git commit' 'printf "%s\n" "git push origin main"' 'grep -rn "git push" .'
+  'git log --grep commit' 'ls .github' 'echo $(git rev-parse HEAD)' 'cat <<< "git push"'
+  'git merge --abort' 'git update-ref -d refs/heads/x' 'gh api repos/o/r/pulls'
+  'command -v git' 'man git-push' 'git push -n origin main' 'npm run build'
+  'for f in commit push; do echo $f; done' 'git config alias.ci' 'brew install git gh'
+  "$(printf 'cat > n.md <<EOF\n$ git push origin main\nEOF')")
+for c in "${QUIET[@]}"; do expect silent "not gated: ${c//$'\n'/ | }" "$c"; done
 mv "$TMP/receipt.bak" .claude/verification-receipt.json
+
+echo "--- parsed as the real command, not just matched (fresh receipt: passes)"
+git add -A; git commit -qm "pre-regression state" >/dev/null 2>&1; fresh
+PASSING=('timeout 60 git commit -am x' 'nice -n 5 git commit -m x' 'eval git commit -m x'
+  'echo x | xargs git commit -m' 'cd "$PWD" && git commit -m x' 'git -C "$PWD" commit -m x'
+  '{ git push; }' 'if true; then git push; fi' 'for i in 1; do git push; done'
+  'env -u FOO git push' 'sudo -u me git push' 'G=git; $G commit -m x'
+  'git -c alias.ci=commit ci -m x' "export GIT_DIR=$R/.git; git commit -m x"
+  'git status && git commit -m x' 'git add -A && git commit -m x'
+  'git diff --stat; git commit -m x 2>/dev/null' 'git commit -m x && git push'
+  'cd "$(git rev-parse --show-toplevel)" && git commit -m x')
+for c in "${PASSING[@]}"; do expect message "passes when verified: $c" "$c" "$R" "PASSED"; done
+
+echo "--- B1: an edit chained before the commit is refused (fresh receipt)"
+T='separate command'
+expect deny   "append then commit -am"             'echo evil >> app.py && git commit -am x' "$R" "$T"
+expect deny   "sed; add; commit"                   "sed -i.bak s/x/y/ app.py; git add app.py; git commit -m y" "$R" "$T"
+expect deny   "test run then commit"               'python3 pass_test.py && git commit -m x' "$R" "$T"
+expect deny   "edit inside bash -c before commit"  "bash -c 'echo evil > app.py; git commit -am x'" "$R" "$T"
+expect deny   "edit in a substitution"             'git commit -m "$(echo evil > app.py)"' "$R" "$T"
+expect deny   "edit before push"                   'echo evil >> app.py; git push' "$R" "$T"
+expect message "redirect to /dev/null is not an edit" 'echo x > /dev/null && git commit -m x' "$R" "PASSED"
 
 echo "--- every publish variant is routed by hooks.json and decided by the script"
 PUBLISH=('git push origin main' 'git tag v1.0.0' 'git tag -a v1 -m rel' 'gh pr create --fill'
   'gh pr merge 3' 'gh release create v1.0.0' 'npm publish --access public' 'pnpm publish'
   'pnpm -r publish' 'yarn publish' 'yarn npm publish' 'twine upload dist/*'
   'python3 -m twine upload dist/*' 'uv publish' 'npm --registry https://r.example publish')
-for c in "${PUBLISH[@]}"; do
-  python3 - "$ROOT/hooks/hooks.json" "$c" <<'PY' && ok "hooks.json routes: $c" || bad "hooks.json routes: $c"
+ROUTED=("${PUBLISH[@]}" '$(echo git) commit -m x' 'G=git; $G commit' 'timeout 60 git commit -am x'
+  'X=$(printf g)it; $X push' 'gh api repos/o/r/pulls/1/merge -X PUT')
+for c in "${ROUTED[@]}"; do
+  python3 - "$ROOT/hooks/hooks.json" "$c" <<'PY'&& ok "hooks.json routes: $c" || bad "hooks.json routes: $c"
 import fnmatch, json, sys
 cfg = json.load(open(sys.argv[1]))
 for group in cfg["hooks"]["PreToolUse"]:
@@ -209,6 +271,90 @@ expect deny   "mode change (chmod +x) invalidates"  "$C"
 chmod -x app.py
 echo '# unstaged' >> app.py; fresh
 expect message "commit with unstaged verified edits warns" "$C" "$R" "never tested"
+
+echo "--- S4: a push is bound to what it sends, not the working tree"
+git add -A; git commit -qm "push binding base" >/dev/null 2>&1; fresh
+BADC="$(git commit-tree "HEAD^{tree}" -p HEAD -m bad)"; git update-ref refs/heads/bad "$BADC"
+git tag old-release "$BADC"
+expect message "push current branch"                'git push origin main' "$R" "PASSED"
+expect message "push HEAD:main"                     'git push origin HEAD:main' "$R" "PASSED"
+expect message "bare git push"                      'git push' "$R" "PASSED"
+expect message "deleting a remote ref sends nothing" 'git push origin :old' "$R" "PASSED"
+expect deny   "push another branch"                 'git push origin bad' "$R" "not the checked-out"
+expect deny   "push bad:main"                       'git push origin bad:main' "$R" "not the checked-out"
+expect deny   "push +bad:main"                      'git push -f origin +bad:main' "$R" "not the checked-out"
+expect deny   "push --tags with a tag elsewhere"    'git push --tags' "$R" "old-release"
+expect deny   "push --all with another branch"      'git push --all origin' "$R" "bad"
+expect deny   "push an unknown ref"                 'git push origin nosuch' "$R" "local commit"
+expect deny   "gh pr create --head bad"             'gh pr create --head bad --fill' "$R" "not the checked-out"
+expect deny   "unresolvable program pushing bad"    '$(echo git) push origin bad' "$R" "not the checked-out"
+expect deny   "push through a bare shell: refs unknown" 'echo "git push origin main" | sh' "$R" "cannot tell"
+git tag good-release; expect message "push a tag at HEAD" 'git push origin good-release' "$R" "PASSED"
+echo 'x = 9' > app.py; fresh
+expect deny   "uncommitted verified edits: push denied" 'git push origin main' "$R" "uncommitted"
+expect deny   "uncommitted verified edits: gh pr create denied" 'gh pr create --fill' "$R" "uncommitted"
+expect message "commit -am && push sends the verified tree" 'git commit -am x && git push' "$R" "PASSED"
+expect deny   "commit (not -a) && push would send less" 'git commit -m x && git push' "$R" "separate command"
+git commit -qam "app 9"; fresh
+
+echo "--- P5: a commit that changes the policy needs a receipt taken with it"
+printf '{"required_checks": {"test": "python3 pass_test.py"}, "max_age_minutes": 9999}\n' > .claude/verification-policy.json
+git add .claude/verification-policy.json
+expect deny   "staged policy edit rides an old receipt" "$C" "$R" "changes .claude/verification-policy.json"
+expect deny   "commit -a with a policy edit"        'git commit -am x' "$R" "changes .claude"
+fresh
+expect message "re-verified with the new policy in place" "$C" "$R" "PASSED"
+git commit -qm "policy: max age"; fresh
+expect message "no policy change: old receipts still fine" "$C" "$R" "PASSED"
+
+echo "--- B2: the receipt write cannot be redirected by a symlink"
+mkdir -p "$TMP/outside"; echo precious > "$TMP/victim.txt"
+B="$TMP/b2"; mkdir -p "$B"; (cd "$B" && git init -q && git config user.email t@t && git config user.name t \
+  && echo a > a && git add a && git commit -qm i)
+mkdir -p "$B/.claude"; ln -s "$TMP/victim.txt" "$B/.claude/verification-receipt.json.tmp"
+(cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>&1); rc=$?
+[ "$rc" -eq 0 ] && [ "$(cat "$TMP/victim.txt")" = precious ] \
+  && ok "planted .tmp symlink is not written through" \
+  || bad "planted .tmp symlink is not written through (rc=$rc, victim=$(cat "$TMP/victim.txt"))"
+rm -rf "$B/.claude"; mkdir "$B/.claude"; ln -s "$TMP/victim.txt" "$B/.claude/verification-receipt.json"
+(cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q symlink "$TMP/err" && [ "$(cat "$TMP/victim.txt")" = precious ] \
+  && ok "receipt symlink refused (exit 2)" || bad "receipt symlink refused (rc=$rc)"
+rm -rf "$B/.claude"; ln -s "$TMP/outside" "$B/.claude"
+(cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q symlink "$TMP/err" && [ -z "$(ls -A "$TMP/outside")" ] \
+  && ok ".claude symlinked outside the repo refused (exit 2)" || bad ".claude symlink refused (rc=$rc)"
+
+echo "--- S3: runner-altering environment and PATH shadowing are refused"
+cp .claude/verification-receipt.json "$TMP/receipt.keep"
+for v in PYTEST_ADDOPTS NODE_OPTIONS GOFLAGS; do
+  (cd "$R" && env "$v=--x" python3 "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
+  [ "$rc" -eq 2 ] && grep -q "$v" "$TMP/err" && ok "$v set: refused (exit 2)" || bad "$v set: refused (rc=$rc)"
+done
+cmp -s .claude/verification-receipt.json "$TMP/receipt.keep" && ok "refusals leave the receipt untouched" \
+  || bad "refusals leave the receipt untouched"
+PYBIN="$(command -v python3)"   # the gate's own interpreter, not the planted one
+mkdir -p "$TMP/evil"; printf '#!/bin/sh\nexit 0\n' > "$TMP/evil/python3"; chmod +x "$TMP/evil/python3"
+(cd "$R" && PATH="$TMP/evil:$PATH" "$PYBIN" "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q "inside" "$TMP/err" && ok "python3 shadowed from a temp dir: refused" \
+  || bad "python3 shadowed from a temp dir: refused (rc=$rc)"
+mkdir -p "$R/bin"; cp "$TMP/evil/python3" "$R/bin/python3"
+(cd "$R" && PATH="$R/bin:$PATH" "$PYBIN" "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q "repository" "$TMP/err" && ok "python3 shadowed from inside the repo: refused" \
+  || bad "python3 shadowed from inside the repo: refused (rc=$rc)"
+rm -rf "$R/bin"
+REALPY="$(python3 -c 'import os,shutil; print(os.path.realpath(shutil.which("python3")))')"
+mkdir -p "$TMP/link"; ln -s "$REALPY" "$TMP/link/python3"
+(cd "$R" && PATH="$TMP/link:$PATH" python3 "$VERIFIED" --name test >/dev/null 2>&1) \
+  && ok "a temp-dir symlink to the real python3 is accepted" || bad "a temp-dir symlink to the real python3 is accepted"
+python3 - "$REALPY" <<'PY' && ok "receipt records the executable's real path" || bad "receipt records the executable's real path"
+import json, sys
+e = json.load(open(".claude/verification-receipt.json"))["checks"]["test"]
+import os
+home = os.path.realpath(os.path.expanduser("~"))
+want = "~" + sys.argv[1][len(home):] if sys.argv[1].startswith(home + os.sep) else sys.argv[1]
+assert e.get("exe") == want, (e.get("exe"), want)
+PY
 
 echo "--- unconfigured and disabled repositories"
 mkdir -p "$OTHER/r2"; (cd "$OTHER/r2" && git init -q && git config user.email t@t && git config user.name t \

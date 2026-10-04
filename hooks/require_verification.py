@@ -2,13 +2,20 @@
 """PreToolUse gate: block completion-shaped actions without fresh verification.
 
 Instructions asking a model to "verify before claiming done" are prose the model can
-talk itself past. This is a gate it cannot: the receipt is signed and bound to a
-content fingerprint, so editing a file after verifying invalidates the proof, and
-hand-writing a receipt does not produce one.
+talk itself past. This is a gate it cannot casually step around: the receipt is signed
+and bound to a content fingerprint, so editing a file after verifying invalidates the
+proof, and hand-writing a receipt does not produce one.
 
-hooks.json routes broadly (any command mentioning git, gh or a publisher) because its
-`if` patterns cannot see past `git -C <path>` or `git -c k=v`; this script parses the
-command and decides. Reads hook JSON on stdin, writes a decision on stdout.
+What it is, and is not: an integrity aid against a confused agent and against casual
+evasion -- every natural way of phrasing a commit, push, PR or publish is meant to be
+caught. It is not a boundary against an agent deliberately setting out to defeat it
+(see docs/SAFETY.md, "Residual bypass classes"). Where the parser cannot tell what a
+command does, it gates rather than guesses.
+
+hooks.json routes broadly (any command mentioning git, gh, commit, push or a
+publisher) because its `if` patterns see only text; this script parses the command and
+decides, and returns fast when nothing is gated. Reads hook JSON on stdin, writes a
+decision on stdout.
 
 Decisions: deny (gate failed), ask (an explicit [skip-verify] -- a human approves it,
 the agent cannot), or no decision at all when the gate passes. A passing gate does not
@@ -17,11 +24,11 @@ command, and a verification gate has no business granting permissions.
 
 Fails OPEN on internal error -- a broken gate must not brick the user's shell.
 """
-import json, os, pathlib, re, shlex, sys
+import hashlib, json, os, pathlib, re, shlex, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 try:
-    from verify_fingerprint import _git, repo_root, snapshot
+    from verify_fingerprint import EXCLUDE, _git, repo_root, snapshot, tree_fingerprint
     from receipts import (POLICY, RECEIPT, GateError, evaluate, load_key, load_policy,
                           rerun_hint)
 except Exception:                                   # fail open, see module docstring
@@ -29,24 +36,82 @@ except Exception:                                   # fail open, see module docs
     sys.exit(0)
 
 SKIP_TOKEN = re.compile(r"\[skip-verify\]|\[no-verify\]")
-SEPARATORS = {"&&", "||", ";", "|", "&", "(", ")", "\n", "|&", ";;"}
-REDIRECT = re.compile(r"^[<>&]+$|^<<-?$")
-ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-WRAPPERS = {"env", "command", "exec", "nohup", "time", "nice", "sudo", "builtin"}
+SEPARATORS = {"&&", "||", ";", "|", "&", "\n", "|&", ";;", ";&", ";;&"}
+PUNCT_PIECES = sorted([";;&", ";;", ";&", "&&", "||", "|&", "&>>", "&>", ">>", ">&", "<&",
+                       "<<<", "<<-", "<<", ">|", "<>", ";", "&", "|", "(", ")", "<",
+                       ">", "\n"], key=len, reverse=True)
+REDIRECT = re.compile(r"^(?:[<>&]+|>\||<<-?)$")
+ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+# (?<!<) and (?!<) keep a here-string (`<<< word`) from being read as a heredoc whose
+# body would swallow every following line.
+HEREDOC = re.compile(r"(?<!<)<<-?(?!<)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+SHELL_FED_HEREDOC = re.compile(r"(?:^|[;&|(\s])(?:sh|bash|zsh|dash|ksh)\b[^;&|]*<<")
+VAR_RX = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+SUB = "$__100x_sub{}__"
+SUB_RX = re.compile(r"\$__100x_sub(\d+)__")
+MAX_DEPTH = 4
+
+# Reserved words at command position. They separate commands rather than being
+# programs, so `{ git push; }` and `if x; then git push; fi` are parsed as `git push`.
+KEYWORDS = {"{", "}", "!", "if", "then", "else", "elif", "fi", "do", "done", "while",
+            "until", "esac"}
+LIST_HEADS = {"for", "select", "case"}       # `for x in a b`: the words are data
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
-NOT_ALIASES = {  # common git builtins; anything else may be an alias worth resolving
+# Programs that run another command, with the options of each that consume a value,
+# and how many positionals precede the command (timeout's duration).
+WRAPPERS = {
+    "env": ({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}, 0),
+    "command": (set(), 0), "exec": ({"-a"}, 0), "nohup": (set(), 0),
+    "time": ({"-f", "--format", "-o", "--output"}, 0), "builtin": (set(), 0),
+    "nice": ({"-n", "--adjustment"}, 0),
+    "sudo": ({"-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U", "-T", "--user",
+              "--group", "--host", "--prompt", "--close-from", "--chdir", "--role",
+              "--type", "--other-user", "--command-timeout"}, 0),
+    "doas": ({"-u", "-C"}, 0),
+    "timeout": ({"-s", "--signal", "-k", "--kill-after"}, 1),
+    "stdbuf": ({"-i", "-o", "-e", "--input", "--output", "--error"}, 0),
+    "xargs": ({"-I", "-L", "-n", "-P", "-s", "-d", "-E", "-a", "--arg-file",
+               "--delimiter", "--max-args", "--max-procs", "--max-chars", "--max-lines",
+               "--eof", "--process-slot-var"}, 0),
+    "watch": ({"-n", "--interval", "-q", "--equexit"}, 0),
+    "eval": (set(), 0), "setsid": (set(), 0), "chronic": (set(), 0),
+    "unbuffer": (set(), 0), "caffeinate": ({"-t", "-w"}, 0),
+    "ionice": ({"-c", "-n", "-p", "--class", "--classdata"}, 0),
+}
+CHDIR_OPTS = {"-C", "--chdir", "-D"}         # env -C, sudo -D/--chdir
+# An unrecognised program may still run its arguments (`find -exec`, `docker run`),
+# so its argv is scanned for these; programs that only display text are not scanned.
+SCAN_PROGS = {"git", "gh", "npm", "pnpm", "yarn", "twine", "uv", "uvx"} | SHELLS
+NO_EXEC = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "ag", "ack", "cat", "less",
+           "more", "head", "tail", "wc", "ls", "man", "which", "type", "whereis",
+           "whatis", "apropos", "info", "help", "tldr", "test", "[", "true", "false",
+           ":", "sed", "awk", "jq", "yq", "diff", "cmp", "sort", "uniq", "cut", "tr",
+           "tee", "file", "stat", "basename", "dirname", "realpath", "readlink",
+           "touch", "mkdir", "cp", "mv", "ln", "chmod"}
+# Words that, after a program name the parser cannot resolve, mean "gate this".
+GATE_WORDS = {"commit", "push", "tag", "merge", "publish", "upload", "send-pack",
+              "commit-tree", "update-ref", "pr", "release"}
+# Segments that cannot change file content, so they may precede a gated action in the
+# same command line without opening a window between the check and the action.
+READ_ONLY = {"cd", "pushd", "popd", "pwd", "ls", "cat", "echo", "printf", "true",
+             "false", ":", "test", "[", "head", "tail", "wc", "grep", "which", "type",
+             "date"}
+READ_ONLY_GIT = {"status", "diff", "log", "show", "add", "rev-parse", "ls-files"}
+# Gated actions that move no content, so a later action in the same line may follow
+# them: each is judged on its own.
+SAFE_EARLIER = {"commit", "tag", "push", "pr"}
+NOT_ALIASES = {  # git builtins: git never lets an alias shadow one
     "add", "am", "apply", "bisect", "blame", "branch", "cat-file", "cherry-pick",
-    "clone", "commit", "config", "describe", "diff", "fetch", "grep", "init", "log",
-    "ls-files", "merge", "mv", "pull", "push", "rebase", "reflog", "remote",
-    "restore", "rev-parse", "revert", "show", "status", "switch", "tag", "worktree"}
+    "clone", "commit", "commit-tree", "config", "describe", "diff", "fetch", "grep",
+    "init", "log", "ls-files", "ls-tree", "merge", "mv", "pull", "push", "rebase",
+    "reflog", "remote", "restore", "rev-parse", "revert", "send-pack", "show",
+    "status", "switch", "tag", "update-ref", "worktree"}
 GIT_OPT_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env",
-               "--super-prefix", "--list-cmds"}
+               "--super-prefix", "--list-cmds", "--exec-path"}
 COMMIT_LONG_ARG = {"--message", "--file", "--reuse-message", "--reedit-message",
                    "--fixup", "--squash", "--author", "--date", "--cleanup",
                    "--template", "--trailer", "--pathspec-from-file", "--untracked-files"}
-# Options that take a separate value, per tool, so the value is not mistaken for the
-# subcommand (`-r` is a value-taking --repository for twine but a flag for pnpm).
+PUSH_OPT_ARG = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
 OPT_ARG = {
     "npm": {"--registry", "--workspace", "-w", "--prefix", "--userconfig", "--cache",
             "--loglevel", "--otp", "--tag", "--access"},
@@ -61,66 +126,221 @@ OPT_ARG = {
 }
 
 
-GIT_LABELS = {
-    "commit": "git commit",
-    "push": "git push",
-    "tag": "git tag",
-}
-
-
 class Action:
-    def __init__(self, label, cwd, git_args=(), evasion=None, commit_all=False):
-        self.label, self.cwd, self.git_args = label, cwd, list(git_args)
-        self.evasion, self.commit_all = evasion, commit_all
+    """One gated action. kind: commit | merge | push | tag | plumbing | publish | pr |
+    generic. srcs (push only): refs it sends; [] means the default (HEAD), None means
+    the parser could not tell."""
+
+    def __init__(self, label, kind, state, git_args=(), evasion=None, commit_all=False,
+                 pathspec=False, srcs=(), push_mode=None):
+        self.label, self.kind = label, kind
+        self.cwd, self.base = state.cwd, state.base
+        self.git_args = list(git_args)
+        self.evasion, self.commit_all, self.pathspec = evasion, commit_all, pathspec
+        self.srcs = None if srcs is None else list(srcs)
+        self.push_mode = push_mode
+        self.after_write = state.dirty_by
+        self.prior_commits = [a for a in state.actions if a.kind == "commit"]
+        self.added = state.added
+
+    def key(self):
+        return (self.label, self.kind, self.cwd, tuple(self.git_args), self.evasion,
+                self.after_write, None if self.srcs is None else tuple(self.srcs),
+                self.push_mode, self.commit_all)
+
+
+class State:
+    """What one shell would know while running the command line, in order."""
+
+    def __init__(self, cwd, raw):
+        self.cwd = self.base = cwd
+        self.raw = raw
+        self.vars, self.exported = {}, {}
+        self.dirty_by = None          # first earlier segment that may change files
+        self.added = None             # "all" | "tracked" after an earlier `git add`
+        self.actions, self.stack, self.dirstack = [], [], []
+
+    def emit(self, action):
+        self.actions.append(action)
+
+    def push_scope(self):
+        self.stack.append((self.cwd, dict(self.vars), dict(self.exported)))
+
+    def pop_scope(self):
+        if self.stack:
+            self.cwd, self.vars, self.exported = self.stack.pop()
+
+
+class Seg:
+    def __init__(self, argv, redirected):
+        self.argv, self.redirected = argv, redirected
 
 
 # ---------------------------------------------------------------- tokenising
 
+def _match_paren(cmd, k):
+    """Index of the `)` closing the `(` at k, honouring quotes; len(cmd) if none."""
+    depth, q, i = 0, None, k
+    while i < len(cmd):
+        c = cmd[i]
+        if q == "'":
+            if c == "'":
+                q = None
+        elif c == "\\":
+            i += 1
+        elif c == '"':
+            q = None if q == '"' else '"'
+        elif c == "'" and q is None:
+            q = "'"
+        elif q is None and c == "(":
+            depth += 1
+        elif q is None and c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(cmd)
+
+
+def _extract_substitutions(cmd, quotes=True):
+    """Replace $(...), `...`, <(...) and >(...) with placeholders.
+
+    Returns (text, inners). A substitution is a command the shell runs before the one
+    containing it, so its text is parsed separately; the placeholder keeps a `$`, which
+    marks a program name produced by substitution as unresolvable.
+    """
+    out, inners, i, n, q = [], [], 0, len(cmd), None
+    while i < n:
+        c = cmd[i]
+        if quotes and q == "'":
+            out.append(c)
+            q = None if c == "'" else q
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if quotes and c == "'" and q is None:
+            q = "'"
+        elif quotes and c == '"':
+            q = None if q == '"' else '"'
+        elif cmd.startswith("(", i + 1) and (c == "$" or (c in "<>" and q is None)):
+            j = _match_paren(cmd, i + 1)
+            inners.append(cmd[i + 2:j])
+            out.append(SUB.format(len(inners) - 1))
+            i = j + 1
+            continue
+        elif c == "`":
+            j = i + 1
+            while j < n and cmd[j] != "`":
+                j += 2 if cmd[j] == "\\" else 1
+            inners.append(cmd[i + 1:j])
+            out.append(SUB.format(len(inners) - 1))
+            i = j + 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), inners
+
+
 def _strip_heredocs(cmd):
     """Drop heredoc bodies: their lines are data, not commands, and a body line that
-    happens to start with a gated word must not be gated."""
+    happens to start with a gated word must not be gated. Two exceptions run code: a
+    body fed to a shell is kept as commands, and substitutions in an unquoted body are
+    kept (as subshells) because the shell expands them."""
     out, lines, i = [], cmd.split("\n"), 0
     while i < len(lines):
         line = lines[i]
         out.append(line)
-        delims = [m.group(2) for m in HEREDOC.finditer(line)]
+        found = list(HEREDOC.finditer(line))
+        shell_fed = bool(SHELL_FED_HEREDOC.search(line))
         i += 1
-        for d in delims:
-            while i < len(lines) and lines[i].strip() != d:
+        for m in found:
+            body = []
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                body.append(lines[i])
                 i += 1
             i += 1
+            if shell_fed:
+                out.extend(body)
+            elif not m.group(1):
+                _, inners = _extract_substitutions("\n".join(body), quotes=False)
+                out.extend("( " + inner.replace("\n", " ; ") + " )" for inner in inners)
     return "\n".join(out)
 
 
-def segments(cmd):
-    """Split a shell command into simple-command argv lists.
+def _split_punct(tok):
+    pieces, i = [], 0
+    while i < len(tok):
+        for p in PUNCT_PIECES:
+            if tok.startswith(p, i):
+                pieces.append(p)
+                i += len(p)
+                break
+        else:
+            return [tok]
+    return pieces
 
-    Approximate by design: over-splitting only ever gates more, never less. Command
-    substitutions are split out because `(` is a separator; backticks become one.
+
+def segments(text):
+    """Split shell text into Seg items and "(" / ")" subshell markers.
+
+    Approximate by design: over-splitting only ever gates more, never less.
     """
-    cmd = _strip_heredocs(cmd).replace("`", "\n")
-    lx = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()<>\n")
+    lx = shlex.shlex(text, posix=True, punctuation_chars=";&|()<>\n")
     lx.whitespace = " \t\r"
     lx.whitespace_split = True
-    segs, cur = [], []
-    skip_next = False
-    for tok in lx:
-        if skip_next:
-            skip_next = False
+    items, cur, state = [], [], {"redir": False, "target": None}
+
+    def flush():
+        if cur:
+            items.append(Seg(list(cur), state["redir"]))
+        del cur[:]
+        state["redir"] = False
+
+    raw = list(lx)
+    toks = []
+    for tok in raw:
+        toks.extend(_split_punct(tok) if tok and set(tok) <= set(";&|()<>\n") else [tok])
+    for tok in toks:
+        if state["target"] is not None:
+            if state["target"] == "write" and tok not in ("/dev/null", "-") \
+                    and not tok.isdigit():
+                state["redir"] = True
+            state["target"] = None
             continue
-        if tok in SEPARATORS:
-            if cur:
-                segs.append(cur)
-            cur = []
+        if tok in ("(", ")"):
+            flush()
+            items.append(tok)
+        elif tok in SEPARATORS:
+            flush()
         elif REDIRECT.match(tok):
             if cur and cur[-1].isdigit():
                 cur.pop()
-            skip_next = True
+            state["target"] = "write" if ">" in tok else "read"
         else:
             cur.append(tok)
-    if cur:
-        segs.append(cur)
-    return segs
+    flush()
+    return items
+
+
+def expand(tok, state):
+    """Expand $NAME / ${NAME} from what the command line itself assigned, then from
+    the hook's environment; an unknown name stays literal (and so keeps its `$`)."""
+    if "$" not in tok:
+        return tok
+
+    def sub(m):
+        name = m.group(1) or m.group(2)
+        if name.startswith("__100x_sub"):
+            return m.group(0)
+        if name == "PWD":
+            return state.cwd
+        if name in state.vars:
+            return state.vars[name]
+        return os.environ.get(name, m.group(0))
+    return VAR_RX.sub(sub, tok)
 
 
 # ---------------------------------------------------------------- per-tool parsing
@@ -141,19 +361,25 @@ def _positionals(args, opt_arg):
     return pos
 
 
+def _is_no_verify(a):
+    # git accepts any unambiguous prefix of a long option: `--no-veri` is --no-verify.
+    return len(a) >= 9 and "--no-verify".startswith(a)
+
+
 def _commit_flags(args):
-    """Return (evasion, commit_all) from `git commit` arguments, skipping option
-    values so `-m "-n"` is a message, not a flag."""
-    evasion, all_ = None, False
+    """Return (evasion, commit_all, pathspec) from `git commit` arguments, skipping
+    option values so `-m "-n"` is a message, not a flag."""
+    evasion, all_, paths = None, False, False
     i = 0
     while i < len(args):
         a = args[i]
         if a == "--":
+            paths = paths or i + 1 < len(args)
             break
-        if a == "--no-verify":
+        if _is_no_verify(a):
             evasion = "--no-verify"
-        elif a == "--all":
-            all_ = True
+        elif a in ("--all", "--include", "--only"):
+            all_ = all_ or a == "--all"
         elif a.startswith("--"):
             if a in COMMIT_LONG_ARG:
                 i += 1
@@ -169,8 +395,10 @@ def _commit_flags(args):
                     break               # otherwise the rest of the cluster is the value
                 elif ch in "Su":
                     break               # optional value, attached
+        else:
+            paths = True
         i += 1
-    return evasion, all_
+    return evasion, all_, paths
 
 
 def _tag_creates(args):
@@ -186,13 +414,91 @@ def _tag_creates(args):
     return bool(_positionals(args, opts))
 
 
-def _resolve_alias(name, cwd, git_args):
-    out = _git(["config", "--get", "alias." + name], cwd, git_args)
+def _push_refs(args):
+    """(srcs, mode) for `git push` arguments: the local refs whose commits it sends.
+    [] means the default, the current branch. mode: all | mirror | tags | None."""
+    pos, mode, delete, i = [], None, False, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            pos.extend(args[i + 1:])
+            break
+        if a in PUSH_OPT_ARG:
+            i += 2
+            continue
+        if a in ("--all", "--branches"):
+            mode = "all"
+        elif a == "--mirror":
+            mode = "mirror"
+        elif a == "--tags":
+            mode = mode or "tags"
+        elif a in ("-d", "--delete"):
+            delete = True
+        elif not a.startswith("-"):
+            pos.append(a)
+        i += 1
+    if delete:
+        return [], None                 # deleting a remote ref sends no content
+    srcs, specs, j = [], pos[1:], 0
+    while j < len(specs):
+        r = specs[j].lstrip("+")
+        if r == "tag" and j + 1 < len(specs):
+            srcs.append("refs/tags/" + specs[j + 1])
+            j += 2
+            continue
+        if not r.startswith(":"):       # `:dst` deletes dst
+            src = r.split(":", 1)[0]
+            if src:
+                srcs.append(src)
+        j += 1
+    return srcs, mode
+
+
+def _config_overlay(env, cfgs):
+    """Config git would see from the environment and -c, lowercased keys. Later
+    entries win, as in git: GIT_CONFIG_PARAMETERS, then GIT_CONFIG_COUNT pairs, then
+    each -c on the command line."""
+    overlay = {}
+    params = env.get("GIT_CONFIG_PARAMETERS", "")
+    try:
+        for item in shlex.split(params):
+            k, _, v = item.partition("=")
+            overlay[k.lower()] = v
+    except ValueError:
+        pass
+    try:
+        count = int(env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        count = 0
+    for n in range(min(count, 100)):
+        k = env.get(f"GIT_CONFIG_KEY_{n}")
+        if k:
+            overlay[k.lower()] = env.get(f"GIT_CONFIG_VALUE_{n}", "")
+    for c in cfgs:
+        k, eq, v = c.partition("=")
+        overlay[k.lower()] = v if eq else "true"
+    return overlay
+
+
+def _resolve_alias(name, cwd, git_args, overlay, env):
+    key = "alias." + name.lower()
+    if key in overlay:
+        return overlay[key].strip() or None
+    for var in ("GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
+        if env.get(var) and "$" not in env[var]:
+            path = os.path.join(cwd, os.path.expanduser(env[var]))
+            out = _git(["config", "--file", path, "--get", key], cwd if os.path.isdir(cwd)
+                       else None)
+            if out and out.strip():
+                return out.strip()
+    if not os.path.isdir(cwd):
+        return None
+    out = _git(["config", "--get", key], cwd, git_args)
     return out.strip() if out else None
 
 
-def parse_git(args, cwd, env, depth):
-    git_args, cfgs, raw_dirs, i = [], [], [], 0
+def parse_git(args, state, env, depth):
+    git_args, cfgs, raw_dirs, i, cwd = [], [], [], 0, state.cwd
     for var, opt in (("GIT_DIR", "--git-dir"), ("GIT_WORK_TREE", "--work-tree")):
         if var in env:
             raw_dirs.append((opt, env[var]))
@@ -206,7 +512,10 @@ def parse_git(args, cwd, env, depth):
             cfgs.append(args[i + 1])
             i += 2
             continue
-        if a.startswith(("--git-dir=", "--work-tree=")):
+        if a.startswith("--config-env="):
+            k, _, var = a[len("--config-env="):].partition("=")
+            cfgs.append(f"{k}={env.get(var, os.environ.get(var, ''))}")
+        elif a.startswith(("--git-dir=", "--work-tree=")):
             opt, _, val = a.partition("=")
             raw_dirs.append((opt, val))
         elif a in ("--git-dir", "--work-tree") and i + 1 < len(args):
@@ -217,119 +526,340 @@ def parse_git(args, cwd, env, depth):
         elif not a.startswith("-"):
             break
         i += 1
-    # Relative --git-dir/--work-tree resolve against the directory after every -C.
+    # Relative --git-dir/--work-tree resolve against the directory after every -C. A
+    # value the parser cannot resolve is dropped: the payload cwd's repo is judged
+    # instead (see judge), rather than a nonexistent path that is "not a repo".
     for opt, val in raw_dirs:
-        git_args.append(f"{opt}={os.path.normpath(os.path.join(cwd, os.path.expanduser(val)))}")
+        path = os.path.normpath(os.path.join(cwd, os.path.expanduser(val)))
+        if "$" not in val and os.path.exists(path):
+            git_args.append(f"{opt}={path}")
     if i >= len(args):
-        return []
+        return
     sub, rest = args[i], args[i + 1:]
+    overlay = _config_overlay(env, cfgs)
     evasion = None
-    for c in cfgs:
-        if c.lower().startswith("core.hookspath="):
-            evasion = f"-c {c} (disables git's own hooks)"
+    if overlay.get("core.hookspath") is not None:
+        evasion = "core.hooksPath set on the command line or in GIT_CONFIG_* " \
+                  "(disables git's own hooks)"
 
-    if sub not in NOT_ALIASES and depth < 3:
-        alias = _resolve_alias(sub, cwd, git_args)
+    if sub not in NOT_ALIASES and depth < MAX_DEPTH:
+        alias = _resolve_alias(sub, cwd, git_args, overlay, env)
         if alias:
-            if alias.startswith("!"):
-                return parse_command(alias[1:] + " " + shlex.join(rest), cwd, depth + 1)
+            saved = state.cwd
+            state.cwd = cwd
             try:
-                expanded = shlex.split(alias)
-            except ValueError:
-                expanded = []
-            if expanded:
-                carried = git_args + [x for c in cfgs for x in ("-c", c)]
-                return parse_git(carried + expanded + rest, cwd, {}, depth + 1)
+                if alias.startswith("!"):
+                    parse_command(alias[1:] + " " + shlex.join(rest), state, depth + 1)
+                    return
+                try:
+                    expanded = shlex.split(alias)
+                except ValueError:
+                    expanded = []
+                if expanded:
+                    carried = git_args + [x for c in cfgs for x in ("-c", c)]
+                    parse_git(carried + expanded + rest, state,
+                              {k: v for k, v in env.items()
+                               if k not in ("GIT_DIR", "GIT_WORK_TREE")}, depth + 1)
+                    return
+            finally:
+                state.cwd = saved
 
-    if sub == "commit":
-        ev, all_ = _commit_flags(rest)
-        return [Action(GIT_LABELS[sub], cwd, git_args, evasion or ev, all_)]
-    if sub == "push":
+    saved = state.cwd
+    state.cwd = cwd
+    try:
+        _git_subcommand(sub, rest, state, git_args, evasion)
+    finally:
+        state.cwd = saved
+
+
+def _git_subcommand(sub, rest, state, git_args, evasion):
+    label = "git " + sub
+    if sub == "add":
+        if any(a in ("-A", "--all", ".", ":/", "--no-ignore-removal") for a in rest):
+            state.added = "all"
+        elif any(a in ("-u", "--update") for a in rest) and state.added is None:
+            state.added = "tracked"
+    elif sub == "commit":
+        ev, all_, paths = _commit_flags(rest)
+        state.emit(Action(label, "commit", state, git_args, evasion or ev, all_, paths))
+    elif sub == "push":
         if "-n" in rest or "--dry-run" in rest:
-            return []
-        ev = "--no-verify" if "--no-verify" in rest else None
-        return [Action(GIT_LABELS[sub], cwd, git_args, evasion or ev)]
-    if sub == "tag" and _tag_creates(rest):
-        return [Action(GIT_LABELS[sub], cwd, git_args, evasion)]
-    return []
+            return
+        ev = "--no-verify" if any(_is_no_verify(a) for a in rest) else None
+        srcs, mode = _push_refs(rest)
+        state.emit(Action(label, "push", state, git_args, evasion or ev, srcs=srcs,
+                          push_mode=mode))
+    elif sub == "send-pack":
+        pos = _positionals(rest, {"--receive-pack", "--exec"})
+        mode = "all" if "--all" in rest or "--mirror" in rest else None
+        state.emit(Action(label, "push", state, git_args, evasion,
+                          srcs=[r.lstrip("+").split(":", 1)[0] for r in pos[1:]
+                                if not r.startswith(":")], push_mode=mode))
+    elif sub == "tag" and _tag_creates(rest):
+        state.emit(Action(label, "tag", state, git_args, evasion))
+    elif sub == "merge" and not any(a in ("--abort", "--quit") for a in rest):
+        ev = "--no-verify" if any(_is_no_verify(a) for a in rest) else None
+        state.emit(Action(label, "merge", state, git_args, evasion or ev))
+    elif sub in ("commit-tree", "update-ref") and "-d" not in rest:
+        state.emit(Action(label, "plumbing", state, git_args, evasion))
 
 
-def parse_segment(argv, cwd, depth):
-    env = {}
+def _parse_gh(args, state):
+    pos = _positionals(args, OPT_ARG["gh"] | {"-H", "--head", "-B", "--base", "-t",
+                                              "--title", "-b", "--body", "-F",
+                                              "--body-file", "-f", "--field", "-X",
+                                              "--method", "--jq", "-q"})
+    if pos[:2] == ["pr", "create"]:
+        head = None
+        for k, a in enumerate(args):
+            if a in ("-H", "--head") and k + 1 < len(args):
+                head = args[k + 1]
+            elif a.startswith("--head="):
+                head = a.split("=", 1)[1]
+        srcs = [head.split(":", 1)[-1]] if head else []
+        state.emit(Action("gh pr create", "push", state, srcs=srcs))
+    elif pos[:1] == ["pr"] and pos[1:2] and pos[1] in ("merge", "ready"):
+        state.emit(Action(f"gh pr {pos[1]}", "pr", state))
+    elif pos[:2] == ["release", "create"]:
+        state.emit(Action("gh release create", "publish", state))
+    elif pos[:1] == ["api"] and (any(re.search(r"/merges?(?:$|[/?])", p) for p in pos[1:])
+                                 or any("mergePullRequest" in a for a in args)):
+        state.emit(Action("gh api (merge)", "pr", state))
+
+
+def _word_match(argv, state):
+    """A program name the parser cannot resolve (`$G commit`, `$(echo git) push`):
+    gate on the words that follow rather than let indirection pass silently."""
+    words = argv[1:]
+    hit = [w for w in words if w in GATE_WORDS]
+    if not hit:
+        return
+    label = f"{argv[0]} {hit[0]} (program name not resolvable)"
+    if hit[0] in ("push", "send-pack"):
+        srcs, mode = _push_refs(words[words.index(hit[0]) + 1:])
+        state.emit(Action(label, "push", state, srcs=srcs, push_mode=mode))
+    else:
+        state.emit(Action(label, "generic", state))
+
+
+def _unwrap(prog, args, state, depth, env):
+    opts, npos = WRAPPERS[prog]
+    i, chdir, split, exec_mode = 0, None, None, False
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            i += 1
+            break
+        if prog == "env" and ENV_ASSIGN.match(a):
+            k, _, v = a.partition("=")
+            env[k.rstrip("+")] = v
+            i += 1
+            continue
+        if not a.startswith("-") or a == "-" or prog == "eval":
+            break
+        name, eq, val = a.partition("=")
+        if a in opts:
+            opt, val, step = a, (args[i + 1] if i + 1 < len(args) else ""), 2
+        elif eq and name in opts:
+            opt, step = name, 1
+        elif not a.startswith("--") and len(a) > 2 and a[:2] in opts:
+            opt, val, step = a[:2], a[2:], 1
+        else:
+            if prog == "command" and a in ("-v", "-V"):
+                return                  # `command -v git` only asks where git is
+            exec_mode = exec_mode or (prog == "watch" and a in ("-x", "--exec"))
+            i += 1
+            continue
+        if prog == "env" and opt in ("-u", "--unset"):
+            env.pop(val, None)
+        elif opt in CHDIR_OPTS and (prog == "env" or (prog == "sudo" and opt != "-C")):
+            chdir = val
+        elif prog == "env" and opt in ("-S", "--split-string"):
+            split = val
+        i += step
+    rest = args[i + npos:]
+    if split is not None:
+        rest = shlex.split(split) + rest
+    saved = state.cwd
+    if chdir:
+        state.cwd = os.path.normpath(os.path.join(state.cwd, os.path.expanduser(chdir)))
+    try:
+        if prog == "eval" or (prog == "watch" and not exec_mode):
+            # eval (and watch without -x) joins its arguments and re-parses them.
+            parse_command(" ".join(rest), state, depth + 1)
+        else:
+            parse_argv(rest, state, depth, env)
+    finally:
+        state.cwd = saved
+
+
+def parse_argv(argv, state, depth, env=None):
+    """Emit the gated Actions one simple command performs."""
+    env = dict(state.exported) if env is None else env
     while argv and ENV_ASSIGN.match(argv[0]):
         k, _, v = argv[0].partition("=")
-        env[k] = v
+        env[k.rstrip("+")] = v
         argv = argv[1:]
-    while argv and os.path.basename(argv[0].lstrip("\\")) in WRAPPERS:
-        argv = argv[1:]
-        while argv and (argv[0].startswith("-") or ENV_ASSIGN.match(argv[0])):
-            if ENV_ASSIGN.match(argv[0]):
-                k, _, v = argv[0].partition("=")
-                env[k] = v
-            argv = argv[1:]
     if not argv:
-        return []
+        return
     prog = os.path.basename(argv[0].lstrip("\\"))
     args = argv[1:]
-    if prog in SHELLS:
+    if "$" in argv[0]:
+        _word_match(argv, state)
+    elif prog in WRAPPERS:
+        _unwrap(prog, args, state, depth, env)
+    elif prog in SHELLS:
         for j, a in enumerate(args):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
-                if j + 1 < len(args) and depth < 3:
-                    return parse_command(args[j + 1], cwd, depth + 1)
-        return []
-    if prog == "git":
-        return parse_git(args, cwd, env, depth)
-    if prog == "gh":
-        pos = _positionals(args, OPT_ARG["gh"])
-        if pos[:1] == ["pr"] and pos[1:2] and pos[1] in ("create", "merge", "ready"):
-            return [Action(f"gh pr {pos[1]}", cwd)]
-        if pos[:2] == ["release", "create"]:
-            return [Action("gh release create", cwd)]
-        return []
-    if prog in ("npm", "pnpm", "yarn"):
+                if j + 1 < len(args):
+                    state.push_scope()  # a child shell: its `cd` does not leak out
+                    try:
+                        parse_command(args[j + 1], state, depth + 1)
+                    finally:
+                        state.pop_scope()
+                return
+            if not a.startswith("-"):
+                return                  # a script file: not parsed (docs/SAFETY.md)
+        # A bare shell reads its commands from stdin (`echo ... | bash`), which the
+        # parser cannot see, so the whole line is word-matched instead.
+        for action in _fallback_actions(state.raw, state):
+            state.emit(action)
+    elif prog == "git":
+        parse_git(args, state, env, depth)
+    elif prog == "gh":
+        _parse_gh(args, state)
+    elif prog in ("npm", "pnpm", "yarn"):
         pos = _positionals(args, OPT_ARG[prog])
         if pos[:1] == ["publish"] or (prog == "yarn" and pos[:2] == ["npm", "publish"]):
-            return [Action(f"{prog} publish", cwd)]
-        return []
-    if prog == "twine":
-        return [Action("twine upload", cwd)] if _positionals(args, OPT_ARG["twine"])[:1] == \
-            ["upload"] else []
-    if re.fullmatch(r"python[0-9.]*", prog) and args[:2] == ["-m", "twine"]:
-        return parse_segment(["twine"] + args[2:], cwd, depth)
-    if prog == "uv":
+            state.emit(Action(f"{prog} publish", "publish", state))
+    elif prog == "twine":
+        if _positionals(args, OPT_ARG["twine"])[:1] == ["upload"]:
+            state.emit(Action("twine upload", "publish", state))
+    elif re.fullmatch(r"python[0-9.]*", prog) and args[:2] == ["-m", "twine"]:
+        parse_argv(["twine"] + args[2:], state, depth, env)
+    elif prog == "uv":
         pos = _positionals(args, OPT_ARG["uv"])
         if pos[:1] == ["publish"]:
-            return [Action("uv publish", cwd)]
-        if pos[:3] == ["tool", "run", "twine"]:
-            return parse_segment(["twine"] + pos[3:], cwd, depth)
-        return []
-    if prog == "uvx" and args:
-        return parse_segment(args, cwd, depth)
-    return []
+            state.emit(Action("uv publish", "publish", state))
+        elif pos[:3] == ["tool", "run", "twine"]:
+            parse_argv(["twine"] + pos[3:], state, depth, env)
+    elif prog == "uvx" and args:
+        parse_argv(args, state, depth, env)
+    elif prog not in NO_EXEC:
+        for j, a in enumerate(args):
+            if os.path.basename(a) in SCAN_PROGS:
+                parse_argv(args[j:], state, depth, env)
 
 
-def parse_command(cmd, cwd, depth=0):
-    """Return the gated Actions a shell command would perform, in order."""
-    actions = []
-    for argv in segments(cmd):
-        if argv[0] in ("cd", "pushd"):
-            target = argv[1] if len(argv) > 1 and argv[1] != "-" else None
-            if target is None and len(argv) == 1:
-                target = os.path.expanduser("~")
-            if target:
-                cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(target)))
+def _is_read_only(argv, redirected):
+    if redirected:
+        return False
+    prog = os.path.basename(argv[0])
+    if prog in READ_ONLY:
+        return True
+    if prog == "git":
+        i = 1
+        while i < len(argv) and argv[i].startswith("-"):
+            i += 2 if argv[i] in GIT_OPT_ARG else 1
+        return i < len(argv) and argv[i] in READ_ONLY_GIT
+    return False
+
+
+def _segment(seg, state, depth):
+    argv = [expand(t, state) for t in seg.argv]
+    while argv and argv[0] in KEYWORDS:
+        argv = argv[1:]
+    if not argv or argv[0] in LIST_HEADS:
+        return
+    head = argv[0]
+    if all(ENV_ASSIGN.match(a) for a in argv):
+        for a in argv:
+            k, _, v = a.partition("=")
+            k = k.rstrip("+")
+            state.vars[k] = v
+            if k in state.exported:
+                state.exported[k] = v
+        return
+    if head in ("export", "declare", "typeset", "local", "readonly"):
+        exporting = head == "export" or any(a.startswith("-") and "x" in a
+                                            for a in argv[1:])
+        for a in argv[1:]:
+            if a.startswith("-"):
+                continue
+            k, eq, v = a.partition("=")
+            if eq:
+                state.vars[k] = v
+            if exporting and k in state.vars:
+                state.exported[k] = state.vars[k]
+        return
+    if head == "unset":
+        for a in argv[1:]:
+            state.vars.pop(a, None)
+            state.exported.pop(a, None)
+        return
+    if head in ("cd", "pushd", "popd"):
+        if head == "popd":
+            if state.dirstack:
+                state.cwd = state.dirstack.pop()
+            return
+        target = next((a for a in argv[1:] if not a.startswith("-")), None)
+        if target is None and len(argv) == 1:
+            target = os.path.expanduser("~")
+        if head == "pushd":
+            state.dirstack.append(state.cwd)
+        if target == "-":
+            target = state.vars.get("OLDPWD")
+        if target:
+            state.vars["OLDPWD"] = state.cwd
+            state.cwd = os.path.normpath(os.path.join(state.cwd,
+                                                      os.path.expanduser(target)))
+        return
+    before = len(state.actions)
+    parse_argv(argv, state, depth)
+    new = state.actions[before:]
+    if state.dirty_by is None and not _is_read_only(argv, seg.redirected) and \
+            not (new and all(a.kind in SAFE_EARLIER for a in new)):
+        state.dirty_by = " ".join(seg.argv)[:80]
+
+
+def parse_command(cmd, state, depth=0):
+    """Emit, into state.actions, the gated Actions a shell command would perform."""
+    if depth > MAX_DEPTH:
+        raise ValueError("nested deeper than the parser follows")
+    text, inners = _extract_substitutions(_strip_heredocs(cmd))
+    done = set()
+    for item in segments(text):
+        if item == "(":
+            state.push_scope()
             continue
-        actions.extend(parse_segment(argv, cwd, depth))
-    return actions
+        if item == ")":
+            state.pop_scope()
+            continue
+        for tok in item.argv:
+            for m in SUB_RX.finditer(tok):
+                idx = int(m.group(1))
+                if idx < len(inners) and idx not in done:
+                    done.add(idx)
+                    state.push_scope()  # a substitution runs in a subshell
+                    try:
+                        parse_command(inners[idx], state, depth + 1)
+                    finally:
+                        state.pop_scope()
+        _segment(item, state, depth)
+    return state.actions
 
 
-def _fallback_actions(cmd, cwd):
-    """Unparseable input (unbalanced quotes): gate on a plain word match rather than
-    letting malformed syntax become a way around the gate."""
-    if re.search(r"\bgit\b.*\b(commit|push|tag)\b|\bgh\s+(pr|release)\b|\bpublish\b|"
-                 r"\btwine\b", cmd, re.S):
-        return [Action("completion-shaped command", cwd)]
-    return []
+def _fallback_actions(cmd, state):
+    """Input the parser cannot follow: gate on a plain word match rather than let
+    malformed syntax or a bare shell become a way around the gate."""
+    m = re.search(r"\bgit\b.*\b(commit|push|tag|merge|send-pack|commit-tree|update-ref)"
+                  r"\b|\bgh\b.*\b(pr|release|api)\b|\b(publish)\b|\b(twine)\b", cmd, re.S)
+    if not m:
+        return []
+    word = next(g for g in m.groups() if g)
+    if word in ("push", "send-pack"):
+        return [Action("completion-shaped command", "push", state, srcs=None)]
+    return [Action("completion-shaped command", "generic", state)]
 
 
 # ---------------------------------------------------------------- decisions
@@ -362,13 +892,111 @@ NOT_CONFIGURED = (
     'without enabling the gate, use {{"mode": "off"}}.')
 
 
+def _where(action):
+    """(cwd, git_args) to judge. A cwd the parser could not resolve (`cd "$X"`, a
+    failed substitution) falls back to the payload cwd's repository instead of
+    becoming "not a repository, nothing to gate"."""
+    if os.path.isdir(action.cwd):
+        return action.cwd, action.git_args
+    return action.base, []
+
+
+def _policy_sha(text):
+    return "absent" if text is None else hashlib.sha256(text.encode()).hexdigest()
+
+
+def _policy_problems(action, root, git_args, policy, fresh):
+    """The policy file is excluded from the fingerprint so editing it does not
+    invalidate the checks it demands -- which would let a commit weakening it ride a
+    receipt taken before the edit. A commit that changes it needs a receipt recorded
+    with the policy being committed."""
+    head = _git(["show", "HEAD:" + POLICY], root, git_args)
+    index = _git(["show", ":" + POLICY], root, git_args)
+    wt_path = pathlib.Path(root) / POLICY
+    wt = wt_path.read_text() if wt_path.is_file() else None
+    committed = wt if (action.commit_all or action.pathspec) and index is not None \
+        else index
+    if committed == head:
+        return []
+    want = _policy_sha(committed)
+    labels = sorted(policy["required"]) or sorted(fresh)
+    stale = [n for n in labels if n in fresh and fresh[n].get("policy_sha") != want]
+    if not stale:
+        return []
+    return [f"this commit changes {POLICY}, and the receipt for "
+            f"{', '.join(stale)} was not recorded with that policy in place (stage the "
+            f"policy edit, then re-run `100x verified`)"]
+
+
+def _changed_paths(root, git_args):
+    out = _git(["status", "--porcelain", "-z", "--untracked-files=all"], root, git_args)
+    return [r[3:] for r in (out or "").split("\0") if len(r) > 3 and r[3:] not in EXCLUDE]
+
+
+def _push_problems(action, root, git_args, snap):
+    """A push sends commits, not the working tree the receipt describes. Every ref
+    it sends must be the checked-out commit, and that commit's tree must be exactly
+    the verified content."""
+    if action.srcs is None:
+        return [f"cannot tell which refs `{action.label}` would send, so they cannot be "
+                f"checked against the receipt; push a named branch directly, as its "
+                f"own command"]
+    head = (_git(["rev-parse", "--verify", "-q", "HEAD"], root, git_args) or "").strip()
+    if not head:
+        return ["HEAD has no commit to send"]
+    refs = list(action.srcs)
+    if action.push_mode in ("all", "mirror"):
+        refs += _z_refs(root, git_args, "refs/heads")
+    if action.push_mode in ("tags", "mirror"):
+        refs += _z_refs(root, git_args, "refs/tags")
+    problems = []
+    for ref in dict.fromkeys(refs):
+        sha = (_git(["rev-parse", "--verify", "-q", ref + "^{commit}"], root, git_args)
+               or "").strip()
+        if not sha:
+            problems.append(f"`{ref}` does not name a local commit, so what it sends "
+                            f"cannot be checked against the receipt")
+        elif sha != head:
+            problems.append(f"`{ref}` is not the checked-out commit; the receipt covers "
+                            f"the working tree at HEAD, not `{ref}`. Check it out, "
+                            f"verify it there, then push it")
+    prior = [c for c in action.prior_commits
+             if repo_root(*_where(c)) == root]
+    if prior:
+        # A commit earlier in the same command line has not happened yet. It is safe
+        # to follow only when it will commit exactly the verified working tree.
+        c = prior[-1]
+        everything = action.added == "all"
+        tracked = everything or c.commit_all or action.added == "tracked"
+        if (snap["untracked"] and not everything) or (snap["unstaged"] and not tracked):
+            problems.append(
+                "the commit earlier in this command will not contain everything that "
+                "was verified, so the push would send an untested tree. Commit, then "
+                "push in a separate command")
+    elif tree_fingerprint(root, git_args, "HEAD") != snap["fingerprint"]:
+        changed = _changed_paths(root, git_args)
+        problems.append(
+            "HEAD's committed tree is not the verified content: there are uncommitted "
+            f"changes ({', '.join(changed[:5]) or 'see git status'}). Commit the "
+            "verified content first, then push in a separate command")
+    return problems
+
+
+def _z_refs(root, git_args, prefix):
+    out = _git(["for-each-ref", "--format=%(refname)", prefix], root, git_args)
+    return [r for r in (out or "").splitlines() if r]
+
+
 def judge(action, cmd):
     """Return (rank, output) for one action. rank: 0 pass, 1 note, 2 ask, 3 deny."""
-    root = repo_root(action.cwd, action.git_args) if os.path.isdir(action.cwd) else None
+    cwd, git_args = _where(action)
+    root = repo_root(cwd, git_args)
+    if not root and git_args:
+        root, git_args = repo_root(action.base), []
     if not root:
         return 0, {}                    # not a repo: nothing to gate
     try:
-        policy = load_policy(root, action.git_args)
+        policy = load_policy(root, git_args)
     except GateError as e:
         return 3, deny(f"`{action.label}` blocked: {e}")
     if policy is None:
@@ -393,6 +1021,12 @@ def judge(action, cmd):
     if os.environ.get("VERIFY_SKIP") == "1":
         return 1, note(f"Verification gate BYPASSED for `{action.label}`: VERIFY_SKIP=1 "
                        f"is set in the environment Claude Code was started from.")
+    if action.after_write:
+        return 3, deny(
+            f"`{action.label}` blocked: an earlier part of this command "
+            f"(`{action.after_write}`) can change files after the gate has checked them, "
+            f"so the receipt would not describe what ships. Run edits and verification "
+            f"first, then commit in a separate command.")
 
     if not (pathlib.Path(root) / RECEIPT).exists():
         return 3, deny(f"`{action.label}` blocked: no verification receipt at {RECEIPT}."
@@ -402,7 +1036,7 @@ def judge(action, cmd):
     except GateError as e:
         return 3, deny(f"`{action.label}` blocked: {e}.\n\nRun the checks first:\n"
                        f"{rerun_hint(policy)}")
-    snap = snapshot(root, action.git_args)
+    snap = snapshot(root, git_args)
     if not snap:
         return 0, {}
     try:
@@ -410,14 +1044,19 @@ def judge(action, cmd):
     except GateError as e:
         return 3, deny(f"`{action.label}` blocked: {e}")
     notes += result["notes"]
-    if result["problems"]:
-        body = "\n".join(f"  - {p}" for p in result["problems"])
+    problems = list(result["problems"])
+    if not problems and action.kind in ("commit", "merge"):
+        problems += _policy_problems(action, root, git_args, policy, result["fresh"])
+    if not problems and action.kind == "push":
+        problems += _push_problems(action, root, git_args, snap)
+    if problems:
+        body = "\n".join(f"  - {p}" for p in problems)
         extra = ("\n\nNotes:\n" + "\n".join(f"  - {n}" for n in notes)) if notes else ""
         return 3, deny(f"`{action.label}` blocked:\n{body}\n\nRe-run verification "
                        f"against the current content, then retry:\n"
                        f"{rerun_hint(policy)}{extra}")
 
-    if action.label == "git commit":
+    if action.kind == "commit":
         left = [] if action.commit_all else snap["unstaged"]
         if left or snap["untracked"]:
             notes.append(
@@ -443,19 +1082,19 @@ def main():
     base = payload.get("cwd")
     if not (isinstance(base, str) and os.path.isdir(base)):
         base = os.getcwd()
+    state = State(base, cmd)
     try:
-        actions = parse_command(cmd, base)
+        actions = parse_command(cmd, state)
     except ValueError:
-        actions = _fallback_actions(cmd, base)
+        actions = _fallback_actions(cmd, State(base, cmd))
     if not actions:
         return {}
 
     worst, outputs, seen = -1, [], set()
     for action in actions:
-        key = (action.label, action.cwd, tuple(action.git_args), action.evasion)
-        if key in seen:
+        if action.key() in seen:
             continue
-        seen.add(key)
+        seen.add(action.key())
         rank, out = judge(action, cmd)
         if rank > worst:
             worst, outputs = rank, [out]
