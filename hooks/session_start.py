@@ -29,6 +29,6 @@ if __name__ == "__main__":
     try:
         sys.stdin.read()
         print(json.dumps(main()))
-    except Exception:
+    except Exception:  # fail-open: an error yields no context, never a broken session start
         print(json.dumps({}))
     sys.exit(0)

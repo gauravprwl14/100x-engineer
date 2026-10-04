@@ -66,6 +66,6 @@ def main():
 if __name__ == "__main__":
     try:
         print(json.dumps(main()))
-    except Exception:
+    except Exception:  # fail-open: a Stop hook that crashes would wedge every session
         print(json.dumps({}))
     sys.exit(0)
