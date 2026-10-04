@@ -375,6 +375,35 @@ expect 0 "diff-scoping: untouched pre-existing violation is not re-flagged" --on
 nothas "no alt attribute"
 git checkout -q -- src/legacy.tsx
 
+# =========================================================================
+# adversarial input: bounded time, oversized files reported, never silent
+# =========================================================================
+# 200KB of unclosed tags of each shape that used to read to end of file per tag.
+python3 - <<'EOF'
+units = ["<img ", "<a{", "<button>", '<input id="x">', "<img alt='", "<div\n", '<a href="#">']
+for k, u in enumerate(units):
+    open(f"src/adv{k}.tsx", "w").write(u * (200_000 // len(u)))
+with open("src/adv0.tsx", "a") as f:
+    f.write('\nexport const Z = () => <img src="/z.png" />;\n')
+EOF
+start=$(python3 -c 'import time; print(time.time())')
+python3 "$AC" >$OUT/ac.out 2>&1; got=$?
+secs=$(python3 -c "import time; print(round(time.time() - $start, 2))")
+if python3 -c "import sys; sys.exit(0 if $secs < 5 else 1)"; then
+  PASS=$((PASS+1)); printf '  ok   %-64s\n' "7 x 200KB adversarial files scanned in ${secs}s (< 5s)"
+else FAIL=$((FAIL+1)); printf '  FAIL %-64s\n' "adversarial files took ${secs}s (>= 5s)"; fi
+if [ "$got" -eq 0 ] || [ "$got" -eq 1 ]; then PASS=$((PASS+1)); printf '  ok   %-64s\n' "adversarial run completed with a verdict (exit $got)"
+else FAIL=$((FAIL+1)); printf '  FAIL %-64s\n' "adversarial run crashed (exit $got)"; sed 's/^/       /' $OUT/ac.out; fi
+has "src/adv0.tsx:2: "
+reset_diff
+
+python3 -c 'open("src/huge.tsx", "w").write("export const A = () => <img src=\"/a.png\" />;\n" + "// pad\n" * 400_000)'
+expect 0 "file over the size cap is skipped, not scanned" --only img-no-alt
+has "file-too-large"
+has "src/huge.tsx: over 2 MB -- NOT scanned"
+expect 1 "a skipped file still fails --strict" --only img-no-alt --strict
+reset_diff
+
 echo
 echo "a11y_check: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

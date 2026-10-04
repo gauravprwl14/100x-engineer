@@ -28,9 +28,13 @@ tech, not a preference. Everything else is advisory: a real risk, but one this
 heuristic cannot confirm without a human or a runtime tool (axe, a keyboard
 pass).
 
+Files over MAX_FILE_BYTES are not scanned and are listed as a file-too-large
+advisory; a file whose tag scanning hits its work budget is listed as
+scan-incomplete. Neither is silent, and both fail under --strict.
+
 Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
-import argparse, re, subprocess, sys, pathlib
+import argparse, bisect, os, re, subprocess, sys, pathlib
 
 from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
@@ -78,15 +82,44 @@ def overlaps(touched, start, end):
     return any(ln in touched for ln in range(start, end + 1))
 
 
+# Files above this are skipped with an explicit advisory: a generated bundle or a
+# vendored blob is not hand-written markup, and scanning it is what timed out.
+MAX_FILE_BYTES = 2 * 1024 * 1024
+# An opening tag longer than this is not a tag (a stray `<` in prose, a comparison
+# in code); stopping here keeps one unclosed `<` from reading to end of file.
+MAX_TAG_CHARS = 8192
+# Total scanner work per file, as a multiple of its length. Exceeding it marks the
+# file incompletely scanned (reported, never silent) instead of going quadratic.
+SCAN_BUDGET_FACTOR = 10
+
+_PER_TEXT = {"text": None}
+INCOMPLETE = set()
+
+
 def read(path):
     try:
+        if os.path.getsize(path) > MAX_FILE_BYTES:
+            return None
         return pathlib.Path(path).read_text(errors="replace")
     except OSError:
         return None
 
 
+def _cache(text):
+    """Per-file memo, keyed by the identity of the text every check re-reads one
+    file at a time. Holds line offsets, scanned tags and closing-tag positions so
+    no check rescans the file per match."""
+    cached = _PER_TEXT["text"]
+    if cached is not text:
+        if cached != text:
+            _PER_TEXT.clear()
+            _PER_TEXT["nl"] = [i for i, c in enumerate(text) if c == "\n"]
+        _PER_TEXT["text"] = text
+    return _PER_TEXT
+
+
 def line_of(text, idx):
-    return text.count("\n", 0, idx) + 1
+    return bisect.bisect_left(_cache(text)["nl"], idx) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -97,13 +130,23 @@ def line_of(text, idx):
 TAG_OPEN_RX = re.compile(r"<([A-Za-z][\w.]*)")
 
 
-def scan_tag(text, start):
+def scan_tag(text, start, limit=None):
     """Given the index of a tag's leading '<', return (attrs_str, gt_idx,
-    self_closing) for that opening tag, or None if it never closes."""
+    self_closing) for that opening tag, or None if it never closes.
+
+    Bounded: an unquoted '<' outside braces cannot occur inside an opening tag, so
+    it ends the scan, as does MAX_TAG_CHARS. Without the bounds every unclosed
+    `<img ` read to end of file and a 40KB file took 20s."""
+    return _scan_tag(text, start, limit)[0]
+
+
+def _scan_tag(text, start, limit=None):
+    """(scan_tag's result, index the scan stopped at)."""
     m = TAG_OPEN_RX.match(text, start)
     if not m:
-        return None
-    i, n = m.end(), len(text)
+        return None, start
+    i = m.end()
+    n = min(len(text), start + MAX_TAG_CHARS, limit if limit is not None else len(text))
     depth, quote, attr_start = 0, None, m.end()
     while i < n:
         c = text[i]
@@ -118,26 +161,38 @@ def scan_tag(text, start):
             depth += 1
         elif c == "}":
             depth -= 1
+        elif c == "<" and depth <= 0:
+            return None, i
         elif c == ">" and depth <= 0:
             self_closing = i > 0 and text[i - 1] == "/"
             end = i - 1 if self_closing else i
-            return text[attr_start:end], i, self_closing
+            return (text[attr_start:end], i, self_closing), i
         i += 1
-    return None
+    return None, i
 
 
-def jsx_tags(text, names=None):
+def _all_tags(text, path=None):
+    c = _cache(text)
+    if "tags" not in c:
+        tags, budget = [], SCAN_BUDGET_FACTOR * len(text) + 100000
+        for m in TAG_OPEN_RX.finditer(text):
+            res, stop = _scan_tag(text, m.start(), m.start() + budget)
+            budget -= stop - m.start() + 1
+            if res is not None:
+                tags.append((m.group(1), res[0], res[1], res[2], m.start()))
+            if budget <= 0:
+                INCOMPLETE.add(path)
+                break
+        c["tags"] = tags
+    return c["tags"]
+
+
+def jsx_tags(text, names=None, path=None):
     """Yield (tag, attrs, gt_idx, self_closing, start_idx) for each matched
     opening tag; names=None matches every tag."""
-    for m in TAG_OPEN_RX.finditer(text):
-        tag = m.group(1)
-        if names is not None and tag not in names:
-            continue
-        res = scan_tag(text, m.start())
-        if res is None:
-            continue
-        attrs, gt_idx, self_closing = res
-        yield tag, attrs, gt_idx, self_closing, m.start()
+    for t in _all_tags(text, path):
+        if names is None or t[0] in names:
+            yield t
 
 
 def has_attr(attrs, name):
@@ -155,11 +210,16 @@ def attr_value(attrs, name):
 
 def scan_children(text, tag, after_gt_idx):
     """Text between an opening tag's '>' and its first matching '</tag>'."""
-    close_rx = re.compile(r"</\s*" + re.escape(tag) + r"\s*>")
-    mclose = close_rx.search(text, after_gt_idx + 1)
-    if not mclose:
+    c = _cache(text)
+    key = ("close", tag)
+    if key not in c:
+        close_rx = re.compile(r"</\s*" + re.escape(tag) + r"\s*>")
+        c[key] = [(mc.start(), mc.end()) for mc in close_rx.finditer(text)]
+    closes = c[key]
+    k = bisect.bisect_left(closes, (after_gt_idx + 1, -1))
+    if k >= len(closes):
         return None
-    return text[after_gt_idx + 1:mclose.start()]
+    return text[after_gt_idx + 1:closes[k][0]]
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +254,7 @@ def check_onclick_non_interactive(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, _, _, start in jsx_tags(text, NONINTERACTIVE_TAGS):
+        for tag, attrs, _, _, start in jsx_tags(text, NONINTERACTIVE_TAGS, p):
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
@@ -235,7 +295,7 @@ def check_img_no_alt(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, _, _, start in jsx_tags(text, IMG_TAGS):
+        for tag, attrs, _, _, start in jsx_tags(text, IMG_TAGS, p):
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
@@ -255,7 +315,7 @@ def check_img_no_dimensions(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, _, _, start in jsx_tags(text, IMG_TAGS):
+        for tag, attrs, _, _, start in jsx_tags(text, IMG_TAGS, p):
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
@@ -281,7 +341,7 @@ def check_form_field_no_label(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, _, _, start in jsx_tags(text, FORM_TAGS):
+        for tag, attrs, _, _, start in jsx_tags(text, FORM_TAGS, p):
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
@@ -294,11 +354,7 @@ def check_form_field_no_label(files, base):
             labeled = False
             if idv:
                 idv_clean = idv.strip("\"'{} ")
-                if idv_clean and (
-                    re.search(r"htmlFor\s*=\s*[\"'{]*\s*" + re.escape(idv_clean) + r"\b", text)
-                    or re.search(r"\bfor\s*=\s*[\"']" + re.escape(idv_clean) + r"[\"']", text)
-                ):
-                    labeled = True
+                labeled = bool(idv_clean) and is_label_target(text, idv_clean)
             if not labeled:
                 out.append((f"{p}:{ln}",
                             f"<{tag}> has no accessible label -- pair `id` with a "
@@ -307,6 +363,24 @@ def check_form_field_no_label(files, base):
 
 
 CONTROL_TAGS = {"button", "a"}
+HTMLFOR_RX = re.compile(r"htmlFor\s*=\s*[\"'{]*\s*([^\s\"'{}>]+)")
+FOR_RX = re.compile(r"\bfor\s*=\s*[\"']([^\"']*)[\"']")
+
+
+def is_label_target(text, idv):
+    """A `<label htmlFor>` naming idv (as a word prefix, as before) or a `for="idv"`.
+    The targets are collected once per file: searching the whole file per input
+    was quadratic in the number of inputs."""
+    c = _cache(text)
+    if "label_for" not in c:
+        c["label_for"] = ([m.group(1) for m in HTMLFOR_RX.finditer(text)],
+                          {m.group(1) for m in FOR_RX.finditer(text)})
+        c["label_hit"] = {}
+    if idv not in c["label_hit"]:
+        html_for, plain_for = c["label_for"]
+        word = re.compile(re.escape(idv) + r"\b")
+        c["label_hit"][idv] = idv in plain_for or any(word.match(t) for t in html_for)
+    return c["label_hit"][idv]
 
 
 def is_icon_only_children(children):
@@ -339,7 +413,7 @@ def check_control_no_accessible_name(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, gt_idx, self_closing, start in jsx_tags(text, CONTROL_TAGS):
+        for tag, attrs, gt_idx, self_closing, start in jsx_tags(text, CONTROL_TAGS, p):
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
@@ -447,7 +521,7 @@ def check_anchor_no_href(files, base):
         if text is None:
             continue
         touched = touched_lines(p, base)
-        for tag, attrs, _, _, start in jsx_tags(text, {"a"}):
+        for tag, attrs, _, _, start in jsx_tags(text, {"a"}, p):
             if not (has_attr(attrs, "onClick") or has_attr(attrs, "onclick")):
                 continue
             if has_attr(attrs, "href"):
@@ -617,6 +691,19 @@ def main():
         return 0
 
     hard = advisory = 0
+    too_big = []
+    for p in files:
+        try:
+            if p.endswith(SCAN_EXT) and os.path.getsize(p) > MAX_FILE_BYTES:
+                too_big.append(p)
+        except OSError:
+            pass
+    if too_big:
+        print(f"\n[ADVISORY] file-too-large")
+        for p in too_big:
+            print(f"  {p}: over {MAX_FILE_BYTES // (1024 * 1024)} MB -- NOT scanned; "
+                  f"a generated or vendored file? check it by hand if it is authored")
+        advisory += len(too_big)
     for n in names:
         try:
             res = checks[n](files, args.base)
@@ -636,6 +723,13 @@ def main():
             advisory += len(res)
         else:
             hard += len(res)
+
+    if INCOMPLETE:
+        print(f"\n[ADVISORY] scan-incomplete")
+        for p in sorted(INCOMPLETE):
+            print(f"  {p}: tag scanning stopped at its work budget -- findings after "
+                  f"that point were NOT checked")
+        advisory += len(INCOMPLETE)
 
     # Severities are reported as declared; --strict changes the exit code only, so
     # the summary never presents an advisory heuristic as a blocking defect.
