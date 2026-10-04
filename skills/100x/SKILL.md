@@ -89,7 +89,7 @@ work type touched: its A items are applied, its in-tier B items listed, its C it
 |---|---|
 | one specialist, a handful of files | work in the main session with the pipeline's skills; no agents |
 | two or more specialists, or tasks that can run in parallel | `orchestrate`: approved spec → `plan.json` → `100x plan_dag lint --spec` → `100x plan_dag waves` → one agent per task, each in its own worktree |
-| any non-trivial build, before merge | independent-verifier replays every report; code-reviewer and security-reviewer review the merged diff |
+| any non-trivial build, before merge | independent-verifier re-runs each task's declared verify commands; code-reviewer and security-reviewer review the merged diff |
 
 Orchestration stays in the main session (§1): agents never talk to the user, and their questions come
 back in their reports. Batch every open question from every agent into one message. A task that
@@ -116,8 +116,10 @@ returns `needs-decision` pauses only its dependents (§6).
 5. Orchestrate only from a task graph that lints; two parallel tasks never own the same files.
    *Enforced by:* `100x plan_dag lint plan.json --spec <spec>`
 
-6. No agent result is merged until its report lints and its evidence replays.
-   *Enforced by:* `100x agent_report lint <report.json>` and `100x agent_report replay --yes <report.json>`
+6. No agent result is merged until its report lints against git's real changes and the task's
+   declared verify commands replay with the claimed exit codes.
+   *Enforced by:* `100x agent_report lint <report.json> --graph plan.json --cwd <wt>` and
+   `100x agent_report replay <report.json> --graph plan.json --cwd <wt> --yes`
 
 7. One-way doors (§4) go to the user as questions; neither this router nor any agent decides them.
    *Enforced by:* `100x agent_report lint` (rejects a `door: one-way` decision)
@@ -130,9 +132,10 @@ returns `needs-decision` pauses only its dependents (§6).
 ```bash
 100x list                                          # the plugin's tools resolve (~0.1s)
 100x baseline show --work api --tier small         # the defaults this router applies (~0.1s)
-100x plan_feature audit <root>/specs/<name>               # intake and spec complete (~0.2s)
-100x plan_dag lint plan.json --spec <root>/specs/<name>/spec.md   # task graph valid before agents start
-100x agent_report lint report.json && 100x agent_report replay --yes report.json   # per agent result
+100x plan_feature audit <name>                     # intake and spec complete (~0.2s)
+100x plan_dag lint plan.json --spec <name>         # task graph valid before agents start
+100x agent_report lint report.json --graph plan.json --cwd <wt>          # per agent result
+100x agent_report replay report.json --graph plan.json --cwd <wt> --yes  # its declared verify commands
 ```
 
 ## Failure modes
@@ -147,7 +150,7 @@ This skill rejects:
   correct an assumption they never saw.
 - **Orchestrating a one-file fix** through six agents, or doing a five-area feature single-threaded
   with no review. The table above decides.
-- **Merging on a report's word.** "Tests pass" without `agent_report replay` is a claim.
+- **Merging on a report's word.** "Tests pass" without `agent_report replay --graph` is a claim.
 - **An agent deciding a migration or a new dependency** because nobody routed the question back.
 
 **Honest limitations:** intent classification is judgement; a mixed request ("fix this and add

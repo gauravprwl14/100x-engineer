@@ -79,8 +79,9 @@ Without that list, "we might need it later" wins every argument.
    `tests/test_baseline.sh` asserts for a regulated `small` app
 
 2. A missing tier, an invalid risk, a risk below its kind's floor, or an unfilled
-   non-functional-requirements table blocks implementation.
-   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
+   non-functional-requirements table blocks implementation; a task graph's `tier` must
+   be one of the tiers in `scale_tiers.json`.
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`; `100x plan_dag lint plan.json`
 
 3. Derive requirements from the tier, never from imagination. If a design element is not
    in the tier's `required` list, name the specific failure it prevents or drop it.

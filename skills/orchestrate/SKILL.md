@@ -34,7 +34,7 @@ flowchart TD
     L -- clean --> W[plan_dag waves]
     W --> D[per task: worktree + dispatch prompt]
     D --> R[collect final messages]
-    R --> X[agent_report extract, lint --graph, replay --yes]
+    R --> X[agent_report extract, lint --graph --cwd, replay --graph --yes]
     X -- rejected --> D
     X -- valid --> M[merge wave, integration verify]
     M --> N{plan_dag next}
@@ -43,24 +43,32 @@ flowchart TD
     X -. questions .-> Q[agent_report summary -> one user message]
 ```
 
-1. **Draft `plan.json`** in the §6 shape, or ask the solution-architect agent to. Put
-   every shared type, API schema and DB schema in a `"contract": true` task, and list it
-   in each consumer's `"consumes"` and `"depends_on"`.
-2. **Lint it:** `100x plan_dag lint plan.json --spec <root>/specs/<feature>/spec.md`
-   (`<root>` is the records root, `docs/engineering/` by default; `docs/OPERATING-MODEL.md`
-   §8). `--spec` counts only ACs the spec *defines* (`AC-<n>: <outcome> (R<k>, S<k>)` in
-   §2b), so a mention like "see AC-3" never counts, and a spec that defines none fails.
-   Fix every numbered error; nothing starts on a red plan.
+1. **Draft `plan.json`** in the §6 shape (`"schema": 1`, `"feature"` = the spec
+   directory name), or ask the solution-architect agent to. Put every shared type, API
+   schema and DB schema in a `"contract": true` task, and list it in each consumer's
+   `"consumes"` and `"depends_on"`. Write each `verify` command so it runs without a
+   shell (`sh -c '…'` when it needs `&&`, `|` or `$VAR`), and never a commit, push, tag
+   or publish.
+2. **Lint it:** `100x plan_dag lint plan.json --spec <feature>` (the spec path as given,
+   from the git root, under the records root, or the bare feature name;
+   `docs/OPERATING-MODEL.md` §8). `--spec` counts only ACs the spec *defines*
+   (`AC-<n>: <outcome> (R<k>, S<k>)` in §2b), so a mention like "see AC-3" never counts,
+   and a spec that defines none fails. An unknown field, an unknown `tier`, a `{a,b}`
+   glob or a verify command that needs a shell is an error too. Fix every numbered
+   error; nothing starts on a red plan.
 3. **Waves:** `100x plan_dag waves plan.json`. Every task in a wave runs at once.
 4. **Per task, one worktree:**
-   `git worktree add ../wt-<task-id> -b wt/<feature>-<task-id>`.
+   `git worktree add ../wt-<task-id> -b wt/<feature>-<task-id>`, and note its start
+   commit (`git -C ../wt-<task-id> rev-parse HEAD`): lint's `--base` if the agent commits.
 5. **Dispatch** each task to its `owner` agent with the template below, all tasks of a
    wave in one message so they run concurrently.
 6. **Collect and check** each final message:
    `100x agent_report extract msg.md -o T1.json`, then
-   `100x agent_report lint T1.json --graph plan.json`, then
-   `100x agent_report replay T1.json --cwd ../wt-T1 --yes`. Read the commands printed by
-   a run without `--yes` first if the report came from an agent you did not configure.
+   `100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1 --base <start>`
+   (git's real changed files, not the report's list), then
+   `100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes`. Replay runs
+   only T1's declared `verify` commands, as argv; a `sh -c` script is printed before it
+   runs. Run it once without `--yes` to read the list first.
 7. **Merge** the wave's branches, then run the project's full verify commands on the
    merged result (`100x verified` records the receipt).
 8. **Continue:** `100x plan_dag next plan.json --done T0,T1 --blocked T2` lists what
@@ -82,12 +90,12 @@ Worktree: {worktree_path} (work and run commands only here)
 Owned files (edit nothing else): {files}
 Consumes (read-only contracts, already merged): {consumes or "none"}
 Acceptance criteria: {acceptance ids, each with its text from the spec}
-Verify commands (run each, record cmd + exit code + output tail): {verify}
+Verify commands (run each; record cmd exactly as written here + exit code + output tail): {verify}
 
 Stop with status needs-decision on any class C question or blocking plan issue; one-way
 doors (schema, public API, new dependency, data deletion, auth boundary) are questions,
 never decisions. Do not commit outside your worktree or push.
-End your final message with the §3 report as the LAST fenced json block.
+End your final message with the §3 report ("schema": 1) as the LAST fenced json block.
 ```
 
 ## Rules
@@ -102,11 +110,13 @@ End your final message with the §3 report as the LAST fenced json block.
 3. A consumer depends on the contract it consumes and never edits the contract's files.
    *Enforced by:* `100x plan_dag lint plan.json`
 
-4. A report is accepted only if it lints, including against the task's owned files.
-   *Enforced by:* `100x agent_report lint T1.json --graph plan.json`
+4. A report is accepted only if it lints, including git's changed files against the
+   task's owned files and every declared verify command at exit 0 for `done`.
+   *Enforced by:* `100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1`
 
-5. A report's evidence must replay with the claimed exit codes before its branch merges.
-   *Enforced by:* `100x agent_report replay T1.json --cwd ../wt-T1 --yes`
+5. The task's declared verify commands must replay with the claimed exit codes before
+   its branch merges.
+   *Enforced by:* `100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes`
 
 6. Run every task of a wave concurrently; serialise only along `depends_on` edges.
    *Enforced by:* `100x plan_dag waves plan.json` (review: dispatch matches the waves)
@@ -126,8 +136,8 @@ End your final message with the §3 report as the LAST fenced json block.
 
 # each report, from its own worktree (lint ~0.1s; replay = the task's own verify time)
 100x agent_report extract msg-T1.md -o T1.json
-100x agent_report lint T1.json --graph plan.json
-100x agent_report replay T1.json --cwd ../wt-T1 --yes
+100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1
+100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes
 
 # what continues, and the one question batch
 100x plan_dag next plan.json --done T0 --blocked T1
@@ -153,6 +163,12 @@ This skill rejects:
 - **Trusting a report without replay.** An agent claims `exit_code: 0` for a test that
   fails: `agent_report replay` prints "MISMATCH … claimed exit 0, actual 1" and the
   real output tail.
+- **Evidence the plan never asked for.** A report proves `done` with `echo ok`: replay
+  lists it "not replayed (undeclared)" and exits 3, and lint fails `done` because the
+  declared `verify` command is not in the evidence with exit 0.
+- **Work the report describes but git does not show**, or a file git shows changed
+  outside the task's `files`: `lint --graph --cwd` errors on each, whatever `changes`
+  says.
 - **Done without proof, or done with an open blocker**, a one-way decision taken alone,
   a class C assumption, or a change outside the task's files: each is a numbered
   `agent_report lint` error.
@@ -164,8 +180,11 @@ This skill rejects:
 **Honest limitations:**
 - File-overlap detection is conservative: `*foo*` and `*bar*` in one directory are
   reported as colliding. It can over-report, never under-report; split the globs.
-- `replay` checks exit codes, not that a command is meaningful: `true` replays fine.
-  The task's `verify` list in the plan is what makes evidence worth replaying.
+- `replay` checks exit codes, not that a command is meaningful: a plan that declares
+  `true` as a verify command replays fine. The plan's `verify` list is what makes
+  evidence worth replaying, so review it before dispatch.
+- `lint --base` defaults to `HEAD` (uncommitted work only); if the agent committed in
+  its worktree, pass the start commit or its committed changes go unseen.
 - Nothing stops an orchestrator from skipping this skill; the gates bind only when run.
 
 ## Scale

@@ -46,12 +46,12 @@ flowchart LR
 |---|---|
 | 1 restate | outcome, actor, success signal, out of scope — at most three sentences plus a list |
 | 2 work types + tier | one or more of `web-ui`, `mobile`, `api`, `worker`, `data-pipeline`, `cli`, `iac`; one tier of `prototype`, `small`, `growth`, `scale` |
-| 3 baseline | `100x baseline show --work <type> --tier <tier>` per work type: A items, B items on at this tier, C items |
+| 3 baseline | `100x baseline show --work <type> --tier <tier>` per work type: A items (always on, from `prototype`), B items (start at a later tier) on at this tier, C items |
 | 4 repo search | existing auth, tenancy, error shape, i18n, design system, test stack, deploy model, each with the path that answered it |
 | 5 classify | every gap tagged A, B or C with its basis |
 | 6 questions | at most five, ordered by how much the answer changes the plan |
 | 7 assumptions | one row per applied default, with a source |
-| 8 hand-off | `100x prd new <name> --tier <tier>` (requirements as `R<k>` rows) or `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`; the spec's `AC-<n>: <observable outcome> (R<k>, S<k>)` lines link back to them |
+| 8 hand-off | `100x prd new <name> --tier <tier>` (requirements as `R<k>` rows) or `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`; the spec's `AC-<n>: <observable outcome> (R<k>, S<k>)` lines link back to them, and its `\| baseline \| <n> \|` header pins the catalogue version it was written against |
 
 ### Tier
 

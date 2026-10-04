@@ -56,7 +56,13 @@ column lists the ACs each row proves. `plan_feature audit` requires: at least on
 every AC on its own canonical line, ids unique and never renumbered, an outcome a test
 can observe, every in-scope `S<k>` row mapped to an AC, `R<k>` links that exist when a
 PRD is linked, and every AC covered by a verification row. `plan_dag lint --spec` and
-`testplan trace` read the same parser, so only defined ACs count.
+`testplan trace` read the same parser, so only ACs defined in §2b count. Tests tag them
+`<feature>/AC-<n>` (`test('login/AC-1 …')`), because AC ids repeat across specs.
+
+The spec header pins the baseline version it was written against, `| baseline | <n> |`.
+The audit requires the items that existed at that version and only warns about items
+added later, so a finished spec does not fail when the catalogue grows. Baseline ids are
+never deleted; a retired item is marked `deprecated`.
 
 ## Rules
 
@@ -76,7 +82,9 @@ PRD is linked, and every AC covered by a verification row. `plan_dag lint --spec
    or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
    implementation starts only once this audit passes. That gate is the whole
    mechanism: without it "we'll decide later" silently becomes "nobody decided".
-   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` exits non-zero
+   A seeded edge-case (§7) or decision (§5) row is answered, never deleted.
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` exits non-zero, also on a
+   deleted seeded row
 
 3. State what is explicitly out of scope. Out-of-scope is what turns a gap into a
    decision — and it is where the edge cases you are deliberately not handling go.
@@ -159,6 +167,8 @@ This skill rejects:
 - **More than five open questions**, or one not tagged `must-ask` / `default`.
 - **A blank Security, Privacy, Observability, Migration or Cost section.**
 - **An edge case left `TODO`.** The audit names the first one and exits non-zero.
+- **A seeded edge case or decision deleted** instead of answered with `n/a(<reason>)`,
+  `waived(<reason>)` or a chosen option.
 - **"Covered" with no test reference** — a claim with no evidence.
 - **"Deferred" with no follow-up** — that is a dropped requirement wearing a label.
 - **A decision that departs from the default with no ADR**, so the reasoning is lost.
