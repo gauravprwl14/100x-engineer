@@ -80,7 +80,9 @@ def _inside(repo, value, origin):
         _fail(f"{origin}: root {value!r} must be a path inside the repository, "
               f"relative to its top level, with no '..' -- e.g. \"docs/engineering\" "
               f"or \".\"")
-    return (repo / pathlib.Path(*raw.parts)) if raw.parts else repo
+    root = (repo / pathlib.Path(*raw.parts)) if raw.parts else repo
+    contained(root, repo, origin)
+    return root
 
 
 def legacy_collections(repo):
@@ -118,7 +120,54 @@ def resolve(repo=None):
                       f"adopt the default, move those directories under {DEFAULT_ROOT}/.",
                       file=sys.stderr)
             return repo, "legacy"
+    contained(default, repo, DEFAULT_ROOT)
     return default, "default"
+
+
+def contained(path, repo, origin="write"):
+    """The resolved path, or exit 2 if it lands outside the repository.
+
+    Text checks (no absolute path, no `..`) are not enough: a committed symlink --
+    `docs/engineering -> ../../elsewhere`, `AGENTS.md -> ~/.zshrc` -- passes them and
+    still sends the write outside the project. Resolving follows every symlink in the
+    chain, so whatever a cloned repo commits, the final target must sit under it.
+    """
+    real_repo = pathlib.Path(repo).resolve()
+    target = pathlib.Path(path)
+    if not target.is_absolute():
+        target = pathlib.Path(repo) / target
+    real = target.resolve()
+    if real != real_repo and real_repo not in real.parents:
+        _fail(f"{origin}: refusing to write {target} -- it resolves to {real}, outside "
+              f"the repository {real_repo} (a symlink or path escape)")
+    return real
+
+
+def safe_write_text(path, text, repo, origin="write"):
+    """Write `text` to `path` without following a symlink out of the repository.
+
+    The content goes to a temp file created with O_CREAT|O_EXCL|O_NOFOLLOW in the same
+    directory and is renamed over the target; rename replaces a symlink rather than
+    writing through it, so a planted link at the destination cannot redirect the bytes.
+    """
+    real = contained(path, repo, origin)
+    contained(real.parent, repo, origin)
+    real.parent.mkdir(parents=True, exist_ok=True)
+    contained(real.parent, repo, origin)
+    tmp = real.parent / f".{real.name}.{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                 0o644)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return real
 
 
 def show(path, repo):
