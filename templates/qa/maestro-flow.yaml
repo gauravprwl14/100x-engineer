@@ -1,0 +1,16 @@
+# Maestro critical-journey flow. Run: maestro test maestro-flow.yaml
+# Put flows under .maestro/ so `100x testplan trace` counts the AC ids below.
+# Commands: https://docs.maestro.dev/
+appId: com.example.app
+tags:
+  - critical
+  - AC-1
+---
+- launchApp:
+    clearState: true
+- tapOn: "Sign in"
+- tapOn: "Email"
+- inputText: "qa+maestro@example.com"
+- tapOn: "Continue"
+- assertVisible: "<success text from AC-1>"
+- takeScreenshot: "ac-1-signed-in"
