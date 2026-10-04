@@ -118,7 +118,7 @@ This skill rejects:
 
 Known gap, stated plainly: the gate proves *a command exited zero against this
 exact content*. It does not prove the command was worth running. Pair it with
-`test-that-can-fail` for that half of the problem.
+`minimal-diff` (assertionless and focused-test detection) for that half of the problem.
 
 ## Next
 
@@ -148,5 +148,5 @@ largest at the smallest scale — the inverse of most process.
 - Human-attestation canary, an independent route to the same goal:
   `zed-industries/zed:.rules` line 16 — a README marker only a human may remove.
   See `research/21-findings-agent-instruction-corpus.md`.
-- Content-fingerprint design, bypass semantics, and the 19-assertion regression
+- Content-fingerprint design, bypass semantics, and the 25-assertion regression
   suite: `SOURCE: original`.

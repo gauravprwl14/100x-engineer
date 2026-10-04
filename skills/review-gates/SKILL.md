@@ -5,7 +5,7 @@ description: >
   path ownership, merge queues, required status checks, DCO or sign-off requirements,
   AI-contribution disclosure trailers, or ADR/release governance. Distinguishes
   checks CI mechanically re-verifies from checkbox ceremony nobody parses. Not for
-  the content of a specific diff (see code-review or scoped-review) and not for the
+  the content of a specific diff (see scoped-review) and not for the
   words inside an AGENTS.md or CLAUDE.md file (see agent-instructions) — this is the
   surrounding merge machinery, not the instructions or the diff itself. Use
   PROACTIVELY when adding a PR template or CODEOWNERS file, or deciding policy on
@@ -28,7 +28,7 @@ merge queues, or sign-off; deciding policy on AI-authored PRs; setting up ADR/RF
 process or release governance.
 
 **Do not fire when:** reviewing the content of a specific diff — that is
-`code-review` work, not change-control design.
+`scoped-review` work, not change-control design.
 
 ## Load-bearing vs ceremony
 
