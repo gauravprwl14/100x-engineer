@@ -2,23 +2,90 @@
   "schema": 1,
   "feature": "album-tagging",
   "tier": "small",
+  "spec": "examples/orchestration/spec.md",
+  "spec_sha256": "d4e5f4d26722a17f1a5c907f6233b370fd5ca396deeed5f37a83beead664931e",
+  "base": "86a85e147c4d4b6354b415a9e086fa89b2126ccd",
   "tasks": [
-    {"id": "T0", "title": "API + DB contract", "owner": "backend-engineer",
-     "depends_on": [], "contract": true,
-     "files": ["backend/src/tagging/dto/**", "docs/engineering/specs/tagging/contract.md"],
-     "acceptance": ["AC-1", "AC-2", "AC-3"], "verify": ["pnpm run lint"]},
-    {"id": "T1", "title": "tagging service", "owner": "backend-engineer",
-     "depends_on": ["T0"], "consumes": ["T0"],
-     "files": ["backend/src/tagging/services/**", "backend/src/tagging/*.module.ts"],
-     "acceptance": ["AC-1", "AC-3"],
-     "verify": ["test -f plan.json", "python3 -c \"import json; json.load(open('plan.json'))\""]},
-    {"id": "T2", "title": "tag list UI", "owner": "frontend-engineer",
-     "depends_on": ["T0"], "consumes": ["T0"],
-     "files": ["frontend/src/pages/photo/**", "frontend/src/components/TagList.tsx"],
-     "acceptance": ["AC-2"], "verify": ["pnpm run test TagList"]},
-    {"id": "T3", "title": "end-to-end tests", "owner": "qa-engineer",
-     "depends_on": ["T1", "T2"],
-     "files": ["backend/test/tagging.e2e-spec.ts"],
-     "acceptance": ["AC-4"], "verify": ["test -f backend/test/tagging.e2e-spec.ts"]}
+    {
+      "id": "T0",
+      "title": "API + DB contract",
+      "owner": "backend-engineer",
+      "depends_on": [],
+      "contract": true,
+      "files": [
+        "backend/src/tagging/dto/**",
+        "docs/engineering/specs/tagging/contract.md"
+      ],
+      "acceptance": [
+        "AC-1",
+        "AC-2",
+        "AC-3"
+      ],
+      "verify": [
+        "pnpm run lint"
+      ]
+    },
+    {
+      "id": "T1",
+      "title": "tagging service",
+      "owner": "backend-engineer",
+      "depends_on": [
+        "T0"
+      ],
+      "consumes": [
+        "T0"
+      ],
+      "files": [
+        "backend/src/tagging/services/**",
+        "backend/src/tagging/*.module.ts"
+      ],
+      "acceptance": [
+        "AC-1",
+        "AC-3"
+      ],
+      "verify": [
+        "test -f plan.json",
+        "python3 -c \"import json; json.load(open('plan.json'))\""
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "tag list UI",
+      "owner": "frontend-engineer",
+      "depends_on": [
+        "T0"
+      ],
+      "consumes": [
+        "T0"
+      ],
+      "files": [
+        "frontend/src/pages/photo/**",
+        "frontend/src/components/TagList.tsx"
+      ],
+      "acceptance": [
+        "AC-2"
+      ],
+      "verify": [
+        "pnpm run test TagList"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "end-to-end tests",
+      "owner": "qa-engineer",
+      "depends_on": [
+        "T1",
+        "T2"
+      ],
+      "files": [
+        "backend/test/tagging.e2e-spec.ts"
+      ],
+      "acceptance": [
+        "AC-4"
+      ],
+      "verify": [
+        "test -f backend/test/tagging.e2e-spec.ts"
+      ]
+    }
   ]
 }

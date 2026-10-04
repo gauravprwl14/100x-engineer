@@ -7,6 +7,16 @@ EX="$ROOT/examples/orchestration"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 P="$ROOT/scripts/plan_dag.py"
 O="$TMP/pd.out"
+# The shipped plan.json is stamped against examples/orchestration/spec.md; a copy used
+# in a temp repo drops the stamp, whose spec path and base commit exist only here.
+EXP="$TMP/plan-unstamped.json"
+python3 - "$EX/plan.json" "$EXP" <<'PYS'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k in ("spec", "spec_sha256", "base"):
+    d.pop(k, None)
+json.dump(d, open(sys.argv[2], "w"), indent=1)
+PYS
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; [ -s "$O" ] && sed 's/^/       /' "$O" | head -8; }
@@ -25,7 +35,7 @@ ready_spec() { # ready_spec <repo> <feature> -> writes <repo>/docs/engineering/s
     "$ROOT/specs/login/spec.md" > "$1/docs/engineering/specs/$2/spec.md"
 }
 six_plan() { # six_plan <out>: the example plan with T3 also owning AC-5, AC-6
-  python3 - "$EX/plan.json" "$1" <<'PY2'
+  python3 - "$EXP" "$1" <<'PY2'
 import json, sys
 d = json.load(open(sys.argv[1])); d["tasks"][3]["acceptance"] += ["AC-5", "AC-6"]
 json.dump(d, open(sys.argv[2], "w"), indent=1)
@@ -74,7 +84,7 @@ has "has status 'draft"; has "not \`ready\`"
 python3 "$P" stamp "$RPLAN" >"$O" 2>&1; rc_is 1 $? "stamp: refuses a draft spec"
 has "is not an approved spec"
 cp "$TMP/spec.bak" "$RSPEC"
-python3 "$P" lint "$EX/invalid/missing-ac.json" --spec "$EX/spec.md" >"$O" 2>&1
+python3 "$P" lint "$EX/invalid/missing-ac.json" --spec "$EX/invalid/unaudited-spec.md" >"$O" 2>&1
 rc_is 1 $? "lint --spec: an unaudited spec is rejected"
 has "does not pass \`100x plan_feature audit\`"
 
@@ -124,7 +134,7 @@ python3 "$P" stamp "$TMP/nogit/plan.json" --spec "$RSPEC" >"$O" 2>&1; rc_is 2 $?
 has "not inside a git repository"
 
 # --- the audit verdict is plan_feature's: audit_spec when present, the CLI otherwise ---
-python3 - "$ROOT" "$RSPEC" "$EX/spec.md" >"$O" 2>&1 <<'PY2'
+python3 - "$ROOT" "$RSPEC" "$EX/invalid/unaudited-spec.md" >"$O" 2>&1 <<'PY2'
 import sys
 sys.path.insert(0, sys.argv[1] + "/scripts")
 import plan_dag, plan_feature
@@ -144,6 +154,10 @@ if had:
     plan_feature.audit_spec = saved
 PY2
 rc_is 0 $? "audit_spec: uses plan_feature.audit_spec if present, else the audit CLI"
+
+# --- the shipped example: an audited, ready spec and a plan stamped against it ---
+python3 "$P" lint "$EX/plan.json" >"$O" 2>&1; rc_is 0 $? "lint: the stamped example plan passes against its own spec"
+no "WARN"
 
 # --- each rule: a fixture that must fail, and the message that names it ---
 lint_fails() { # lint_fails <fixture> <expected substring> [extra args]
@@ -174,11 +188,11 @@ no "AC-9"
 cp "$TMP/spec.bak" "$RSPEC"; python3 "$P" stamp "$RPLAN" >/dev/null 2>&1
 # the canonical plan_feature line, with its requirement links, is parsed the same way
 printf '# s\n\n## 2b. Acceptance criteria\n\nAC-1: one (R1, S1)\nAC-2: two (R2, S1)\nAC-3: three (R1)\nAC-4: four (S2)\nAC-5: five (R3, S2)\n' > "$TMP/canon.md"
-python3 "$P" lint "$EX/plan.json" --spec "$TMP/canon.md" >"$O" 2>&1
+python3 "$P" lint "$EXP" --spec "$TMP/canon.md" >"$O" 2>&1
 rc_is 1 $? "lint --spec: canonical AC lines are parsed (AC-5 uncovered)"
 has "AC-5 in $TMP/canon.md is covered by no task"
 printf '# s\n\nNo criteria here.\n' > "$TMP/noac.md"
-python3 "$P" lint "$EX/plan.json" --spec "$TMP/noac.md" >"$O" 2>&1
+python3 "$P" lint "$EXP" --spec "$TMP/noac.md" >"$O" 2>&1
 rc_is 1 $? "lint --spec: a spec defining no AC fails instead of checking nothing"
 has "defines no acceptance criteria"
 
@@ -192,7 +206,7 @@ has "WARN  no spec: acceptance coverage and spec approval were not checked"
 
 # --- top level: feature required, tier from scale_tiers.json, schema ---
 top() { # top <python expr mutating d> -> lint of the mutated valid plan
-  python3 - "$EX/plan.json" "$TMP/top.json" "$1" <<'PY'
+  python3 - "$EXP" "$TMP/top.json" "$1" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); exec(sys.argv[3]); json.dump(d, open(sys.argv[2], "w"))
 PY
@@ -277,7 +291,7 @@ for arg in docs/engineering/specs/album-tagging/spec.md docs/engineering/specs/a
   rc_is 0 $? "lint --spec $arg resolves"
 done
 SP="$RS"
-( cd "$SP" && python3 "$P" lint "$EX/plan.json" --spec nosuch ) >"$O" 2>&1
+( cd "$SP" && python3 "$P" lint "$EXP" --spec nosuch ) >"$O" 2>&1
 rc_is 2 $? "lint --spec: an unresolvable spec is exit 2"; has "no spec.md for 'nosuch'"
 
 # --- --agents-dir extends the roster; without it the same owner is rejected ---
@@ -321,20 +335,20 @@ PY
 rc_is 0 $? "roster matches the §1 table in OPERATING-MODEL.md"
 
 # --- waves ---
-python3 "$P" waves "$EX/plan.json" --json >"$O" 2>&1; rc_is 0 $? "waves: runs"
+python3 "$P" waves "$EXP" --json >"$O" 2>&1; rc_is 0 $? "waves: runs"
 python3 -c "import json,sys; w=json.load(open('$O')); sys.exit(0 if [x['tasks'] for x in w]==[['T0'],['T1','T2'],['T3']] else 1)" \
   && ok "waves: [T0] then [T1,T2] in parallel then [T3]" || bad "waves: wrong ordering"
-python3 "$P" waves "$EX/plan.json" >"$O" 2>&1; has "| 2 | T2 | frontend-engineer | tag list UI |"
+python3 "$P" waves "$EXP" >"$O" 2>&1; has "| 2 | T2 | frontend-engineer | tag list UI |"
 python3 "$P" waves "$EX/invalid/cycle.json" >"$O" 2>&1; rc_is 1 $? "waves: refuses a cyclic plan"
 
 # --- next: blocked tasks hold only their dependents ---
-nxt() { python3 "$P" next "$EX/plan.json" --json "$@" >"$O" 2>&1; }
+nxt() { python3 "$P" next "$EXP" --json "$@" >"$O" 2>&1; }
 jq_is() { python3 -c "import json,sys; d=json.load(open('$O')); sys.exit(0 if $1 else 1)" && ok "$2" || bad "$2"; }
 nxt;                         jq_is "d['ready']==['T0'] and d['waiting']=={'T1':['T0'],'T2':['T0'],'T3':['T1','T2']}" "next: only the contract starts first"
 nxt --done T0;               jq_is "d['ready']==['T1','T2']" "next: contract done releases both consumers"
 nxt --done T0 --blocked T1;  jq_is "d['ready']==['T2'] and d['held']=={'T3':['T1']}" "next: blocked T1 holds T3, T2 continues"
 nxt --done T0,T1,T2;         jq_is "d['ready']==['T3'] and not d['held']" "next: all deps done releases T3"
-python3 "$P" next "$EX/plan.json" --done T9 >"$O" 2>&1; rc_is 2 $? "next: unknown id is a usage error"
+python3 "$P" next "$EXP" --done T9 >"$O" 2>&1; rc_is 2 $? "next: unknown id is a usage error"
 
 echo
 echo "plan_dag: $PASS passed, $FAIL failed"

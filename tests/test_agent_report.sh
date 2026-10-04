@@ -10,6 +10,16 @@ M="$EX/messages"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 A="$ROOT/scripts/agent_report.py"
 P="$ROOT/scripts/plan_dag.py"
+# The shipped plan.json is stamped against examples/orchestration/spec.md; a copy used
+# in a temp repo drops the stamp, whose spec path and base commit exist only here.
+EXP="$TMP/plan-unstamped.json"
+python3 - "$EX/plan.json" "$EXP" <<'PYS'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k in ("spec", "spec_sha256", "base"):
+    d.pop(k, None)
+json.dump(d, open(sys.argv[2], "w"), indent=1)
+PYS
 O="$TMP/ar.out"
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
@@ -74,14 +84,14 @@ has "missing required key \"understanding\""
 has "evidence[0]: \"exit_code\" must be an integer"
 
 # --- lint --graph: the worktree, not the report, says what changed ---
-python3 "$A" lint "$M/done-valid.md" --graph "$EX/plan.json" >"$O" 2>&1
+python3 "$A" lint "$M/done-valid.md" --graph "$EXP" >"$O" 2>&1
 rc_is 2 $? "lint --graph without --cwd is a usage error"
 has "--graph needs --cwd"
-WT="$TMP/wt"; mkdir -p "$WT"; cp "$EX/plan.json" "$WT/"
+WT="$TMP/wt"; mkdir -p "$WT"; cp "$EXP" "$WT/plan.json"
 ( cd "$WT" && git init -q && git config user.email e@e && git config user.name e \
   && git add -A && git commit -qm base )
 BASE="$(git -C "$WT" rev-parse HEAD)"
-lintg() { python3 "$A" lint "$1" --graph "$EX/plan.json" --cwd "$WT" "${@:2}" >"$O" 2>&1; }
+lintg() { python3 "$A" lint "$1" --graph "$EXP" --cwd "$WT" "${@:2}" >"$O" 2>&1; }
 
 # a hollow report: done, files claimed, nothing actually changed
 lintg "$M/done-valid.md"; rc_is 1 $? "lint --graph: claimed changes that do not exist are rejected"
@@ -110,7 +120,7 @@ lintg "$M/done-valid.md"; rc_is 1 $? "lint --graph: committed work is not seen a
 has "did the agent commit? pass --base <fork point>"
 lintg "$M/done-valid.md" --base "$BASE"; rc_is 0 $? "lint --graph --base: committed work since the base passes"
 lintg "$M/done-valid.md" --base nope; rc_is 2 $? "lint --graph: an unknown --base is exit 2"
-python3 "$A" lint "$M/done-valid.md" --graph "$EX/plan.json" --cwd "$TMP/none" >"$O" 2>&1
+python3 "$A" lint "$M/done-valid.md" --graph "$EXP" --cwd "$TMP/none" >"$O" 2>&1
 rc_is 2 $? "lint --graph: --cwd outside a git work tree is exit 2"
 
 # done must carry every declared verify command, verbatim, with exit 0
@@ -133,16 +143,16 @@ lintg "$TMP/t42.md"; rc_is 1 $? "lint: task id missing from the graph"
 has "'T42' is not a task in the supplied plan"
 # the saved report itself, inside the worktree, is not a change
 cp "$TMP/r.json" "$WT/T1.json"
-python3 "$A" lint "$WT/T1.json" --graph "$EX/plan.json" --cwd "$WT" --base "$BASE" >"$O" 2>&1
+python3 "$A" lint "$WT/T1.json" --graph "$EXP" --cwd "$WT" --base "$BASE" >"$O" 2>&1
 rc_is 0 $? "lint --graph: a report saved inside the worktree is not counted as a change"
 rm "$WT/T1.json"
-cp "$EX/plan.json" "$WT/plan-copy.json"
+cp "$EXP" "$WT/plan-copy.json"
 python3 "$A" lint "$M/done-valid.md" --graph "$WT/plan-copy.json" --cwd "$WT" --base "$BASE" >"$O" 2>&1
 rc_is 0 $? "lint --graph: the plan file itself, inside the worktree, is not counted as a change"
 rm "$WT/plan-copy.json"
 
 # committed work with plan.json's "base": no --base needed, and the base is named
-python3 - "$EX/plan.json" "$TMP/plan-base.json" "$BASE" <<'PY'
+python3 - "$EXP" "$TMP/plan-base.json" "$BASE" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1])); p["base"] = sys.argv[3]; json.dump(p, open(sys.argv[2], "w"))
 PY
@@ -163,7 +173,7 @@ has "'backend/src/tagging/services/ghost.ts' is claimed but"
 no "did the agent commit"
 
 # a linked worktree with no base anywhere: its fork point from the main checkout
-MAIN="$TMP/main"; mkdir -p "$MAIN"; cp "$EX/plan.json" "$MAIN/"
+MAIN="$TMP/main"; mkdir -p "$MAIN"; cp "$EXP" "$MAIN/plan.json"
 ( cd "$MAIN" && git init -q && git config user.email e@e && git config user.name e \
   && git add -A && git commit -qm base && git worktree add -q -b wt-T1 "$TMP/wt-linked" )
 FORK="$(git -C "$MAIN" rev-parse HEAD)"
@@ -172,7 +182,7 @@ echo 'export class TagService {}' > "$TMP/wt-linked/backend/src/tagging/services
 echo 'export class TaggingModule {}' > "$TMP/wt-linked/backend/src/tagging/tagging.module.ts"
 ( cd "$TMP/wt-linked" && git add -A && git commit -qm work )
 ( cd "$MAIN" && echo y > later && git add later && git commit -qm "main moves on" )
-python3 "$A" lint "$M/done-valid.md" --graph "$EX/plan.json" --cwd "$TMP/wt-linked" >"$O" 2>&1
+python3 "$A" lint "$M/done-valid.md" --graph "$EXP" --cwd "$TMP/wt-linked" >"$O" 2>&1
 rc_is 0 $? "lint --graph: a linked worktree's committed work is seen from its fork point"
 has "NOTE  base $FORK — from the worktree's fork point"
 no "'later'"
@@ -261,13 +271,13 @@ has "declared verify command 'test -f plan.json' is not in the evidence"
 # --- replay: only the plan's declared verify commands ever run ---
 python3 "$A" replay "$M/done-valid.md" --cwd "$WT" --yes >"$O" 2>&1; rc_is 2 $? "replay: --graph is required"
 has "--graph plan.json is required"
-python3 "$A" replay "$M/done-valid.md" --graph "$EX/plan.json" --cwd "$WT" --yes >"$O" 2>&1
+python3 "$A" replay "$M/done-valid.md" --graph "$EXP" --cwd "$WT" --yes >"$O" 2>&1
 rc_is 0 $? "replay: a truthful report passes"
 has "2/2 reproduced"
-python3 "$A" replay "$M/lying.md" --graph "$EX/plan.json" --cwd "$EX" --yes >"$O" 2>&1
+python3 "$A" replay "$M/lying.md" --graph "$EXP" --cwd "$EX" --yes >"$O" 2>&1
 rc_is 1 $? "replay: claimed-0-actual-1 fails"
 has "MISMATCH  \$ test -f backend/test/tagging.e2e-spec.ts"; has "claimed exit 0, actual 1"; has "actual output tail:"
-python3 "$A" replay "$M/done-verified-wrapper.md" --graph "$EX/plan.json" --cwd "$WT" --yes >"$O" 2>&1
+python3 "$A" replay "$M/done-verified-wrapper.md" --graph "$EXP" --cwd "$WT" --yes >"$O" 2>&1
 rc_is 0 $? "replay: wrapped evidence replays the plain declared command"
 has "2/2 reproduced"; has "runs the plan's form: test -f plan.json"
 
@@ -360,7 +370,7 @@ has "touch created-by-replay"
 replay --yes; rc_is 0 $? "replay: --yes runs it"
 [ -e "$RP/created-by-replay" ] && ok "replay: --yes actually executed in --cwd" || bad "replay: --yes did not run in --cwd"
 
-python3 "$A" replay "$M/done-no-evidence.md" --graph "$EX/plan.json" --yes >"$O" 2>&1
+python3 "$A" replay "$M/done-no-evidence.md" --graph "$EXP" --yes >"$O" 2>&1
 rc_is 1 $? "replay: done with no evidence for the declared commands fails"
 
 # --- summary: one batch, blocking first, max five, deduplicated ---
