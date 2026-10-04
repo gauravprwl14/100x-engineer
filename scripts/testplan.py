@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn a spec's acceptance criteria into a test plan, and prove every AC has a test.
 
-    testplan.py new <root>/specs/tagging/spec.md [--out [<root>/testplans/tagging.md]]
+    testplan.py new <root>/specs/tagging/spec.md [--out [<root>/specs/tagging/testplan.md]]
     testplan.py trace specs/tagging/spec.md --tests backend/test,frontend/e2e [--json]
     testplan.py matrix --work web-ui --tier small [--json]
 
@@ -21,7 +21,10 @@ and lists bare `AC-<n>` tags as not counted, with a hint to namespace them.
 
 `new` derives cases mechanically from each AC's wording (numbers become boundary
 rows, ownership words become authz rows, state words become transition rows). It is
-a first draft for a human to prune, not a substitute for reading the AC.
+a first draft for a human to prune, not a substitute for reading the AC. Each
+implicit-requirement row gets one case whose level comes from the baseline item
+(LEVEL_BY_ID, or a `level` field in baseline.json), never from its evidence text;
+ask.* rows and n/a(...), waived(...) or ASK rows get none.
 
 `trace` counts an AC as covered only when its tag appears in a TEST file (by name
 pattern) outside a commented-out test or a skipped test; a skipped `describe` block,
@@ -36,7 +39,11 @@ import _mutation_guard as mg
 import _paths
 from _md import parse_acs
 
-NFR_ID = re.compile(r"`?\b([a-z][a-z0-9]*\.[a-z0-9][a-z0-9-]*)\b`?")
+# The prefix may itself contain hyphens (`web-ui.reflow-320`, `data-pipeline.*`); the
+# lookbehind stops a search from starting mid-prefix and returning `ui.reflow-320`.
+NFR_ID = re.compile(r"`?(?<![A-Za-z0-9_-])([a-z][a-z0-9-]*\.[a-z0-9][a-z0-9-]*)\b`?")
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent
+DATA = PLUGIN / "scripts" / "data"
 
 AUTO_OUT = "\0auto"
 
@@ -93,14 +100,23 @@ def feature_of(path, text, override=None):
     return name if FEATURE_RX.match(name) else None
 
 
+SKIP_STATUS = re.compile(r"^\s*(n/a|waived|ask)\b", re.I)
+
+
 def implicit_requirements(text):
-    """Ids from the implicit-requirements table (the spec section whose heading
-    contains 'implicit' or is numbered 0b). Returns [(id, row_text)]."""
-    out, in_sec, seen = [], False, set()
+    """Rows of the implicit-requirements table (the spec section whose heading contains
+    'implicit' or is numbered 0b), as [(id, requirement, status)].
+
+    `requirement` is the default/requirement column only, never the evidence column:
+    evidence prose ("k6 run", "axe scan") is how a row was met, not what it requires,
+    and classifying on it put health checks under axe and consent under k6. Status is
+    "" when the table has no status column."""
+    out, in_sec, seen, cols = [], False, set(), None
     for line in text.splitlines():
         if line.startswith("#"):
             h = line.lower()
             in_sec = "implicit" in h or re.match(r"^#+\s*(§\s*)?0b\b", h) is not None
+            cols = None
             continue
         if not in_sec or not line.lstrip().startswith("|"):
             continue
@@ -108,9 +124,25 @@ def implicit_requirements(text):
         if not cells or set("".join(cells)) <= set("-: "):
             continue
         m = NFR_ID.fullmatch(cells[0]) or NFR_ID.search(cells[0])
-        if m and m.group(1) not in seen and not re.fullmatch(r"\d+\.\d+", m.group(1)):
-            seen.add(m.group(1))
-            out.append((m.group(1), " — ".join(c for c in cells[1:] if c)))
+        if not m or re.fullmatch(r"\d+\.\d+", m.group(1)):
+            if cols is None:
+                cols = [c.lower() for c in cells]
+            continue
+        if m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        names = cols or []
+
+        def col(*want):
+            for w in want:
+                if w in names and names.index(w) < len(cells):
+                    return cells[names.index(w)]
+            return None
+
+        req = col("default", "requirement")
+        if req is None:
+            req = cells[1] if len(cells) > 1 else ""
+        out.append((m.group(1), req, col("status") or ""))
     return out
 
 
@@ -216,33 +248,151 @@ def cases_for(ac_id, text):
     return [(f"TC-{n}-{i}", ac_id) + c for i, c in enumerate(cases, 1)]
 
 
-NFR_LEVELS = [
-    (re.compile(r"reflow|responsive|viewport|overflow|320|zoom", re.I), "e2e",
-     "responsive overflow at 320/768/1280 (templates/qa/responsive.spec.ts)"),
-    (re.compile(r"contrast|wcag|a11y|access|focus|keyboard|label|alt|aria|screen-?reader|"
-                r"target-size|heading|landmark", re.I), "a11y",
-     "axe scan, wcag2a/2aa/21aa/22aa (templates/qa/a11y.spec.ts) + manual keyboard pass"),
-    (re.compile(r"visual|mock|pixel|design|layout|theme", re.I), "visual",
-     "toHaveScreenshot vs approved baseline (templates/qa/visual.spec.ts)"),
-    (re.compile(r"p9[59]|latency|perf|slo|throughput|load|rps|concurren|timeout", re.I), "load",
-     "k6 with thresholds from the SLO (templates/qa/load.k6.js)"),
-    (re.compile(r"lcp|inp|cls|vitals", re.I), "e2e",
-     "field/lab web-vitals budget check (see the web-vitals skill)"),
-    (re.compile(r"authz|auth|tenant|idor|permission|csrf|session", re.I), "integration",
-     "negative authz: other role / other tenant denied"),
-    (re.compile(r"smoke|health|deploy|rollback", re.I), "e2e",
-     "post-deploy smoke (templates/qa/smoke.sh)"),
+# How each kind of implicit requirement is tested: (level, how). `automated?` is "no"
+# for review and manual-exploratory.
+NFR_HOW = {
+    "responsive": ("e2e", "responsive overflow at 320/768/1280 and 200% text "
+                          "(templates/qa/responsive.spec.ts)"),
+    "a11y": ("a11y", "axe scan, wcag2a/2aa/21aa/22aa (templates/qa/a11y.spec.ts) + manual "
+                     "keyboard pass"),
+    "a11y-mobile": ("a11y", "VoiceOver + TalkBack pass at max font scale, on the Maestro "
+                            "flows"),
+    "visual": ("visual", "toHaveScreenshot vs approved baseline, one per state and theme "
+                         "(templates/qa/visual.spec.ts)"),
+    "vitals": ("e2e", "field/lab web-vitals budget check (see the web-vitals skill)"),
+    "load": ("load", "k6 with thresholds from the SLO (templates/qa/load.k6.js)"),
+    "authz": ("integration", "negative authz: other role / other tenant denied, per endpoint"),
+    "integration": ("integration", "integration test at the boundary asserting the stated "
+                                   "behaviour, including the failure path"),
+    "unit": ("unit", "unit tests on the values the requirement names (boundaries, zones, "
+                     "encodings)"),
+    "e2e": ("e2e", "end-to-end test of the journey on the matrix browsers "
+                   "(100x testplan matrix)"),
+    "mobile-e2e": ("e2e", "Maestro flow on the smallest and largest supported device and "
+                          "the min supported OS"),
+    "smoke": ("e2e", "post-deploy smoke (templates/qa/smoke.sh)"),
+    "static": ("static", "a CI check that fails the build (linter, scanner or config "
+                         "assertion); link the job"),
+    "release": ("review", "release checklist item, exercised once in staging; link the run"),
+    "review": ("review", "reviewer confirms it in the PR; not an automated test"),
+}
+
+# Every baseline id (scripts/data/baseline.json) by name. A `level` field on the
+# baseline item, when present, wins; tests/test_testplan.sh fails when a baseline id
+# is in neither place, so a new item cannot fall through to a keyword guess.
+LEVEL_BY_ID = {
+    "web-ui.reflow-320": "responsive", "web-ui.text-resize-200": "responsive",
+    "web-ui.contrast-and-targets": "a11y", "web-ui.keyboard-focus-names": "a11y",
+    "web-ui.view-states": "visual", "web-ui.core-web-vitals": "vitals",
+    "web-ui.browser-target": "e2e", "web-ui.security-headers-csrf": "integration",
+    "web-ui.design-tokens": "static", "web-ui.i18n-ready": "static",
+    "web-ui.color-scheme": "visual", "web-ui.seo-meta": "integration",
+    "web-ui.analytics-consent": "e2e",
+    "mobile.touch-targets": "a11y-mobile", "mobile.font-scaling-labels": "a11y-mobile",
+    "mobile.orientation-safe-areas": "mobile-e2e", "mobile.offline-flaky-network": "mobile-e2e",
+    "mobile.crash-anr-thresholds": "release", "mobile.staged-rollout-kill-switch": "release",
+    "mobile.privacy-manifest-permissions": "static", "mobile.min-os-device-matrix": "mobile-e2e",
+    "api.authz-every-endpoint": "authz", "api.property-authz-mass-assignment": "authz",
+    "api.boundary-validation": "integration", "api.resource-caps": "integration",
+    "api.rate-limit": "integration", "api.problem-details-errors": "integration",
+    "api.idempotency-timeouts-retries": "integration",
+    "api.health-graceful-shutdown": "integration", "api.contract-checked-in": "static",
+    "api.ssrf-guard": "integration", "api.inventory-deprecation": "review",
+    "worker.idempotent-handler": "integration", "worker.retry-jitter-dlq": "integration",
+    "worker.visibility-timeout": "integration", "worker.queue-alerts": "review",
+    "worker.cron-overlap-timezone": "integration",
+    "data-pipeline.rerunnable-partitions": "integration",
+    "data-pipeline.schema-contract": "static", "data-pipeline.quality-assertions": "integration",
+    "data-pipeline.late-data-watermarks": "integration", "data-pipeline.pii-lineage": "review",
+    "cli.conventions": "integration", "cli.semver-changelog": "review",
+    "cli.minimal-deps-lockfile": "static",
+    "iac.no-public-data-encrypted": "static", "iac.least-privilege-iam": "static",
+    "iac.backups-tested-restore": "release", "iac.remote-state-locking": "static",
+    "iac.cost-tags-budgets": "static", "iac.multi-az": "release", "iac.multi-region": "release",
+    "all.no-secrets-in-code": "static", "all.sast-deps-pinned-actions": "static",
+    "all.sbom-provenance": "static", "all.threat-model-paragraph": "review",
+    "all.pii-out-of-logs": "integration", "all.golden-signals-tracing": "review",
+    "all.runbook-per-alert": "review", "all.tests-in-same-change": "review",
+    "all.e2e-critical-journeys": "e2e", "all.visual-regression": "visual",
+    "all.load-soak-spike": "load", "all.flags-tested-rollback": "release",
+    "all.canary": "release", "all.small-changes": "review", "all.readme-adrs": "review",
+    "all.time-unicode": "unit", "all.copyleft-review": "static",
+    "all.wcag-aa-floor": "a11y", "all.audit-trail": "integration",
+    "all.privacy-impact-assessment": "review", "all.encryption-in-transit": "static",
+}
+
+# For ids outside the baseline (a team's own rows). Tried against the id first, then
+# the requirement text; whole words only, so "load only after consent" is not a load
+# test and "label" inside "labelled" is not accessibility.
+NFR_KEYWORDS = [
+    (re.compile(r"\b(reflow|responsive|viewport|text-resize|320)\b", re.I), "responsive"),
+    (re.compile(r"\b(wcag\w*|contrast|a11y|accessib\w*|keyboard|focus|screen-?reader|"
+                r"aria|target-size)\b", re.I), "a11y"),
+    (re.compile(r"\b(visual(-regression)?|screenshot|pixel|theme|dark mode)\b", re.I),
+     "visual"),
+    (re.compile(r"\b(lcp|inp|cls|web-?vitals|core-web-vitals)\b", re.I), "vitals"),
+    (re.compile(r"\b(p9[059](-budget)?|latency|throughput|rps|load[- ]test\w*|soak|spike)\b",
+                re.I), "load"),
+    (re.compile(r"\b(authz|idor|tenant\w*|permission\w*|csrf|authori[sz]\w*)\b", re.I),
+     "authz"),
+    (re.compile(r"\b(smoke|health-?check)\b", re.I), "smoke"),
 ]
 
 
-def nfr_case(req_id, row):
-    for rx, level, how in NFR_LEVELS:
-        if rx.search(req_id) or rx.search(row):
-            return (f"TC-{req_id}-1", req_id, level, "non-functional", how,
-                    row or "the baseline requirement")
-    return (f"TC-{req_id}-1", req_id, "manual-exploratory", "non-functional",
-            "exploratory charter (templates/qa/exploratory-charter.md)",
-            row or "the baseline requirement")
+def _baseline():
+    try:
+        return {i["id"]: i for i in json.loads((DATA / "baseline.json").read_text())["items"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+BASELINE_BY_ID = _baseline()
+
+
+def nfr_level(req_id, requirement):
+    """The NFR_HOW key for a row: the baseline item's `level`, else LEVEL_BY_ID, else
+    a whole-word keyword on the id, then on the requirement text; None when nothing
+    fits (an exploratory charter)."""
+    hint = BASELINE_BY_ID.get(req_id, {}).get("level")
+    if isinstance(hint, str) and hint in NFR_HOW:
+        return hint
+    if req_id in LEVEL_BY_ID:
+        return LEVEL_BY_ID[req_id]
+    for text in (req_id.replace(".", " "), requirement):
+        for rx, key in NFR_KEYWORDS:
+            if rx.search(text):
+                return key
+    return None
+
+
+def skip_reason(req_id, status):
+    """Why a row gets no test case: ask.* items are questions, not behaviour, and an
+    n/a(...), waived(...) or unanswered ASK row has nothing to test."""
+    if req_id.startswith("ask."):
+        return "a question"
+    m = SKIP_STATUS.match(status or "")
+    return m.group(1).lower() if m else None
+
+
+def nfr_case(req_id, requirement, status=""):
+    expected = requirement or "the baseline requirement"
+    if expected.startswith("ASK:") and status:
+        expected = status
+    key = nfr_level(req_id, requirement)
+    if key is None:
+        return (f"TC-{req_id}-1", req_id, "manual-exploratory", "non-functional",
+                "exploratory charter (templates/qa/exploratory-charter.md)", expected)
+    level, how = NFR_HOW[key]
+    return (f"TC-{req_id}-1", req_id, level, "non-functional", how, expected)
+
+
+def default_testplan(feature, repo):
+    """(<root>/specs/<feature>/testplan.md, the legacy <root>/testplans/<feature>.md
+    when one exists there, else None)."""
+    records, _ = _paths.resolve(repo)
+    legacy = records / _paths.LEGACY_TESTPLANS / f"{feature}.md"
+    return (_paths.feature_dir(feature, repo) / "testplan.md",
+            legacy if legacy.is_file() else None)
 
 
 def esc(s):
@@ -268,10 +418,17 @@ def cmd_new(a):
         for cid, acid, level, tech, given, exp in cases_for(ac, t):
             rows.append((cid, f"{feature}/{acid}", level, tech, given, exp,
                          "no" if level == "manual-exploratory" else "yes", a.owner))
-    nfr = implicit_requirements(text)
-    for cid, rid, level, tech, given, exp in (nfr_case(i, r) for i, r in nfr):
-        rows.append((cid, rid, level, tech, given, exp,
-                     "no" if level == "manual-exploratory" else "yes", a.owner))
+    nfr, skipped = [], []
+    for rid, req, status in implicit_requirements(text):
+        why = skip_reason(rid, status)
+        if why:
+            skipped.append(f"{rid} ({why})")
+        else:
+            nfr.append(rid)
+            cid, rid, level, tech, given, exp = nfr_case(rid, req, status)
+            rows.append((cid, rid, level, tech, given, exp,
+                         "no" if level in ("manual-exploratory", "review") else "yes",
+                         a.owner))
     first = next(iter(acs))
     out = [f"# Test plan — {feature}", "",
            f"Generated from `{a.doc}` by `100x testplan new`: {len(acs)} acceptance "
@@ -283,21 +440,34 @@ def cmd_new(a):
            "automated? | owner |",
            "|---|---|---|---|---|---|---|---|"]
     out += ["| " + " | ".join(esc(c) for c in r) + " |" for r in rows]
-    if not nfr:
+    if skipped:
+        out += ["", f"No case for {len(skipped)} implicit-requirement row(s) with nothing "
+                f"to test: {', '.join(skipped)}."]
+    if not nfr and not skipped:
         out += ["", "No implicit-requirements table (a section headed 'implicit "
                 "requirements' or '0b') was found, so no non-functional rows were added. "
                 "Responsive, accessibility and performance cases still apply per "
                 "`100x testplan matrix`."]
     doc = "\n".join(out) + "\n"
     repo, in_git = _paths.git_root()
+    legacy = None
     if a.out == AUTO_OUT:
-        records, _ = _paths.resolve(repo)
-        a.out = str(_paths.show(records / "testplans" / f"{feature}.md", pathlib.Path.cwd()))
+        target, legacy = default_testplan(feature, repo)
+        a.out = str(_paths.show(target, pathlib.Path.cwd()))
     if a.out:
         p = pathlib.Path(a.out)
         if p.exists() and not a.force:
             print(f"testplan new: {a.out} exists (use --force)", file=sys.stderr)
             return 2
+        if legacy is not None and not p.exists():
+            here = _paths.show(legacy, pathlib.Path.cwd())
+            print(f"testplan new: note: a test plan for {feature} exists at the legacy "
+                  f"location {here}; plans now live beside the spec at {a.out}. Move it "
+                  f"(`git mv {here} {a.out}`) to keep one copy"
+                  + ("" if a.force else ", or pass --force to write a fresh one there"),
+                  file=sys.stderr)
+            if not a.force:
+                return 2
         if a.dry_run:
             print(f"would write {a.out}: {len(rows)} cases for {len(acs)} ACs")
             return 0
@@ -547,7 +717,7 @@ def cmd_trace(a):
 # matrix
 # ---------------------------------------------------------------------------
 
-TIERS = ["prototype", "small", "growth", "scale"]
+TIERS = json.loads((DATA / "scale_tiers.json").read_text())["_order"]
 WEB_BROWSERS = [
     ("Chrome (latest)", "Desktop Chrome", "every PR"),
     ("Edge (latest)", "Desktop Edge, channel: 'msedge'", "nightly"),
@@ -646,7 +816,7 @@ def main():
     n.add_argument("doc")
     n.add_argument("--out", nargs="?", const=AUTO_OUT,
                    help="write the plan to this file; bare --out writes "
-                        "<records root>/testplans/<feature>.md")
+                        "<records root>/specs/<feature>/testplan.md")
     n.add_argument("--owner", default="qa-engineer")
     n.add_argument("--force", action="store_true")
     n.add_argument("--dry-run", action="store_true", help="say what --out would write")

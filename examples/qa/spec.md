@@ -22,9 +22,20 @@ mentions ids but defines nothing.
 
 ## 0b. Implicit requirements
 
-| id | requirement | class |
-|---|---|---|
-| `web.reflow-320` | no horizontal scroll at 320 CSS px | A |
-| `a11y.wcag22-aa` | WCAG 2.2 AA, axe-clean | A |
-| `api.p95-budget` | p95 latency under 300 ms at the declared tier | B |
-| `api.authz-every-endpoint` | every endpoint checks the actor's tenant | A |
+Baseline ids as `plan_feature new` writes them. The evidence column names tools on
+purpose (axe, k6, web-vitals, screenshots) that are NOT how the row is tested:
+`testplan new` must take each level from the requirement, never from the evidence.
+
+| id | default | status | evidence |
+|---|---|---|---|
+| web-ui.reflow-320 | content reflows at a 320 CSS px wide viewport with no two-dimensional scrolling | covered | e2e/responsive.spec.ts |
+| web-ui.contrast-and-targets | text contrast >= 4.5:1, UI component contrast >= 3:1, pointer targets >= 24x24 CSS px | covered | e2e/a11y.spec.ts |
+| web-ui.analytics-consent | non-essential analytics and tracking load only after opt-in consent | covered | k6 run shows no tracker request before consent |
+| api.health-graceful-shutdown | separate liveness and readiness endpoints; SIGTERM drains in-flight work before exit | covered | axe scan of the status page is clean too |
+| api.boundary-validation | every input is validated at the trust boundary for type, range, length and format, with explicit size limits | covered | web-vitals unaffected by the validation layer |
+| all.tests-in-same-change | tests ship in the same change as the code, and they are deterministic (no sleeps, no wall-clock, no network) | covered | visual snapshots updated in the same PR |
+| api.authz-every-endpoint | every endpoint checks the actor's tenant | covered | api/test_tag_delete.py |
+| api.p95-budget | p95 latency under 300 ms at the declared tier | accepted | measured in staging |
+| api.rate-limit | per-client rate limiting at the gateway, returning 429 with Retry-After | n/a(internal API behind the gateway's own limit) | — |
+| web-ui.seo-meta | public, indexable pages carry a unique title, a meta description and a canonical URL | waived(album pages are private) | — |
+| ask.data-residency | ASK: In which country or region must personal data be stored and processed? | ASSUMED(Tokyo region) | — |
