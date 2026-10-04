@@ -32,7 +32,7 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 
 | axis | flag | catalogue |
 |---|---|---|
-| feature kind | `--kind auth,crud` | edge cases + 24 pre-answered decisions |
+| feature kind | `--kind auth,crud` (optional, default `universal`) | edge cases + 24 pre-answered decisions |
 | work type | `--work web-ui,api` | implicit requirements (`scripts/data/baseline.json`) |
 | load tier + risk | `--tier small --risk elevated` | what is required and what is not |
 
@@ -40,13 +40,18 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
    listed; decisions carry a recommendation. The agent proceeds and records it.
 2. **Only class C items are asked** — residency, retention, compliance regime, cost,
    SLO numbers, unusual targets. At most five questions, each tagged `must-ask` or
-   `default`, each with a recommendation.
+   `default`, each with a recommendation. `plan_feature new` seeds §6 with at most five
+   of the applicable C asks, blocking first, then one-way doors; the rest are listed as
+   "Deferred to next batch" and stay `ASK` rows in §0b.
 3. **An unanswered C item may proceed as `ASSUMED(<recommendation>)`**, except
    residency, retention, compliance regime and cost, which block `ready`.
 
 `<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
 `{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
 This plugin's own repo pins `{"root": "."}`, so its worked example is `specs/login/`.
+A feature's spec, `plan.json`, `testplan.md` and `reports/` live together in
+`<root>/specs/<feature>/`. A generated `spec.md` keeps its fixed sections and needs no
+Contents table (`AGENTS.md` rule 17).
 
 ## Acceptance criteria — the one id from PRD to test
 
@@ -55,8 +60,10 @@ the header's `| prd |` field names the PRD, and the §8 verification plan's `cov
 column lists the ACs each row proves. `plan_feature audit` requires: at least one AC,
 every AC on its own canonical line, ids unique and never renumbered, an outcome a test
 can observe, every in-scope `S<k>` row mapped to an AC, `R<k>` links that exist when a
-PRD is linked, and every AC covered by a verification row. `plan_dag lint --spec` and
-`testplan trace` read the same parser, so only ACs defined in §2b count. Tests tag them
+PRD is linked, and every AC covered by a verification row. It also runs `prd audit` on
+the linked PRD (the `| prd |` field, else `<root>/prds/<feature>/`): its failures are
+errors from the `growth` tier, where a PRD is required, and warnings below;
+`| prd | none |` unlinks it. `plan_dag lint` and `testplan trace` read the same parser, so only ACs defined in §2b count. Tests tag them
 `<feature>/AC-<n>` (`test('login/AC-1 …')`), because AC ids repeat across specs.
 
 The spec header pins the baseline version it was written against, `| baseline | <n> |`.
@@ -69,13 +76,16 @@ never deleted; a retired item is marked `deprecated`.
 1. Scaffold the spec before writing code, declaring the load tier (no default exists),
    the risk level and the work types. `auth`, `payment` and `pii-compliance` raise risk
    to at least `elevated`.
-   *Enforced by:* `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`
+   *Enforced by:* `100x plan_feature new <name> --work <types> --tier <tier> [--kind <kinds>]`
    exits 2 without `--tier`
 
 1b. Resolve every §0b implicit requirement with an allowlisted status: `covered` or
    `applied` with evidence, `accepted`, `deferred` with a follow-up, `waived(<reason>)`
    (only if waivable), `n/a(<reason>)`, or for class C `ASK(<answer>)` /
-   `ASSUMED(<recommendation>)`.
+   `ASSUMED(<recommendation>)`. Evidence for `covered`/`applied` (and a covered edge
+   case's reference) must be proof: a test or file path, a `<feature>/AC-<n>` tag, a
+   runnable command, an ADR id or a §8 `V<n>` row. The seeded suggestion copied as-is is
+   an error; `review` alone passes but is counted unverified in the audit summary.
    *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
@@ -169,7 +179,8 @@ This skill rejects:
 - **An edge case left `TODO`.** The audit names the first one and exits non-zero.
 - **A seeded edge case or decision deleted** instead of answered with `n/a(<reason>)`,
   `waived(<reason>)` or a chosen option.
-- **"Covered" with no test reference** — a claim with no evidence.
+- **"Covered" with no test reference** — a claim with no evidence — or with the seeded
+  suggestion pasted back, or prose that names nothing a reviewer can open or run.
 - **"Deferred" with no follow-up** — that is a dropped requirement wearing a label.
 - **A decision that departs from the default with no ADR**, so the reasoning is lost.
 - **A verification plan with no commands.**

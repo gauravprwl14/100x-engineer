@@ -17,8 +17,8 @@ why its examples live at `specs/login`, `decisions/` and `ledger/`.
 |---|---|---|---|
 | 0 | [0. Start here: say it in plain English](#0-start-here-say-it-in-plain-english) | the one command a newcomer needs; the router picks everything below | 15 lines |
 | 1 | [1. Turn a vague request into requirements](#1-turn-a-vague-request-into-requirements) | intake: defaults applied silently, at most five questions | 15 lines |
-| 2 | [2. Build a feature](#2-build-a-feature) | the full sequence from PRD to commit, with every gate named | 60 lines |
-| 3 | [3. Split the work across agents](#3-split-the-work-across-agents) | orchestrate: task graph, parallel waves, agent reports checked against git, replay of declared verify commands | 27 lines |
+| 2 | [2. Build a feature](#2-build-a-feature) | the full sequence from PRD to commit, with every gate named | 66 lines |
+| 3 | [3. Split the work across agents](#3-split-the-work-across-agents) | orchestrate: a task graph stamped against the approved spec, parallel waves, agent reports checked against git, replay of declared verify commands | 31 lines |
 | 4 | [4. Feature into a codebase whose PRD, spec and code have diverged](#4-feature-into-a-codebase-whose-prd-spec-and-code-have-diverged) | **the common real case**: establish ground truth first, then record which of the three you treated as authoritative | 28 lines |
 | 5 | [5. Fix a bug](#5-fix-a-bug) | repro-first, and how to prove the test fails without the fix | 28 lines |
 | 6 | [6. Review your own code](#6-review-your-own-code) | mechanical checks, then the 9 questions no tool answers | 12 lines |
@@ -75,7 +75,8 @@ Greenfield or a new feature in an existing codebase.
 100x prd new checkout --kind payment --tier small
 100x prd audit <root>/prds/checkout                       # GATE
 
-# plan it: --tier is required; --work selects the implicit-requirement baseline
+# plan it: --tier is required; --work selects the implicit-requirement baseline;
+# --kind is optional (default universal); §6 seeds at most five asks, the rest deferred
 100x plan_feature new checkout --kind payment,crud --stack nestjs --tier small --work api,web-ui
 100x prd align <root>/prds/checkout <root>/specs/checkout  # R <-> AC <-> S trace
 100x plan_feature audit <root>/specs/checkout              # GATE: blocks coding
@@ -116,6 +117,8 @@ AC-1: A returning user with a correct password gets a 204 and an httpOnly sessio
 | a missing or unknown `R<k>` when a PRD exists (header `prd` field, or `<root>/prds/<feature>/`) | the requirement has no trace |
 | an AC no verification row `covers` | a criterion nothing checks |
 | a seeded edge-case or decision row deleted | a seeded row is answered (`n/a(<reason>)`, `waived(<reason>)`, an option), never removed |
+| `covered`/`applied` evidence that is the seeded suggestion, or cites no test or file path, `<feature>/AC-<n>` tag, runnable command, ADR id or §8 `V<n>` row | a reviewer must be able to open or run the proof; `review` alone passes but is counted unverified |
+| a linked PRD that fails `prd audit`, from the `growth` tier (a warning below; `\| prd \| none \|` unlinks it) | a PRD is required from `growth` |
 
 The audit checks the baseline items that existed at the spec's `| baseline | <n> |` pin and
 only warns about items added since, so a finished spec does not fail when the catalogue
@@ -135,11 +138,13 @@ resolved), one or more ADRs in `<root>/decisions/`, a verification receipt.
 For two or more specialists, or tasks that can run in parallel (`orchestrate`).
 
 ```bash
-100x plan_dag lint plan.json --spec checkout                         # GATE
+# plan.json lives beside the spec: <root>/specs/checkout/plan.json
+100x plan_dag stamp plan.json          # records the approved spec, its sha256, base = HEAD
+100x plan_dag lint plan.json                                         # GATE
 100x plan_dag waves plan.json          # which tasks run together
 100x plan_dag next plan.json           # what can start now
 # per task: git worktree add ../wt-T1 -b wt/checkout-T1, then dispatch its agent
-100x agent_report extract msg.md -o T1.json
+100x agent_report extract msg.md -o <root>/specs/checkout/reports/T1.json
 100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1      # GATE: git's real changes
 100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes   # GATE: declared verify only
 100x agent_report summary *.json       # every open question, one message to the user
@@ -147,13 +152,15 @@ For two or more specialists, or tasks that can run in parallel (`orchestrate`).
 
 | rule | why |
 |---|---|
-| `--spec` counts only **defined** ACs, and fails a spec with none | a mention like "see AC-3" is not a criterion |
+| `stamp` and `lint` need the spec to pass `plan_feature audit` with status `ready`; lint fails when its sha256 changed since the stamp | a plan cut from an unapproved or since-edited spec builds the wrong thing; re-plan or re-approve, then stamp again |
+| lint counts only **defined** ACs, fails a spec with none, and fails a task claiming an undefined AC | a mention like "see AC-3" is not a criterion, and `AC-12` for `AC-2` covers nothing |
 | `plan.json` carries `"schema": 1` and `feature`; an unknown field fails with a did-you-mean | a misspelt `depend_on` would silently drop an ordering edge |
 | each `verify` command runs without a shell (`sh -c '…'` when it needs one) and never commits, pushes, tags or publishes | replay runs exactly these commands, as argv |
 | tasks with no dependency path own disjoint files | two agents never edit the same file |
 | shared contracts are `contract: true` tasks others `consume` | the API shape is settled before both sides build on it |
 | a report merges only after it lints against git's changed files and its declared verify commands replay | "tests pass" is a claim until the main session re-runs the plan's own commands |
-| `done` needs every declared verify command in the evidence, verbatim, exit 0; other evidence is "not replayed (undeclared)" | a report cannot pick its own proof |
+| `done` needs every declared verify command in the evidence (argv-equal, bare or via `100x verified`), exit 0; other evidence is "not replayed (undeclared)" | a report cannot pick its own proof |
+| the report's `agent` is the task's `owner`; reviewers report under their own `task_id` with `findings` | a task's report comes from the agent the plan assigned |
 | a `needs-decision` task pauses only its dependents | independent work keeps moving |
 
 ---
@@ -311,7 +318,7 @@ current state to write down.
 ## 11. QA: test plan and coverage
 
 ```bash
-100x testplan new <root>/specs/checkout/spec.md --out   # writes <root>/testplans/checkout.md
+100x testplan new <root>/specs/checkout/spec.md --out   # writes <root>/specs/checkout/testplan.md
 100x testplan trace <root>/specs/checkout/spec.md --tests tests/,e2e/   # AC covered / uncovered
 100x testplan matrix --work web-ui --tier small         # default devices and browsers
 100x test_design_check --base origin/main

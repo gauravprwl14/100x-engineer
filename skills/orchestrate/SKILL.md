@@ -29,7 +29,8 @@ subagent — orchestration lives in the main session (OPERATING-MODEL §1).
 ```mermaid
 flowchart TD
     S[approved spec with AC ids] --> P[draft plan.json]
-    P --> L{plan_dag lint --spec}
+    P --> ST[plan_dag stamp]
+    ST --> L{plan_dag lint}
     L -- errors --> P
     L -- clean --> W[plan_dag waves]
     W --> D[per task: worktree + dispatch prompt]
@@ -44,28 +45,32 @@ flowchart TD
 ```
 
 1. **Draft `plan.json`** in the §6 shape (`"schema": 1`, `"feature"` = the spec
-   directory name), or ask the solution-architect agent to. Put every shared type, API
+   directory name) at `<root>/specs/<feature>/plan.json`, beside the spec, or ask the
+   solution-architect agent to. Put every shared type, API
    schema and DB schema in a `"contract": true` task, and list it in each consumer's
    `"consumes"` and `"depends_on"`. Write each `verify` command so it runs without a
    shell (`sh -c '…'` when it needs `&&`, `|` or `$VAR`), and never a commit, push, tag
    or publish.
-2. **Lint it:** `100x plan_dag lint plan.json --spec <feature>` (the spec path as given,
-   from the git root, under the records root, or the bare feature name;
-   `docs/OPERATING-MODEL.md` §8). `--spec` counts only ACs the spec *defines*
-   (`AC-<n>: <outcome> (R<k>, S<k>)` in §2b), so a mention like "see AC-3" never counts,
-   and a spec that defines none fails. An unknown field, an unknown `tier`, a `{a,b}`
-   glob or a verify command that needs a shell is an error too. Fix every numbered
-   error; nothing starts on a red plan.
+2. **Stamp, then lint:** `100x plan_dag stamp plan.json` records the approved spec's
+   path, its sha256 and `"base"` (HEAD); it refuses a spec that fails `plan_feature audit`
+   or is not `ready`. Then `100x plan_dag lint plan.json` (`--spec` defaults to the stamped
+   spec; a path, the git root, the records root or the bare feature name all resolve, §8).
+   Lint re-audits the spec and fails when its hash changed since the stamp: re-plan or
+   re-approve, then stamp again. It counts only ACs the spec *defines*
+   (`AC-<n>: <outcome> (R<k>, S<k>)` in §2b), a spec that defines none fails, and a task
+   claiming an undefined AC is an error. An unknown field, an unknown `tier`, a `{a,b}`
+   glob or a verify command that needs a shell is an error too. Nothing starts on a red plan.
 3. **Waves:** `100x plan_dag waves plan.json`. Every task in a wave runs at once.
 4. **Per task, one worktree:**
-   `git worktree add ../wt-<task-id> -b wt/<feature>-<task-id>`, and note its start
-   commit (`git -C ../wt-<task-id> rev-parse HEAD`): lint's `--base` if the agent commits.
+   `git worktree add ../wt-<task-id> -b wt/<feature>-<task-id>`. Lint diffs against
+   plan.json's `"base"`, else the worktree's fork point, so committed work is seen; pass
+   `--base <start>` only when the task started from another commit.
 5. **Dispatch** each task to its `owner` agent with the template below, all tasks of a
    wave in one message so they run concurrently.
 6. **Collect and check** each final message:
-   `100x agent_report extract msg.md -o T1.json`, then
-   `100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1 --base <start>`
-   (git's real changed files, not the report's list), then
+   `100x agent_report extract msg.md -o <root>/specs/<feature>/reports/T1.json`, then
+   `100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1`
+   (git's real changed files, not the report's list; the agent must be T1's owner), then
    `100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes`. Replay runs
    only T1's declared `verify` commands, as argv; a `sh -c` script is printed before it
    runs. Run it once without `--yes` to read the list first.
@@ -76,8 +81,10 @@ flowchart TD
 9. **Questions:** `100x agent_report summary *.json` merges every open question into
    one batch of at most five, blocking first. Send that as a single user message.
 10. **Review** the merged diff with solution-architect, code-reviewer and
-    security-reviewer; their reports go through `agent_report lint` too, and a blocking
-    item sends the owning task back to step 5.
+    security-reviewer. Each reports under its own `task_id` (`R-T1`) with its findings
+    in `findings`; `agent_report lint R-T1.json` checks it without `--graph`, and
+    `agent_report summary` merges findings, blocking first. A blocking finding sends the
+    owning task back to step 5.
 
 ### Dispatch prompt template
 
@@ -100,8 +107,9 @@ End your final message with the §3 report ("schema": 1) as the LAST fenced json
 
 ## Rules
 
-1. No task starts until the plan lints clean against the spec.
-   *Enforced by:* `100x plan_dag lint plan.json --spec spec.md`
+1. No task starts until the plan is stamped against an audited, `ready` spec and lints
+   clean against it.
+   *Enforced by:* `100x plan_dag stamp plan.json`, then `100x plan_dag lint plan.json`
 
 2. Tasks with no dependency path between them own disjoint files; a shared file goes in
    a contract task both depend on.
@@ -130,8 +138,9 @@ End your final message with the §3 report ("schema": 1) as the LAST fenced json
 ## Verify
 
 ```bash
-# the plan (~0.1s)
-100x plan_dag lint plan.json --spec spec.md
+# the plan (stamp and lint each re-run the spec audit, ~0.1s)
+100x plan_dag stamp plan.json
+100x plan_dag lint plan.json
 100x plan_dag waves plan.json
 
 # each report, from its own worktree (lint ~0.1s; replay = the task's own verify time)
@@ -143,8 +152,8 @@ End your final message with the §3 report ("schema": 1) as the LAST fenced json
 100x plan_dag next plan.json --done T0 --blocked T1
 100x agent_report summary T1.json T2.json
 
-# worked example shipped with the plugin
-100x plan_dag lint "$(100x root)/examples/orchestration/plan.json" --spec "$(100x root)/examples/orchestration/spec.md"
+# worked example shipped with the plugin, stamped against the spec beside it
+100x plan_dag lint "$(100x root)/examples/orchestration/plan.json"
 ```
 
 ## Failure modes
@@ -159,6 +168,10 @@ This skill rejects:
   on it".
 - **A consumer quietly editing the contract.** "consumer owns contract T0's files".
 - **An acceptance criterion nobody owns.** "AC-4 in spec.md is covered by no task".
+- **A task claiming a criterion the spec never wrote.** "AC-12 is claimed by T2 but
+  spec.md does not define it".
+- **A plan cut from a spec edited afterwards.** "spec … changed since the plan was
+  stamped … re-plan or re-approve".
 - **A spec with no defined criteria.** "--spec spec.md defines no acceptance criteria".
 - **Trusting a report without replay.** An agent claims `exit_code: 0` for a test that
   fails: `agent_report replay` prints "MISMATCH … claimed exit 0, actual 1" and the
@@ -183,8 +196,8 @@ This skill rejects:
 - `replay` checks exit codes, not that a command is meaningful: a plan that declares
   `true` as a verify command replays fine. The plan's `verify` list is what makes
   evidence worth replaying, so review it before dispatch.
-- `lint --base` defaults to `HEAD` (uncommitted work only); if the agent committed in
-  its worktree, pass the start commit or its committed changes go unseen.
+- Without `--base`, a plan `"base"` or a linked worktree, lint diffs against `HEAD`
+  (uncommitted work only), and a claimed change it cannot see asks "did the agent commit?".
 - Nothing stops an orchestrator from skipping this skill; the gates bind only when run.
 
 ## Scale
