@@ -184,11 +184,12 @@ most others in this plugin.
 
 ## Scale
 
-`solo`: rules 1, 2, 4, 6, 8, 9 — free or near-free, and rules 4/6/8/9 are fully
-mechanical via `perf_check.py`.
+`solo`: rules 1, 2, 4, 6, 7, 8, 9 — free or near-free, and rules 4/6/7/8/9 are
+fully mechanical via `perf_check.py`. Rule 7 is here because rule 7 itself calls
+an unbounded endpoint a correctness bug, and those apply at every size.
 `small-team (2-10)`: add 3, 5, 10, 13 — back-of-envelope math and `EXPLAIN` start
 paying for themselves once more than one person touches the query layer.
-`org` / `high-blast-radius`: add 7, 11, 12, 14, 15, 16 and a numeric capacity/soak
+`org` / `high-blast-radius`: add 11, 12, 14, 15, 16 and a numeric capacity/soak
 regime. DuckDuckGo Android's canary is 0.0001% before a wider rollout
 (`mobile-release-safety` Sources) — that's the shape of org-scale caution, applied
 here to capacity headroom instead of a mobile rollout ladder.
