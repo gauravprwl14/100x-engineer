@@ -434,6 +434,21 @@ python3 "$ROOT/scripts/prd.py" align "$ROOT/examples/login" "$ROOT/specs/login" 
 rc_is 0 $? "align: the worked example aligns clean against specs/login"
 has "0 requirement(s) with no spec coverage, 0 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step, 0 acceptance criterion/criteria tracing to no requirement"
 
+# audit_prd is the importable audit plan_feature runs on a spec's linked PRD
+python3 - "$ROOT" "$CONS/docs/engineering/prds/demo/prd.md" >$OUT/pd.out 2>&1 <<'PY'
+import sys, io, contextlib
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import prd
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    e, w, info = prd.audit_prd(sys.argv[1] + "/examples/login/prd.md")
+    e2, _, info2 = prd.audit_prd(sys.argv[2])
+assert buf.getvalue() == "", buf.getvalue()
+assert e == [] and info["ready"] and info["status"] == "ready" and info["requirements"] == 5, (e, info)
+assert isinstance(e2, list) and isinstance(info2["status"], str), (e2, info2)
+PY
+rc_is 0 $? "audit_prd: returns (errors, warnings, info) and prints nothing"
+
 echo
 echo "prd: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -10,7 +10,8 @@ Two failures, both of which appear once a project has more than a handful of rec
 
 A book solves both: a shelf catalogue, and a table of contents in every volume. This
 enforces the same thing, and only where it pays -- long documents you read to extract
-information, never short ones or fixed-structure files like SKILL.md.
+information, never short ones or fixed-structure files like SKILL.md or a generated
+spec.md / prd.md (recognised by the header table its generator writes).
 
     check_index.py                       # check the whole repo
     check_index.py research/             # one tree
@@ -84,6 +85,35 @@ INDEXED_DIRS = ("research", "docs", "reviewers", "specs", "prds", "rca", "review
 EXEMPT_NAMES = {"INDEX.md", "MAP.md", "SKILL.md", "ARCHIVE.md", "README.md",
                 "CHANGELOG.md", "AGENTS.md", "CLAUDE.md", "LICENSE.md"}
 EXEMPT_PREFIX = ("_TEMPLATE",)
+# Records `plan_feature new` and `prd new` generate: <root>/specs/<name>/spec.md and
+# <root>/prds/<name>/prd.md. Their sections are fixed by the template (AGENTS.md rule
+# 17), so they are recognised by the template's header table, not by length: the
+# `| field | value |` table right under the title, with the rows each template writes.
+GENERATED_RECORDS = {"spec.md": ("specs", ("feature", "status")),
+                     "prd.md": ("prds", ("linked spec", "status"))}
+HEADER_ROW_RX = re.compile(r"^\|\s*([^|]+?)\s*\|")
+
+
+def generated_record(path, text):
+    """True for a spec.md / prd.md under a specs/ or prds/ collection that still carries
+    its generator's header table. A hand-written long document in the same place, or a
+    record whose header was removed, is not exempt."""
+    want = GENERATED_RECORDS.get(path.name)
+    if not want or len(path.parts) < 3 or path.parts[-3] != want[0]:
+        return False
+    lines = text.splitlines()
+    i = next((n for n, l in enumerate(lines[:5]) if l.startswith("# ")), None)
+    if i is None:
+        return False
+    rows = []
+    for l in lines[i + 1:i + 16]:
+        if not l.strip() and not rows:
+            continue
+        m = HEADER_ROW_RX.match(l)
+        if not m:
+            break
+        rows.append(m.group(1).strip().lower())
+    return bool(rows) and rows[0] == "field" and all(k in rows for k in want[1])
 # Collections that should carry a listing file.
 COLLECTIONS = {
     "research": "INDEX.md", "reviewers": "INDEX.md", "specs": "INDEX.md",
@@ -115,6 +145,8 @@ def needs_index(path, text):
     if not parts or parts[0] not in INDEXED_DIRS:
         return False
     if len(text.splitlines()) < MIN_LINES:
+        return False
+    if generated_record(path, text):
         return False
     return len(real_h2s(text)) >= MIN_SECTIONS
 

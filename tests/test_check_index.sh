@@ -162,6 +162,31 @@ rc_is 2 $? "register: a missing file exits 2"
 python3 "$CI" >$OUT/c.out 2>&1
 rc_is 0 $? "plain check: unchanged behaviour on a repo with nothing to index"
 
+# generated records: a spec.md / prd.md carrying its generator's header table is a
+# fixed-structure file (AGENTS.md rule 17); anything else that long still needs Contents
+python3 "$ROOT/scripts/plan_feature.py" new big --tier growth --risk regulated \
+  --work api,web-ui,mobile,data-pipeline,iac >/dev/null 2>&1
+python3 "$ROOT/scripts/prd.py" new big --kind crud --tier growth >/dev/null 2>&1
+S="docs/engineering/specs/big/spec.md"; P="docs/engineering/prds/big/prd.md"
+[ "$(wc -l < "$S")" -ge 150 ] && [ "$(wc -l < "$P")" -ge 150 ] \
+  && ok "fixture: generated spec and PRD are long enough to be checked" \
+  || bad "fixture: a generated record under 150 lines leaves the exemption untested"
+python3 "$CI" docs/engineering >$OUT/c.out 2>&1
+rc_is 0 $? "generated spec.md and prd.md need no Contents table"
+no "MISSING"
+python3 - "$S" <<'PY'
+import sys, pathlib, re
+p = pathlib.Path(sys.argv[1]); t = p.read_text()
+p.write_text(re.sub(r"^\| field \| value \|\n\|---\|---\|\n", "", t, count=1, flags=re.M))
+PY
+python3 "$CI" docs/engineering >$OUT/c.out 2>&1
+rc_is 1 $? "a spec.md whose generator header was removed needs Contents again"
+has "MISSING  docs/engineering/specs/big/spec.md"
+mkdir -p docs/engineering/specs/notes
+cp "$P" docs/engineering/specs/notes/design.md
+python3 "$CI" docs/engineering/specs/notes >$OUT/c.out 2>&1
+rc_is 1 $? "a long hand-named doc under specs/ is not exempt"
+
 cd "$ROOT"
 echo
 echo "check_index: $PASS passed, $FAIL failed"

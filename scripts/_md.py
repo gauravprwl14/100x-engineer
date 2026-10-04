@@ -35,7 +35,11 @@ AC_DEF = re.compile(
     r"\s*(?P<body>.*)$")
 AC_TAG = re.compile(r"(?<![A-Za-z0-9])@?AC-(\d+)(?![0-9])")
 # Trailing "(R1, S2)" on a definition: the PRD requirements and in-scope rows it traces to.
+# AC_LINKS is kept for importers; parse_criteria does not use it, because `.search` on
+# a long line of spaces backtracks quadratically (40 KB took 5 s). `_trailing_links`
+# finds the same parenthesis with one rfind and a linear fullmatch.
 AC_LINKS = re.compile(r"\s*\(\s*((?:[RS]\d+)(?:\s*[,;]\s*[RS]\d+)*)\s*\)\s*$")
+LINKS_INNER = re.compile(r"\s*[RS]\d+(?:\s*[,;]\s*[RS]\d+)*\s*")
 AC_SECTION_RX = re.compile(r"^(#{2,6})\s+(?:§\s*)?(?:\d+[a-z]?\.\s+)?Acceptance criteria\b.*$",
                            re.I)
 
@@ -89,6 +93,14 @@ def header_field(text, name):
     return m.group(1).strip() if m else ""
 
 
+def status_field(text):
+    """The record's `| status |` header value reduced to its leading word, lower-cased:
+    `**draft — not ready to implement**` -> 'draft', `**ready**` -> 'ready'; '' when
+    the header has no status row."""
+    m = re.match(r"[\s*_`]*([A-Za-z][A-Za-z-]*)", header_field(text, "status"))
+    return m.group(1).lower() if m else ""
+
+
 def section_by_rx(text, rx):
     """(1-based first body line, body) of the first '## ' section whose heading
     matches rx; (None, None) when absent. The body ends at the next '## '."""
@@ -118,22 +130,65 @@ def section_body(text, heading):
 
 # ---------------------------------------------------------------- acceptance criteria
 
+FENCE_RX = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+class _Fences:
+    """Fenced-code-block state, fed one line at a time. A fence opens on a line
+    starting (after up to three spaces) with ``` or ~~~ and closes only on a run of
+    the SAME character at least as long, so a ``` inside a ~~~ block stays content.
+    `step(line)` is True when the line is a fence delimiter or inside a block."""
+
+    def __init__(self):
+        self.open = None
+
+    def step(self, line):
+        m = FENCE_RX.match(line)
+        if self.open is None:
+            if m:
+                self.open = m.group(1)
+                return True
+            return False
+        if m and m.group(1)[0] == self.open[0] and len(m.group(1)) >= len(self.open) \
+                and not line.strip().lstrip(self.open[0]):
+            self.open = None
+        return True
+
+
 def ac_section(text):
     """(offset, body) of the acceptance-criteria section, ends at the next heading of
-    the same or a higher level; (None, None) when the document has none."""
+    the same or a higher level; (None, None) when the document has none.
+
+    Fenced code blocks are content, never structure: a heading inside a fence neither
+    opens the section (a quoted `## Acceptance criteria` example) nor ends it (a
+    `# create a tag` comment in a ```bash block)."""
     lines = text.splitlines()
+    fences = _Fences()
     for i, line in enumerate(lines):
+        if fences.step(line):
+            continue
         m = AC_SECTION_RX.match(line.strip())
         if not m:
             continue
-        level, body = len(m.group(1)), []
+        level, body, inner = len(m.group(1)), [], _Fences()
         for nxt in lines[i + 1:]:
-            h = re.match(r"^(#{1,6})\s", nxt)
-            if h and len(h.group(1)) <= level:
-                break
+            if not inner.step(nxt):
+                h = re.match(r"^(#{1,6})\s", nxt)
+                if h and len(h.group(1)) <= level:
+                    break
             body.append(nxt)
         return i + 1, "\n".join(body)
     return None, None
+
+
+def _trailing_links(body):
+    """(body without its trailing "(R1, S2)", [link ids]); the body unchanged and []
+    when it does not end in a link parenthesis. Linear in the line length."""
+    s = body.rstrip()
+    i = s.rfind("(")
+    if not s.endswith(")") or i < 0 or not LINKS_INNER.fullmatch(s, i + 1, len(s) - 1):
+        return body, []
+    return s[:i].rstrip(), re.findall(r"[RS]\d+", s[i + 1:-1])
 
 
 def parse_criteria(text, scoped=True):
@@ -149,12 +204,9 @@ def parse_criteria(text, scoped=True):
         off, body = ac_section(text)
         if body is not None:
             offset, text = off, body
-    out, fence = [], False
+    out, fences = [], _Fences()
     for n, line in enumerate(text.splitlines(), 1):
-        if line.lstrip().startswith("```"):
-            fence = not fence
-            continue
-        if fence:
+        if fences.step(line):
             continue
         m = AC_DEF.match(line)
         if not m:
@@ -162,12 +214,9 @@ def parse_criteria(text, scoped=True):
         acid = m.group("t") or m.group("b") or m.group("p")
         num = m.group("tn") or m.group("bn") or m.group("pn")
         body = m.group("body").strip().rstrip("|").strip()
-        body = re.sub(r"\s*\|\s*", " — ", body).strip(" —")
-        links = []
-        lm = AC_LINKS.search(body)
-        if lm:
-            links = re.findall(r"[RS]\d+", lm.group(1))
-            body = body[:lm.start()].rstrip()
+        # split/join, not re.sub(r"\s*\|\s*"): the regex is quadratic on long blank runs
+        body = " — ".join(part.strip() for part in body.split("|")).strip(" —")
+        body, links = _trailing_links(body)
         out.append({"id": acid, "num": int(num), "text": body, "links": links,
                     "line": n + offset, "raw": line})
     return out

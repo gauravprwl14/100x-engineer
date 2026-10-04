@@ -13,7 +13,11 @@ Design constraints taken from how this gets used in practice:
     silently become "nobody decided".
 
     plan_feature.py new login --kind auth --work api,web-ui --tier small --stack nestjs
+    plan_feature.py new tagging --work api,web-ui --tier small   # --kind defaults to universal
     plan_feature.py audit docs/engineering/specs/login   # or specs/login, or login
+
+`audit_spec(path)` is the importable audit: (errors, warnings, status), no printing,
+no exit; `plan_dag lint --spec` calls it so a plan cannot start from an unready spec.
 
 Specs live under the root `_paths.py` resolves (docs/engineering/ by default).
     plan_feature.py index
@@ -100,10 +104,10 @@ def esc(x):
     return str(x).replace("|", "\\|")
 
 
-def baseline_rows(work, tier, risk, prefilled):
+def baseline_rows(work, tier, risk, prefilled, kinds=None):
     """§0b rows: every applicable baseline item, C items as unanswered ASK rows."""
     rows = []
-    for i in bl.applicable(work, tier, risk, BASELINE):
+    for i in bl.applicable(work, tier, risk, BASELINE, kinds=kinds):
         if i["class"] == "C":
             default = f"ASK: {i['ask']}"
             status = prefilled.get(i["id"], "ASK")
@@ -116,8 +120,34 @@ def baseline_rows(work, tier, risk, prefilled):
     return rows
 
 
+def question_batch(work, tier, risk, kinds, prefilled):
+    """(this batch, deferred) of the class C asks §6 seeds: at most MAX_QUESTIONS,
+    blocking first, then one-way doors, then catalogue order (OPERATING-MODEL.md §5).
+    A prefilled answer (--work public-api) is not a question."""
+    asks = [i for i in bl.ask_order(bl.applicable(work, tier, risk, BASELINE, kinds=kinds))
+            if i["id"] not in prefilled]
+    return asks[:MAX_QUESTIONS], asks[MAX_QUESTIONS:]
+
+
+def question_rows(batch):
+    if not batch:
+        return ["| Q1 | <!-- must-ask or default --> | <!-- --> | <!-- --> | <!-- --> | no |"]
+    out = []
+    for n, i in enumerate(batch, 1):
+        if i.get("blocks_ready"):
+            why = "blocks `ready` until answered with ASK(<answer>) in §0b"
+        elif i.get("door") == "one-way":
+            why = ("a one-way door (docs/OPERATING-MODEL.md §4); until answered, work "
+                   "proceeds on the recommendation, marked ASSUMED(...) in §0b")
+        else:
+            why = "until answered, work proceeds on the recommendation, marked ASSUMED(...) in §0b"
+        out.append(f"| Q{n} | must-ask | {esc(i['ask'])} (§0b `{i['id']}`) | {esc(why)} | "
+                   f"<!-- recommendation: what work proceeds on until this is answered --> | no |")
+    return out
+
+
 def cmd_new(a):
-    kinds = [k.strip() for k in a.kind.split(",") if k.strip()]
+    kinds = [k.strip() for k in (a.kind or "universal").split(",") if k.strip()] or ["universal"]
     bad = [k for k in kinds if k not in KINDS]
     if bad:
         print(f"unknown kind(s): {bad}. available: {KINDS}", file=sys.stderr)
@@ -156,8 +186,9 @@ def cmd_new(a):
     prefilled = {}
     if "public-api" in (a.work or ""):
         prefilled["ask.api-audience"] = "ASK(public — declared with --work public-api)"
-    base = baseline_rows(work, tier_name, risk, prefilled)
+    base = baseline_rows(work, tier_name, risk, prefilled, kinds)
     n_ask = sum(1 for r in base if "| ASK: " in r)
+    batch, deferred = question_batch(work, tier_name, risk, kinds, prefilled)
     work_arg = ",".join(work) or '""'
 
     prd_dir = PRDS / a.name
@@ -241,10 +272,18 @@ def cmd_new(a):
           "## 6. Open questions", "",
           f"At most {MAX_QUESTIONS}, ordered by impact. `type` is `must-ask` (a class C "
           "item: the user's call) or `default` (proceeding on the recommendation). Every "
-          "question carries a recommendation so work continues while it is unanswered.", "",
+          "question carries a recommendation so work continues while it is unanswered. "
+          "The class C rows of §0b are seeded here, blocking first, then one-way doors "
+          "(docs/OPERATING-MODEL.md §5).", "",
           "| # | type | question | why it matters | recommendation (proceeding with this) | answered |",
           "|---|---|---|---|---|---|",
-          "| Q1 | <!-- must-ask or default --> | <!-- --> | <!-- --> | <!-- --> | no |", "",
+          *question_rows(batch), ""]
+    if deferred:
+        s += [f"Deferred to next batch ({len(deferred)}, at most {MAX_QUESTIONS} per batch; "
+              f"ask them once this batch is answered, in this order): "
+              + ", ".join(f"`{i['id']}`" for i in deferred) + ". They stay ASK rows in §0b "
+              "until then.", ""]
+    s += [
           "## 7. Edge cases", "",
           f"{len(edges)} seeded from the catalogue for kinds: {', '.join(kinds)}. "
           "Every row needs a `status` of `covered` (with a test reference), `accepted`, "
@@ -305,6 +344,8 @@ def cmd_new(a):
         print("  no --work given: only cross-cutting baseline items were seeded "
               f"(work types: {', '.join(bl.work_types(BASELINE))})")
     print(f"  {len(base)} implicit requirements seeded ({n_ask} to ask)")
+    print(f"  {len(batch)} question(s) in §6" + (f", {len(deferred)} deferred to next batch"
+                                                 if deferred else ""))
     print(f"  {len(decs)} decisions pre-answered with defaults")
     print(f"  {len(edges)} edge cases seeded (all TODO)")
     print(f"\nNext: fill §0b and sections 1-14, then `100x plan_feature audit {rel(d)}`")
@@ -330,6 +371,71 @@ def no_evidence(cell):
 
 NA_BARE = re.compile(r"^n/?a\.?$", re.I)
 
+# What counts as proof in an evidence cell of a covered/applied row. Deleting the
+# `_suggested:_` marker in front of the seeded hint used to pass the audit, so a row
+# must cite something a reviewer can open or run (docs/OPERATING-MODEL.md §7).
+FILE_EXT = ("ts|tsx|js|jsx|mjs|cjs|py|go|rb|java|kt|kts|swift|rs|sh|bash|php|cs|json|"
+            "ya?ml|toml|md|sql|tf|hcl|proto|feature|css|scss|html|vue|svelte|dart|c|cc|"
+            "cpp|h|hpp|ex|exs|scala|xml|gradle|ini|cfg|lock|txt")
+RUNNERS = set(bl.EXTERNAL_TOOLS) | {
+    "python", "python3", "bash", "sh", "make", "yarn", "bun", "deno", "node", "jest",
+    "vitest", "playwright", "mocha", "rspec", "rake", "bundle", "mvn", "gradle",
+    "./gradlew", "dotnet", "swift", "xcodebuild", "flutter", "dart", "tox", "nox", "uv",
+    "poetry", "ruff", "mypy", "eslint", "tsc", "docker", "kubectl", "helm", "curl"}
+TICKED = re.compile(r"`([^`\n]{1,400})`")
+FILE_TOKEN = re.compile(rf"^[\w.@/-]*[\w-]\.(?:{FILE_EXT})(?::\d+)?$")
+BARE_PATH = re.compile(rf"(?<![\w/.-])(?:[\w.@-]+/)+[\w.@-]+\.(?:{FILE_EXT})(?![\w])")
+ADR_ID = re.compile(r"\bADR-\d+\b")
+TOOL_100X = re.compile(r"(?<![\w-])100x\s+([a-z_][a-z0-9_]*)")
+V_REF = re.compile(r"\bV(\d+)\b")
+REVIEW_ONLY = re.compile(r"^\W*review\b", re.I)
+
+
+def norm_ev(s):
+    return re.sub(r"\s+", " ", s.replace("_suggested:_", "").replace("`", "")).strip().lower()
+
+
+def proof_kind(cell, feature, vids):
+    """'proof' when the cell cites a test or file path, a `<feature>/AC-<n>` tag, a
+    runnable command, an ADR id or a §8 verification row that has a command;
+    'review' when it is a review alone; None otherwise."""
+    for span in TICKED.findall(cell):
+        s = span.strip()
+        first = s.split()[0] if s.split() else ""
+        if FILE_TOKEN.match(s) or ("/" in s and " " not in s):
+            return "proof"
+        if first in RUNNERS or (first == "100x" and len(s.split()) > 1):
+            return "proof"
+    if BARE_PATH.search(cell) or ADR_ID.search(cell):
+        return "proof"
+    if feature and re.search(rf"(?<![\w/-]){re.escape(feature)}/AC-\d+\b", cell):
+        return "proof"
+    if any((PLUGIN / "scripts" / f"{m}.py").is_file() for m in TOOL_100X.findall(cell)):
+        return "proof"
+    if any(f"V{n}" in vids for n in V_REF.findall(cell)):
+        return "proof"
+    return "review" if REVIEW_ONLY.match(cell) else None
+
+
+def proof_context(text):
+    """(feature, ids of §8 verification rows that name a command)."""
+    feature = md.header_field(text, "feature")
+    vids = {r[0].strip() for r in rows_of(text, "| # | check |")
+            if len(r) > 2 and r[2].strip() and "<!--" not in r[2]}
+    return feature, vids
+
+
+def check_evidence(rid, cell, seeded, feature, vids, bad, copied, review):
+    """Sort one covered/applied row: a copy of the seeded hint, not proof, or
+    review-only (accepted, counted as unverified)."""
+    kind = proof_kind(cell, feature, vids)
+    if kind == "review":
+        review.append(rid)
+    elif seeded and norm_ev(cell) == norm_ev(seeded):
+        copied.append(rid)
+    elif kind is None:
+        bad.append(f"{rid}: {cell.strip()[:40]!r}")
+
 
 def pinned_baseline(text, errs, warns):
     """The catalogue version the spec was written against (`| baseline | <n> |`). A
@@ -346,15 +452,20 @@ def pinned_baseline(text, errs, warns):
     return int(raw)
 
 
-def audit_baseline(text, work, tier, risk, errs, warns):
+def audit_baseline(text, work, tier, risk, errs, warns, kinds=None, stats=None):
+    """§0b rules. `kinds` scopes `when_any` items; `stats`, when given, receives the
+    ids of covered/applied rows whose only evidence is a review ("review_only")."""
     rows = rows_of(text, "| id | default | status | evidence |")
     if "## 0b. Implicit requirements" not in text or not rows:
         errs.append("no '## 0b. Implicit requirements' table — regenerate with "
-                    "`100x plan_feature new <name> --tier ... --work ...` and merge")
+                    "`100x plan_feature new <name> --tier ... --work ... [--kind ...]` "
+                    "and merge")
         return rows
     pin = pinned_baseline(text, errs, warns)
-    expected = {i["id"] for i in bl.applicable(work, tier, risk, BASELINE, upto=pin)}
-    newer = sorted({i["id"] for i in bl.applicable(work, tier, risk, BASELINE)} - expected)
+    expected = {i["id"] for i in bl.applicable(work, tier, risk, BASELINE, upto=pin,
+                                               kinds=kinds)}
+    newer = sorted({i["id"] for i in bl.applicable(work, tier, risk, BASELINE, kinds=kinds)}
+                   - expected)
     present = {r[0] for r in rows if r}
     missing = sorted(expected - present)
     if missing:
@@ -373,6 +484,8 @@ def audit_baseline(text, work, tier, risk, errs, warns):
         warns.append(f"§0b row(s) for deprecated baseline item(s): {', '.join(retired)}")
     blocking = bl.blocking_ids(BASELINE)
     bad, todo, unanswered, assumed_block, wrong_class, no_ev, nowaive = ([] for _ in range(7))
+    not_proof, copied, review = [], [], []
+    feature, vids = proof_context(text)
     for r in rows:
         if len(r) < 4:
             bad.append(r[0] if r else "?")
@@ -394,6 +507,9 @@ def audit_baseline(text, work, tier, risk, errs, warns):
             assumed_block.append(iid)
         if word in ("covered", "applied", "deferred") and no_evidence(ev):
             no_ev.append(f"{iid} ({word})")
+        elif word in ("covered", "applied"):
+            check_evidence(iid, ev, item.get("enforced_by", ""), feature, vids,
+                           not_proof, copied, review)
         if word == "waived" and item and not item.get("waivable", True):
             nowaive.append(iid)
     if bad:
@@ -415,10 +531,24 @@ def audit_baseline(text, work, tier, risk, errs, warns):
     if no_ev:
         errs.append(f"{len(no_ev)} §0b row(s) with no evidence (first: {no_ev[0]}) — "
                     f"covered/applied need a test or check, deferred a follow-up")
+    if copied:
+        errs.append(f"{len(copied)} §0b row(s) whose evidence is the seeded suggestion "
+                    f"(first: {copied[0]}) — the hint names the check; evidence names the "
+                    f"test, file, command run or ADR that shows it passed")
+    if not_proof:
+        errs.append(f"{len(not_proof)} covered/applied §0b row(s) whose evidence is not "
+                    f"proof (first: {not_proof[0]}) — {PROOF_HINT}")
     if nowaive:
         errs.append(f"{len(nowaive)} non-waivable baseline item(s) waived: "
                     f"{', '.join(nowaive)}")
+    if stats is not None:
+        stats.setdefault("review_only", []).extend(review)
     return rows
+
+
+PROOF_HINT = ("cite a test or file path, a `<feature>/AC-<n>` tag, a runnable command "
+              "(`100x …`, `npx …`), an ADR id or a §8 `V<n>` row; `review` alone is "
+              "accepted but counted as unverified")
 
 
 AC_CANONICAL = re.compile(r"^AC-\d+: \S")
@@ -427,15 +557,44 @@ MIN_OUTCOME_WORDS = 3
 
 def linked_prd(text, spec_dir):
     """The PRD this spec answers to: the header's `prd` field (a directory relative to
-    the git root), else <records>/prds/<feature>/. None when there is no PRD."""
-    m = re.search(r"^\|\s*prd\s*\|\s*(.+?)\s*\|\s*$", text, re.I | re.M)
-    if m and m.group(1).strip().lower() not in ("none", "-", "—", ""):
-        d = pathlib.Path(m.group(1).strip().strip("`"))
+    the git root); `none` (or `-`) declares there is none. Without the field,
+    <records>/prds/<feature>/, where <feature> is the `| feature |` field, else the
+    spec's directory name. None when there is no PRD; ("missing", value) when the
+    field names one that does not exist."""
+    raw = md.header_field(text, "prd").strip().strip("`").strip()
+    if raw.lower() in ("none", "-", "—"):
+        return None
+    if raw:
+        d = pathlib.Path(raw)
         p = (d if d.is_absolute() else ROOT / d)
         p = p if p.name == "prd.md" else p / "prd.md"
-        return p if p.exists() else ("missing", m.group(1).strip())
-    p = PRDS / spec_dir.name / "prd.md"
+        return p if p.exists() else ("missing", raw)
+    feature = md.header_field(text, "feature").strip() or spec_dir.name
+    p = PRDS / feature / "prd.md"
     return p if p.exists() else None
+
+
+def audit_linked_prd(text, spec_dir, tier, errs, warns):
+    """Run the PRD audit on the linked PRD. Its failures block a spec from the growth
+    tier, where a PRD is required; below growth a PRD is optional, so they warn."""
+    prd = linked_prd(text, spec_dir)
+    if not isinstance(prd, pathlib.Path):
+        return
+    import prd as prd_tool  # lazy: only a spec that links a PRD pays for the import
+    perrs, _, pinfo = prd_tool.audit_prd(prd)
+    shown = rel(prd.parent)
+    required = tier in TIER_ORDER and TIER_ORDER.index(tier) >= TIER_ORDER.index("growth")
+    if perrs:
+        msg = (f"linked PRD {rel(prd)} fails its audit: {len(perrs)} issue(s) "
+               f"(first: {perrs[0][:90]}) — run `100x prd audit {shown}`")
+        if required:
+            errs.append(f"{msg}; a PRD is required from the growth tier")
+        else:
+            warns.append(f"{msg}; a warning at tier {tier or '?'} because a PRD is optional "
+                         f"below growth — fix it, or set `| prd | none |` to unlink it")
+    elif not pinfo.get("ready"):
+        warns.append(f"linked PRD {rel(prd)} passes its audit but its status is "
+                     f"{pinfo.get('status') or 'unset'}, not ready")
 
 
 def prd_requirement_ids(prd_text):
@@ -549,14 +708,12 @@ def audit_seeded(text, kinds, edges, decisions, errs):
                     f"record a choice")
 
 
-def cmd_audit(a):
-    sp = md.find_record(a.dir, "specs", "spec.md", ROOT, RECORDS)
-    if sp is None:
-        print(md.not_found(a.dir, "specs", "spec.md", RECORDS, rel), file=sys.stderr)
-        return 2
+def _audit(sp):
+    """Every audit rule on the spec.md at `sp`: a dict of errors, warnings, the header
+    status word and the summary counts. Prints nothing."""
     d = sp.parent
-    text = sp.read_text()
-    errs, warns = [], []
+    text = sp.read_text(errors="replace")
+    errs, warns, stats = [], [], {"review_only": []}
 
     # template comments anywhere — prose, tables or diagrams — mean an unfilled spec
     ph = [l.strip()[:70] for l in text.splitlines() if "<!--" in l]
@@ -606,7 +763,8 @@ def cmd_audit(a):
         if empty_nfr:
             errs.append(f"non-functional requirements table has {len(empty_nfr)} "
                         f"unfilled field(s): {', '.join(empty_nfr)}")
-        base_rows = audit_baseline(text, work, tier_val, risk_val, errs, warns)
+        base_rows = audit_baseline(text, work, tier_val, risk_val, errs, warns,
+                                   kinds=kinds, stats=stats)
     else:
         base_rows = []
 
@@ -621,6 +779,22 @@ def cmd_audit(a):
                   and no_evidence(r[5])]
     noref = [r for r in edges if len(r) > 5 and r[4].lower() == "covered"
              and no_evidence(r[5])]
+    feature, vids = proof_context(text)
+    seeded_test = {re.sub(r"\s+", " ", w).strip().lower(): test
+                   for _, w, _, test in gather([k for k in kinds if k in KINDS])[0]}
+    e_bad, e_copied, e_review = [], [], []
+    for r in covered:
+        if len(r) > 5 and not no_evidence(r[5]):
+            check_evidence(r[0], r[5], seeded_test.get(re.sub(r"\s+", " ", r[2]).strip()
+                                                       .lower(), ""),
+                           feature, vids, e_bad, e_copied, e_review)
+    stats["review_only"].extend(e_review)
+    if e_copied:
+        errs.append(f"{len(e_copied)} covered edge case(s) whose reference is the seeded "
+                    f"suggestion (first: {e_copied[0]}) — name the test that covers it")
+    if e_bad:
+        errs.append(f"{len(e_bad)} covered edge case(s) whose reference is not proof "
+                    f"(first: {e_bad[0]}) — {PROOF_HINT}")
     if todo:
         errs.append(f"{len(todo)} of {len(edges)} edge cases still TODO "
                     f"(first: {todo[0][2][:60]})")
@@ -671,6 +845,7 @@ def cmd_audit(a):
         errs.append(f"{len(novcmd)} verification row(s) with no command")
 
     crits = audit_acceptance(text, d, errs, warns)
+    audit_linked_prd(text, d, tier_val, errs, warns)
 
     if "sequenceDiagram" not in text:
         warns.append("no mermaid sequenceDiagram — design_drift.py has nothing to check")
@@ -684,24 +859,52 @@ def cmd_audit(a):
             errs.append(f"section '## {sec}' is blank — 'N/A because <reason>' is allowed, "
                         f"empty is not")
 
-    status_ready = re.search(r"\|\s*status\s*\|\s*\*?\*?ready", text, re.I)
+    review = stats["review_only"]
+    summary = [
+        f"  scale tier : {tier_val or '(none declared)'}   risk: {risk_val}   "
+        f"work: {', '.join(work) or '-'}",
+        f"  baseline   : {len(base_rows)} implicit requirement row(s)",
+        f"  edge cases : {len(edges)} total, {len(covered)} covered, {len(todo)} TODO",
+        f"  decisions  : {len(ds)} total, {len(defaults)} accepted as default",
+        f"  questions  : {len(qs)}",
+        f"  acceptance : {len(crits)} criteria",
+        f"  evidence   : {len(review)} covered/applied row(s) rest on review alone "
+        f"(unverified)" + (f": {', '.join(review[:6])}" + (" …" if len(review) > 6 else "")
+                           if review else "")]
+    return {"errors": errs, "warnings": warns, "status": md.status_field(text),
+            "summary": summary, "review_only": review}
 
+
+def audit_spec(path):
+    """(errors, warnings, status) for a spec: its directory, its spec.md, specs/<name>
+    under the records root, or the bare name. `status` is the header's leading word
+    (`draft`, `ready`, ...), '' when absent; an unresolvable path is one error and
+    status ''. Prints nothing and never exits, so `plan_dag lint --spec` can call it."""
+    sp = md.find_record(str(path), "specs", "spec.md", ROOT, RECORDS)
+    if sp is None:
+        return [md.not_found(str(path), "specs", "spec.md", RECORDS, rel)], [], ""
+    r = _audit(sp)
+    return r["errors"], r["warnings"], r["status"]
+
+
+def cmd_audit(a):
+    sp = md.find_record(a.dir, "specs", "spec.md", ROOT, RECORDS)
+    if sp is None:
+        print(md.not_found(a.dir, "specs", "spec.md", RECORDS, rel), file=sys.stderr)
+        return 2
+    r = _audit(sp)
+    errs = r["errors"]
     print(f"audit {rel(sp)}")
-    print(f"  scale tier : {tier_val or '(none declared)'}   risk: {risk_val}   "
-          f"work: {', '.join(work) or '-'}")
-    print(f"  baseline   : {len(base_rows)} implicit requirement row(s)")
-    print(f"  edge cases : {len(edges)} total, {len(covered)} covered, {len(todo)} TODO")
-    print(f"  decisions  : {len(ds)} total, {len(defaults)} accepted as default")
-    print(f"  questions  : {len(qs)}")
-    print(f"  acceptance : {len(crits)} criteria")
-    for w in warns:
+    for line in r["summary"]:
+        print(line)
+    for w in r["warnings"]:
         print(f"  WARN  {w}")
     for e in errs:
         print(f"  ERROR {e}")
     if errs:
         print(f"\nspec is NOT ready to implement: {len(errs)} blocking issue(s)")
         return 1
-    if not status_ready:
+    if r["status"] != "ready":
         print("\nno blocking issues — set `status` to `ready` in the header table")
         return 0
     print("\nspec is ready to implement")
@@ -744,7 +947,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     n = sub.add_parser("new"); n.add_argument("name")
-    n.add_argument("--kind", required=True, help=f"comma-separated: {','.join(KINDS)}")
+    n.add_argument("--kind", default="universal",
+                    help=f"comma-separated feature kinds (default universal, the edge cases "
+                         f"every feature shares): {','.join(KINDS)}")
     n.add_argument("--stack", default=None)
     n.add_argument("--tier", "--scale", dest="tier", default=None,
                     help=f"REQUIRED load tier: {'|'.join(TIER_ORDER)} "

@@ -470,6 +470,151 @@ PY2
 rc_is 0 $? "audit: pinned baseline — newer items warn, pinned items required, deprecated optional"
 cd "$ROOT"
 
+# ---------- --kind is optional; §6 seeds at most five asks; deferred beyond five ----------
+cd "$CONS"
+SP="$CONS/docs/engineering/specs"
+python3 "$ROOT/scripts/plan_feature.py" new tagging --tier small --work api,web-ui >$OUT/pt.out 2>&1
+rc_is 0 $? "plan: new without --kind succeeds (default universal)"
+grep -q "^| kinds | universal |" "$SP/tagging/spec.md" && ok "plan: kinds default to universal" \
+  || bad "plan: kinds not defaulted to universal"
+NQ=$(grep -cE "^\| Q[0-9]+ \| must-ask \|" "$SP/tagging/spec.md")
+[ "$NQ" -ge 1 ] && [ "$NQ" -le 5 ] && ok "plan: api+web-ui small tagging seeds $NQ asks (<= 5)" \
+  || bad "plan: api+web-ui small tagging seeds $NQ asks"
+NA=$(grep -c "^| ask\.[a-z-]* | ASK: " "$SP/tagging/spec.md")
+[ "$NA" -le 5 ] && ok "plan: api+web-ui small tagging has $NA class C rows in §0b (<= 5)" \
+  || bad "plan: $NA class C rows in §0b"
+grep -qE "^\| ask\.(rpo-rto|supported-locales) \|" "$SP/tagging/spec.md" \
+  && bad "plan: RPO/RTO or launch locales asked of a small, risk-none feature" \
+  || ok "plan: no RPO/RTO or launch-locale ask at small, risk none"
+grep -q "Deferred to next batch" "$SP/tagging/spec.md" && bad "plan: deferred list with <= 5 asks" \
+  || ok "plan: no deferred list when the batch fits"
+grep -q "^| Q1 | must-ask | What recurring spend" "$SP/tagging/spec.md" \
+  && ok "plan: the blocking ask (cost) is Q1" || bad "plan: blocking ask not first"
+grep -q "^| ask.rpo-rto |" "$SP/authy/spec.md" && ok "plan: RPO/RTO still asked at small + elevated risk" \
+  || bad "plan: RPO/RTO lost at elevated risk"
+
+python3 "$ROOT/scripts/plan_feature.py" new big --tier growth --risk regulated \
+  --work api,web-ui,mobile,data-pipeline,iac >$OUT/pt.out 2>&1
+has "deferred to next batch"
+NQ=$(grep -cE "^\| Q[0-9]+ \| must-ask \|" "$SP/big/spec.md")
+[ "$NQ" -eq 5 ] && ok "plan: more than five asks -> exactly five in §6" || bad "plan: $NQ asks in §6"
+grep -E "^\| Q[1-4] \| must-ask \|" "$SP/big/spec.md" | grep -c "blocks \`ready\`" | grep -qx 4 \
+  && ok "plan: the four blocking asks come first" || bad "plan: blocking asks not first"
+grep -q "^Deferred to next batch (.*\`ask.rpo-rto\`" "$SP/big/spec.md" \
+  && ok "plan: the rest are listed as deferred to next batch" || bad "plan: no deferred list"
+python3 "$ROOT/scripts/plan_feature.py" audit big >$OUT/pt.out 2>&1
+no "open questions; at most"
+
+# a fresh generated spec is a fixed-structure record: check_index does not ask for Contents
+python3 "$ROOT/scripts/check_index.py" docs/engineering/specs/big >$OUT/pt.out 2>&1
+rc_is 0 $? "check_index: a fresh plan_feature new spec passes"
+no "MISSING"
+mkdir -p docs/notes; cp "$SP/big/spec.md" docs/notes/copied.md
+python3 "$ROOT/scripts/check_index.py" docs/notes >$OUT/pt.out 2>&1
+rc_is 1 $? "check_index: the same text outside specs/<name>/spec.md still needs Contents"
+rm -r docs/notes
+
+# ---------- evidence must look like proof ----------
+ev() {  # ev <row id> <new evidence cell>: rewrite one §0b or §7 row's last cell in $W
+  python3 - "$W/spec.md" "$1" "$2" <<'PY2'
+import sys, pathlib
+p, rid, new = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+out, hit = [], False
+for l in p.read_text().splitlines():
+    if l.startswith(f"| {rid} |"):
+        cells = l.split(" | "); cells[-1] = new + " |"; l = " | ".join(cells); hit = True
+    out.append(l)
+if not hit:
+    print(f"TEST BUG: no row {rid}", file=sys.stderr); sys.exit(1)
+p.write_text("\n".join(out) + "\n")
+PY2
+}
+fresh; ev all.no-secrets-in-code "gitleaks detect --redact"
+audit_w; rc_is 1 $? "evidence: the seeded hint with the marker deleted is rejected"
+has "evidence is the seeded suggestion (first: all.no-secrets-in-code)"
+fresh; ev all.no-secrets-in-code "\`gitleaks detect --redact\`"
+audit_w; rc_is 1 $? "evidence: the seeded hint in backticks is still the hint"
+fresh; ev all.pii-out-of-logs "logs were looked at"
+audit_w; rc_is 1 $? "evidence: prose that cites nothing is rejected"
+has "evidence is not proof (first: all.pii-out-of-logs"
+fresh; ev all.pii-out-of-logs "review"
+audit_w; rc_is 0 $? "evidence: review alone is accepted"
+has "3 covered/applied row(s) rest on review alone (unverified)"
+for good in "login/AC-3 tagged test" "ADR-0001" "\`100x bloat_check --base origin/main\`" "V9" \
+            "tests/redaction_test.py" "\`log-redaction.spec.ts\` → grep for the session id"; do
+  fresh; ev all.pii-out-of-logs "$good"; audit_w; rc_is 0 $? "evidence accepted: $good"
+done
+for badev in "billing/AC-3 tagged test" "100x nosuch_tool" "V99" "see Node.js docs"; do
+  fresh; ev all.pii-out-of-logs "$badev"; audit_w; rc_is 1 $? "evidence rejected: $badev"
+done
+fresh; ev E1 "two parallel requests with the same idempotency key produce one effect"
+audit_w; rc_is 1 $? "evidence: a covered edge case citing the seeded test text is rejected"
+has "covered edge case(s) whose reference is the seeded suggestion (first: E1)"
+fresh; ev E1 "tested by hand"
+audit_w; rc_is 1 $? "evidence: a covered edge case citing no test is rejected"
+has "covered edge case(s) whose reference is not proof (first: E1"
+
+# ---------- the linked PRD is audited too ----------
+fresh; mkdir -p "$CONS/prdbad"; cp "$ROOT/examples/login/prd.md" "$CONS/prdbad/prd.md"
+swap "$CONS/prdbad/prd.md" "## 22. Approvers" "## 22. Signoff"
+swap "$W/spec.md" "| prd | examples/login |" "| prd | prdbad |"
+audit_w; rc_is 0 $? "prd: a failing PRD below growth does not block the spec"
+has "WARN  linked PRD prdbad/prd.md fails its audit"
+has "a PRD is optional below growth"
+swap "$W/spec.md" "| scale tier | small |" "| scale tier | growth |"
+audit_w; rc_is 1 $? "prd: a failing PRD at growth blocks the spec"
+has "ERROR linked PRD prdbad/prd.md fails its audit"
+has "a PRD is required from the growth tier"
+fresh; audit_w; no "linked PRD"
+PR="$CONS/docs/engineering/prds"
+mkdir -p "$PR/login" "$PR/w"
+cp "$CONS/prdbad/prd.md" "$PR/login/prd.md"; cp "$CONS/prdbad/prd.md" "$PR/w/prd.md"
+fresh; swap "$W/spec.md" "| prd | examples/login |" "| prd | none |"
+swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 0 $? "prd: | prd | none | is honoured over prds/<feature>/"
+no "linked PRD"
+fresh; grep -v "^| prd |" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; has "linked PRD docs/engineering/prds/login/prd.md"
+no "prds/w/prd.md"
+rm -r "$PR/login" "$PR/w" "$CONS/prdbad"
+
+# ---------- audit_spec: importable, silent, returns the header status ----------
+fresh; python3 - "$ROOT" "$W" "$SP/thing" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, io, contextlib
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import plan_feature as pf
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+    e, w, s = pf.audit_spec(sys.argv[2])
+    e2, w2, s2 = pf.audit_spec(sys.argv[3] + "/spec.md")
+    e3, w3, s3 = pf.audit_spec("no-such-spec")
+assert buf.getvalue() == "", buf.getvalue()
+assert (e, s) == ([], "ready"), (e, s)
+assert e2 and s2 == "draft", (e2, s2)
+assert len(e3) == 1 and "no spec.md" in e3[0] and s3 == "", (e3, s3)
+PY2
+rc_is 0 $? "audit_spec: (errors, warnings, status) with no output"
+
+# ---------- _md: fences and the acceptance-criteria section scope ----------
+python3 - "$ROOT" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, time
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import _md
+bt = "## 2b. Acceptance criteria\n\nAC-1: one two three\n\n```bash\n# create a tag\nAC-7: in a fence\n```\n\nAC-2: four five six\n\n## 3. Interfaces\n\nAC-9: a well-formed line outside the section\n"
+assert list(_md.parse_acs(bt)) == ["AC-1", "AC-2"], _md.parse_acs(bt)
+tl = "# s\n\n~~~markdown\n## Acceptance criteria\nAC-1: example only\n~~~\n\n## 2b. Acceptance criteria\n\nAC-1: the real criterion here\n~~~\n# a comment\n~~~\nAC-2: also real here\n"
+assert _md.parse_acs(tl) == {"AC-1": "the real criterion here", "AC-2": "also real here"}, _md.parse_acs(tl)
+mixed = "~~~~\n```\n## Acceptance criteria\nAC-1: x y z\n```\n~~~~\n## Acceptance criteria\nAC-3: real real real\n"
+assert list(_md.parse_acs(mixed)) == ["AC-3"], _md.parse_acs(mixed)
+for line in ["AC-1: x" + " " * 200000 + "y", "AC-1: a" + " |" * 100000,
+             "AC-1: x (" + "R1, " * 50000, "AC-1: x" + " " * 200000 + "(R1)"]:
+    t = time.time(); _md.parse_criteria(line); dt = time.time() - t
+    assert dt < 1, f"{dt:.2f}s on a {len(line)}-char line"
+assert _md.parse_criteria("AC-1: tag ten people. (R1, S2)")[0]["links"] == ["R1", "S2"]
+PY2
+rc_is 0 $? "_md: fences never end or open the AC section; AC-9 outside it not counted; 200KB line < 1s"
+cd "$ROOT"
+
 echo
 echo "planning-tools: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
