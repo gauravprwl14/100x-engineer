@@ -14,7 +14,7 @@ Every mutation happens silently, so the only protection is what the code refuses
 | 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root), and what guards it | 40 lines |
 | 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run recorded commands | 25 lines |
 | 4 | [Refusals](#refusals) | path traversal, a records root outside the repo, and non-git directories | 25 lines |
-| 5 | [The hooks](#the-hooks) | gate modes, signed receipts and their limit, skip-verify, Stop and SessionStart, fail-open | 55 lines |
+| 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop and SessionStart, fail-open | 95 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
 | 7 | [Residual risks](#residual-risks) | what is still on you | 20 lines |
 
@@ -63,7 +63,7 @@ them, with a warning that says how to settle it.
 
 | tool | writes | where | guard |
 |---|---|---|---|
-| `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file |
+| `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file; written via `safe_write_text`, refused when `.claude/` or the receipt is a symlink |
 | `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
 | `plan_feature.py new` | `spec.md`, `INDEX.md` | `<root>/specs/<name>/` | `--dry-run`, name validation |
 | `prd.py new` | `prd.md`, `INDEX.md` | `<root>/prds/<name>/` | `--dry-run`, name validation |
@@ -142,12 +142,28 @@ Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 | `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
 | `session_start.py` | `SessionStart` | add five lines of context naming `/100x-engineer:100x`, `100x list`, the operating model and the receipt rule; reads nothing in your repo |
 
-**When the PreToolUse gate acts.** `hooks.json` routes any Bash command mentioning
-`git`, `gh`, or a publisher (`npm`/`pnpm`/`yarn publish`, `twine upload`,
-`uv publish`), because its `if` patterns cannot see past `git -C <path>` or
-`git -c k=v`. The script then parses the command (compound commands, `cd`, `-C`,
-`--git-dir`, `env`/`bash -c` wrappers, git aliases) and acts only on `git commit`,
-`git push` (not `--dry-run`), tag creation, `gh pr create|merge|ready`,
+**What the gate is.** An integrity aid against a confused agent and against casual
+evasion: every natural way of phrasing a commit, push, PR or publish is meant to be
+caught, and where the parser cannot tell what a command does it gates rather than
+guesses. It is **not** a security boundary against an agent that deliberately sets out
+to defeat it; the classes it does not close are listed below, so nobody over-trusts it.
+
+**When the PreToolUse gate acts.** `hooks.json` routes any Bash command containing
+`git`, `gh`, `commit`, `push`, `merge`, `publish`, `twine` or `upload` as a bare
+substring, so `$(echo git) commit` still reaches the script, which returns at once when
+nothing is gated. The script parses the command line the way one shell would run it:
+
+| construct | example |
+|---|---|
+| compound commands, keywords, subshells | `a && b`, `{ git push; }`, `if …; then git push; fi`, `for …; do git push; done`, `(cd x); …` |
+| where it runs | `cd` (including `"$PWD"`), `git -C`, `--git-dir`, `GIT_DIR` exported earlier in the line; an unresolvable directory falls back to the session's repository |
+| wrappers, with their option arities | `env -u X`/`-S`/`-C`, `sudo -u`, `doas`, `timeout`, `nice -n`, `stdbuf`, `xargs`, `watch`, `eval`, `command`, `bash -c` |
+| indirection | `G=git; $G commit`, command substitution, `-c alias.ci=commit`, `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, repo and global aliases |
+| programs that run their arguments | `find -exec git commit`, `docker run img git push`: an unrecognised program's argv is scanned |
+| a program name it cannot resolve | `$X commit`, `$(…) push`: gated on the words that follow |
+
+It acts on `git commit`, `git merge`, `git push` and `send-pack` (not `--dry-run`), tag
+creation, `commit-tree` and `update-ref`, `gh pr create|merge|ready`, `gh api …/merge`,
 `gh release create` and the publishers, against the repository each one targets.
 
 | repository state | result |
@@ -156,7 +172,10 @@ Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 | policy `{"mode": "off"}` | silent |
 | policy present | **block**: denied unless a fresh, **signed** receipt covers every required check with the command the policy binds to it |
 | `[skip-verify]` in the command | `ask`: a human approves or refuses; the agent cannot approve its own bypass |
-| `--no-verify`, `commit -n`, `-c core.hooksPath=` | denied (they skip git's own hooks silently) |
+| `--no-verify` (or an abbreviation), `commit -n`, `core.hooksPath` via `-c` or `GIT_CONFIG_*` | denied (they skip git's own hooks silently) |
+| an earlier part of the same command can change files (`echo x >> f && git commit -am x`) | denied: the gate checks before the line runs, so run edits and verification first, then commit **in a separate command** |
+| `git push` / `gh pr create` | each ref sent must be the checked-out commit, and HEAD's tree must equal the verified content: `git push origin other-branch` or a push with uncommitted verified edits is denied |
+| a commit that changes `.claude/verification-policy.json` | needs a receipt recorded with that policy in place |
 
 **Why it never says `allow`.** An `allow` decision also skips the user's own `ask`
 permission rules for that command. A gate whose job is to refuse has no business
@@ -168,9 +187,35 @@ you, so an agent that deliberately reads the key can still sign; add a deny rule
 `~/.config/100x/**` (Read and Bash) or run sandboxed if that matters to you. A key that
 others can read or write is refused outright.
 
+**What `100x verified` refuses** (exit 2, nothing recorded): a run with
+`PYTEST_ADDOPTS`, `PYTEST_PLUGINS`, `NODE_OPTIONS`, `GOFLAGS`, `LD_PRELOAD` or
+`DYLD_INSERT_LIBRARIES` set, since each can turn a suite into a passing no-op without
+changing the command the receipt records; a program found first in a PATH entry inside
+the repository or a temp directory (a virtualenv or `node_modules/.bin` is exempt, and a
+symlink there to a system binary is fine); and a symlinked `.claude/` or receipt. The
+receipt records the real path of the executable that ran.
+
 **The committed policy wins.** When the worktree copy of the policy differs from the
 committed one, the committed one is enforced, so the agent cannot switch the gate off
 by editing or deleting the file.
+
+**Residual bypass classes.** Stated so nobody mistakes the gate for a boundary:
+
+- **Forgery by reading the key.** An agent that reads `~/.config/100x/receipt.key` can
+  sign anything. Close it with a permission deny rule in `settings.json`, or run
+  sandboxed:
+
+  ```json
+  {"permissions": {"deny": ["Read(~/.config/100x/**)", "Edit(~/.config/100x/**)",
+                            "Bash(*.config/100x*)"]}}
+  ```
+- **Code the parser never sees as a command line**: a script file, `make`, `npm run`,
+  `npx`, `python -c "os.system(...)"`, `bash < file`, or `eval "$X"` where `$X` was not
+  assigned in the same command line.
+- **Anything not modelled**: shell functions and aliases defined in rc files, a fake
+  `HOME` supplying a global git alias, `PYTHONPATH`/`sitecustomize` shaping a check.
+  History commands that make commits (`rebase`, `cherry-pick`, `revert`, `am`, `pull`)
+  are not gated; the push that ships their result is, and is bound to HEAD's content.
 
 **The Stop hook** blocks only when the repository is in block mode, has uncommitted
 changes, and no signed receipt matches the current content. It respects
@@ -207,9 +252,10 @@ Honest list of what is still on you:
 - **`--dangerously-skip-permissions` disables every other protection Claude Code has.**
   This plugin's refusals are narrow and specific; they are not a substitute for
   permission prompts.
-- **Commands the parser cannot see are not gated**: `eval "$X"`, a script file that
-  runs `git commit`, or a heredoc piped into a shell. The gate stops the shortcut, not
-  an agent determined to evade it.
+- **Commands the parser cannot see are not gated**: a script file that runs
+  `git commit`, `eval "$X"` with `$X` set elsewhere, and the other classes listed under
+  "Residual bypass classes" above. The gate stops the shortcut, not an agent determined
+  to evade it.
 - **Nothing here protects against the model's own edits.** The gates check *evidence*
   before a commit; they do not review the diff. That is what `diff-review` and the
   stack reviewers are for, and they are advisory.

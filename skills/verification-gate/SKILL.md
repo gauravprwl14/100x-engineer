@@ -30,6 +30,11 @@ The specific failure this catches: **run tests → edit a file → commit.** The
 passed, the statement "tests pass" is technically true, and the committed code was
 never tested. Nothing in a normal setup notices.
 
+What the gate is: an **integrity aid** against a confused agent and casual evasion, not
+a security boundary against an agent set on defeating it. Every natural phrasing of a
+commit, push, PR or publish is meant to be caught; the classes it does not close are
+listed under Failure modes.
+
 ## Rules
 
 1. Never state that work is complete without naming the command you ran and its
@@ -69,7 +74,13 @@ never tested. Nothing in a normal setup notices.
    Claude Code starts from is the human-only off switch.
    *Enforced by:* `bash tests/test_verification_gate.sh`
 
-7. Prefer diff-scoped checks over whole-repo checks on an existing codebase. A gate
+7. Never chain an edit, or the checks, into the same command line as the commit or
+   push: the gate judges before the line runs, so `echo x >> f && git commit -am x`
+   would ship content it never saw. Edit and verify, then commit in a separate command.
+   *Enforced by:* the `PreToolUse` hook (denies a gated action after any earlier segment
+   that is not read-only)
+
+8. Prefer diff-scoped checks over whole-repo checks on an existing codebase. A gate
    that takes 40 minutes gets turned off, and a turned-off gate is worse than none.
    *Enforced by:* convention
 
@@ -131,15 +142,27 @@ This skill rejects:
 - **An untracked file created after verifying** (a stray `NOTES.md`) → denied.
 - **`git -C ../repo commit`, `cd repo && git commit`, `git -c k=v commit`, an alias
   for `commit -n`** → parsed as the commit it is, against the repository it targets.
+  So are wrappers (`timeout`, `nice -n`, `sudo -u`, `env -u`, `xargs`, `eval`), shell
+  keywords (`{ git push; }`, `if …; then`), `find -exec git commit`, `G=git; $G commit`,
+  `-c alias.ci=commit` and `GIT_CONFIG_*` aliases, an exported `GIT_DIR`, and plumbing
+  (`commit-tree`, `update-ref`, `send-pack`, `merge`, `gh pr merge`, `gh api …/merge`).
+- **`git push origin other-branch`**, or a push with verified edits still uncommitted →
+  denied: a push is bound to what it sends, so each ref must be HEAD and HEAD's tree
+  must equal the verified content.
+- **A commit that weakens `.claude/verification-policy.json`** on a receipt taken before
+  the edit → denied until `100x verified` runs with the new policy in place.
+- **`PYTEST_ADDOPTS`, `NODE_OPTIONS`, `GOFLAGS` (and kin) set, or a `pytest` shadowing
+  the real one from the repo or a temp dir** → `100x verified` refuses to record.
 - **A green suite that cannot fail** — rule 5. The gate cannot catch this; it
   confirms a command exited 0, not that the command was meaningful.
 
 Known gaps, stated plainly: the gate proves *a command exited zero against this
 exact content*, not that the command was worth running (pair it with `minimal-diff`).
-The signing key is readable by anything running as you, so an agent that sets out to
-read it can still forge; the signature stops the easy shortcut, an OS-level deny rule
-on the key path stops the deliberate one. Commands hidden behind `eval` or a script
-file are not parsed. See `docs/SAFETY.md`.
+Residual bypass classes: **deliberate key-read forgery** (the key is readable by
+anything running as you; add a deny rule for `~/.config/100x/**` on Read, Edit and
+Bash, or run sandboxed); **code run from a script file, `npm run`, `python -c`, or
+`eval` of a variable set elsewhere**; and **anything the parser does not model** (rc-file
+aliases and functions, a fake `HOME`). See `docs/SAFETY.md`, "Residual bypass classes".
 
 ## Next
 
