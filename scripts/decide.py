@@ -48,7 +48,7 @@ def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("ADR-*.md")):
+    for p in sorted(DIR.rglob("ADR-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -66,7 +66,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("ADR-*.md")
+    # rglob, not glob: `ledger.py shard` moves records into YYYY/QN/, and a top-level
+    # scan would hand out ADR-0001 again once the originals are in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("ADR-*.md")
            if (m := re.match(r"ADR-(\d+)", p.name))]
     return f"ADR-{max(ids, default=0) + 1:04d}"
 
@@ -180,7 +182,7 @@ def cmd_index(a):
                      r.get("date", "?"), chosen, nass,
                      ", ".join(r.get("tags") or []) or "—",
                      ", ".join(r.get("affects") or []) or "—",
-                     r["_path"].name))
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# Decision index", "",
            f"{len(rows)} decision(s). Regenerate with `python3 scripts/decide.py index`.",
@@ -190,7 +192,7 @@ def cmd_index(a):
         out.append(f"| [{i}]({fn}) | {t} | {s} | {d} | {c} | {n} | {tg} | `{af}` |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `decide.py verify` runs every assumption's verification command.",
             "- `decide.py drift` lists decisions whose `affects` paths changed since "

@@ -69,14 +69,13 @@ def discover():
         if not base.exists():
             continue
         seen = set()
-        for pat in (glob, f"*/*/{glob}", f"*/*/*/{glob}"):
-            for p in base.glob(pat):
-                if not p.is_file() or p.resolve() in seen:
-                    continue
-                if p.name in ("INDEX.md", "ARCHIVE.md"):
-                    continue
-                seen.add(p.resolve())
-                out.append(parse(kind, p))
+        for p in sorted(base.rglob(glob)):
+            if not p.is_file() or p.resolve() in seen:
+                continue
+            if p.name in ("INDEX.md", "ARCHIVE.md"):
+                continue
+            seen.add(p.resolve())
+            out.append(parse(kind, p))
     return out
 
 

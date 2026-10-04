@@ -162,7 +162,7 @@ def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("RCA-*.md")):
+    for p in sorted(DIR.rglob("RCA-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -180,7 +180,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("RCA-*.md")
+    # rglob, not glob: `ledger.py shard` moves records into YYYY/QN/, and a top-level
+    # scan would hand out an id that already exists in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("RCA-*.md")
            if (m := re.match(r"RCA-(\d+)", p.name))]
     return f"RCA-{max(ids, default=0) + 1:04d}"
 
@@ -386,7 +388,8 @@ def cmd_index(a):
                      fmt(d["time_to_mitigate"]), fmt(d["time_to_resolve"]),
                      len(r.get("action_items") or []), has_test,
                      len(r.get("decision_links") or []),
-                     ", ".join(r.get("affects") or []) or "—", r["_path"].name))
+                     ", ".join(r.get("affects") or []) or "—",
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# RCA index", "",
            f"{len(rows)} record(s). Regenerate with `100x rca index`.", "",
@@ -398,7 +401,7 @@ def cmd_index(a):
                    f"{ht} | {nl} | `{af}` |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `rca.py lint` is the completeness gate: free-text severity, missing impact, "
             "a timestamp without a timezone, an action item with no owner/due/type, no "
@@ -623,7 +626,7 @@ def cmd_link(a):
     path.write_text(new_text)
 
     adr_dir = DIR.parent / "decisions"
-    hits = list(adr_dir.glob(f"{a.decision}*.md")) if adr_dir.exists() else []
+    hits = list(adr_dir.rglob(f"{a.decision}*.md")) if adr_dir.exists() else []
     if not hits:
         print(f"warning: no decision record found for {a.decision} under {rel(adr_dir)}/ — "
               f"link recorded anyway")

@@ -103,7 +103,7 @@ def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("LESSON-*.md")):
+    for p in sorted(DIR.rglob("LESSON-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -121,7 +121,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("LESSON-*.md")
+    # rglob, not glob: `ledger.py shard` moves lessons into YYYY/QN/, and a top-level
+    # scan would hand out an id that already exists in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("LESSON-*.md")
            if (m := re.match(r"LESSON-(\d+)", p.name))]
     return f"LESSON-{max(ids, default=0) + 1:04d}"
 
@@ -183,7 +185,8 @@ def cmd_index(a):
             continue
         rows.append((r.get("id", "?"), r.get("kind", "?"), r.get("title", "?"),
                      ", ".join(r.get("affects") or []) or "—",
-                     r.get("source") or "—", r.get("date", "?"), r["_path"].name))
+                     r.get("source") or "—", r.get("date", "?"),
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# Lesson index", "",
            f"{len(rows)} lesson(s). Regenerate with `python3 scripts/learn.py index`.",
@@ -193,7 +196,7 @@ def cmd_index(a):
         out.append(f"| [{i}]({fn}) | {k} | {t} | `{af}` | {src} | {d} |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `learn.py relevant <path>` — lessons that apply before editing a file.",
             "- `learn.py list --kind gotcha` — browse by kind.",

@@ -117,6 +117,41 @@ has "2026/Q"
 python3 "$L" shard --yes >$OUT/lg.out 2>&1
 has "nothing to shard"
 
+# --- the record tools see shards: no reused id, no record dropped from an index ---
+S="$ROOT/scripts"
+python3 "$S/decide.py" new "After the shard" >$OUT/lg.out 2>&1
+has "ADR-0046"
+[ "$(find "$C/$E/decisions" -name 'ADR-0001-*' | wc -l | tr -d ' ')" -eq 1 ] \
+  && ok "decide: no ADR id reused after shard" || bad "decide: ADR-0001 created again"
+python3 "$S/decide.py" index >$OUT/lg.out 2>&1
+has "46 decisions"
+grep -q "](2026/Q1/ADR-0003-d3.md)" "$C/$E/decisions/INDEX.md" \
+  && ok "decide index: sharded record linked by its shard path" || bad "decide index: sharded link wrong"
+python3 "$S/rca.py" new "Checkout outage" >/dev/null 2>&1
+python3 "$S/learn.py" add "Run make proto before the build, otherwise the client is stale" \
+  --kind gotcha --affects f.txt --source f.txt:1 >/dev/null 2>&1
+python3 "$L" shard --force --yes >$OUT/lg.out 2>&1
+has "moved 3 record"
+python3 "$S/rca.py" new "Second outage" >$OUT/lg.out 2>&1
+has "RCA-0002"
+python3 "$S/learn.py" add "Rotate the staging token before the demo, otherwise the webhook fails" \
+  --kind gotcha --affects f.txt --source f.txt:1 >$OUT/lg.out 2>&1
+has "LESSON-0002"
+python3 "$S/rca.py" index >$OUT/lg.out 2>&1
+has "(2 record(s)"
+python3 "$S/learn.py" index >$OUT/lg.out 2>&1
+has "(2 lesson(s)"
+python3 "$S/decide.py" new "Third" >$OUT/lg.out 2>&1
+has "ADR-0047"
+python3 - "$C/$E/decisions/INDEX.md" "$C/$E/rca/INDEX.md" "$C/$E/lessons/INDEX.md" >$OUT/lg.out 2>&1 <<'PY'
+import pathlib, re, sys
+dead = [f"{p}: {h}" for p in map(pathlib.Path, sys.argv[1:])
+        for h in re.findall(r"\]\(([^)#]+\.md)\)", p.read_text())
+        if not (p.parent / h).resolve().is_file()]
+print("\n".join(dead) or "all links resolve"); sys.exit(1 if dead else 0)
+PY
+rc_is 0 $? "decide/rca/learn indexes: every sharded link resolves"
+
 cd "$ROOT"
 echo
 echo "ledger: $PASS passed, $FAIL failed"
