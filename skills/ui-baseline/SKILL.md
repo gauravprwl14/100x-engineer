@@ -1,17 +1,9 @@
 ---
 name: ui-baseline
 description: >
-  Use when building or reviewing any page, screen, form, layout, or dashboard, or
-  asked to "make it responsive" or "look good on mobile". The always-on UI defaults
-  a senior frontend engineer applies without being asked: reflow at 320px with no
-  horizontal scroll, mobile-first fluid breakpoints, zoom left enabled, touch
-  targets (24px web, 44pt iOS, 48dp Android), room for translated text,
-  loading/empty/error/partial states for every view, optimistic updates with
-  rollback and retry, form validation UX (inline errors on blur and submit, an
-  error summary), design tokens instead of raw hex, prefers-color-scheme and
-  prefers-reduced-motion, reusing the repo's own components before writing new
-  ones, SEO meta on public pages, and a Browserslist `defaults` target. Use
-  PROACTIVELY on any diff that adds a `.tsx`/`.vue`/`.html`/`.css` view.
+  Page, screen, form, dashboard, table or layout: responsive to 320px, looks good on mobile,
+  loading/empty/error states, touch targets, design tokens, form validation UX. Not for
+  per-component a11y (→ accessibility).
 ---
 
 # UI baseline

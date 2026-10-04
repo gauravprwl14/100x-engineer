@@ -1,14 +1,9 @@
 ---
 name: feature-planning
 description: >
-  Use BEFORE writing code for any new feature, endpoint, screen, payment flow,
-  upload, migration, or integration — scaffolds a spec that seeds the edge cases
-  and decisions that feature kind always has, pre-answers each with a recommended
-  default, and mechanically blocks implementation until gaps are resolved or
-  explicitly accepted. Use PROACTIVELY when asked to build, implement, or add a
-  feature. Not for fixing something broken (bug-fix) and not for choosing between
-  competing implementation approaches inside an already-planned feature
-  (approach-selection, called from within this skill's decision points).
+  Build, implement or add a feature, endpoint, screen, payment flow, upload or integration:
+  scaffold a spec with the edge cases and decisions it always has, before code. Not for a bug (→
+  bug-fix).
 ---
 
 # Feature planning
@@ -173,7 +168,7 @@ This skill rejects:
 
 Once the audit passes: read `stack-reviewer` for the framework's failure modes
 before writing code. While implementing, `bloat_check.py` and `design_drift.py` run
-continuously (Verify step 4). Before opening the PR, run `scoped-review` on the
+continuously (Verify step 4). Before opening the PR, run `diff-review` on the
 diff. Before commit, `verification-gate`.
 
 ## Scale

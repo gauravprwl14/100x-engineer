@@ -1,16 +1,9 @@
 ---
 name: qa-strategy
 description: >
-  Use when writing a test plan, doing QA, turning acceptance criteria into tests,
-  or asking "is this tested enough" — test automation strategy, the test portfolio
-  per tier (unit, integration with a real DB via testcontainers, contract, e2e,
-  visual regression, accessibility testing with axe, load/performance testing with
-  k6, smoke tests, DAST baseline, mutation testing), AC-to-test traceability, the
-  critical-journey e2e list, responsive overflow checks, flaky-test quarantine,
-  exploratory charters, and the device/browser QA matrix. Not for choosing
-  individual cases inside one test file (test-design) or the receipt that proves
-  a suite ran (verification-gate). Use PROACTIVELY when a spec gains acceptance
-  criteria and before a feature is called done.
+  Test plan, QA, is it tested enough: acceptance criteria → tests from a PRD or spec,
+  unit/integration/e2e/visual/a11y/load portfolio, traceability, flaky-test quarantine. Not for
+  one function's cases (→ test-design).
 ---
 
 # QA strategy

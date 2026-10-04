@@ -1,15 +1,9 @@
 ---
 name: root-cause-analysis
 description: >
-  Use when something IS broken in production, an incident or outage happened, a
-  postmortem is due, or a test is mysteriously failing and the cause is not yet
-  obvious — not for a bug you already understand (use bug-fix directly for that).
-  Produces an incident record to the SRE postmortem standard: SEV1-SEV4 severity,
-  quantified impact, a typed timezone-aware timeline with computed time to detect,
-  mitigate and resolve, symptom/trigger/mechanism/root cause, falsifiable
-  hypotheses, five whys or a fault tree for several causes, contributing factors,
-  where we got lucky, and owned, dated, typed action items, written blamelessly. Use
-  PROACTIVELY after any incident, before writing the fix.
+  Incident, outage, postmortem, production broken after a deploy, flaky or CI-only failure —
+  find the cause: timeline, hypotheses, five whys, root cause, action items. Not for a known bug
+  (→ bug-fix).
 ---
 
 # Root cause analysis

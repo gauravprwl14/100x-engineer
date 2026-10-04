@@ -1,14 +1,9 @@
 ---
 name: dependency-vetting
 description: >
-  Use before running npm install, pnpm add, pip install, uv add, or poetry add for any
-  new package, and when reviewing a diff that touches package.json, pyproject.toml,
-  requirements.txt, or a lockfile. Validates a package against the npm and PyPI
-  registries before it is adopted — deprecation, licence, maintainer count, install
-  scripts, typosquatting, transitive tree size — so "trendy" means actively maintained
-  and safe to depend on, not merely popular. Not for scanning dependencies already
-  installed (see security-baseline) and not for deciding whether you need a dependency
-  at all before checking the stdlib (see minimal-diff rule 2, which comes first).
+  Before npm install, pnpm add, pip install or uv add of a new package: is it safe —
+  maintainers, licence, install scripts, typosquatting, deprecation, transitive size. Not for
+  installed-dep scanning (→ security-baseline).
 ---
 
 # Dependency vetting

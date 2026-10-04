@@ -1,12 +1,9 @@
 ---
 name: data-modeling
 description: >
-  Use when designing or reviewing a database schema, ORM model, or migration —
-  new tables, money/currency columns, soft delete, audit trails, state machines,
-  multi-tenant tables, or PII columns. Use PROACTIVELY before writing a migration,
-  a Prisma model, a SQLAlchemy/Django model, or a TypeORM entity, and when
-  reviewing someone else's. Not for API request/response shape — that is
-  api-contract, the schema's external face.
+  Database schema, tables, ORM model or migration: money columns, soft delete, audit trails,
+  state machines, multi-tenant and PII columns, indexes on existing tables. Not for API shape (→
+  api-contract).
 ---
 
 # Data modeling

@@ -1,22 +1,15 @@
 ---
 name: test-design
 description: >
-  Use when choosing WHICH test cases to write, for new code or a diff that adds
-  tests — equivalence partitioning and boundary values, pairwise coverage for
-  combinatorial booleans, illegal state transitions, test-double choice (stub vs
-  spy vs mock vs fake, and not mocking what you do not own), test naming as
-  specification, one logical assertion per test, determinism, and where
-  property-based testing beats hand-written examples. Not for whether a test CAN
-  fail at all (assertionless/focused-test detection lives in minimal-diff) and
-  not for which commands a language's suite should run (python-verification,
-  typescript-verification, go-verification). Use PROACTIVELY before writing any
-  test, and when reviewing a diff that adds them.
+  Which test cases to write: boundary values, equivalence classes, pairwise inputs, state
+  transitions, mocks vs fakes, property-based tests, test names as spec. Not for a whole test
+  plan (→ qa-strategy).
 ---
 
 # Test design
 
-`minimal-diff` catches whether a test can fail. `python-verification` and its
-siblings catch whether the suite runs and gates CI. Neither says anything about
+`minimal-diff` catches whether a test can fail. `language-verification`
+catches whether the suite runs and gates CI. Neither says anything about
 whether the cases chosen would catch a real bug — and across 72 JS/TS and 50
 Python production repos, a patch-coverage gate exists in exactly 1 of 72
 (`TriliumNext/Trilium`), mutation testing exists in 0 of 72 and 0 of 50, and

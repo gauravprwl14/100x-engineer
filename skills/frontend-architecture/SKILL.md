@@ -1,15 +1,9 @@
 ---
 name: frontend-architecture
 description: >
-  Use when building or reviewing any React/TypeScript feature — a page, a form, a
-  dashboard widget, a list with actions — to keep presentation, logic and business
-  rules in separate files instead of one component. Fires on a new/changed `.tsx`
-  component, a new `use*` hook, or any change touching money, tax, discount,
-  validation, or a `fetch`/API call from inside a component. Covers what
-  `code-craft` (function shape) and `reviewers/nextjs-react.md` (framework failure
-  modes, server/client boundary, hydration) do not: WHICH FILE a piece of logic is
-  allowed to live in, and which direction imports may point. Use PROACTIVELY before
-  writing a component that fetches data, computes a total, or validates input.
+  React component doing too much — fetch, business logic (tax, discounts, validation) and
+  rendering in one file: which file each piece lives in, hooks, import direction. Not for
+  framework bugs (→ stack-reviewer).
 ---
 
 # Frontend architecture
@@ -160,7 +154,7 @@ that actually is even at scale.
 
 ## Sources
 
-- `owner/reactive-resume` (cited via `skills/typescript-verification/SKILL.md`,
+- `owner/reactive-resume` (cited via `skills/language-verification/SKILL.md`,
   rule 5, and `research/30-findings-js-verification.md`) — the **only** repo in
   a 72-repo JS/TS corpus survey with a machine-enforced cross-package import
   boundary (Turborepo `boundaries` + Grit). Everyone else in that corpus

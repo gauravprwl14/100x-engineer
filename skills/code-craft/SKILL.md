@@ -1,13 +1,9 @@
 ---
 name: code-craft
 description: >
-  Use when writing or reviewing a function, class, or module and deciding its
-  SHAPE — naming, function length, parameter count, nesting depth, error
-  handling, coupling, mutability, and primitive obsession (raw number/string
-  used for money, ids, durations). Complements minimal-diff, which covers diff
-  VOLUME (too much code); this is about whether the code that exists reads as
-  clean, senior-engineer work. Use PROACTIVELY after writing a function and
-  before opening a PR, and during scoped-review's R-question pass.
+  Function, class or module shape: naming, long functions, too many parameters, deep nesting,
+  error handling, coupling, primitive obsession (raw money, ids, durations). Not for diff size
+  (→ minimal-diff).
 ---
 
 # Code craft

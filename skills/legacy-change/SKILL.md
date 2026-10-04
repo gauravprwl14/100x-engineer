@@ -1,15 +1,9 @@
 ---
 name: legacy-change
 description: >
-  Use when changing code that has no tests, or where the tests that exist don't
-  cover the part you're about to touch — most real work, not the exception.
-  Covers characterization tests (capture what the code DOES, bugs included, as
-  the safety net), finding a seam to change behaviour without editing the thing
-  under test, sprout/wrap to avoid touching a large unsafe function directly,
-  branch by abstraction and the strangler fig for larger replacements, the
-  single highest-value rule (never refactor and change behaviour in one
-  commit), the approval-testing trap, and a stop rule for cleanup scope. Use
-  PROACTIVELY before editing any function or module with no test covering it.
+  Changing old code or a module with no tests: characterization tests first, seams, sprout/wrap,
+  strangler fig, never refactor and change behaviour in one commit. Not for well-tested code (→
+  bug-fix).
 ---
 
 # Legacy change

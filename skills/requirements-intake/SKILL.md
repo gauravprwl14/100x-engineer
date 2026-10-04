@@ -1,13 +1,9 @@
 ---
 name: requirements-intake
 description: >
-  Use when turning a plain-English request, ticket, Slack message or vague goal into requirements
-  before any PRD, spec or code — restate the goal, detect the work types and the scale tier, pull the
-  implicit industry-default requirements from `100x baseline show`, classify every gap as A (default),
-  B (tier-dependent) or C (must ask), and ask one batch of at most five plan-changing questions, each
-  with why it matters, options and a recommendation. Produces a sourced assumptions table that feeds
-  `100x prd new` / `100x plan_feature new`. Use PROACTIVELY at the start of any build, plan or PRD
-  request; not for a bug whose expected behaviour is already known (use bug-fix).
+  Vague request, ticket or one-line ask → requirements: restate the goal, apply industry
+  defaults, ask at most five plan-changing questions with recommendations, before any PRD, spec
+  or code. Not for a known bug (→ bug-fix).
 ---
 
 # Requirements intake

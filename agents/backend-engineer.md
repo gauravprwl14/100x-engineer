@@ -62,8 +62,7 @@ build them only when the spec states them; otherwise ask.
 
 ## Verify
 
-The task's own `verify` commands, plus the stack's checks (`typescript-verification`,
-`python-verification`, `go-verification`), run through `100x verified --name <label> -- <cmd>` so the
+The task's own `verify` commands, plus the stack's checks (`language-verification`), run through `100x verified --name <label> -- <cmd>` so the
 result binds to the code. Then `100x bloat_check --base <ref>` and `100x review_scope --base <ref>`.
 
 ## Protocol

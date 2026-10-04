@@ -1,14 +1,9 @@
 ---
 name: orchestrate
 description: >
-  Use in the MAIN session when an approved spec or plan spans two or more specialist
-  agents (backend-engineer, frontend-engineer, mobile-engineer, qa-engineer) or has
-  tasks that can run in parallel — turning it into a plan.json task graph, linting it
-  with plan_dag (cycles, owners, file collisions, contract ordering, acceptance-criteria
-  coverage), dispatching each wave to agents in their own git worktrees with a fixed
-  prompt, then extracting, linting and replaying every agent report before merging,
-  routing review, and batching open questions into one user message. Not for a single
-  task one agent can finish alone, and never run inside a subagent.
+  Split work across engineers or agents: turn an approved plan into a parallel task graph, run
+  backend, frontend, mobile and QA agents in worktrees, lint and replay each report before
+  merging. Main session only.
 ---
 
 # Orchestrate

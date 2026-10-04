@@ -1,16 +1,9 @@
 ---
 name: solution-architecture
 description: >
-  Use when asked to write a PRD, a solution proposal, or "the implementation
-  approach" for something bigger than one feature — a new system, a build-vs-buy
-  call, a migration, or any request to "think like a solution architect" before
-  a spec exists. Sits ABOVE feature-planning: this frames the problem, weighs
-  options at the system level, and recommends; feature-planning then turns the
-  recommendation into edge cases and a diagram for a single feature. Not for
-  scoring a single already-framed technical choice — that's approach-selection,
-  which this skill calls for its own options table rather than re-deriving it.
-  Also use to reverse-engineer a PRD from code that already exists and was never
-  documented.
+  PRD, solution proposal, system design, build vs buy, rewrite vs extend a service, migration
+  plan bigger than one feature: frame the problem, compare approaches, recommend. Not for one
+  choice (→ approach-selection).
 ---
 
 # Solution architecture
@@ -210,9 +203,9 @@ This skill rejects:
 
 Once the PRD audits clean and aligns with a spec (or there isn't one yet): hand the
 recommendation to `feature-planning` to scaffold that spec. Record the recommendation
-itself with `decision-log` if it departs from an existing choice
+itself with `decision-records` if it departs from an existing choice
 (`decide.py trace` first). Implementation then follows the normal path through
-`stack-reviewer`, `scoped-review`, and `verification-gate`.
+`stack-reviewer`, `diff-review`, and `verification-gate`.
 
 ## Scale
 

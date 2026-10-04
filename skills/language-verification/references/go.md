@@ -1,30 +1,10 @@
----
-name: go-verification
-description: >
-  Use when writing, reviewing, or setting up verification for Go code specifically —
-  golangci-lint linter selection, the race detector, go:generate drift gates,
-  depguard import bans, or goroutine-leak detection with goleak. Covers the measured
-  practice of 40 production Go repositories including Kubernetes-lineage distributed
-  systems. Not for JavaScript/TypeScript or Python toolchains (see
-  typescript-verification, python-verification), and not for Kubernetes manifest or
-  Terraform code review (see stack-reviewer). Use PROACTIVELY when adding go.mod,
-  .golangci.yml, a Makefile verify target, or go:generate directives.
----
+# Go verification — detail
 
-# Go verification
+Reference for `language-verification` (loaded on demand). The numbered rules live in `../SKILL.md`; rule numbers below refer to that file.
 
 What 40 production Go repos actually run. Written for someone competent in another
 language who is adopting Go: the toolchain gives you several things for free that
 JavaScript and Python must assemble from parts.
-
-## Trigger
-
-**Fire when:** writing or changing Go; setting up a Go project's checks;
-configuring golangci-lint or depguard; adding code generation; auditing a Go repo's
-gates.
-
-**Do not fire when:** editing Go only incidentally (a version bump in a YAML file,
-a docs change with no code impact).
 
 ## What Go gives you free
 
@@ -51,44 +31,6 @@ only **2 of 40** repos — available, but not idiomatic Go, so do not import tha
 from other ecosystems. `make verify` chaining independent sub-checks appears in
 **14 of 40**, concentrated in the Kubernetes lineage.
 
-## Rules
-
-1. Run the race detector in tests. Concurrency bugs are Go's characteristic defect
-   and `-race` finds them cheaply.
-   *Enforced by:* `go test -race ./...`
-
-2. Gate generated-code drift: regenerate, then fail if the tree changed. This is the
-   single most consistent practice in the corpus — 20+ of 25 deep-read repos.
-   *Enforced by:* `go generate ./... && git add -N . && git diff --exit-code`
-
-3. Use `git add -N .` before `git diff --exit-code`. Plain `git diff --exit-code`
-   **misses newly created untracked files**, so a generator that adds a file passes a
-   naive gate. `git add -N` stages intent-to-add so new files appear in the diff.
-   *Enforced by:* the command in rule 2 (`tailscale`, `cilium`, `moby` all use this form)
-
-4. Keep `go.mod` honest in CI.
-   *Enforced by:* `go mod tidy -diff` (or `go mod tidy && git diff --exit-code go.mod go.sum`)
-
-5. Enable golangci-lint with an explicit opt-in linter list, not everything. The
-   corpus converges on curated lists; `default: all` produces ignore-list churn.
-   *Enforced by:* `golangci-lint run` with an `enable:` list in `.golangci.yml`
-
-6. If your project has a house rule about which packages may be imported, encode it
-   in `depguard` rather than a CONTRIBUTING paragraph, and log the ban as a decision
-   so the next person knows it was chosen, not defaulted:
-   `100x decide new "Ban <import path>" --affects ".golangci.yml"`.
-   *Enforced by:* `depguard` rules in `.golangci.yml`
-
-7. Wrap errors with `%w` and compare with `errors.Is`/`errors.As`. Do not compare
-   error strings.
-   *Enforced by:* `golangci-lint run` with `errorlint` enabled
-
-8. Detect leaked goroutines in tests for anything long-lived.
-   *Enforced by:* `goleak.VerifyTestMain(m)` in `TestMain`
-
-9. Scan dependencies for known vulnerabilities.
-   *Enforced by:* `govulncheck ./...`
-
 ## Verify
 
 ```bash
@@ -99,7 +41,7 @@ go test -race ./...
 golangci-lint run
 go mod tidy -diff
 
-# generated-code drift gate (rules 2-3): the mature form
+# generated-code drift gate (rules 20-21): the mature form
 go generate ./...
 git add -N . && git diff --exit-code
 
@@ -157,10 +99,10 @@ CI hygiene.
 
 ## Scale
 
-`solo`: rules 1, 4 — both are one line and the toolchain already ships them.
-`small-team (2-10)`: add 2, 3, 5, 7 — the codegen gate earns its keep the first time
+`solo`: rules 19, 22 — both are one line and the toolchain already ships them.
+`small-team (2-10)`: add 20, 21, 23, 25 — the codegen gate earns its keep the first time
 a generator output is committed stale.
-`org` / `high-blast-radius`: add 6, 8, 9, plus a `make verify` chaining independent
+`org` / `high-blast-radius`: add 24, 26, 27, plus a `make verify` chaining independent
 sub-checks (the Kubernetes-lineage pattern, 14/40).
 
 ## Sources

@@ -1,16 +1,9 @@
 ---
 name: agent-instructions
 description: >
-  Use when creating or improving the actual content of an AGENTS.md, CLAUDE.md,
-  .cursorrules, or copilot-instructions file for a repository you maintain — what to
-  tell agents, which rules actually change behaviour, how to keep CLAUDE.md from
-  becoming a second drifting document, and how to structure a long file. Not for
-  merge mechanics like CODEOWNERS or required checks (see review-gates), and not for
-  auditing someone else's instruction file as a security surface (see
-  untrusted-agent-config) — this is about authoring your own file's words. Use
-  PROACTIVELY when onboarding a repo to AI-assisted development, when asked to write
-  repo conventions for agents, or when an agent keeps making the same mistake in a
-  codebase.
+  AGENTS.md, CLAUDE.md, .cursorrules, copilot-instructions: write your own repository's agent
+  instruction file — which rules change behaviour, CLAUDE.md as a pointer. Not for a third
+  party's config (→ untrusted-agent-config).
 ---
 
 # Agent instructions

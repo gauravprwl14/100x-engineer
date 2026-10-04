@@ -1,15 +1,9 @@
 ---
 name: minimal-diff
 description: >
-  Use when writing or changing code, and especially before committing, to keep the
-  change as small as the problem requires. Catches AI-generated bloat: new files
-  that should have been edits, dead and commented-out code, tests that assert
-  nothing, speculative single-use abstractions, unrequested documentation,
-  dependency creep, focused or silently-skipped tests, and cosmetic reformatting
-  that inflates a diff. Not a merge-policy or CODEOWNERS skill (see review-gates)
-  and not about proving a check passed (see verification-gate) — this is about the
-  shape and size of the diff itself, before it is ever submitted. Use PROACTIVELY
-  when asked to add a feature, refactor, fix a bug, or clean up a codebase.
+  Bloated diff — too many new files, dead or commented-out code, tests that assert nothing,
+  speculative abstractions, unrequested docs, agent bloat, reformatting: keep the change small.
+  Not for merge policy (→ review-gates).
 ---
 
 # Minimal diff
@@ -149,8 +143,7 @@ questions — not asked to re-derive what the mechanical checks already settled.
 ## Next
 
 Once the diff is small, run `verification-gate` to bind a real check to it, then
-the matching language skill (`typescript-verification`, `python-verification`,
-`go-verification`) for what "real" means on this stack. If the diff touches a
+the matching language skill (`language-verification`) for what "real" means on this stack. If the diff touches a
 framework with known LLM failure shapes, `stack-reviewer` catches what bloat
 checking cannot.
 

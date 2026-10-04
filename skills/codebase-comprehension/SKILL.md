@@ -1,14 +1,9 @@
 ---
 name: codebase-comprehension
 description: >
-  Use when asked to understand, explain, map, or onboard to a feature, module, service
-  or monorepo package someone else built — "how does X work", "explain this flow",
-  "map this codebase", "why is this shaped this way", tracing a bug to its origin, or
-  before modifying code you did not write. Gives a fixed order (packages, entry points
-  and routes, data flow, boundaries, the one hot file) for any language via
-  `100x repo_map`, a predict-then-confirm check on the top claims, and a durable
-  architecture note at docs/engineering/architecture/<area>.md where every claim is
-  tagged verified or inferred. Use PROACTIVELY before touching unfamiliar code.
+  How does this code work: explain, map or onboard to an unfamiliar repo, module or flow — entry
+  points, data flow, boundaries, the hot file, an architecture note with verified claims. Not
+  for reviewing a diff (→ diff-review).
 ---
 
 # Codebase comprehension
@@ -25,9 +20,9 @@ boundaries say where it can fail, and the hot file is where the real logic lives
 write; about to modify code you do not yet understand; tracing a bug to its cause;
 onboarding to a new repo, service or monorepo.
 
-**Do not fire when:** reviewing someone's diff (`reviewing-others-code`,
-`scoped-review`, `stack-reviewer`); writing new code from a spec (`feature-planning`);
-recording a decision (`decision-log`); something is broken in production and needs a
+**Do not fire when:** reviewing someone's diff (`diff-review`,
+`stack-reviewer`); writing new code from a spec (`feature-planning`);
+recording a decision (`decision-records`); something is broken in production and needs a
 causal chain (`root-cause-analysis`, which can use this skill's map first); or the code
 is one file under ~100 lines with no unfamiliar imports. Just read that one.
 

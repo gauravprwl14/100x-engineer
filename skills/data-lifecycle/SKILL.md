@@ -1,16 +1,9 @@
 ---
 name: data-lifecycle
 description: >
-  Use when creating or reviewing a database, bucket, table holding personal data,
-  backup job, retention rule, or account-deletion feature. Covers backups proven
-  by tested restore drills, RPO/RTO targets (an owner decision, always asked),
-  point-in-time recovery, deletion protection, soft delete before hard delete,
-  retention schedules, a PII inventory and classification, the GDPR Art. 17 and
-  APPI Art. 35 erasure workflow across primary stores, caches, search indexes,
-  analytics, processors and backups (with the backup-retention caveat), opt-in
-  analytics consent, and audit logs. Use PROACTIVELY when a migration adds a
-  personal-data column, Terraform adds a datastore, or a "delete my account"
-  request is implemented.
+  Personal data, backups and deletion: delete account and GDPR erasure, retention, PII
+  inventory, restoring backups in tested drills, RPO/RTO, point-in-time recovery, audit logs.
+  Not for schema shape (→ data-modeling).
 ---
 
 # Data lifecycle

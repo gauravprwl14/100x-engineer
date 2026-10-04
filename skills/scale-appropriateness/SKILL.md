@@ -1,13 +1,9 @@
 ---
 name: scale-appropriateness
 description: >
-  Use BEFORE designing anything, to declare the load tier and the risk level and derive
-  what the design must and must not include — user and request volume, data growth,
-  latency budget, availability target, and the security or compliance items that data
-  sensitivity adds. Prevents both over-engineering for scale nobody asked
-  for and shipping a design that cannot survive the stated load. Use PROACTIVELY at the
-  start of a spec or PRD, and whenever a decision invokes scale as its justification.
-  Not for measuring or fixing performance after the fact — see performance-budgets.
+  Scale tier and over-engineering check at the start of a spec, or before adding caching,
+  sharding or a queue: users, traffic, data growth, latency, availability, compliance — what the
+  design must and must not include.
 ---
 
 # Scale appropriateness

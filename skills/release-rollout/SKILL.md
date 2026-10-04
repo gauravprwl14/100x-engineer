@@ -1,15 +1,9 @@
 ---
 name: release-rollout
 description: >
-  Use when shipping, deploying, or releasing a change to production: putting a
-  feature behind a feature flag or kill switch, planning a canary or progressive
-  rollout with explicit pass/fail metrics, defining automatic rollback triggers,
-  testing a rollback, ordering a database migration against the deploy with
-  expand/contract, adding post-deploy smoke tests, or writing release notes.
-  Scales by tier: flag plus rollback for small, canary for growth, automated
-  canary analysis at scale. Web and backend services; mobile store releases are
-  mobile-release-safety. Use PROACTIVELY before merging a change that alters a
-  schema, a hot path, or user-visible behaviour.
+  Production deploy, rollout or release: feature flags, kill switches, canary, roll out
+  gradually, rollback plan and triggers, migration ordering, smoke tests. Not for mobile store
+  releases (→ mobile-release-safety).
 ---
 
 # Release rollout

@@ -1,15 +1,9 @@
 ---
 name: verification-gate
 description: >
-  Use when about to claim work is done, commit, push, open a PR, tag a release, or
-  publish a package — or when setting up the mechanism that proves a change is
-  correct before it ships. Covers binding a check's result to the exact code
-  content via a receipt, so "tests pass" is evidence, not an assertion, and cannot
-  survive a post-verify edit. Not for choosing which language-specific commands to
-  run (see typescript-verification, python-verification, go-verification) — this is
-  the wrapper and policy file around whichever commands you already chose. Use
-  PROACTIVELY before any completion-shaped action, and whenever asked to configure
-  required checks, pre-commit gates, or CI blocking.
+  Done, finished, commit, push, PR or release: bind each check's pass to the exact code with a
+  receipt so tests-pass is evidence; set up required checks and pre-commit gates. Not for which
+  commands (→ language-verification).
 ---
 
 # Verification gate
@@ -149,8 +143,7 @@ file are not parsed. See `docs/SAFETY.md`.
 
 ## Next
 
-Pick the commands to run *before* this gate: `typescript-verification`,
-`python-verification`, or `go-verification` for the language's real baseline.
+Pick the commands to run *before* this gate: `language-verification` for the language's real baseline.
 Wrap them with `100x verified` here, then hand off to `review-gates` for how the
 result gets merged. A diagram is ceremony for this skill — there is no flow to
 orient on, only a pass/fail receipt — so none is included.

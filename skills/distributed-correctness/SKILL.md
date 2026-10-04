@@ -1,16 +1,9 @@
 ---
 name: distributed-correctness
 description: >
-  Use when designing or reviewing anything that crosses a network boundary more
-  than once for one logical operation — a service calling another service, a DB
-  write paired with an event/webhook/notification, a queue consumer, a retry, a
-  timeout, a cache, a fan-out to multiple downstreams, or any code that compares
-  timestamps from different machines. Covers idempotency, the dual-write/outbox
-  problem, ordering, sagas, retry and timeout budgets, backpressure, clock
-  hazards, consistency bounds, and cache correctness. Use PROACTIVELY before
-  writing an integration, a queue consumer, a webhook sender/receiver, or a
-  multi-step write, and during review of any diff that adds a retry, a timeout,
-  or a second write derived from a first one.
+  Retries, webhook, queue consumer, duplicate events, charged twice: idempotency, outbox and
+  dual writes, ordering, sagas, timeouts, clock skew, cache consistency across services. Not for
+  single-process code.
 ---
 
 # Distributed correctness

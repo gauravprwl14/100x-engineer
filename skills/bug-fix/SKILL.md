@@ -1,13 +1,9 @@
 ---
 name: bug-fix
 description: >
-  Use when something is broken and the change is a fix, not new work — a crash, a
-  wrong return value, a regression, a user-reported defect, a test that started
-  failing. Enforces repro-first: reproduce before reading code, commit the
-  reproduction as a failing test before touching the implementation, fix only the
-  narrowest thing that makes it pass, and grep for sibling instances of the same
-  bug class elsewhere in the codebase. Use PROACTIVELY before editing code in
-  response to a bug report, a crash, or a failing test.
+  Fix a bug, crash, regression, wrong output or failing test: reproduce first, commit the
+  failing test, fix the narrowest thing, grep for sibling bugs. Not for an unexplained outage (→
+  root-cause-analysis).
 ---
 
 # Bug fix
@@ -145,7 +141,7 @@ takes to understand it, the "narrowest fix" premise no longer holds and
 
 ## Next
 
-Test passing, diff narrow, sibling grep clear: `scoped-review` before opening the
+Test passing, diff narrow, sibling grep clear: `diff-review` before opening the
 PR, then `verification-gate` before commit. If rule 3 found a violated assumption,
 supersede that decision record — do not edit it in place.
 
@@ -174,4 +170,4 @@ has looked at yet.
 - Rule ordering (reproduce, commit a failing test, narrowest fix, sibling grep,
   permanent test) is this skill's own synthesis of the above sources: `SOURCE: original`.
 - The violated-assumption check (rule 3) reuses `decide.py trace`/`verify` from
-  `skills/decision-log/SKILL.md` rather than reimplementing assumption tracking here.
+  `skills/decision-records/SKILL.md` rather than reimplementing assumption tracking here.

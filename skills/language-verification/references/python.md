@@ -1,28 +1,9 @@
----
-name: python-verification
-description: >
-  Use when writing, reviewing, or setting up verification for Python code
-  specifically — ruff/mypy/pyright configuration, uv or poetry lockfiles, pytest
-  strictness flags, property-based testing with hypothesis, or which type-checker
-  actually gates CI versus merely exists. Covers the measured practice of 50
-  production Python repositories. Not for JavaScript/TypeScript or Go toolchains
-  (see typescript-verification, go-verification), and not for framework-specific
-  code idioms (see stack-reviewer). Use PROACTIVELY when adding pytest, ruff, mypy,
-  pyright, uv, or poetry configuration.
----
+# Python verification — detail
 
-# Python verification
+Reference for `language-verification` (loaded on demand). The numbered rules live in `../SKILL.md`; rule numbers below refer to that file.
 
 What 50 production Python repos (20k+ stars, 250+ commits/yr) actually run, measured
 rather than recommended.
-
-## Trigger
-
-**Fire when:** writing or changing Python; setting up or auditing a Python project's
-checks; configuring ruff/mypy/pytest/uv; deciding a Python project's merge gates.
-
-**Do not fire when:** the Python file is a one-off script outside a project, or the
-task is pure data analysis in a notebook with no shipped artifact.
 
 ## The measured baseline
 
@@ -40,44 +21,6 @@ that large repos have accreted over years.
 repos (72%), but only *gates CI* in 27/50 (54%), and runs strict in 8/50 (16%).
 Twelve repos have no type-checker config at all — including `django/django` and
 `keras-team/keras`. So "we use mypy" is not evidence that mypy can fail your build.
-
-## Rules
-
-1. Run `ruff format --check` and `ruff check` before anything else. It replaces
-   black, isort, flake8 and most plugins in one binary.
-   *Enforced by:* `uv run ruff format --check . && uv run ruff check .`
-
-2. Pick one type checker and let it gate, or do not have one. A configured-but-
-   advisory checker is the worst of both: it costs setup and catches nothing.
-   *Enforced by:* `100x audit_ci_gates` (flags `continue-on-error`,
-   `set +e`, `|| true`, `--exit-zero`, `.disabled` workflows)
-
-3. Curate ruff rules with `extend-select`; do not `select = ["ALL"]`. Corpus repos
-   that tried ALL ended up with long per-rule ignore lists that nobody maintains.
-   *Enforced by:* review
-
-4. Commit a lockfile. `uv.lock` is the fastest-growing choice in the corpus.
-   *Enforced by:* `uv lock --check` (or `poetry check --lock`)
-
-5. Make pytest strict about its own configuration: unknown markers and unexpected
-   passes should fail, not warn.
-   *Enforced by:* `addopts = "--strict-markers --strict-config"` and
-   `xfail_strict = true` in `[tool.pytest.ini_options]`
-
-6. Scope type checking honestly, and log the scope as a decision. Blocking on a
-   named subset beats claiming repo-wide coverage behind a 90-path ignore list (the
-   `PrefectHQ/prefect` pattern): `100x decide new "mypy --strict scope"
-   --affects "<package>/**"`.
-   *Enforced by:* `uv run mypy --strict <package>/` on named packages, in CI
-
-7. For parser, schema, or numeric libraries, add property-based tests. This is the
-   corpus's largest unclaimed gap: `pandas`, `scikit-learn` and `jax` all ship
-   numerical code and none of them use `hypothesis`.
-   *Enforced by:* `uv run pytest tests/property/` once written
-
-8. Do not trust a coverage percentage as proof tests can fail. Mutation testing is
-   confirmed absent from all 50 repos — so the whole corpus shares this blind spot.
-   *Enforced by:* `100x bloat_check --only assertionless`
 
 ## Verify
 
@@ -107,7 +50,7 @@ uv run pytest --cov=<package> --cov-fail-under=<N>
 ```
 
 Runtime: minimum stack is seconds on a small repo. `mypy --strict` on a large
-package is the slow step — scope it per rule 6.
+package is the slow step — scope it per rule 16.
 
 ## Failure modes
 
@@ -137,9 +80,9 @@ specific to what makes a Python *verification* setup real versus advisory.
 
 ## Scale
 
-`solo`: rules 1, 4, 5 — minutes to adopt, immediate return.
-`small-team (2-10)`: add 2 and 6 — one gated type checker on named packages.
-`org`: add 3, 7, 8 and a coverage floor.
+`solo`: rules 11, 14, 15 — minutes to adopt, immediate return.
+`small-team (2-10)`: add 12 and 16 — one gated type checker on named packages.
+`org`: add 13, 17, 18 and a coverage floor.
 The `vllm`/`pandas`-style 30-hook pre-commit setup with per-CUDA lockfile
 regeneration is years of accreted institutional memory. A three-person team copying
 it wholesale is cargo-culting, which Part G of the rubric forbids.
@@ -153,4 +96,4 @@ it wholesale is cargo-culting, which Part G of the rubric forbids.
   `research/00-signal-rubric.md`.
 - Advisory-gate detection patterns, derived from the six cases above:
   `scripts/audit_ci_gates.py` — `SOURCE: original`.
-- `PrefectHQ/prefect`, `ray-project/ray` — the named-subset scoping pattern in rule 6.
+- `PrefectHQ/prefect`, `ray-project/ray` — the named-subset scoping pattern in rule 16.

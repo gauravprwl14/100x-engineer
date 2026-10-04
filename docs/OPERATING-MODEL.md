@@ -46,7 +46,7 @@ conversation that questions must reach. `SOURCE: original`
 | frontend-engineer | implements web UI tasks | yes | ui-baseline, accessibility, web-vitals, frontend-architecture |
 | mobile-engineer | implements mobile tasks | yes | ui-baseline, accessibility, mobile-release-safety |
 | qa-engineer | test plan, acceptance-criteria traceability, automated tests | tests only | qa-strategy, test-design |
-| code-reviewer | independent review of someone else's diff | no | reviewing-others-code, scoped-review, code-craft, minimal-diff |
+| code-reviewer | independent review of someone else's diff | no | diff-review, code-craft, minimal-diff |
 | security-reviewer | application security review of a diff or design | no | app-security, security-baseline |
 | independent-verifier | re-runs every evidence command itself; trusts no report | no | verification-gate |
 | comprehension-mapper | maps an unfamiliar codebase into a durable architecture note | docs only | codebase-comprehension, diagramming |

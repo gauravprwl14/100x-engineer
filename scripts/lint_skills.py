@@ -3,9 +3,19 @@
 
 The plugin claims that advice without a runnable check is decoration. That claim
 has to bind this plugin's own skills first, so this is the gate on our output.
-Exit 1 on any ERROR. Run: python3 scripts/lint_skills.py
+Exit 1 on any ERROR. Run: python3 scripts/lint_skills.py [--root DIR]
+
+Description rules are tuned for a crowded listing, not for this plugin alone. Installed
+beside ~400 other skills, the harness showed many of ours NAME-ONLY: descriptions were
+dropped once the listing budget ran out, and any one description is cut at 1,536 chars.
+So a description is capped (MAX_DESC, an error) and must name what fires it early: the
+first TRIGGER_WINDOW chars should share at least one noun with the skill's own
+`**Fire when:**` paragraph (a warning). That check is a heuristic -- a lowercase word
+match of 4+ letters with a trailing "s" stripped, minus a stoplist of generic words -- so
+it catches a description that opens with throat-clearing ("Use when writing or reviewing
+any...") and cannot judge whether the noun it finds is the right one.
 """
-import re, sys, pathlib
+import argparse, re, sys, pathlib
 
 ALLOWED_FM = {"name", "description", "license", "allowed-tools", "metadata", "compatibility",
               "when_to_use", "argument-hint", "disable-model-invocation", "user-invocable",
@@ -14,6 +24,14 @@ REQUIRED = ["## Trigger", "## Rules", "## Verify", "## Failure modes", "## Scale
 MAX_LINES = 250
 MAX_CONVENTION = 3
 MIN_DESC = 120
+MAX_DESC = 300          # hard cap; the house style aims at <= 250
+TRIGGER_WINDOW = 100
+GENERIC = set("""when what with that this from into your their there which where while about
+after before every other them they than then also only just like such some more most much
+many each both have does done used using user users code file files work change changes
+changing write writing review reviewing build building add adding make making new any one
+two need needs asked asking task tasks thing things something someone being been were
+will would should could start started about across without within someone's""".split())
 CMD_START = ("100x", "python3", "bash", "npx", "npm", "yarn", "pnpm", "ruff", "mypy", "pytest",
              "mkdir", "test ", "grep", "find", "gofmt", "curl", "ls ", "printf",
              "go", "golangci-lint", "cargo", "git", "make", "./", "uv", "deptry",
@@ -46,8 +64,25 @@ def section(body: str, heading: str) -> str:
 errors, warns = [], []
 
 
+def nouns(text):
+    """Heuristic content words: 4+ letters, trailing 's' stripped, generic words removed."""
+    words = (w.lower().rstrip(".-") for w in re.findall(r"[A-Za-z][A-Za-z0-9.+#-]{3,}", text))
+    return {w[:-1] if w.endswith("s") and len(w) > 4 else w
+            for w in words if w not in GENERIC}
+
+
+def fire_nouns(trigger_section):
+    """Words of the '**Fire when:**' paragraph only; 'Do not fire' names anti-triggers."""
+    m = re.search(r"\*\*Fire when:\*\*(.*?)(?:\n\s*\n|\*\*Do not fire|$)",
+                  trigger_section, re.S)
+    return nouns(m.group(1)) if m else set()
+
+
 def lint(path: pathlib.Path):
-    rel = path.relative_to(pathlib.Path.cwd()) if path.is_absolute() else path
+    try:
+        rel = path.resolve().relative_to(pathlib.Path.cwd())
+    except ValueError:
+        rel = path
     def err(m): errors.append(f"{rel}: {m}")
     def warn(m): warns.append(f"{rel}: {m}")
 
@@ -82,8 +117,14 @@ def lint(path: pathlib.Path):
     if len(desc) < MIN_DESC:
         err(f"description is {len(desc)} chars, under the {MIN_DESC} minimum "
             f"(a vague description is why skills never fire)")
-    if not re.search(r"\buse\b", desc, re.I):
-        err("description must state when to use the skill (contract: retrieval key, not summary)")
+    if len(desc) > MAX_DESC:
+        err(f"description is {len(desc)} chars, over the {MAX_DESC} cap (a long description "
+            f"is dropped or cut first when many plugins share the skill listing)")
+    fire = fire_nouns(section(body, "## Trigger"))
+    head = nouns(desc[:TRIGGER_WINDOW])
+    if fire and not (head & fire):
+        warn(f"first {TRIGGER_WINDOW} chars of the description share no noun with "
+             f"'**Fire when:**' — front-load what fires the skill")
 
     for sec in REQUIRED:
         if sec not in body:
@@ -126,7 +167,9 @@ def lint(path: pathlib.Path):
 
 
 def main():
-    root = pathlib.Path("skills")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--root", default=".", help="plugin root holding skills/ (default: cwd)")
+    root = pathlib.Path(ap.parse_args().root) / "skills"
     if not root.exists():
         print("no skills/ directory"); return 0
     files = sorted(root.glob("*/SKILL.md"))

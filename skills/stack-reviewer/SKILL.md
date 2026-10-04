@@ -1,16 +1,9 @@
 ---
 name: stack-reviewer
 description: >
-  Use when writing or reviewing code in a specific application framework — NestJS,
-  Next.js, React, React Native, Expo, Flutter, native Android or iOS, Kubernetes
-  manifests, Terraform, or cloud IaC. Routes to the reviewer file for that framework,
-  which carries the failure modes LLMs specifically produce there (a missing NestJS
-  `whitelist: true`, a React `key={index}`, a Flutter `BuildContext` used after an
-  async gap), the edge cases that framework routinely misses, and a default for each
-  recurring architectural choice. Not for language-level test/lint/typecheck setup
-  (see typescript-verification, python-verification, go-verification) — this is
-  framework code shape, not the toolchain that checks it. Use PROACTIVELY when a
-  diff touches any of these stacks, especially one you don't know well.
+  Framework stack review — NestJS, Next.js, React, React Native, Expo, Flutter, Android, iOS,
+  Kubernetes, Terraform: stack-specific mistakes, module boundaries and defaults from per-stack
+  reviewer files. Not for toolchains (→ language-verification).
 ---
 
 # Stack reviewer
@@ -29,7 +22,7 @@ in official reference code.
 in one.
 
 **Do not fire when:** the change is framework-agnostic (a pure utility, a config value,
-docs) — `scoped-review` covers that.
+docs) — `diff-review` covers that.
 
 ## Routing
 
@@ -42,7 +35,7 @@ docs) — `scoped-review` covers that.
 | `build.gradle*`, `*.xcodeproj`, `Package.swift` | `reviewers/native-mobile.md` |
 | `*.yaml` with `apiVersion:`/`kind:`, `Chart.yaml`, `kustomization.yaml` | `reviewers/kubernetes.md` |
 | `*.tf`, `cdk.json`, CloudFormation templates | `reviewers/cloud-iac.md` |
-| Python backend | `skills/python-verification` + `reviewers/` if a framework applies |
+| Python backend | `skills/language-verification` (rules 11–18) + `reviewers/` if a framework applies |
 
 Read the one that matches. Do not read them all — that is context spent on stacks not
 in the diff.
@@ -120,7 +113,7 @@ file carries its sources so that is checkable.
 ## Next
 
 Once the stack is identified, the language toolchain is a separate skill:
-`typescript-verification`, `python-verification`, or `go-verification`. For a mobile
+`language-verification`. For a mobile
 release specifically, add `mobile-release-safety`. Bind whatever you ran with
 `verification-gate` before claiming the review is done.
 

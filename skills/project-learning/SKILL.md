@@ -1,13 +1,9 @@
 ---
 name: project-learning
 description: >
-  Use when a mistake cost time, a non-obvious convention was discovered, or a failure
-  mode was hit that will recur — recording it as a git-tracked project lesson shared
-  with the team, deciding whether it belongs in personal auto-memory, lessons/, or
-  AGENTS.md, and promoting a stable lesson into AGENTS.md. Also use before editing a
-  file, to run `100x learn relevant <file>` and recall lessons recorded for it. Not
-  for a design choice with alternatives (decision-log) or a production incident
-  (root-cause-analysis).
+  Gotcha, surprise, discovered convention, recurring failure mode: remember it as a git-tracked
+  team lesson, recall lessons before editing a file, promote stable ones to AGENTS.md. Not for
+  design choices (→ decision-records).
 ---
 
 # Project learning
@@ -139,7 +135,7 @@ This skill rejects:
   into folklore.
 - **"Prefer descriptive names"** — a preference with no observable trigger. Not a lesson.
 - **"We use NestJS"** — already in `package.json`.
-- **A design choice with alternatives** — that is `decision-log`; a lesson has no
+- **A design choice with alternatives** — that is `decision-records`; a lesson has no
   rejected options.
 - **A production incident** — that is `root-cause-analysis`, which also demands a
   timeline and a regression test.

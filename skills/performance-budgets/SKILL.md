@@ -1,22 +1,15 @@
 ---
 name: performance-budgets
 description: >
-  Use before designing or reviewing anything with a request/response shape, a
-  loop that touches a database or network, a new cache, a connection pool, or a
-  capacity question — an endpoint, a query, a batch job, a fan-out call, a cache
-  layer. Covers latency budgets split across a call chain, p95/p99 over
-  averages, back-of-envelope estimation, the N+1 family, query cost and
-  EXPLAIN, pagination as correctness, cache invalidation cost, capacity
-  headroom, connection pools, and load/soak/spike testing. Not for bundle-byte
-  or binary-byte budgets (see typescript-verification, mobile-release-safety)
-  and not for choosing an implementation approach (see approach-selection).
-  Use PROACTIVELY whenever asked "is this fast enough" or "will this scale."
+  Slow endpoint, will it scale, can it handle the traffic: latency budgets, p95/p99, N+1
+  queries, EXPLAIN, pagination, caching, connection pools, load tests. Not for bundle size (→
+  language-verification).
 ---
 
 # Performance and capacity
 
 Bundle-byte and binary-byte budgets are owned elsewhere in this plugin
-(`typescript-verification` rule 6, `mobile-release-safety` rule 7) and this skill
+(`language-verification` rule 6, `mobile-release-safety` rule 7) and this skill
 does not repeat them. What's missing across the corpus this plugin studied is the
 other half of "will this survive production": **latency budgets, query cost, and
 capacity arithmetic**. `research/30-findings-js-verification.md` found a bundle-size
@@ -211,7 +204,7 @@ here to capacity headroom instead of a mobile rollout ladder.
   `brettwooldridge/HikariCP.wiki:About-Pool-Sizing.md`.
 - Capacity/storage-growth arithmetic: `prometheus/prometheus@main:docs/storage.md`.
 - Bundle-byte and binary-byte budgets, owned elsewhere and not duplicated here:
-  `skills/typescript-verification/SKILL.md` rule 6 (`TanStack/table` 30KB
+  `skills/language-verification/SKILL.md` rule 6 (`TanStack/table` 30KB
   `size-limit` on `table-core` — 2 of 72 JS repos have any budget at all) and
   `skills/mobile-release-safety/SKILL.md` rule 7 (0 of 31 mobile repos have a hard
   byte gate).

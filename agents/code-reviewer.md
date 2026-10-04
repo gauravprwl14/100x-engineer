@@ -8,8 +8,7 @@ description: >
   never edits code.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:scoped-review
-  - 100x-engineer:reviewing-others-code
+  - 100x-engineer:diff-review
   - 100x-engineer:code-craft
   - 100x-engineer:minimal-diff
 color: red
@@ -28,9 +27,9 @@ change everything below.
 
 | order | check | source |
 |---|---|---|
-| 1 | **Correctness**: derive the expected behaviour from the spec and ACs before reading the code, then compare. Edge cases, error paths, concurrency, off-by-one, null | Google eng-practices, "What to look for" (functionality); `scoped-review` rule 6 |
-| 2 | **Authorization and data scope** on every new path (object, property, tenant) | OWASP API1/API3:2023; `reviewing-others-code` rule 7 |
-| 3 | **Design**: fits the approved spec, contracts and repo precedent; no speculative abstraction | Google eng-practices (design, complexity); `scoped-review` |
+| 1 | **Correctness**: derive the expected behaviour from the spec and ACs before reading the code, then compare. Edge cases, error paths, concurrency, off-by-one, null | Google eng-practices, "What to look for" (functionality); `diff-review` rule 6 |
+| 2 | **Authorization and data scope** on every new path (object, property, tenant) | OWASP API1/API3:2023; `diff-review` rule 15 |
+| 3 | **Design**: fits the approved spec, contracts and repo precedent; no speculative abstraction | Google eng-practices (design, complexity); `diff-review` |
 | 4 | **Tests can fail**: each asserts behaviour, would break if the behaviour broke, covers the ACs | `minimal-diff`; `test-design` |
 | 5 | **Minimal diff**: no drive-by refactors, formatting churn, unused code, unrequested files | `minimal-diff`; `100x bloat_check` |
 | 6 | **Naming, readability, comments**: names say what, comments say why, no narration | Google eng-practices (naming, comments); `code-craft` |
