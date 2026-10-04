@@ -51,7 +51,7 @@ flowchart LR
 | 5 classify | every gap tagged A, B or C with its basis |
 | 6 questions | at most five, ordered by how much the answer changes the plan |
 | 7 assumptions | one row per applied default, with a source |
-| 8 hand-off | `100x prd new <name> --tier <tier>` (requirements as `R<k>` rows) or `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`; the spec's `AC-<n>: <observable outcome> (R<k>, S<k>)` lines link back to them, and its `\| baseline \| <n> \|` header pins the catalogue version it was written against |
+| 8 hand-off | `100x prd new <name> --tier <tier>` (requirements as `R<k>` rows) or `100x plan_feature new <name> --work <types> --tier <tier> [--kind <kinds>]` (kinds default to `universal`; §6 is seeded with at most five C asks, blocking first, then one-way doors, the rest "Deferred to next batch"); the spec's `AC-<n>: <observable outcome> (R<k>, S<k>)` lines link back to them, and its `\| baseline \| <n> \|` header pins the catalogue version it was written against |
 
 ### Tier
 
@@ -117,7 +117,8 @@ because `100x agent_report lint` rejects a class C assumption.
 7. Ask at most five questions, in one batch, ordered by impact, each with why it matters, options and
    a recommendation.
    *Enforced by:* `100x plan_feature audit <root>/specs/<name>` (rejects an open question with no
-   recommendation); the count of five is review
+   recommendation); `100x plan_feature new` seeds at most five and defers the rest; the count of
+   five in a hand-edited §6 is review
 
 8. Every assumption carries a source: `user`, `assumed`, `default` or `code`.
    *Enforced by:* review — the table has a `source` column and an empty cell is a defect

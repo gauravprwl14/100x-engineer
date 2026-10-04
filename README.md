@@ -105,12 +105,12 @@ React Native + Expo, Flutter, native Android/iOS, Kubernetes, cloud IaC.
 | phase | blocks unless | command |
 |---|---|---|
 | intake | every requirement has a source; must-ask items are answered or marked `ASSUMED` | `100x prd audit`, `100x plan_feature audit` |
-| plan | every `AC-<n>` is canonical, maps to scope and the PRD, and is covered by a verification row | `100x plan_feature audit` |
+| plan | every `AC-<n>` is canonical, maps to scope and the PRD, and is covered by a verification row; `covered`/`applied` evidence cites a test, file, `<feature>/AC-<n>` tag, command, ADR or `V<n>` row; a linked PRD passes its own audit (an error from `growth`, a warning below) | `100x plan_feature audit` |
 | choices | every option declares fit pass/fail; the chosen one passes and tops the scores or says why | `100x decide lint` |
-| task graph | acyclic, known owners, no unknown fields, `feature` set, disjoint files in parallel, every defined AC owned by a task, every verify command replayable without a shell and never a commit, push, tag or publish | `100x plan_dag lint --spec` |
-| per agent | the report is valid (`"schema": 1`); git's changed files stay inside the task's files and match its claimed changes; `done` carries every declared verify command at exit 0; those commands, and only those, replay with the same exit codes | `100x agent_report lint <report> --graph plan.json --cwd <wt>` + `100x agent_report replay <report> --graph plan.json --cwd <wt> --yes` |
+| task graph | the spec passes its audit, is `ready` and still hashes to what the plan was stamped against; acyclic, known owners, no unknown fields, `feature` set, disjoint files in parallel, every defined AC owned by a task and no undefined AC claimed, every verify command replayable without a shell and never a commit, push, tag or publish | `100x plan_dag stamp plan.json`, then `100x plan_dag lint plan.json` |
+| per agent | the report is valid (`"schema": 1`, no unknown keys) and comes from the task's owner; git's changed files since the task's base (plan.json's `"base"`, else the worktree's fork point) stay inside the task's files and match its claimed changes; `done` carries every declared verify command at exit 0 and every other evidence entry at its `expect_exit` (default 0); those commands, and only those, replay with the same exit codes | `100x agent_report lint <report> --graph plan.json --cwd <wt>` + `100x agent_report replay <report> --graph plan.json --cwd <wt> --yes` |
 | QA | every AC has a live test tagged `<feature>/AC-<n>` (`test('tagging/AC-1 …')`); bare `AC-1` tags and skipped tests do not count | `100x testplan trace` |
-| review | no blocking item from architect, code or security review; diff not bloated | `100x agent_report lint`, `100x bloat_check`, `100x review_scope` |
+| review | no blocking finding, question or plan issue from architect, code or security review (each reports its `findings` under its own `task_id`); diff not bloated | `100x agent_report lint`, `100x agent_report summary`, `100x bloat_check`, `100x review_scope` |
 | commit / push / PR / publish | a fresh, signed receipt covers every required check | `PreToolUse` hook |
 | end of turn | no stop with changes and no matching receipt (block mode only) | `Stop` hook |
 
@@ -144,12 +144,13 @@ root**, resolved first match wins:
 
 | order | source | example |
 |---|---|---|
-| 1 | `.100x.json` at the git root | `{"root": "docs/engineering"}` |
+| 1 | `.100x.json` at the git root | `{"schema": 1, "root": "docs/engineering"}`; both keys optional, any other key refused |
 | 2 | env `HUNDREDX_ROOT_DIR` | one-off runs, CI |
 | 3 | default | `docs/engineering` |
 
-Layout: `<root>/{prds,specs,decisions,rca,lessons,reviews,ledger,testplans}/` plus
-`<root>/INDEX.md`. A root outside the repo is refused. A repo that already has top-level
+Layout: `<root>/{prds,specs,decisions,rca,lessons,reviews,ledger}/` plus
+`<root>/INDEX.md`. A feature's files sit together: `<root>/specs/<feature>/` holds
+`spec.md`, `plan.json`, `testplan.md` and `reports/<task>.json`. A root outside the repo is refused. A repo that already has top-level
 record directories keeps them, with a warning. This repo commits `{"root": "."}`, so its
 own examples are `specs/login` and `decisions/ADR-0001-…`.
 
@@ -163,8 +164,16 @@ hash of the exact content it verified**:
 ```
 
 A `PreToolUse` hook gates `git commit`, `git push`, tag creation, `gh pr create|merge|ready`,
-`gh release create` and package publishes. Editing anything after the run invalidates the
-receipt, so *test → edit → commit* is caught.
+`gh release create` and package publishes (`npm`/`pnpm`/`yarn publish`, `twine upload`,
+`uv`/`poetry`/`hatch`/`cargo publish`, `gem push`). Editing anything after the run
+invalidates the receipt, so *test → edit → commit* is caught. Commit and push are
+separate commands: a push after a commit in the same line is denied, because that commit
+has not happened when the gate judges.
+
+The receipt lives in the per-worktree git directory, at
+`git rev-parse --git-path 100x/verification-receipt.json`: never a change in the worktree,
+so `git add -A` cannot commit it and no `.gitignore` line is needed. Each linked worktree
+has its own. A `.claude/verification-receipt.json` left by 0.1 is ignored, with a note.
 
 | repository state | gate |
 |---|---|
@@ -180,6 +189,8 @@ receipt, so *test → edit → commit* is caught.
 | mechanism | behaviour |
 |---|---|
 | `--no-verify`, `commit -n`, `-c core.hooksPath=` | denied |
+| `git commit … && git push` in one command | the push is denied; commit, then push |
+| `git push origin other-branch`, or a `remote.<name>.push` refspec that makes the refs sent unknown | denied: each ref sent must be HEAD, and HEAD's tree the verified content |
 | `[skip-verify]` in the commit message | a human is asked to approve; the agent cannot approve its own bypass |
 | `Stop` hook | in block mode, stops the turn ending once if there are changes and no matching receipt |
 | `SessionStart` hook | adds five lines naming `/100x-engineer:100x` and `100x list`, so the router stays reachable when many skills are installed |
@@ -261,13 +272,14 @@ How the diff checkers behave, whichever one runs:
   gaps (golang/go, crashes/crash) a bag-of-words scorer cannot close.
 - **The commit gate is an integrity aid, not a security boundary.** It catches every
   natural phrasing of a commit, push, PR or publish, denies an edit chained into the same
-  command line before a commit, binds a push to HEAD's verified tree, needs a fresh
+  command line before a commit and a push chained after one, binds a push to HEAD's verified tree, needs a fresh
   receipt after a policy change, and refuses runner-altering variables
   (`PYTEST_ADDOPTS`, `NODE_OPTIONS`, …). It does not close: deliberate forgery with the
   signing key (readable by the agent, which runs as you; see
   [The commit gate](#the-commit-gate)); code run from a script file, `npm run`,
   `python -c` or `eval` of a variable set elsewhere; and anything its parser does not model
-  (rc-file aliases and functions, a fake `HOME`). Full list: `docs/SAFETY.md`.
+  (rc-file aliases and functions, a fake `HOME`, `source file`, a push target set through
+  `include.path` config). Full list: `docs/SAFETY.md`.
 - **Checkers are heuristic diff scanners, not CodeQL.** Python checks parse the syntax
   tree; TS/JS checks are regex and brace counting. They catch the shapes in the evals, not
   everything.
@@ -319,7 +331,7 @@ claude plugin install 100x-engineer@100x-engineer
 |---|---|
 | installed with `--scope project` | run the add and install with `--scope project`, and commit the `.claude/settings.json` they rewrite |
 | listed `100x-engineer@100x-local` under `enabledPlugins` in any settings file by hand | change the key to `100x-engineer@100x-engineer`; the `renames` map Claude Code reads covers plugin names, not a marketplace name |
-| worry about losing state | removing the marketplace deletes the plugin's saved options and data directory, and this plugin keeps neither: receipts live in your repository and the signing key in `~/.config/100x/` |
+| worry about losing state | removing the marketplace deletes the plugin's saved options and data directory, and this plugin keeps neither: receipts live in your repository's git directory and the signing key in `~/.config/100x/` |
 
 **2. Seven skills became three.** References by the old name (`/100x-engineer:scoped-review`,
 an agent's `skills:` list, a note in `CLAUDE.md`) stop resolving, and a subagent's unknown
@@ -344,6 +356,10 @@ an agent's `skills:` list, a note in `CLAUDE.md`) stop resolving, and a subagent
 | records at the top level (`specs/`, `decisions/`, …) | under the records root, `docs/engineering/` by default; set it with `.100x.json` `{"root": "<dir>"}`. Existing top-level collections keep working, with a warning |
 | `.claude/verification-policy.json` `"required_checks": ["test"]` | `"required_checks": {"test": "npm test"}`; the list form still works but checks labels, not commands |
 | an unsigned receipt from 0.1 | rejected; re-run your checks through `100x verified` once |
+| `.claude/verification-receipt.json` in the worktree, listed in `.gitignore` | the receipt is written to the git directory (`git rev-parse --git-path 100x/verification-receipt.json`); the old file is ignored with a note saying to delete it, and no `.gitignore` entry is needed |
+| `plan_dag lint plan.json --spec <spec>` | `plan_dag stamp plan.json` once the spec audits `ready`, then `plan_dag lint plan.json`; an unstamped plan fails against a spec |
+| `plan_feature new` required `--kind` | `--kind` is optional (default `universal`) |
+| `testplan new --out` wrote `<root>/testplans/<feature>.md` | it writes `<root>/specs/<feature>/testplan.md`, beside the spec; an old file there stops it until moved or `--force` |
 | no policy file: the gate was silent | no policy file: the gate warns; `{"mode": "off"}` silences it |
 
 ## Licence

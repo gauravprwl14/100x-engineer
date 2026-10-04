@@ -69,13 +69,13 @@ Skills run in the order listed. Agents are this plugin's subagents (`100x-engine
 
 | intent | skills, in order | agents | gates |
 |---|---|---|---|
-| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag lint --spec`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x review_scope`, `100x verified` |
+| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag stamp` + `lint`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x review_scope`, `100x verified` |
 | fix | bug-fix → test-design (regression test first) → minimal-diff → diff-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier | failing test before the fix, `100x bloat_check`, `100x verified` |
 | incident | root-cause-analysis → bug-fix → release-rollout (rollback or flag-off first if users are hurting) → project-learning | rca-investigator, then the engineer for the area, independent-verifier | `100x rca lint`, `100x rca link`, `100x decide drift` |
 | understand | codebase-comprehension → diagramming → project-learning | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index` |
 | review-own | diff-review → minimal-diff → code-craft → verification-gate | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
 | review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check` |
-| plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag lint --spec` |
+| plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag stamp` + `lint` |
 | change-untested | requirements-intake → codebase-comprehension → legacy-change (characterisation tests first) → test-design → minimal-diff → diff-review | comprehension-mapper, qa-engineer, the engineer for the area, code-reviewer | characterisation tests pass before the change, `100x bloat_check`, `100x verified` |
 | QA | requirements-intake → qa-strategy → test-design → accessibility → performance-budgets at growth+ | qa-engineer, independent-verifier | `100x testplan new` + `trace`, `100x test_design_check`, `100x verified` |
 | ship | release-rollout → data-lifecycle for migrations or deletions → mobile-release-safety for mobile → observability-design → verification-gate | solution-architect (rollout/rollback), independent-verifier | `100x verified`, the `PreToolUse` receipt gate, the `Stop` hook |
@@ -88,7 +88,7 @@ work type touched: its A items are applied, its in-tier B items listed, its C it
 | situation | do |
 |---|---|
 | one specialist, a handful of files | work in the main session with the pipeline's skills; no agents |
-| two or more specialists, or tasks that can run in parallel | `orchestrate`: approved spec → `plan.json` → `100x plan_dag lint --spec` → `100x plan_dag waves` → one agent per task, each in its own worktree |
+| two or more specialists, or tasks that can run in parallel | `orchestrate`: approved spec → `plan.json` → `100x plan_dag stamp` → `100x plan_dag lint` → `100x plan_dag waves` → one agent per task, each in its own worktree |
 | any non-trivial build, before merge | independent-verifier re-runs each task's declared verify commands; code-reviewer and security-reviewer review the merged diff |
 
 Orchestration stays in the main session (§1): agents never talk to the user, and their questions come
@@ -113,8 +113,9 @@ returns `needs-decision` pauses only its dependents (§6).
 4. Apply baseline defaults without asking, and say which were applied.
    *Enforced by:* `100x baseline show --work <type> --tier <tier>`
 
-5. Orchestrate only from a task graph that lints; two parallel tasks never own the same files.
-   *Enforced by:* `100x plan_dag lint plan.json --spec <spec>`
+5. Orchestrate only from a task graph stamped against an audited, `ready` spec that lints; two
+   parallel tasks never own the same files.
+   *Enforced by:* `100x plan_dag stamp plan.json`, then `100x plan_dag lint plan.json`
 
 6. No agent result is merged until its report lints against git's real changes and the task's
    declared verify commands replay with the claimed exit codes.
@@ -133,7 +134,8 @@ returns `needs-decision` pauses only its dependents (§6).
 100x list                                          # the plugin's tools resolve (~0.1s)
 100x baseline show --work api --tier small         # the defaults this router applies (~0.1s)
 100x plan_feature audit <name>                     # intake and spec complete (~0.2s)
-100x plan_dag lint plan.json --spec <name>         # task graph valid before agents start
+100x plan_dag stamp plan.json                      # record the approved spec and base
+100x plan_dag lint plan.json                       # task graph valid before agents start
 100x agent_report lint report.json --graph plan.json --cwd <wt>          # per agent result
 100x agent_report replay report.json --graph plan.json --cwd <wt> --yes  # its declared verify commands
 ```

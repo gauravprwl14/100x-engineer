@@ -67,7 +67,8 @@ them, with a warning that says how to settle it.
 | `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
 | `plan_feature.py new` | `spec.md`, `INDEX.md` | `<root>/specs/<name>/` | `--dry-run`, name validation |
 | `prd.py new` | `prd.md`, `INDEX.md` | `<root>/prds/<name>/` | `--dry-run`, name validation |
-| `testplan.py new --out` | a test plan | the path given, or bare `--out` → `<root>/testplans/<feature>.md` | `--dry-run`, refuses to overwrite without `--force`, git root required |
+| `testplan.py new --out` | a test plan | the path given, or bare `--out` → `<root>/specs/<feature>/testplan.md`, beside the spec | `--dry-run`, refuses to overwrite without `--force`, git root required; stops when a plan exists at the old `<root>/testplans/<feature>.md` unless `--force` |
+| `plan_dag.py stamp` | adds `spec`, `spec_sha256` and `base` to an existing plan.json | the plan file given | git repository required; refuses a spec that fails `plan_feature audit` or is not `ready`; written via `safe_write_text`, contained in the repository |
 | `decide.py new` | `ADR-NNNN-*.md`, `INDEX.md` | `<root>/decisions/` | `--dry-run`, name validation |
 | `rca.py new` / `link` | `RCA-NNNN-*.md`, `INDEX.md` | `<root>/rca/` | `--dry-run`, name validation |
 | `learn.py add` | `LESSON-NNNN-*.md`, `INDEX.md` | `<root>/lessons/` | scope: one directory |
@@ -116,8 +117,11 @@ a plan and does nothing without explicit consent:
 declares as that task's `verify` list (required: no `--graph`, exit 2), as argv without a
 shell; a `sh -c '…'` script is printed before it runs. Evidence for any other command is
 listed `not replayed (undeclared)` and the run exits 3. A declared command the
-verification hook classes as a commit, push, tag or publish is refused, and a timeout
-kills the command's whole process group.
+verification hook classes as a commit, push, tag or publish is refused, judged on the
+exact argv replay would execute (and an `sh -c` script with `#` read literally), and a
+timeout kills the command's whole process group. Evidence matches a declared command by
+argv equality, and `100x verified [--name X] -- <cmd>` evidence matches `<cmd>`; replay
+runs the plan's plain form, never the wrapper.
 
 `shard` moves records into date directories once a folder exceeds 40 entries. Ids live
 in the filenames and do not change, so links keep working — but it is still a file

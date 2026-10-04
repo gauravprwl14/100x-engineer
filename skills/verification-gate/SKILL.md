@@ -49,8 +49,10 @@ listed under Failure modes.
    invalidate it, because they move no content, so commit-then-push needs no rerun.
    *Enforced by:* `100x verified --name <label> -- <command>`
 
-3. Never write or edit the receipt by hand (it lives in the git directory, at
-   `git rev-parse --git-path 100x/verification-receipt.json`). Entries are
+3. Never write or edit the receipt by hand. It lives in the per-worktree git directory,
+   at `git rev-parse --git-path 100x/verification-receipt.json`, so it is never a change
+   `git add -A` could commit and needs no `.gitignore` line; a leftover
+   `.claude/verification-receipt.json` from 0.1 is ignored with a note. Entries are
    HMAC-SHA256 signed with `~/.config/100x/receipt.key`; a hand-written, edited or
    foreign-key entry is denied as forged.
    *Enforced by:* signature check in the `PreToolUse` hook
@@ -148,7 +150,12 @@ This skill rejects:
   (`commit-tree`, `update-ref`, `send-pack`, `merge`, `gh pr merge`, `gh api …/merge`).
 - **`git push origin other-branch`**, or a push with verified edits still uncommitted →
   denied: a push is bound to what it sends, so each ref must be HEAD and HEAD's tree
-  must equal the verified content.
+  must equal the verified content. A `remote.<name>.push` refspec makes a plain push
+  send refs the gate cannot tell, so it is denied too.
+- **`git commit -m x && git push`** → the push is denied: that commit has not happened
+  when the gate judges, so the tree it would send is unknown. Commit, then push.
+- **`poetry publish`, `hatch publish`, `cargo publish`, `gem push`, any `<program>
+  publish`** → gated like `npm publish`.
 - **A commit that weakens `.claude/verification-policy.json`** on a receipt taken before
   the edit → denied until `100x verified` runs with the new policy in place.
 - **`PYTEST_ADDOPTS`, `NODE_OPTIONS`, `GOFLAGS` (and kin) set, or a `pytest` shadowing
@@ -162,7 +169,8 @@ Residual bypass classes: **deliberate key-read forgery** (the key is readable by
 anything running as you; add a deny rule for `~/.config/100x/**` on Read, Edit and
 Bash, or run sandboxed); **code run from a script file, `npm run`, `python -c`, or
 `eval` of a variable set elsewhere**; and **anything the parser does not model** (rc-file
-aliases and functions, a fake `HOME`). See `docs/SAFETY.md`, "Residual bypass classes".
+aliases and functions, a fake `HOME`, `source file`, a push target chosen through
+`include.path` config). See `docs/SAFETY.md`, "Residual bypass classes".
 
 ## Next
 

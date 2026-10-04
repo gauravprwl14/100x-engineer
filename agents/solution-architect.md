@@ -42,7 +42,10 @@ built before their contract, or a launch with no way back.
 ## Gates to run
 
 `100x prd audit <root>/prds/<name>`, `100x prd align <root>/prds/<name> <root>/specs/<name>`, `100x plan_feature audit
-<root>/specs/<name>`, `100x plan_dag lint plan.json --spec <spec>` on a task graph (`"schema": 1`, `feature` required, a known `tier`, no unknown fields, no `{a,b}` globs, every `verify` command replayable without a shell and never a commit, push, tag or publish), `100x decide lint` on recorded
+<root>/specs/<name>`, then on a task graph `100x plan_dag stamp plan.json` (records the approved spec's
+path, sha256 and the base commit) and `100x plan_dag lint plan.json` (the spec must pass `plan_feature
+audit` with status `ready` and still match the stamped hash, else re-plan or re-approve; `--spec`
+defaults to the plan's own `spec`; a claimed AC the spec does not define is an error; (`"schema": 1`, `feature` required, a known `tier`, no unknown fields, no `{a,b}` globs, every `verify` command replayable without a shell and never a commit, push, tag or publish), `100x decide lint` on recorded
 choices. Each is evidence in your report. Record arguments resolve as given, from the git root, under the records root, or as a bare feature name. `<root>` is the records root: `docs/engineering/` by
 default, or `.100x.json` `{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (§8). `prd align`
 traces ids (R<k> ↔ AC-<n> ↔ S<k>, metric → V<k>): a declared link proves the trace exists, not that
@@ -53,7 +56,7 @@ on every option, a fit-passing chosen option, and the top fit-passing score or a
 
 Compare the diff with the approved spec and decisions (`100x decide trace <path>`). A divergence is
 blocking when it crosses a one-way door or breaks a contract; otherwise it is should-fix with the spec
-section it contradicts.
+section it contradicts. Each divergence is an entry in your report's `findings` (see Output).
 
 ## Protocol
 
@@ -72,7 +75,9 @@ If that path reached you unsubstituted, `100x root` prints the plugin root.
    item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Touch only the task's owned files.
 6. **Verify.** Run the task's verify commands; record each with its exit code and output tail, the
-   command written exactly as `plan.json` writes it.
+   command as `plan.json` writes it (replay matches by argv, so quoting and spacing may differ, and
+   `100x verified --name <label> -- <cmd>` counts as `<cmd>`). A gate that fails the way
+   your finding says is recorded with `expect_exit` set to its exit code.
 7. **Report** in the §3 shape.
 
 Decisions follow §4. Two-way, local: decide and record. Two-way, cross-cutting: follow repo precedent,
@@ -89,12 +94,22 @@ why_it_matters, two or three options and a recommendation.
 
 The **last fenced `json` block** of your final message is your §3 report: `"schema": 1`, `agent`,
 `task_id`, `status`, `understanding`, `inputs_read`, `assumptions`, `questions`, `plan_issues`,
-`decisions`, `changes`, `evidence`, `follow_ups`. It is linted with
-`100x agent_report lint <report> --graph plan.json --cwd <your worktree>`, which reads git's changed
-files rather than your `changes` list. Then the task's declared verify commands are re-run by
-`100x agent_report replay <report> --graph plan.json --cwd <your worktree> --yes`; evidence for any other
-command is not replayed. Record each verify command exactly as `plan.json` writes it, with its real
-exit code. It is rejected for: `done` without evidence or with a non-zero exit; `done` without every
-declared verify command at exit 0; any `door: one-way` decision; a class C assumption;
-`needs-decision` with nothing blocking; `done` with a blocking item still open; a file changed outside
-your owned files, or a claimed change git does not show; a `schema` other than 1.
+`decisions`, `changes`, `evidence`, `follow_ups`, and optionally `findings`; any other top-level key is
+rejected. It is linted with `100x agent_report lint <report> --graph plan.json --cwd <your worktree>`,
+which reads git's changed files since the task's base (`--base`, else plan.json's `"base"`, else your
+worktree's fork point, else HEAD) rather than your `changes` list. Then the task's declared verify
+commands are re-run by `100x agent_report replay <report> --graph plan.json --cwd <your worktree> --yes`;
+evidence for any other command is not replayed. Record each verify command as `plan.json` writes it,
+bare or as `100x verified --name <label> -- <cmd>`, with its real exit code. It is rejected for: `done`
+without evidence, or with an exit code other than the entry's `expect_exit` (default 0); `done` without
+every declared verify command at exit 0; an `agent` that is not the task's `owner`; any `door: one-way`
+decision; a class C assumption; `needs-decision` or `blocked` with nothing blocking; `done` with a
+blocking item still open; a file changed outside your owned files, or a claimed change git does not
+show; an unknown top-level key; a `schema` other than 1.
+
+You are a read-only role, so your `task_id` may be your own review id rather than a plan task: lint then
+prints a NOTE and applies the report-level checks only. With a plan task's id, you must be its owner.
+Each finding goes in `findings` as `{"id", "severity": "critical|major|minor|trivial", "confidence":
+"definite|probable|possible", "location", "issue", "fix", "blocking": true|false}`. A blocking finding
+makes the report `needs-decision`, never `done`. A gate that fails the way the finding says is
+evidence with its expected code: `"exit_code": 1, "expect_exit": 1`.

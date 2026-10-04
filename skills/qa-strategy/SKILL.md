@@ -72,7 +72,7 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
    such as "see AC-3" is never a criterion.
    *Enforced by:* `100x testplan new <spec> --out [path]` (exit 1 when the doc has
    no `AC-<n>` lines, with the format to use; bare `--out` writes
-   `<root>/testplans/<feature>.md`)
+   `<root>/specs/<feature>/testplan.md`, beside the spec)
 
 3. **Shape the portfolio by risk, not by default ratios, and never invert it.** E2E
    covers only the critical journeys (sign-in, the primary/money path, the one
@@ -144,7 +144,7 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
 100x testplan trace <root>/specs/<feature>/spec.md --tests e2e,backend/test
 100x testplan trace <root>/specs/<feature>/spec.md --tests e2e --json
 # first-draft plan from the ACs (exit 1 if the spec has none); bare --out files it
-# at <root>/testplans/<feature>.md
+# beside the spec, at <root>/specs/<feature>/testplan.md
 100x testplan new <root>/specs/<feature>/spec.md --out
 100x testplan matrix --work web-ui --tier small
 # the project's own suites, from templates/qa/ (minutes; needs Playwright, k6)

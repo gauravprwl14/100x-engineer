@@ -27,7 +27,7 @@ commands, are in the README under "Migrating from 0.1".
 | record location | top-level `prds/`, `specs/`, `decisions/`, `rca/`, `lessons/`, `ledger/` | under the records root: `.100x.json` `{"root": "<dir>"}`, then `HUNDREDX_ROOT_DIR`, then `docs/engineering` | nothing to do to keep working (existing top-level collections are used, with a warning); set `.100x.json` to settle it |
 | verification receipt | unsigned | HMAC-signed with a key in `~/.config/100x/` | re-run each check through `100x verified`; 0.1 receipts are rejected |
 | commit gate with no policy file | silent | warns | add `.claude/verification-policy.json`, or `{"mode": "off"}` to silence it |
-| receipt file location | `.claude/verification-receipt.json` in the worktree | inside the repository's git directory, never in the worktree | nothing to do; delete the old `.claude/verification-receipt.json` and its `.gitignore` line |
+| receipt file location | `.claude/verification-receipt.json` in the worktree | the per-worktree git directory, `git rev-parse --git-path 100x/verification-receipt.json`: never a worktree change, one per linked worktree | nothing to do: the old file is ignored, with a note saying to delete it; no `.gitignore` entry is needed |
 
 ### Added
 
@@ -49,7 +49,21 @@ commands, are in the README under "Migrating from 0.1".
   files against the task's declared files; `100x agent_report replay <report> --graph
   plan.json --cwd <worktree> --yes` re-runs only the plan's declared verify commands and
   compares exit codes. Reports declare `"schema": 1`.
-- Agent reports carry a `findings` list, and declared verify commands an `expect_exit`.
+- Agent reports may carry `findings` (`id`, `severity` critical|major|minor|trivial,
+  `confidence` definite|probable|possible, `location`, `issue`, `fix`, `blocking`), and
+  each evidence entry an `expect_exit` (default 0) that `done` is judged against; a plan's
+  declared verify commands still need exit 0. A blocking finding unblocks `needs-decision`
+  like a blocking question, and `agent_report summary` merges findings, blocking first.
+  Read-only roles (requirements-analyst, solution-architect, code-reviewer,
+  security-reviewer, independent-verifier) may report on their own `task_id`.
+- `100x plan_dag stamp plan.json` records the approved spec's path, its sha256 and the
+  base commit. `plan_dag lint` then requires that spec to pass `plan_feature audit` with
+  status `ready` and to match the stamped hash ("re-plan or re-approve"), defaults
+  `--spec` to it, and fails a task that claims an AC the spec does not define.
+- A feature's files live together in `<root>/specs/<feature>/`: `spec.md`, `plan.json`,
+  `testplan.md` (where bare `testplan new --out` now writes) and `reports/<task>.json`.
+- `.100x.json` accepts `"schema": 1`; `"root"` is optional, and any other key is refused
+  with a did-you-mean.
 - `SessionStart` hook naming the router and `100x list`; `Stop` hook that, in block mode,
   stops a turn ending with changes and no matching receipt.
 - Policy `required_checks` as an object binding each label to its command,
@@ -61,7 +75,26 @@ commands, are in the README under "Migrating from 0.1".
   catches the phrasings of a commit, push, PR or publish that 0.1 let through; it also
   gates `gh release create`, and enforces the committed policy when the worktree copy
   differs from it. Its remaining bypass classes are listed in `docs/SAFETY.md`.
-- `prd new` and `plan_feature new` require `--tier`.
+- `prd new` and `plan_feature new` require `--tier`; `plan_feature new --kind` is optional
+  (default `universal`).
+- `plan_feature new` seeds a spec's open questions with at most five class C asks, blocking
+  first, then one-way doors; the rest are listed "Deferred to next batch". Baseline items
+  gain `when_any` (ask only for the kinds, work, tier or risk named) and `door`.
+- `plan_feature audit` requires `covered`/`applied` evidence to be proof: a test or file
+  path, a `<feature>/AC-<n>` tag, a runnable command, an ADR id or a §8 `V<n>` row. A
+  pasted seeded suggestion is an error; `review` alone passes, counted unverified. It also
+  runs `prd audit` on the linked PRD: errors from the `growth` tier, warnings below, and
+  `| prd | none |` unlinks it.
+- `agent_report lint` diffs against `--base`, else plan.json's `"base"`, else the
+  worktree's fork point, else HEAD; requires the report's `agent` to be the task's owner;
+  rejects unknown top-level keys; and matches evidence to declared commands by argv, with
+  `100x verified [--name X] -- <cmd>` counting as `<cmd>`. `replay` screens the exact argv
+  it runs.
+- The commit gate also gates `poetry publish`, `hatch publish`, `cargo publish`, `gem push`
+  and any `<program> publish`.
+- Commit and push are separate commands: a push or `gh pr create` after a commit in the
+  same command line is denied, and a `remote.<name>.push` refspec makes a plain push's refs
+  unknown, so it is denied too.
 - `plan_feature audit` blocks on any malformed `AC-<n>` line and on a deleted seeded edge-case
   or decision row.
 - `decide lint` treats each option's `fit` as pass/fail before weighted scoring.

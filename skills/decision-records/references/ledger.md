@@ -15,10 +15,12 @@ Every path is under the records root `<root>`: `docs/engineering/` by default, o
 ```
 <root>/prds/<feature>/prd.md          why we are building it
 <root>/specs/<feature>/spec.md        what we are building
+<root>/specs/<feature>/plan.json      the task graph, stamped against the spec
+<root>/specs/<feature>/testplan.md    the test plan (`testplan new --out`)
+<root>/specs/<feature>/reports/       one agent report per task
 <root>/decisions/ADR-NNNN-slug.md     why it is built this way
 <root>/rca/RCA-NNNN-slug.md           why it broke
 <root>/reviews/REV-NNNN-slug.md       what a review concluded
-<root>/testplans/<feature>.md         the test plan (`testplan new --out`)
 <root>/ledger/INDEX.md                generated: every record, by type
 <root>/ledger/MAP.md                  generated: the traceability matrix
 <root>/INDEX.md                       catalogue (`check_index --register`)

@@ -318,7 +318,6 @@ Back-of-book index: every term defined in bold (`**term** —`), listed in a glo
 - **Length vs quality** — [research/21-findings-agent-instruction-corpus.md#length-vs-quality](research/21-findings-agent-instruction-corpus.md#length-vs-quality)
 - **Licensed** — [skills/dependency-vetting/SKILL.md#what-trendy-should-mean-here](skills/dependency-vetting/SKILL.md#what-trendy-should-mean-here) *defined*
 - **limit** — [reviewers/kubernetes.md#blocking-rules](reviewers/kubernetes.md#blocking-rules) *defined*
-- **Lint it** — [skills/orchestrate/SKILL.md#procedure](skills/orchestrate/SKILL.md#procedure) *defined*
 - **Linters** — [research/30-findings-js-verification.md#tooling-distribution-counts](research/30-findings-js-verification.md#tooling-distribution-counts) *defined*
 - **Literal duplicate content** — [research/21-findings-agent-instruction-corpus.md#adoption-statistics](research/21-findings-agent-instruction-corpus.md#adoption-statistics) *defined*
 - **Live examples** — [skills/dependency-vetting/SKILL.md#live-examples-verified-2026-09-29-against-the-real-registries](skills/dependency-vetting/SKILL.md#live-examples-verified-2026-09-29-against-the-real-registries)
@@ -566,6 +565,7 @@ Back-of-book index: every term defined in bold (`**term** —`), listed in a glo
 - **solo / very small team** — [research/37-findings-review-governance.md#minimum-change-control-by-team-size](research/37-findings-review-governance.md#minimum-change-control-by-team-size) *defined*
 - **Someone else's diff** — [skills/diff-review/SKILL.md#someone-elses-diff](skills/diff-review/SKILL.md#someone-elses-diff)
 - **Split the work across agents** — [docs/PLAYBOOK.md#3-split-the-work-across-agents](docs/PLAYBOOK.md#3-split-the-work-across-agents)
+- **Stamp, then lint** — [skills/orchestrate/SKILL.md#procedure](skills/orchestrate/SKILL.md#procedure) *defined*
 - **Star-count sanity check** — [research/20-findings-ecosystem-skills.md#inventory](research/20-findings-ecosystem-skills.md#inventory) *defined*
 - **start here** — [reviewers/kubernetes.md#contents](reviewers/kubernetes.md#contents) *defined*, [reviewers/nestjs.md#contents](reviewers/nestjs.md#contents) *defined*
 - **start here for Kotlin** — [reviewers/native-mobile.md#contents](reviewers/native-mobile.md#contents) *defined*
