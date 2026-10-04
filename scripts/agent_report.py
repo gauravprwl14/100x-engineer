@@ -352,6 +352,29 @@ def run_argv(argv, cwd, timeout):
         return "timeout", out or ""
 
 
+def argv_problems(cmd, argv, cwd):
+    """Screen the argv replay is about to execute, not the text plan_dag linted. The
+    hook's parser reads `#` as a comment wherever a token starts, while shlex.split and
+    sh only treat it so at a word start: `env A=1#x git tag v9` linted clean and then
+    tagged. So the argv is re-quoted before parsing, and an `sh -c` script, which the
+    shell will read itself, is screened with every `#` neutralised; that can only
+    refuse more, never less."""
+    extra = getattr(plan_dag, "replay_argv_problems", None)
+    out = list(extra(cmd, cwd)) if extra is not None else []
+    texts = [shlex.join(argv)]
+    script = plan_dag.shell_wrapped(argv)
+    if script is not None:
+        texts += [script, script.replace("#", "_")]
+    gated = []
+    for t in texts:
+        gated += plan_dag.gated_actions(t, cwd)
+    if gated:
+        out.append(f"performs a gated action ({', '.join(dict.fromkeys(gated))}) in the "
+                   f"argv replay would run — a verify command proves the work, it never "
+                   f"ships it")
+    return out
+
+
 def plan_replay(r, task, cwd):
     """Sort every evidence entry into run / undeclared / refused, and list declared
     verify commands the report has no evidence for."""
@@ -363,10 +386,13 @@ def plan_replay(r, task, cwd):
             undeclared.append(e)
             continue
         problems = plan_dag.command_problems(cmd, cwd)
+        argv = None if problems else shlex.split(cmd)
+        if argv is not None:
+            problems = argv_problems(cmd, argv, cwd)
         if problems:
             refused.append((e, problems[0]))
             continue
-        run.append((e, shlex.split(cmd)))
+        run.append((e, argv))
     have = {e["cmd"].strip() for e in _items(r, "evidence")}
     missing = [v for v in declared if v not in have]
     return run, undeclared, refused, missing

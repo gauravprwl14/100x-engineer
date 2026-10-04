@@ -187,6 +187,21 @@ has "refused   \$ sh -c"
 python3 "$P" lint "$TMP/p.json" >"$O" 2>&1; rc_is 1 $? "plan_dag lint rejects the same gated verify commands"
 has "performs a gated action (git commit)"
 
+# the argv replay runs is screened, not the comment-stripped text plan_dag linted
+mkplan "env A=1#x git tag -a v9 -m shipped"
+mkrep done '[{"cmd":"env A=1#x git tag -a v9 -m shipped","exit_code":0}]'
+replay --yes; rc_is 3 $? "replay: a gated action hidden behind a mid-word # is refused"
+has "refused   \$ env A=1#x git tag -a v9 -m shipped"; has "gated action (git tag)"
+[ -z "$(git -C "$RP" tag -l)" ] && ok "replay: no tag was created" || bad "replay: created a tag"
+mkplan "sh -c 'env A=1#x git tag v8'"
+mkrep done '[{"cmd":"sh -c '"'"'env A=1#x git tag v8'"'"'","exit_code":0}]'
+replay --yes; rc_is 3 $? "replay: the same inside sh -c is refused"
+[ -z "$(git -C "$RP" tag -l)" ] && ok "replay: no tag was created by the sh -c script" || bad "replay: sh -c created a tag"
+mkplan "sh -c 'echo a#b; echo c # trailing comment'"
+mkrep done '[{"cmd":"sh -c '"'"'echo a#b; echo c # trailing comment'"'"'","exit_code":0}]'
+replay --yes; rc_is 0 $? "replay: a harmless # in a declared script still runs"
+has "1/1 reproduced"
+
 # a declared command that needs a shell but is not wrapped is refused, not mis-run
 mkplan "test -f f && touch pwned"
 mkrep done '[{"cmd":"test -f f && touch pwned","exit_code":0}]'
