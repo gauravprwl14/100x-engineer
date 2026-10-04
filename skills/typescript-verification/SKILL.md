@@ -94,7 +94,7 @@ entire 20k-star JS ecosystem — not catching up to it.
    `@typescript-eslint/ban-ts-comment` enabled in eslint
 
 9. Verify your gates actually gate before trusting green CI.
-   *Enforced by:* `python3 scripts/audit_ci_gates.py`
+   *Enforced by:* `100x audit_ci_gates`
 
 10. Consider `noUncheckedIndexedAccess`. Array and record access returning
     `T | undefined` is correct, and catches a real bug class — adopted by very few
@@ -126,12 +126,12 @@ diff-cover coverage/cobertura-coverage.xml \
   --compare-branch=$(git merge-base HEAD origin/main) --fail-under=80
 
 # project state vs the measured corpus
-python3 scripts/stack_audit.py .
-python3 scripts/audit_ci_gates.py .
+100x stack_audit .
+100x audit_ci_gates .
 
 # bind the checks to the code being shipped
-python3 scripts/verified.py --name typecheck -- npx tsc --noEmit
-python3 scripts/verified.py --name test      -- pnpm test
+100x verified --name typecheck -- npx tsc --noEmit
+100x verified --name test      -- pnpm test
 ```
 
 `--max-warnings=0` matters: eslint exits 0 with warnings by default, so a
@@ -167,7 +167,7 @@ beyond `bloat_check.py --only assertionless`.
 Bind whichever commands you chose to the code being shipped with
 `verification-gate`. If a rule here (patch-coverage threshold, a banned `any`
 exception, a bundle-size number) departs from the corpus baseline, log it:
-`python3 scripts/decide.py new "<the choice>" --affects "<glob>"`. If the diff is
+`100x decide new "<the choice>" --affects "<glob>"`. If the diff is
 inside NestJS, Next.js, React Native, or another tracked framework, apply
 `stack-reviewer` too — this skill covers the toolchain, not the code shape.
 

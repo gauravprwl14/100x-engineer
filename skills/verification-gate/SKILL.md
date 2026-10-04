@@ -45,7 +45,7 @@ never tested. Nothing in a normal setup notices.
 2. Run checks through the receipt wrapper so the result is bound to file content,
    not to time. A receipt is invalidated by any edit, staged or unstaged, tracked
    or untracked.
-   *Enforced by:* `python3 scripts/verified.py --name <label> -- <command>`
+   *Enforced by:* `100x verified --name <label> -- <command>`
 
 3. Verify the code you are about to ship, not the code you had. If you edit after
    verifying, re-verify. There is no partial credit.
@@ -56,7 +56,7 @@ never tested. Nothing in a normal setup notices.
    it the gate is inactive, which is why installing the plugin does not disrupt
    unrelated repositories. If the list departs from the relevant language skill's
    baseline (`typescript-verification`, `python-verification`, `go-verification`),
-   record why: `python3 scripts/decide.py new "Required checks for <repo>" --affects ".claude/**"`.
+   record why: `100x decide new "Required checks for <repo>" --affects ".claude/**"`.
    *Enforced by:* `.claude/verification-policy.json` `required_checks`
 
 5. A check that cannot fail is not a check. Before trusting a suite, confirm it
@@ -86,9 +86,9 @@ JSON
 echo ".claude/verification-receipt.json" >> .gitignore
 
 # 2. every change: run the real checks through the wrapper (exit non-zero on failure)
-python3 scripts/verified.py --name lint      -- <your lint command>
-python3 scripts/verified.py --name typecheck -- <your typecheck command>
-python3 scripts/verified.py --name test      -- <your test command>
+100x verified --name lint      -- <your lint command>
+100x verified --name typecheck -- <your typecheck command>
+100x verified --name test      -- <your test command>
 
 # 3. confirm the gate agrees before you claim anything
 python3 hooks/verify_fingerprint.py                     # current content hash

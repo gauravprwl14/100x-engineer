@@ -43,7 +43,7 @@ come back here once a characterization test exists to extend from.
    missing more often than any others: **max+1** (the off-by-one nobody wrote)
    and **empty** (the case that isn't "small", it's zero elements). A boundary
    bug lives at the boundary, never in the middle of a partition.
-   *Enforced by:* `python3 scripts/test_design_check.py --only single-value`
+   *Enforced by:* `100x test_design_check --only single-value`
    (advisory, heuristic — flags a lone test exercising one numeric value with no
    table/parametrize sibling in the file; see Failure modes)
 
@@ -86,7 +86,7 @@ come back here once a characterization test exists to extend from.
    library's implementation, not its contract — a minor version bump can pass
    every mocked test and break production. Put a narrow interface (a port) of
    your own in front of the dependency, and fake *that* instead.
-   *Enforced by:* `python3 scripts/test_design_check.py --only mock-thirdparty`
+   *Enforced by:* `100x test_design_check --only mock-thirdparty`
    (advisory — heuristic on module path/specifier, see Failure modes)
 
 7. **Name the test as a sentence describing the behaviour, not the function.**
@@ -94,7 +94,7 @@ come back here once a characterization test exists to extend from.
    `Test_UnitParseHeader` (k3s's own generated-test convention). A reader should
    learn the contract from `grep -o 'def test_.*' tests/*.py` alone, without
    opening a single file. `test_1`, `testFoo`, `it('works')` describe nothing.
-   *Enforced by:* `python3 scripts/test_design_check.py --only test-name`
+   *Enforced by:* `100x test_design_check --only test-name`
    (blocking — see Failure modes for what it deliberately does not flag)
 
 8. **One logical assertion per test, arranged as Arrange/Act/Assert.** A test
@@ -102,7 +102,7 @@ come back here once a characterization test exists to extend from.
    first failure means the other three never ran — a fix to assertion 1 can
    still be wrong in assertions 2-4, and nothing says so until the next run.
    Split by behaviour, not by convenience.
-   *Enforced by:* `python3 scripts/test_design_check.py --only assert-count`
+   *Enforced by:* `100x test_design_check --only assert-count`
    (advisory, default threshold 4 — `--max-asserts N` to change it)
 
 9. **Determinism: no sleeps, no real clock, no shared mutable fixture, no order
@@ -113,7 +113,7 @@ come back here once a characterization test exists to extend from.
    after another one ran first is *order-dependence*. `apache/airflow`'s own
    contributor guide states the sleep rule directly: "you should mock sleep
    calls in tests or set the sleep time to 0."
-   *Enforced by:* `python3 scripts/test_design_check.py --only sleep` (blocking)
+   *Enforced by:* `100x test_design_check --only sleep` (blocking)
    and `--only realtime` (advisory — clock use with no freeze/injection)
 
 10. **Do not test generated code, framework behaviour, a private method via
@@ -150,14 +150,14 @@ come back here once a characterization test exists to extend from.
 
 ```bash
 # case-selection checks, diff-scoped (~1-2s on a normal diff)
-python3 scripts/test_design_check.py                      # all 8 checks vs HEAD
-python3 scripts/test_design_check.py --base origin/main
-python3 scripts/test_design_check.py --only sleep,test-name,assert-count
-python3 scripts/test_design_check.py --strict              # advisory also fails
-python3 scripts/test_design_check.py --max-asserts 6 --max-files 25
+100x test_design_check                      # all 8 checks vs HEAD
+100x test_design_check --base origin/main
+100x test_design_check --only sleep,test-name,assert-count
+100x test_design_check --strict              # advisory also fails
+100x test_design_check --max-asserts 6 --max-files 25
 
 # whether the test can fail at all -- owned by minimal-diff, run alongside this
-python3 scripts/bloat_check.py --only assertionless,focused-tests
+100x bloat_check --only assertionless,focused-tests
 
 # prove the checker itself still works, false positives included (39 assertions)
 bash tests/test_test_design_check.sh

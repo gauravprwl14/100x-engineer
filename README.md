@@ -46,7 +46,7 @@ Two separate questions, answered separately.
 **Do the checks catch what they claim?** Measured:
 
 ```bash
-python3 scripts/run_evals.py
+100x run_evals
 ```
 
 19 seeded defects, one per class the plugin claims to catch — **19/19 caught**. 4 clean
@@ -87,7 +87,7 @@ Run your real checks through a wrapper that records the result **bound to a hash
 exact file content it verified**:
 
 ```bash
-python3 scripts/verified.py --name test -- npm test
+100x verified --name test -- npm test
 ```
 
 A `PreToolUse` hook then blocks `git commit`, `git push`, `gh pr create`, `git tag` and
@@ -211,10 +211,10 @@ enforced:
   150 lines opens with a `## Contents` table saying what each section **answers**.
 
 ```bash
-python3 scripts/check_index.py                     # audit both levels
-python3 scripts/check_index.py --fix-stubs         # scaffold a Contents table
-python3 scripts/check_index.py --gen-collections   # regenerate catalogues
-python3 scripts/ledger.py check                    # records + traceability + gaps
+100x check_index                     # audit both levels
+100x check_index --fix-stubs         # scaffold a Contents table
+100x check_index --gen-collections   # regenerate catalogues
+100x ledger check                    # records + traceability + gaps
 ```
 
 Deliberately **not** applied to files under 150 lines or fixed-structure files like

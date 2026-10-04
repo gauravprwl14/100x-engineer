@@ -7,12 +7,14 @@ Exit 1 on any ERROR. Run: python3 scripts/lint_skills.py
 """
 import re, sys, pathlib
 
-ALLOWED_FM = {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
+ALLOWED_FM = {"name", "description", "license", "allowed-tools", "metadata", "compatibility",
+              "when_to_use", "argument-hint", "disable-model-invocation", "user-invocable",
+              "model", "context", "agent", "paths"}
 REQUIRED = ["## Trigger", "## Rules", "## Verify", "## Failure modes", "## Scale", "## Sources"]
 MAX_LINES = 250
 MAX_CONVENTION = 3
 MIN_DESC = 120
-CMD_START = ("python3", "bash", "npx", "npm", "yarn", "pnpm", "ruff", "mypy", "pytest",
+CMD_START = ("100x", "python3", "bash", "npx", "npm", "yarn", "pnpm", "ruff", "mypy", "pytest",
              "mkdir", "test ", "grep", "find", "gofmt", "curl", "ls ", "printf",
              "go", "golangci-lint", "cargo", "git", "make", "./", "uv", "deptry",
              "vulture", "madge", "depcheck", "tsc", "eslint", "prettier", "sh ",

@@ -61,14 +61,14 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
 
 1. Record every choice with at least two options, and a concrete reason each rejected
    option lost. An option listed with no downside was not considered.
-   *Enforced by:* `python3 scripts/decide.py lint`
+   *Enforced by:* `100x decide lint`
 
 2. Name the single deciding factor for the winner. If you cannot name one, the options
    were equivalent — take the default bias and say so.
-   *Enforced by:* `python3 scripts/decide.py lint` (chosen option requires `why`)
+   *Enforced by:* `100x decide lint` (chosen option requires `why`)
 
 3. Record the assumption the choice rests on, with what would falsify it.
-   *Enforced by:* `python3 scripts/decide.py lint` (requires `revisit_when`)
+   *Enforced by:* `100x decide lint` (requires `revisit_when`)
 
 4. Do not choose for a requirement nobody stated. Scale, multi-region and
    extensibility are requirements only if written down.
@@ -80,7 +80,7 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
 
 6. When the repo already made this choice, follow it. Departing needs an ADR that
    supersedes the earlier one.
-   *Enforced by:* `python3 scripts/decide.py trace <path>` before choosing
+   *Enforced by:* `100x decide trace <path>` before choosing
 
 7. Prefer the option you can verify. An approach you cannot test is worse than a
    slightly weaker one you can.
@@ -90,14 +90,14 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
 
 ```bash
 # has this already been decided here?
-python3 scripts/decide.py trace src/<area>/<file>
+100x decide trace src/<area>/<file>
 grep -rniE "redis|kafka|rabbit|postgres|mysql|mongo" --include="*.json" --include="*.toml" . | head
 
 # record the decision with its options and scores
-python3 scripts/decide.py new "Cache layer for product reads" --affects "src/catalog/**" --tag backend
+100x decide new "Cache layer for product reads" --affects "src/catalog/**" --tag backend
 
 # the record must survive lint: >=2 options, why_not on every reject, falsifiable assumption
-python3 scripts/decide.py lint
+100x decide lint
 
 # recurring stack-level choices already have defaults — check before deriving one
 ls reviewers/                       # per-stack "Approach selection" tables

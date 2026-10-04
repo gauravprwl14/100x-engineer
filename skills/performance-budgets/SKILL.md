@@ -59,7 +59,7 @@ UI-only change with no data fetching; doc/config edits with no runtime path.
    of a loop with no batching, prefetching, or gathering. This is the N+1 family:
    an ORM's lazy relation and a hand-written `for x in items: call_service(x)`
    are the same bug.
-   *Enforced by:* `python3 scripts/perf_check.py --only n-plus-one`
+   *Enforced by:* `100x perf_check --only n-plus-one`
 
 5. Run `EXPLAIN` on any new query against a table that isn't trivially small,
    before merge. A sequential scan is free at 10k rows (fits in cache) and an
@@ -68,27 +68,27 @@ UI-only change with no data fetching; doc/config edits with no runtime path.
 
 6. Bound every list query — `LIMIT`/`take`/`first` — and remember an index has a
    write cost, so don't add one to speed up a query nothing calls.
-   *Enforced by:* `python3 scripts/perf_check.py --only unbounded-query`
+   *Enforced by:* `100x perf_check --only unbounded-query`
 
 7. Treat an endpoint with no pagination limit as a correctness bug, not a
    performance nit. It is a latent outage waiting for the table to grow, and
    "sort in application code after an unbounded fetch" is the same bug wearing
    a different hat.
-   *Enforced by:* `python3 scripts/perf_check.py --only unbounded-query,hot-path-sort`
+   *Enforced by:* `100x perf_check --only unbounded-query,hot-path-sort`
 
 8. Never `SELECT *` in application code or a migration. It fetches columns
    nobody asked for and breaks silently when a column is added or renamed.
-   *Enforced by:* `python3 scripts/perf_check.py --only select-star`
+   *Enforced by:* `100x perf_check --only select-star`
 
 9. Give every outbound HTTP/RPC call an explicit timeout. An unstated timeout is
    a contract the client library invents for you — Envoy's own default is 5s;
    yours might not be.
-   *Enforced by:* `python3 scripts/perf_check.py --only no-timeout`
+   *Enforced by:* `100x perf_check --only no-timeout`
 
 10. Cap concurrency on any fan-out (`Promise.all`/`asyncio.gather`) and cap any
     in-memory accumulation over a query-result loop. Unbounded either one turns
     one large input into an outage, not a slow response.
-    *Enforced by:* `python3 scripts/perf_check.py --only unbounded-concurrency,unbounded-accumulation`
+    *Enforced by:* `100x perf_check --only unbounded-concurrency,unbounded-accumulation`
 
 11. Treat caching as a decision with an invalidation cost, not a default. State
     the hit-rate assumption, and state what happens at 0% hit rate — cold start,
@@ -132,12 +132,12 @@ Diff-scoped; runs in well under a second on a typical PR.
 
 ```bash
 # the mechanical half -- structural shapes only a script can reliably catch
-python3 scripts/perf_check.py --list
-python3 scripts/perf_check.py --base origin/main
-python3 scripts/perf_check.py --base origin/main --strict   # treat advisories as failures too
+100x perf_check --list
+100x perf_check --base origin/main
+100x perf_check --base origin/main --strict   # treat advisories as failures too
 
 # just the blocking checks (N+1, missing timeouts)
-python3 scripts/perf_check.py --only n-plus-one,no-timeout
+100x perf_check --only n-plus-one,no-timeout
 
 # the reasoning half -- no command exists for this by design; the numbers below
 # are what "is this ok" gets checked against

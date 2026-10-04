@@ -34,7 +34,7 @@ impact, or the change is to the API layer only — that's `api-contract`.
    float, and the currency travels in the same row as the amount — never a
    global default. Rounding direction and precision are a written decision, not
    an accident of the language's float implementation.
-   *Enforced by:* `python3 scripts/schema_check.py --only money-float` (blocking),
+   *Enforced by:* `100x schema_check --only money-float` (blocking),
    `--only money-currency` (advisory)
 
 2. Invariants live in the schema — `NOT NULL`, `CHECK`, `UNIQUE`, `FOREIGN KEY`,
@@ -48,7 +48,7 @@ impact, or the change is to the API layer only — that's `api-contract`.
    every row by incrementing it. Use UUIDv7 or ULID (time-ordered, so the
    primary-key index still clusters on insert, unlike UUIDv4 which scatters
    every write across the whole index) or a separate public identifier.
-   *Enforced by:* `python3 scripts/schema_check.py --only new-table-pk` (blocking
+   *Enforced by:* `100x schema_check --only new-table-pk` (blocking
    on missing PK); the id-exposure half is *Enforced by:* review
 
 4. `created_at`/`updated_at` are conveniences, not an audit trail — they say
@@ -56,7 +56,7 @@ impact, or the change is to the API layer only — that's `api-contract`.
    trail is its own immutable, append-only table (actor, action, before, after,
    timestamp) with different retention and tamper-evidence guarantees than
    application logs, which rotate and are not admissible as a record of intent.
-   *Enforced by:* `python3 scripts/schema_check.py --only new-table-created-at`
+   *Enforced by:* `100x schema_check --only new-table-created-at`
    (advisory, presence only — it cannot check immutability)
 
 5. A financial or otherwise regulator-visible record is not `UPDATE`d in place;
@@ -90,7 +90,7 @@ impact, or the change is to the API layer only — that's `api-contract`.
 9. Normalize by default. Denormalize only as a deliberate, written decision that
    names the invalidation cost — which write paths must now update two places,
    and how staleness will be detected.
-   *Enforced by:* `python3 scripts/decide.py new "<denormalization>" --affects "<glob>"`
+   *Enforced by:* `100x decide new "<denormalization>" --affects "<glob>"`
    (convention: reviewers reject an un-recorded denormalization on sight)
 
 10. Every table that can be read by more than one tenant carries `tenant_id` (or
@@ -99,14 +99,14 @@ impact, or the change is to the API layer only — that's `api-contract`.
     missing optimization — it is a promise that no two tenants can ever collide
     on that value, which is almost never true and is a cross-tenant leak the
     day it's false.
-    *Enforced by:* `python3 scripts/schema_check.py --only tenant-index` (blocking,
+    *Enforced by:* `100x schema_check --only tenant-index` (blocking,
     unique constraints), `--only tenant-lookup-index` (advisory, non-unique
     indexes; one leading with an FK column is exempt)
 
 11. A foreign-key column has an index on the referencing side. Most databases do
     not create one automatically for you (Postgres/SQLAlchemy do not; Django's
     `ForeignKey` does). A tenant-first composite `(tenant_id, fk_col)` counts.
-    *Enforced by:* `python3 scripts/schema_check.py --only fk-index` (advisory)
+    *Enforced by:* `100x schema_check --only fk-index` (advisory)
 
 12. A destructive change (`DROP`/`RENAME COLUMN`, `DROP`/`RENAME TABLE`, `ALTER
     COLUMN ... TYPE`) ships only after readers have moved. Old code must run
@@ -115,7 +115,7 @@ impact, or the change is to the API layer only — that's `api-contract`.
     must not fail on its rows or hold a long write lock: no `ADD COLUMN ... NOT
     NULL` without a `DEFAULT`; `CREATE INDEX CONCURRENTLY`; FKs `NOT VALID`,
     then `VALIDATE`.
-    *Enforced by:* `python3 scripts/schema_check.py --only expand-contract` and
+    *Enforced by:* `100x schema_check --only expand-contract` and
     `--only not-null-no-default` (blocking); `--only index-concurrently`,
     `--only fk-not-valid` (advisory, Postgres)
 
@@ -134,12 +134,12 @@ impact, or the change is to the API layer only — that's `api-contract`.
 
 ```bash
 # diff-scoped, ~1s on a normal migration/schema diff
-python3 scripts/schema_check.py --base origin/main
-python3 scripts/schema_check.py --base origin/main --strict     # advisories fail too
-python3 scripts/schema_check.py --list                          # see all checks
+100x schema_check --base origin/main
+100x schema_check --base origin/main --strict     # advisories fail too
+100x schema_check --list                          # see all checks
 
 # record a denormalization or any other departure from the default
-python3 scripts/decide.py new "Denormalize order totals" --affects "src/orders/**"
+100x decide new "Denormalize order totals" --affects "src/orders/**"
 
 # if the stack has one, run its own migration linter too -- this tool is not a
 # substitute for strong_migrations / squawk / django's makemigrations --check
@@ -196,7 +196,7 @@ Read `api-contract` before the schema decisions above reach an API response —
 an internal id exposed in a URL, or a nullable-field-as-state-machine leaking
 into JSON, are both schema smells that become API contract problems the moment
 a client depends on them. Log any departure from a default here with
-`python3 scripts/decide.py new`. Run `bloat_check.py` and `design_drift.py` as
+`100x decide new`. Run `bloat_check.py` and `design_drift.py` as
 usual while implementing (see `feature-planning`).
 
 ## Scale

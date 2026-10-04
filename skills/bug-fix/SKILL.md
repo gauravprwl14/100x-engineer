@@ -47,12 +47,12 @@ you are just doing step 2 onward, with the mechanism already known.
 3. Before theorizing about a new cause, check whether the bug is a violated
    assumption — one of the most common root causes there is, and the cheapest to
    check: something already on record said "this holds until X" and X happened.
-   *Enforced by:* `python3 scripts/decide.py trace <file>` then
-   `python3 scripts/decide.py verify`
+   *Enforced by:* `100x decide trace <file>` then
+   `100x decide verify`
 
 4. Only then find the cause. Fix the narrowest change that makes the failing test
    pass — one root cause, one diff.
-   *Enforced by:* `python3 scripts/bloat_check.py` — flags a diff that grew past the
+   *Enforced by:* `100x bloat_check` — flags a diff that grew past the
    fix (new files, new abstractions, unrelated hunks)
 
 5. Do not fix adjacent things you noticed while in there. A second defect gets its
@@ -67,7 +67,7 @@ you are just doing step 2 onward, with the mechanism already known.
 
 7. The test stays forever. Never delete it, skip it, or mark it `.only`/`.skip` —
    it is the actual deliverable of the fix, not scratch work that outlived its use.
-   *Enforced by:* `python3 scripts/bloat_check.py --only focused-tests`
+   *Enforced by:* `100x bloat_check --only focused-tests`
 
 ## Verify
 
@@ -85,13 +85,13 @@ rc=$?; git stash pop; [ "$rc" -ne 0 ]        # must fail without the fix
 #   ~seconds to a minute, one test only — never the whole suite here
 
 # 3. is this a violated assumption? cheapest thing to check before theorizing
-python3 scripts/decide.py trace <file>       # which decision, if any, governs this
-python3 scripts/decide.py verify             # does its assumption still hold?
+100x decide trace <file>       # which decision, if any, governs this
+100x decide verify             # does its assumption still hold?
 #   ~1s each
 
 # 4. after the fix: the same test now passes, and the diff stayed narrow
 pytest tests/test_bug.py::test_repro -x      # now exits 0
-python3 scripts/bloat_check.py               # diff-scoped: scope creep, focused/skipped tests
+100x bloat_check               # diff-scoped: scope creep, focused/skipped tests
 #   ~1-3s, diff-scoped
 
 # 5. sibling check — same class of bug elsewhere in the codebase

@@ -57,10 +57,10 @@ Without that list, "we might need it later" wins every argument.
 
 1. Declare the tier before designing. It is recorded in the spec's section 0, not held
    in someone's head.
-   *Enforced by:* `python3 scripts/plan_feature.py new <name> --scale <tier>`
+   *Enforced by:* `100x plan_feature new <name> --scale <tier>`
 
 2. An unfilled or invalid non-functional-requirements table blocks implementation.
-   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit specs/<name>`
 
 3. Derive requirements from the tier, never from imagination. If a design element is not
    in the tier's `required` list, name the specific failure it prevents or drop it.
@@ -74,7 +74,7 @@ Without that list, "we might need it later" wins every argument.
 
 5. Keep the PRD's tier and the spec's tier the same. A silent mismatch means two
    documents describe different systems.
-   *Enforced by:* `python3 scripts/prd.py align prds/<name> specs/<name>`
+   *Enforced by:* `100x prd align prds/<name> specs/<name>`
 
 6. A tier change is a re-plan, not a patch. Moving up invalidates decisions made under
    the old tier — supersede them rather than editing them.
@@ -90,8 +90,8 @@ Without that list, "we might need it later" wins every argument.
 
 ```bash
 # declare the tier; `small` is the default if you say nothing
-python3 scripts/plan_feature.py new checkout --kind payment --scale growth
-python3 scripts/plan_feature.py audit specs/checkout          # blocks on an unfilled NFR table
+100x plan_feature new checkout --kind payment --scale growth
+100x plan_feature audit specs/checkout          # blocks on an unfilled NFR table
 
 # what does this tier require, and explicitly not require?
 python3 -c "import json;t=json.load(open('scripts/data/scale_tiers.json'))['growth'];\
@@ -99,11 +99,11 @@ print('REQUIRED:');[print(' -',x) for x in t['required']];\
 print('NOT REQUIRED:');[print(' -',x) for x in t['not_required']]"
 
 # PRD and spec must agree on the tier
-python3 scripts/prd.py align prds/checkout specs/checkout
+100x prd align prds/checkout specs/checkout
 
 # decisions whose `affects` files changed since they were recorded (a lead for
 # rule 6, not a tier-change detector: it never reads the tier)
-python3 scripts/decide.py drift
+100x decide drift
 ```
 
 ## Failure modes

@@ -74,11 +74,11 @@ Two operations change files that already exist, so both print a plan and do noth
 without explicit consent:
 
 ```bash
-python3 scripts/ledger.py shard              # prints the moves, changes nothing
-python3 scripts/ledger.py shard --yes        # performs them
+100x ledger shard              # prints the moves, changes nothing
+100x ledger shard --yes        # performs them
 
-python3 scripts/check_index.py --fix-stubs           # lists what it would rewrite
-python3 scripts/check_index.py --fix-stubs --yes     # rewrites in place
+100x check_index --fix-stubs           # lists what it would rewrite
+100x check_index --fix-stubs --yes     # rewrites in place
 ```
 
 `shard` moves records into date directories once a folder exceeds 40 entries. Ids live
@@ -124,7 +124,7 @@ A safety claim in a README decays the moment someone adds a line, so the boundar
 executable:
 
 ```bash
-python3 scripts/safety_audit.py     # fails if a destructive primitive appears
+100x safety_audit     # fails if a destructive primitive appears
 bash tests/test_safety.sh           # 22 assertions, including a planted rmtree
 ```
 

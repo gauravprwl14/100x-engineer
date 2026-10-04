@@ -43,24 +43,24 @@ a lesson.
 
 1. Record a lesson the moment it costs you time. Not at the end of the task, when the
    specific detail has blurred into a general feeling.
-   *Enforced by:* `python3 scripts/learn.py add "<lesson>" --kind <k> --affects "<glob>"`
+   *Enforced by:* `100x learn add "<lesson>" --kind <k> --affects "<glob>"`
 
 2. Every lesson needs an `--affects` glob. A lesson nobody can find from the file it
    applies to will never be read again.
-   *Enforced by:* `python3 scripts/learn.py lint`
+   *Enforced by:* `100x learn lint`
 
 3. Every lesson needs a source — an ADR id, an RCA id, or a `file:line`. An unsourced
    lesson cannot be re-checked when the code moves.
-   *Enforced by:* `python3 scripts/learn.py lint`
+   *Enforced by:* `100x learn lint`
 
 4. State the observable trigger, not a preference. "Prefer clean code" is unusable;
    "the linter fails with X unless Y is set first" is actionable.
-   *Enforced by:* `python3 scripts/learn.py lint` (rejects a vague preference with no
+   *Enforced by:* `100x learn lint` (rejects a vague preference with no
    observable trigger)
 
 5. Recall before editing an unfamiliar file. This is the half of the loop that pays —
    writing lessons nobody reads is a diary.
-   *Enforced by:* `python3 scripts/learn.py relevant <path>`
+   *Enforced by:* `100x learn relevant <path>`
 
 6. Do not record what the repo already records. Code structure, git history and
    `CLAUDE.md` are not lessons.
@@ -68,27 +68,27 @@ a lesson.
 
 7. Delete a lesson that stops being true. A stale lesson is worse than none, because it
    is trusted.
-   *Enforced by:* `python3 scripts/learn.py lint` flags a lesson whose source path no
+   *Enforced by:* `100x learn lint` flags a lesson whose source path no
    longer exists
 
 ## Verify
 
 ```bash
 # record it, with where it applies and where it came from
-python3 scripts/learn.py add \
+100x learn add \
   "Integration suite needs docker compose up db first; otherwise it fails with a DNS error" \
   --kind gotcha --affects "tests/integration/**" --source "tests/integration/conftest.py:14"
 
 # recall it — run this before editing an unfamiliar file
-python3 scripts/learn.py relevant tests/integration/test_orders.py
+100x learn relevant tests/integration/test_orders.py
 
 # browse and audit
-python3 scripts/learn.py list --kind gotcha
-python3 scripts/learn.py lint          # no affects, no source, or vague preference
-python3 scripts/learn.py index         # regenerates lessons/INDEX.md
+100x learn list --kind gotcha
+100x learn lint          # no affects, no source, or vague preference
+100x learn index         # regenerates lessons/INDEX.md
 
 # lessons appear in the ledger alongside decisions and RCAs
-python3 scripts/ledger.py find "docker compose"
+100x ledger find "docker compose"
 ```
 
 Kinds: `gotcha` (it will bite again), `convention` (discovered, not documented),

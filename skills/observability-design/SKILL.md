@@ -123,7 +123,7 @@ Grafana vs...) — this is about what to emit, not where it's stored.
    rate (and whether errors/slow requests are always kept regardless of the
    base rate) and the retention window explicitly, and record it like any
    other decision that departs from "just turn everything on".
-   *Enforced by:* `python3 scripts/decide.py new "Sampling/retention policy" --affects "<glob>" --tag observability`
+   *Enforced by:* `100x decide new "Sampling/retention policy" --affects "<glob>" --tag observability`
 
 ## Verify
 
@@ -142,8 +142,8 @@ grep -rniE "(email|phone|ssn|password|token)\s*[:=]" src/ 2>/dev/null
 grep -rniE "\bavg\(|average" src/ docs/ specs/ 2>/dev/null | grep -i "sli\|latency\|slo"
 
 # 5. record the sampling/retention decision once it's made
-python3 scripts/decide.py new "Sampling/retention policy" --affects "src/telemetry/**" --tag observability
-python3 scripts/decide.py verify   # confirms the assumption still holds later
+100x decide new "Sampling/retention policy" --affects "src/telemetry/**" --tag observability
+100x decide verify   # confirms the assumption still holds later
 ```
 Each grep is diff-scoped in practice (point at `git diff --name-only`) and runs
 in under a second; step 5 is a few seconds and is what makes the sampling

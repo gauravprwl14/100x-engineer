@@ -39,7 +39,7 @@ or a copy/config-only change with no new element or interaction.
 
 1. Reach for the semantic element first. A `div`/`span`/`li` with `onClick` and
    no `role`/`tabIndex` is not a button — it's invisible to assistive tech.
-   *Enforced by:* `python3 scripts/a11y_check.py --only onclick-non-interactive`
+   *Enforced by:* `100x a11y_check --only onclick-non-interactive`
 
 2. Every interactive element must be reachable and operable by keyboard alone
    (Tab to reach it, Enter/Space to activate it) — this is broader than any
@@ -48,21 +48,21 @@ or a copy/config-only change with no new element or interaction.
 
 3. Never remove the default focus outline without a compliant replacement. A
    `:focus-visible` rule in the same file is the minimum bar.
-   *Enforced by:* `python3 scripts/a11y_check.py --only outline-none-no-focus-visible`
+   *Enforced by:* `100x a11y_check --only outline-none-no-focus-visible`
 
 4. Don't use a positive `tabIndex`. It reorders focus away from DOM order and
    breaks the mental model every screen-reader and keyboard user relies on.
-   *Enforced by:* `python3 scripts/a11y_check.py --only positive-tabindex`
+   *Enforced by:* `100x a11y_check --only positive-tabindex`
 
 5. Every control needs an accessible name: visible text, `aria-label`, or
    `aria-labelledby`. An icon-only button with none of the three is unusable —
    a screen reader announces "button" with nothing else.
-   *Enforced by:* `python3 scripts/a11y_check.py --only control-no-accessible-name`
+   *Enforced by:* `100x a11y_check --only control-no-accessible-name`
 
 6. Every form field needs a programmatic label: `id` paired with a `label
    htmlFor`, or `aria-label`/`aria-labelledby`. A placeholder is not a label —
    it disappears the moment the user types.
-   *Enforced by:* `python3 scripts/a11y_check.py --only form-field-no-label`
+   *Enforced by:* `100x a11y_check --only form-field-no-label`
 
 7. Associate a field's error with the field via `aria-describedby`, and make
    sure it's actually announced (a `role="alert"`/live region, or the field
@@ -73,11 +73,11 @@ or a copy/config-only change with no new element or interaction.
 8. Every `<img>`/`next/image` needs a meaningful `alt`, or an explicit `alt=""`
    for a purely decorative image. Missing `alt` is a defect; empty `alt` is a
    decision — the checker treats them differently.
-   *Enforced by:* `python3 scripts/a11y_check.py --only img-no-alt`
+   *Enforced by:* `100x a11y_check --only img-no-alt`
 
 9. Never invent an `aria-*` attribute name. A typo (`aria-lable`) is silently
    ignored by assistive tech — no warning, no fallback, just missing metadata.
-   *Enforced by:* `python3 scripts/a11y_check.py --only unknown-aria-attribute`
+   *Enforced by:* `100x a11y_check --only unknown-aria-attribute`
 
 10. Meet WCAG 2.2 AA contrast: **4.5:1** for body text, **3:1** for large-scale
     text (≥18pt, or ≥14pt bold) and for UI-component/graphical boundaries. And
@@ -99,7 +99,7 @@ or a copy/config-only change with no new element or interaction.
 13. Respect `prefers-reduced-motion`. A parallax hero or a spinning loader
     with no reduced-motion guard can trigger vestibular symptoms, not just
     annoy.
-    *Enforced by:* `python3 scripts/a11y_check.py --only animation-no-reduced-motion`
+    *Enforced by:* `100x a11y_check --only animation-no-reduced-motion`
 
 14. Meet the WCAG 2.2 target-size minimum: pointer targets at least **24×24
     CSS pixels**, or 24px of clear space around a smaller one (SC 2.5.8).
@@ -117,12 +117,12 @@ or a copy/config-only change with no new element or interaction.
 Diff-scoped; runs in well under a second on a typical component PR.
 
 ```bash
-python3 scripts/a11y_check.py --list
-python3 scripts/a11y_check.py --base origin/main
-python3 scripts/a11y_check.py --base origin/main --strict   # advisories also fail
+100x a11y_check --list
+100x a11y_check --base origin/main
+100x a11y_check --base origin/main --strict   # advisories also fail
 
 # just the four blocking checks
-python3 scripts/a11y_check.py --only onclick-non-interactive,img-no-alt,form-field-no-label,control-no-accessible-name
+100x a11y_check --only onclick-non-interactive,img-no-alt,form-field-no-label,control-no-accessible-name
 
 # what no script can do -- run manually before merging a real interactive component
 #   1. unplug the mouse: Tab through the component, Enter/Space to activate

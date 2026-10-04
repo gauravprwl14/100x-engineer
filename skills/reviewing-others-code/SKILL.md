@@ -67,7 +67,7 @@ unfamiliar code with no review pending is `codebase-comprehension`.
 5. Before marking anything blocking, check the target repo's own conventions —
    existing similar code, its linter config, its style guide, its `AGENTS.md` — and
    cite where the convention is established. Your preference is not their convention.
-   *Enforced by:* `python3 scripts/repo_map.py <root> --symbol <PatternName>` (find an
+   *Enforced by:* `100x repo_map <root> --symbol <PatternName>` (find an
    existing precedent before asserting one should exist)
 
 6. Assume a constraint you cannot see before assuming incompetence — a deadline, a
@@ -80,7 +80,7 @@ unfamiliar code with no review pending is `codebase-comprehension`.
    record id), races in check-then-act sequences, missing error paths, silent
    behavior changes (a return type, a default, an error being swallowed), and whether
    the tests would actually fail if the code were wrong.
-   *Enforced by:* `python3 scripts/review_scope.py --base <ref>` generates R6/R7-style
+   *Enforced by:* `100x review_scope --base <ref>` generates R6/R7-style
    questions scoped to the diff — run it even on someone else's diff; the questions
    are the same, only the intent-inference step around them differs
 
@@ -88,34 +88,34 @@ unfamiliar code with no review pending is `codebase-comprehension`.
    level-2 sequence diagram of the new path before writing findings. A mismatch
    between what the diagram shows and what the PR description claims is often the
    finding itself — skip this for a single-function or config-only diff.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <their-dir> --kind sequence --level 2`
+   *Enforced by:* `100x diagram_from_code <their-dir> --kind sequence --level 2`
 
 8. For AI-generated code specifically, check for plausible-but-wrong output (the code
    reads as correct and compiles but the logic is subtly off), over-abstraction
    (interfaces and factories with one implementation), and tests that assert the
    implementation's current behavior rather than the intended one.
-   *Enforced by:* `python3 scripts/bloat_check.py --base <ref>`
+   *Enforced by:* `100x bloat_check --base <ref>`
 
 ## Verify
 
 ```bash
 # 1. the shared mechanical + defect-class layer (same tools scoped-review uses)
-python3 scripts/bloat_check.py --base <ref>
-python3 scripts/review_scope.py --base <ref>
+100x bloat_check --base <ref>
+100x review_scope --base <ref>
 
 # 2. framework-specific failure modes, if the diff touches a known stack
-python3 scripts/stack_audit.py .
+100x stack_audit .
 sed -n '/## Common AI failure modes/,/## Edge cases/p' reviewers/<stack>.md
 
 # 3. precedent check before asserting a convention -- find it, don't guess it
-python3 scripts/repo_map.py . --symbol <PatternOrClassName>
+100x repo_map . --symbol <PatternOrClassName>
 git log --follow --oneline <file changed in the diff>
 
 # 4. is there a decision on record explaining why it's shaped this way
-python3 scripts/decide.py trace <path>
+100x decide trace <path>
 
 # 5. a multi-step/multi-component flow only -- skip for a single-function diff
-python3 scripts/diagram_from_code.py <their-dir> --kind sequence --level 2
+100x diagram_from_code <their-dir> --kind sequence --level 2
 
 # 6. self-check before posting: every finding labelled, highest blast-radius first
 grep -c '\*\*blocking\*\*\|\*\*should-fix\*\*\|\*\*optional\*\*\|\*\*question\*\*' <notes>

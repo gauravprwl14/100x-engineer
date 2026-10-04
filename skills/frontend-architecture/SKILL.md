@@ -50,51 +50,51 @@ then correctly layered, so the difference is visible, not described.
 1. A `.tsx` component never calls `fetch`/`axios`/an API client method, and never
    embeds a raw backend URL. If a component needs data, it calls a hook that
    returns it.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only presentation-io`
+   *Enforced by:* `100x fe_layers_check --only presentation-io`
    (**blocking**)
 
 2. A `.tsx` component never does arithmetic on a money/tax/discount identifier
    (`price`, `amount`, `total`, `tax`, `discount`, `fee`). If the UI needs a
    computed total, the business layer computes it and the component displays the
    result.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only presentation-money-math`
+   *Enforced by:* `100x fe_layers_check --only presentation-money-math`
    (**blocking**)
 
 3. A business module (`domain/`, `lib/`, `core/`, `business/`) never imports
    `react`, `next/*`, or touches a DOM global. If it needs to, it is not a
    business module — move it.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only business-imports-react`
+   *Enforced by:* `100x fe_layers_check --only business-imports-react`
    (**blocking**)
 
 4. A `use*.ts` hook never returns JSX. A hook that renders has become a component
    with the wrong file suffix, and loses every benefit of being a hook (reuse
    across markup, easy mock in a non-DOM test).
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only hook-renders-jsx`
+   *Enforced by:* `100x fe_layers_check --only hook-renders-jsx`
    (**blocking**)
 
 5. A `useEffect` body that fetches, transforms, or subscribes belongs in a named
    hook, not inline in a component — a long inline effect is the leading
    indicator that logic never got extracted.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only large-use-effect`
+   *Enforced by:* `100x fe_layers_check --only large-use-effect`
    (advisory, default 15 lines)
 
 6. A component file should not simultaneously be long AND own more than a
    handful of `use*` calls — that shape is a container and a presenter fused
    into one file, and it is the single hardest shape to review or test.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only container-presenter-fused`
+   *Enforced by:* `100x fe_layers_check --only container-presenter-fused`
    (advisory, default >200 lines and >3 `use*` calls)
 
 7. A component never reads `localStorage`/`sessionStorage`/`document.cookie`
    directly — a hook wraps it, so the storage mechanism can be swapped or mocked
    without touching markup.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only presentation-storage-access`
+   *Enforced by:* `100x fe_layers_check --only presentation-storage-access`
    (advisory)
 
 8. A component that imports `zod`/`yup`/`joi` and calls `.parse`/`.validate`
    itself has put validation in the wrong layer — the schema and the parse call
    belong in the business layer; the component reads a validated value or an
    error the logic layer already produced.
-   *Enforced by:* `python3 scripts/fe_layers_check.py --only presentation-inline-validation`
+   *Enforced by:* `100x fe_layers_check --only presentation-inline-validation`
    (advisory)
 
 9. Naming, function length, parameter count and general shape inside any of the
@@ -106,11 +106,11 @@ then correctly layered, so the difference is visible, not described.
 
 ```bash
 # diff-scoped: safe on a large existing codebase (regex + brace balancing, ~1-2s)
-python3 scripts/fe_layers_check.py                        # all checks vs HEAD
-python3 scripts/fe_layers_check.py --base origin/main
-python3 scripts/fe_layers_check.py --strict                # advisory findings also fail
-python3 scripts/fe_layers_check.py --only presentation-io,business-imports-react
-python3 scripts/fe_layers_check.py --effect-lines 20 --file-lines 250 --hook-calls 4
+100x fe_layers_check                        # all checks vs HEAD
+100x fe_layers_check --base origin/main
+100x fe_layers_check --strict                # advisory findings also fail
+100x fe_layers_check --only presentation-io,business-imports-react
+100x fe_layers_check --effect-lines 20 --file-lines 250 --hook-calls 4
 
 # the reference doc: the SAME component badly layered, then correctly layered
 sed -n '1,80p' reviewers/_frontend-layers.md

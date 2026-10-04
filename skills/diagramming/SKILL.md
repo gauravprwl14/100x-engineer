@@ -97,46 +97,46 @@ just described.
    before it appears in a message. `scripts/design_drift.py` only reads explicit
    declarations — an alias mermaid auto-creates from its first message is invisible
    to drift-checking.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 3. Sequence arrows use one of `-> --> ->> -->> -x --x` — the exact set
    `design_drift.py`'s message regex recognizes. An async `-)` arrow renders fine in
    Mermaid and disappears from drift-checking.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 4. External participants (UI, browser, third-party API) are marked `actor` or
    listed in `%% external:` — otherwise `design_drift.py` reports them as
    unimplemented code that was never meant to exist.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>` + `design_drift.py`
+   *Enforced by:* `100x check_diagrams <file>` + `design_drift.py`
 
 5. A declared or forced level's node budget is a hard gate; an undeclared diagram
    is inferred and reported instead of blocked.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 6. L3 diagrams — declared or inferred by size — carry a numbered step table
    immediately below and show ≥ 1 branch/error path in the diagram itself. A wall
    of 40 happy-path arrows numbered in sequence is not a spec.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 7. No placeholder text (`TODO`, `<!-- action -->`, `<...>`) survives in a diagram
    or its step table.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 8. A sequence diagram in a feature spec stays current against the implementation —
    this skill supplies the diagram discipline `feature-planning` rule 5 depends on.
-   *Enforced by:* `python3 scripts/design_drift.py specs/<name>/spec.md <code-dir>`
+   *Enforced by:* `100x design_drift specs/<name>/spec.md <code-dir>`
 
 ## Verify
 
 ```bash
 # single spec, ~1s
-python3 scripts/check_diagrams.py specs/login/spec.md
+100x check_diagrams specs/login/spec.md
 # force-check against a stricter level than declared/inferred, ~1s
-python3 scripts/check_diagrams.py specs/login/spec.md --level 3
+100x check_diagrams specs/login/spec.md --level 3
 # every mermaid block under a directory, ~1s for this repo
-python3 scripts/check_diagrams.py specs/
+100x check_diagrams specs/
 # the worked example — all three levels must pass clean
-python3 scripts/check_diagrams.py reviewers/_diagram-levels.md
+100x check_diagrams reviewers/_diagram-levels.md
 # regression suite against the real fixture + deliberately broken blocks, ~2s
 bash tests/test_check_diagrams.sh
 ```

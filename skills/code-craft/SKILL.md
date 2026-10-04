@@ -34,7 +34,7 @@ hand-written logic — there is no shape to review.
    booleans read as predicates (`is_active`, not `active`); abbreviate only
    established domain terms; match the surrounding codebase over personal
    preference.
-   *Enforced by:* `python3 scripts/craft_check.py --only vague-names` (advisory,
+   *Enforced by:* `100x craft_check --only vague-names` (advisory,
    stoplist only) + review for predicates/abbreviations/consistency.
 
 2. One level of abstraction per function — extract until each function reads
@@ -44,38 +44,38 @@ hand-written logic — there is no shape to review.
 3. Function length has a threshold, not a hard cap. Default 60 lines (real
    range 40-100, see Sources); Google's own guidance is "no hard limit...
    think about it," which is why this stays advisory.
-   *Enforced by:* `python3 scripts/craft_check.py --only function-length`
+   *Enforced by:* `100x craft_check --only function-length`
    (advisory).
 
 4. Parameter count has a threshold too (default 5). When a function's
    parameters always travel and change together, reach for a parameter
    object instead of adding a sixth loose value.
-   *Enforced by:* `python3 scripts/craft_check.py --only param-count`
+   *Enforced by:* `100x craft_check --only param-count`
    (advisory).
 
 5. No boolean flag parameters that select behaviour at the call site
    (`save(1, True)`). A keyword-only flag that just toggles one line of
    output, not a code path, is fine.
-   *Enforced by:* `python3 scripts/craft_check.py --only boolean-flag-arg`
+   *Enforced by:* `100x craft_check --only boolean-flag-arg`
    (advisory).
 
 6. Return early over nested conditionals (guard clauses); no flag variable
    threaded through loops in place of nested `if`s. Nesting depth threshold
    default 4.
-   *Enforced by:* `python3 scripts/craft_check.py --only nesting-depth`
+   *Enforced by:* `100x craft_check --only nesting-depth`
    (advisory).
 
 7. A module has one reason to change; dependency direction points inward
    (core never imports an adapter). No reaching through a collaborator to
    its collaborator's collaborator — Demeter, stated concretely in
    `reviewers/_code-craft.md`, not as a slogan.
-   *Enforced by:* `python3 scripts/craft_check.py --only demeter-chain`
+   *Enforced by:* `100x craft_check --only demeter-chain`
    (advisory, chain-depth heuristic) + review for dependency direction.
 
 8. Errors are a typed taxonomy, translated at the edge, never swallowed. An
    `except`/`catch` with an empty or log-only body and no re-raise is a bug,
    not a style choice.
-   *Enforced by:* `python3 scripts/craft_check.py --only bare-except`
+   *Enforced by:* `100x craft_check --only bare-except`
    (**blocking**).
 
 9. Distinguish expected failure (a `Result`/`Either` or a checked domain
@@ -97,7 +97,7 @@ hand-written logic — there is no shape to review.
 12. A money amount, an id, and a duration are types, not `number`/`string`/
     `float`. This matters most in fintech/bank code: a `float` for money is
     a latent rounding bug, not a style preference.
-    *Enforced by:* `python3 scripts/craft_check.py --only money-as-float`
+    *Enforced by:* `100x craft_check --only money-as-float`
     (advisory).
 
 13. Parallel operations look parallel; an argument-order or naming inversion
@@ -109,11 +109,11 @@ hand-written logic — there is no shape to review.
 
 ```bash
 # diff-scoped: safe to run on a large existing codebase (~1-3s)
-python3 scripts/craft_check.py                        # all checks vs HEAD
-python3 scripts/craft_check.py --base origin/main
-python3 scripts/craft_check.py --strict                # advisory findings also fail
-python3 scripts/craft_check.py --only vague-names,money-as-float,bare-except
-python3 scripts/craft_check.py --func-len 80 --params 6 --depth 5
+100x craft_check                        # all checks vs HEAD
+100x craft_check --base origin/main
+100x craft_check --strict                # advisory findings also fail
+100x craft_check --only vague-names,money-as-float,bare-except
+100x craft_check --func-len 80 --params 6 --depth 5
 
 # the reference doc for every rule above, with a before/after example
 sed -n '1,40p' reviewers/_code-craft.md

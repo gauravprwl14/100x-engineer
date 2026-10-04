@@ -41,7 +41,7 @@ code you are about to delete outright — see the last rule.
    technique explicitly in *Working Effectively with Legacy Code* (2004):
    pin current behaviour first, decide separately whether that behaviour is
    correct.
-   *Enforced by:* `python3 scripts/test_design_check.py --only assert-count,test-name`
+   *Enforced by:* `100x test_design_check --only assert-count,test-name`
    run on the new characterization test itself — it must be a real, well-named,
    assertive test, not a placeholder
 
@@ -74,7 +74,7 @@ code you are about to delete outright — see the last rule.
    and usually can't. Split it: refactor first (characterization test stays
    green throughout), commit, *then* change behaviour (a different test now
    goes red, then green).
-   *Enforced by:* `python3 scripts/test_design_check.py --only refactor-behavior`
+   *Enforced by:* `100x test_design_check --only refactor-behavior`
    (advisory — flags a diff over `--max-files` (default 15) where a *modified*
    test file's expected value changed alongside production logic; see Verify)
 
@@ -87,7 +87,7 @@ code you are about to delete outright — see the last rule.
    regenerated and committed without being read is **worse than no test** — it
    looks like coverage, asserts nothing about correctness, and will silently
    re-approve the next regression too.
-   *Enforced by:* `python3 scripts/test_design_check.py --only snapshot-same-diff`
+   *Enforced by:* `100x test_design_check --only snapshot-same-diff`
    (advisory — flags a snapshot file changed in the same diff as the production
    code it approves, the shape most likely to mean "regenerated, not reviewed")
 
@@ -112,7 +112,7 @@ code you are about to delete outright — see the last rule.
    — `minimal-diff` owns diff-size discipline generally; this rule is the
    legacy-specific version of it, because "I'm already in here, might as well"
    is strongest exactly where the code is worst.
-   *Enforced by:* `python3 scripts/bloat_check.py --only file-creation-ratio`
+   *Enforced by:* `100x bloat_check --only file-creation-ratio`
    (advisory) — a real hard number on scope creep beyond a stated intent
 
 8. **Do not touch code that is stable, understood, and scheduled for deletion.**
@@ -126,14 +126,14 @@ code you are about to delete outright — see the last rule.
 
 ```bash
 # characterization test exists, is real, and is well-named (~1s)
-python3 scripts/test_design_check.py --only assert-count,test-name
+100x test_design_check --only assert-count,test-name
 
 # refactor/behaviour-change conflation + unreviewed snapshot approval (~1-2s)
-python3 scripts/test_design_check.py --only refactor-behavior,snapshot-same-diff
-python3 scripts/test_design_check.py --strict --max-files 15   # org-scale: treat both as blocking
+100x test_design_check --only refactor-behavior,snapshot-same-diff
+100x test_design_check --strict --max-files 15   # org-scale: treat both as blocking
 
 # scope creep beyond the seam you needed (~1-3s, diff-scoped)
-python3 scripts/bloat_check.py --only file-creation-ratio,commented-code
+100x bloat_check --only file-creation-ratio,commented-code
 
 # characterization tests pin CURRENT behaviour: they pass before AND after a
 # refactor. Only the new-behaviour test must fail without your source change.

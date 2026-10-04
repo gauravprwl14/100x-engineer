@@ -49,17 +49,17 @@ blast-radius ranking this skill deliberately skips because you already know the 
 
 1. Generate the checklist from the diff rather than reviewing from memory. It names
    which files each question applies to.
-   *Enforced by:* `python3 scripts/review_scope.py --base origin/main`
+   *Enforced by:* `100x review_scope --base origin/main`
 
 2. Answer every in-scope question explicitly `yes`, `no`, or `n-a` with a reason. An
    unanswered question is not a pass.
    *Enforced by:* review — the generated table has an `answer` column per row
 
 3. Run the mechanical checks first, so this review is not spent on what they settle.
-   *Enforced by:* `python3 scripts/bloat_check.py --base origin/main && python3 scripts/decide.py check`
+   *Enforced by:* `100x bloat_check --base origin/main && 100x decide check`
 
 4. For every `no`, apply the stated remedy or record why you are not, as an accepted gap.
-   *Enforced by:* `python3 scripts/decide.py new` for the accepted-gap case
+   *Enforced by:* `100x decide new` for the accepted-gap case
 
 5. Check the stack-specific reviewer too — each carries the failure modes particular to
    that framework, which these nine generic questions do not cover.
@@ -74,36 +74,36 @@ blast-radius ranking this skill deliberately skips because you already know the 
    concurrency in your head — a check-then-act gap is a missing arrow, easy to spot
    drawn and easy to miss read top-to-bottom as text. Skip this for a diff with no
    multi-step or concurrent flow; a diagram of a single function is ceremony.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <dir> --kind sequence --level 3`
+   *Enforced by:* `100x diagram_from_code <dir> --kind sequence --level 3`
 
 8. Re-check the spec's edge-case table after implementing. Implementation reveals cases
    planning missed.
-   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit specs/<name>`
 
 ## Verify
 
 ```bash
 # 1. mechanical first — do not spend a human pass on these
-python3 scripts/bloat_check.py --base origin/main
-python3 scripts/decide.py check
-python3 scripts/audit_ci_gates.py .
+100x bloat_check --base origin/main
+100x decide check
+100x audit_ci_gates .
 
 # 2. generate the scoped checklist (names the files per question)
-python3 scripts/review_scope.py --base origin/main
+100x review_scope --base origin/main
 
 # 3. the stack-specific failure modes
 ls reviewers/
 grep -A20 "Common AI failure modes" reviewers/<stack>.md
 
 # 4. after implementing, re-audit the spec
-python3 scripts/plan_feature.py audit specs/<feature>
-python3 scripts/design_drift.py specs/<feature>/spec.md <code-dir>
+100x plan_feature audit specs/<feature>
+100x design_drift specs/<feature>/spec.md <code-dir>
 
 # 5. R7/R6 on a multi-step or concurrent flow only — skip for a single-function diff
-python3 scripts/diagram_from_code.py <code-dir> --kind sequence --level 3
+100x diagram_from_code <code-dir> --kind sequence --level 3
 
 # 6. confirm the uncovered list has not changed under you
-python3 scripts/run_evals.py | sed -n '/KNOWN GAPS/,$p'
+100x run_evals | sed -n '/KNOWN GAPS/,$p'
 ```
 
 ## Failure modes

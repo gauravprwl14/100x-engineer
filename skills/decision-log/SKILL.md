@@ -46,56 +46,56 @@ record carries:
 
 1. Record a decision when the choice was not forced. One command, at the time you make
    it — not later, when the reasoning has evaporated.
-   *Enforced by:* `python3 scripts/decide.py new "<title>" --affects "<glob>"`
+   *Enforced by:* `100x decide new "<title>" --affects "<glob>"`
 
 2. Every assumption needs a verification command. An assumption nobody can test is a
    belief, and it will never be revisited.
-   *Enforced by:* `python3 scripts/decide.py verify` reports unverifiable assumptions
+   *Enforced by:* `100x decide verify` reports unverifiable assumptions
    explicitly rather than skipping them
 
 3. Every assumption needs a `revisit_when`. Without it nothing will ever prompt a
    re-check.
-   *Enforced by:* `python3 scripts/decide.py lint`
+   *Enforced by:* `100x decide lint`
 
 4. Never edit an accepted decision in place. Supersede it with a new record and set
    `supersedes`, so the history of the reasoning survives.
    *Enforced by:* review
 
 5. Check for an existing decision before changing code it governs.
-   *Enforced by:* `python3 scripts/decide.py trace <path>`
+   *Enforced by:* `100x decide trace <path>`
 
 6. Re-verify assumptions and check drift before shipping. A decision whose governed
    code moved underneath it needs re-reading, not just re-running.
-   *Enforced by:* `python3 scripts/decide.py verify && python3 scripts/decide.py drift`
+   *Enforced by:* `100x decide verify && 100x decide drift`
 
 7. Record what the decision does **not** handle. An empty gaps table claims you thought
    of everything.
-   *Enforced by:* `python3 scripts/decide.py lint` warns on an empty gaps table
+   *Enforced by:* `100x decide lint` warns on an empty gaps table
 
 8. Keep the index generated, never hand-maintained.
-   *Enforced by:* `python3 scripts/decide.py index`
+   *Enforced by:* `100x decide index`
 
 ## Verify
 
 ```bash
 # record a decision at the moment you make it
-python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
+100x decide new "Session strategy" --affects "src/auth/**" --tag auth
 #   then fill: options with why_not, assumptions with verify + revisit_when, gaps
 
 # the record must be complete enough to re-evaluate later
-python3 scripts/decide.py lint       # >=2 options, why_not, falsifiable assumptions
+100x decide lint       # >=2 options, why_not, falsifiable assumptions
 
 # do past assumptions still hold? (runs each assumption's own command)
-python3 scripts/decide.py verify
+100x decide verify
 
 # has governed code moved since the decision, or is a revisit overdue?
-python3 scripts/decide.py drift
+100x decide drift
 
 # which decision governs this file?
-python3 scripts/decide.py trace src/auth/session.ts
+100x decide trace src/auth/session.ts
 
 # everything, for CI
-python3 scripts/decide.py check      # lint + index + drift, exits non-zero on problems
+100x decide check      # lint + index + drift, exits non-zero on problems
 ```
 
 Records live in `decisions/` in **your** repo (resolved from the git root, not the

@@ -52,9 +52,9 @@ in the diff.
 1. Identify the stack from repo signals, then read that reviewer's
    `## Common AI failure modes` section before writing code in it. If the diff is
    in a stack you don't know well, orient first:
-   `python3 scripts/diagram_from_code.py <dir> --kind sequence --level 1` (≤12
+   `100x diagram_from_code <dir> --kind sequence --level 1` (≤12
    nodes) before reading source linearly.
-   *Enforced by:* `python3 scripts/stack_audit.py .` (reports the detected stacks)
+   *Enforced by:* `100x stack_audit .` (reports the detected stacks)
 
 2. Apply the reviewer's `## Blocking rules`. Each is a runnable check or a yes/no
    question, never an adjective.
@@ -62,7 +62,7 @@ in the diff.
 
 3. Use the reviewer's `## Approach selection` default rather than deriving one. These are
    the recurring choices, already answered with the factor that would change the answer.
-   *Enforced by:* `python3 scripts/decide.py lint` when you depart from a default
+   *Enforced by:* `100x decide lint` when you depart from a default
 
 4. Walk the reviewer's `## Edge cases routinely missed` against the diff. These are
    stack-specific and are not in the generic edge-case catalogue.
@@ -79,23 +79,23 @@ in the diff.
 
 ```bash
 # what stacks are actually here?
-python3 scripts/stack_audit.py .
+100x stack_audit .
 
 # orient before reviewing an unfamiliar diff (rule 1): L1 first, L2 if you'll
 # actually touch the code, not just review it
-python3 scripts/diagram_from_code.py <dir> --kind sequence --level 1
-python3 scripts/diagram_from_code.py <dir> --kind sequence --level 2
+100x diagram_from_code <dir> --kind sequence --level 1
+100x diagram_from_code <dir> --kind sequence --level 2
 
 # read only the relevant reviewer's failure modes
 ls reviewers/
 sed -n '/## Common AI failure modes/,/## Edge cases/p' reviewers/<stack>.md
 
 # run that stack's checks, bound to the code being shipped
-python3 scripts/verified.py --name typecheck -- <the reviewer's typecheck command>
-python3 scripts/verified.py --name test      -- <the reviewer's test command>
+100x verified --name typecheck -- <the reviewer's typecheck command>
+100x verified --name test      -- <the reviewer's test command>
 
 # then the generic pass for what no tool catches
-python3 scripts/review_scope.py --base origin/main
+100x review_scope --base origin/main
 ```
 
 ## Failure modes

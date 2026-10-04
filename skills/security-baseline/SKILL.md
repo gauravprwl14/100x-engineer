@@ -50,7 +50,7 @@ for CNCF-tier infrastructure.
 
 3. SHA-pin any GitHub Action in a workflow that touches `secrets:` or publishes
    artifacts. A tag is mutable; whoever owns the action can change what runs.
-   *Enforced by:* `python3 scripts/audit_ci_gates.py --pins`
+   *Enforced by:* `100x audit_ci_gates --pins`
 
 4. Turn every bug and crash repro into a committed test input on the day it is found.
    *Enforced by:* the repro file living in the test suite, replayed by the normal
@@ -68,7 +68,7 @@ for CNCF-tier infrastructure.
 7. Test authorization with multiple personas, not one. Assert that role A **cannot**
    reach role B's data — a negative assertion, not just a positive one. For a
    nontrivial permission model, draw it before you write the tests:
-   `python3 scripts/diagram_from_code.py <dir> --kind flow --level 2` shows who can
+   `100x diagram_from_code <dir> --kind flow --level 2` shows who can
    reach what without inferring it from scattered middleware.
    *Enforced by:* per-role test cases in the test suite
 
@@ -78,16 +78,16 @@ for CNCF-tier infrastructure.
 
 9. Verify your security checks actually gate. A scanner behind
    `continue-on-error: true` is a reporting tool, not a control.
-   *Enforced by:* `python3 scripts/audit_ci_gates.py`
+   *Enforced by:* `100x audit_ci_gates`
 
 ## Verify
 
 ```bash
 # posture snapshot (~1s each)
-python3 scripts/stack_audit.py .                    # SECURITY.md, dependabot, CODEOWNERS
-python3 scripts/audit_ci_gates.py --pins .          # action SHA-pinning ratio
-python3 scripts/audit_ci_gates.py .                 # do the security gates actually gate?
-python3 scripts/audit_agent_config.py .             # agent-config supply-chain surface
+100x stack_audit .                    # SECURITY.md, dependabot, CODEOWNERS
+100x audit_ci_gates --pins .          # action SHA-pinning ratio
+100x audit_ci_gates .                 # do the security gates actually gate?
+100x audit_agent_config .             # agent-config supply-chain surface
 
 # dependency vulnerability sweep -- use what your stack has
 npm audit --audit-level=high
@@ -99,7 +99,7 @@ cargo audit
 git log --all --full-history -p | grep -nE '(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY)' | head
 
 # bind the security checks to the code being shipped
-python3 scripts/verified.py --name audit -- npm audit --audit-level=high
+100x verified --name audit -- npm audit --audit-level=high
 ```
 
 ## Failure modes
@@ -141,7 +141,7 @@ If you're auditing a repo you did not write rather than your own,
 `untrusted-agent-config` is the matching skill — different threat model, same
 "trust nothing that auto-loads" instinct. Log any threshold you picked rather than
 inherited (cooldown length, SAST rule set, disclosure SLA) with
-`python3 scripts/decide.py new "<the choice>" --affects "<glob>"`.
+`100x decide new "<the choice>" --affects "<glob>"`.
 
 Deleted since the last pass: a rule requiring external-effect calls to route
 through a single wrapper. Real testability advice, but it is not a security

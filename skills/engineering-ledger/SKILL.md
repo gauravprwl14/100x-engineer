@@ -56,17 +56,17 @@ matter.
 ## Rules
 
 1. Record at the moment of the decision, not later. Reasoning evaporates within days.
-   *Enforced by:* `python3 scripts/decide.py new` / `scripts/rca.py new`
+   *Enforced by:* `100x decide new` / `scripts/rca.py new`
 
 2. Every record needs a stable id and a date. Both come from the scaffolding tools —
    do not hand-create record files.
-   *Enforced by:* `python3 scripts/ledger.py index` (records without a parseable id
+   *Enforced by:* `100x ledger index` (records without a parseable id
    surface as unattached)
 
 3. Attach every record to a feature, via `links.feature`, a tag matching a spec
    directory, or an `affects` glob. An unattached record is findable by id and
    invisible by feature.
-   *Enforced by:* `python3 scripts/ledger.py map` lists unattached records separately
+   *Enforced by:* `100x ledger map` lists unattached records separately
 
 4. Never hand-edit a generated index. `ledger/INDEX.md` and `ledger/MAP.md` are
    outputs.
@@ -74,32 +74,32 @@ matter.
    overwrites them
 
 5. Shard before a directory becomes unbrowsable, not after.
-   *Enforced by:* `python3 scripts/ledger.py gaps` warns past 40 records per directory
+   *Enforced by:* `100x ledger gaps` warns past 40 records per directory
 
 6. Search the ledger before asking a human or re-deriving an answer.
-   *Enforced by:* `python3 scripts/ledger.py find <term>`
+   *Enforced by:* `100x ledger find <term>`
 
 7. Run the linkage audit in CI so gaps surface while the context is fresh.
-   *Enforced by:* `python3 scripts/ledger.py check`
+   *Enforced by:* `100x ledger check`
 
 ## Verify
 
 ```bash
 # regenerate both indexes and audit linkage (this is the CI command)
-python3 scripts/ledger.py check
+100x ledger check
 
 # individually
-python3 scripts/ledger.py index      # ledger/INDEX.md — every record by type
-python3 scripts/ledger.py map        # ledger/MAP.md  — feature x record-type matrix
-python3 scripts/ledger.py gaps       # specs with no decision, PRDs with no spec, ...
+100x ledger index      # ledger/INDEX.md — every record by type
+100x ledger map        # ledger/MAP.md  — feature x record-type matrix
+100x ledger gaps       # specs with no decision, PRDs with no spec, ...
 
 # retrieval
-python3 scripts/ledger.py find "session"       # across ids, titles and bodies
-python3 scripts/decide.py trace src/auth/x.ts  # which decision governs this file
-python3 scripts/ledger.py stats                 # volume per month, sharding threshold
+100x ledger find "session"       # across ids, titles and bodies
+100x decide trace src/auth/x.ts  # which decision governs this file
+100x ledger stats                 # volume per month, sharding threshold
 
 # growth management (ids stay stable; links keep working)
-python3 scripts/ledger.py shard
+100x ledger shard
 ```
 
 ## Failure modes

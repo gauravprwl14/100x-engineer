@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Single entry point for every plugin tool: `100x <tool> [args]` runs scripts/<tool>.py.
+# Claude Code puts a plugin's bin/ on the Bash PATH while the plugin is enabled, so this
+# resolves in any project; a relative `python3 scripts/x.py` only resolves inside this repo.
+set -euo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
+SCRIPTS="$ROOT/scripts"
+
+list_tools() {
+  # Research-pipeline scripts start with a digit and helpers with an underscore;
+  # neither is a user-facing tool.
+  for f in "$SCRIPTS"/[a-z]*.py; do basename "$f" .py; done
+}
+
+if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "list" ]; then
+  echo "usage: 100x <tool> [args...]   (plugin root: $ROOT)"
+  echo "tools:"
+  list_tools | sed 's/^/  /'
+  [ $# -eq 0 ] && exit 2
+  exit 0
+fi
+
+tool="$1"; shift
+if [ "$tool" = "root" ]; then echo "$ROOT"; exit 0; fi
+if ! [[ "$tool" =~ ^[a-z][a-z0-9_]*$ ]] || [ ! -f "$SCRIPTS/$tool.py" ]; then
+  echo "100x: unknown tool '$tool' — run '100x list'" >&2
+  exit 2
+fi
+command -v python3 >/dev/null 2>&1 || { echo "100x: python3 is required" >&2; exit 127; }
+exec python3 "$SCRIPTS/$tool.py" "$@"

@@ -87,7 +87,7 @@ working merge queue would have caught. The YAML was present. The gate was not.
    *Enforced by:* a required repro field in the issue template
 
 9. Record rejected proposals, not just accepted ones — and prefer this plugin's own
-   `python3 scripts/decide.py new` over a bespoke ADR template, since a rejected
+   `100x decide new` over a bespoke ADR template, since a rejected
    option is exactly what `decide.py trace` needs later. An ADR directory containing
    only approved decisions loses the reasoning that matters most.
    *Enforced by:* convention
@@ -115,8 +115,8 @@ mkdir -p .github && cat > .github/PULL_REQUEST_TEMPLATE.md <<'MD'
 MD
 
 # audit what you actually have
-python3 scripts/stack_audit.py .                 # CODEOWNERS, SECURITY.md, CI presence
-python3 scripts/audit_ci_gates.py .              # gates that cannot fail
+100x stack_audit .                 # CODEOWNERS, SECURITY.md, CI presence
+100x audit_ci_gates .              # gates that cannot fail
 grep -cvE '^\s*(#|$)' .github/CODEOWNERS         # CODEOWNERS specificity floor
 
 # confirm required checks are real, not just configured
@@ -158,8 +158,8 @@ This skill rejects:
 
 ## Next
 
-For the decision log this rule 9 points at, retrieval is `python3 scripts/ledger.py
-find "<term>"` or `python3 scripts/decide.py trace <path>`. Once merge mechanics are
+For the decision log this rule 9 points at, retrieval is `100x ledger
+find "<term>"` or `100x decide trace <path>`. Once merge mechanics are
 in place, `verification-gate` is what actually blocks a bad merge at commit time;
 this skill only builds the surrounding process. Writing the instruction file itself
 is `agent-instructions`, a different skill.

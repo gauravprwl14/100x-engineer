@@ -44,11 +44,11 @@ Two documents drift. One does not.
 
 1. Name **one command** that proves a change works. This is the most common rule in
    the corpus (30+ repos) and the highest-value line in the file.
-   *Enforced by:* `python3 scripts/check_agents_md.py` (required check)
+   *Enforced by:* `100x check_agents_md` (required check)
 
 2. Demand scoped diffs: no drive-by refactors, reformatting, or unrelated dependency
    bumps.
-   *Enforced by:* `python3 scripts/check_agents_md.py` (required check)
+   *Enforced by:* `100x check_agents_md` (required check)
 
 3. Tag every rule by how it is enforced — a lint rule id, or human review. An
    untagged rule is indistinguishable from a wish.
@@ -56,40 +56,40 @@ Two documents drift. One does not.
 
 4. Use numbers, not adjectives. "Keep PRs small" is unenforceable; ">500 lines or
    >10 files" is.
-   *Enforced by:* `python3 scripts/check_agents_md.py` numeric-budget check
+   *Enforced by:* `100x check_agents_md` numeric-budget check
 
 5. Forbid hand-editing generated files, and name the regeneration command.
-   *Enforced by:* `python3 scripts/check_agents_md.py` generated-code check
+   *Enforced by:* `100x check_agents_md` generated-code check
 
 6. State that the narrowest check runs first. A fast first gate is the one that
    actually gets run.
-   *Enforced by:* `python3 scripts/check_agents_md.py` narrowest-check check
+   *Enforced by:* `100x check_agents_md` narrowest-check check
 
 7. Defer to authoritative docs instead of duplicating them. Copied details drift.
-   *Enforced by:* `python3 scripts/check_agents_md.py` deference check
+   *Enforced by:* `100x check_agents_md` deference check
 
 8. Ban process narration and AI attribution in commits, PR bodies and comments — no
    discarded alternatives, no tool-usage logs, no co-author footers.
-   *Enforced by:* `python3 scripts/check_agents_md.py` attribution check
+   *Enforced by:* `100x check_agents_md` attribution check
 
 9. In a monorepo, say that the closest `AGENTS.md` wins locally.
-   *Enforced by:* `python3 scripts/check_agents_md.py` nested-override check
+   *Enforced by:* `100x check_agents_md` nested-override check
 
 10. Remember the file is untrusted input to anyone who clones you. Do not put
     secrets, egress commands, or review-steering instructions in it.
-    *Enforced by:* `python3 scripts/audit_agent_config.py .`
+    *Enforced by:* `100x audit_agent_config .`
 
 ## Verify
 
 ```bash
 # check a file against the 12 measured corpus patterns (~0.2s)
-python3 scripts/check_agents_md.py .
+100x check_agents_md .
 
 # confirm CLAUDE.md is a pointer rather than a second document
 cat CLAUDE.md          # expect a one-line @AGENTS.md reference
 
 # audit your own file the way someone cloning you would
-python3 scripts/audit_agent_config.py .
+100x audit_agent_config .
 
 # the rules are only real if the commands in them run
 bash -c "$(grep -A3 '```bash' AGENTS.md | sed -n '2p')"

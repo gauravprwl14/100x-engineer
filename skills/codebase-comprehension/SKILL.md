@@ -41,13 +41,13 @@ overhead on a trivial read is how process gets abandoned.
 Follow this order. Do not start at step 4 because the file "looks interesting" —
 that is exactly the file whose neighbors you do not yet know matter.
 
-1. **Entry points.** `python3 scripts/repo_map.py <root>` — orientation summary:
+1. **Entry points.** `100x repo_map <root>` — orientation summary:
    stacks, entry points (route decorators, `main`, CLI registration, exported
    handlers), the most-connected files, test-to-source ratio, and which docs exist.
    Open the entry point it names, not the file that sounds central.
 2. **Data flow.** From the entry point, follow one request or call all the way
    through — trace calls and assignments, not files in alphabetical order.
-   `python3 scripts/repo_map.py <root> --symbol <Name>` jumps from an identifier to
+   `100x repo_map <root> --symbol <Name>` jumps from an identifier to
    its definition and every file that references it, instead of grepping blind.
 3. **Boundaries.** Name every boundary the flow crosses before reading implementation
    detail inside any one of them — network call, DB, queue, auth check, external
@@ -76,11 +76,11 @@ slower and less reliable.
 - **CODEOWNERS** (`.github/CODEOWNERS`, `CODEOWNERS`) — who to ask when the history
   does not explain it. Absent in many repos (this one included); say so rather than
   guessing an owner.
-- **`python3 scripts/decide.py trace <path>`** — which recorded decision, if any,
+- **`100x decide trace <path>`** — which recorded decision, if any,
   governs this file. A shape with an ADR behind it is a decision; a shape with none
   might be one nobody wrote down, or might be nothing — both are worth knowing before
   you propose changing it.
-- **`python3 scripts/ledger.py find <term>`** — search past decisions, specs, RCAs and
+- **`100x ledger find <term>`** — search past decisions, specs, RCAs and
   reviews before re-deriving an answer someone already worked out
   (`skills/engineering-ledger`).
 
@@ -102,7 +102,7 @@ picture. Do not hand-build a second diagramming path in this skill; that tool ow
 2. Run `repo_map.py` before reading any file by hand. It is cheaper than exploring
    blind and it is deterministic, so two people orienting on the same repo get the
    same starting point.
-   *Enforced by:* `python3 scripts/repo_map.py <root>`
+   *Enforced by:* `100x repo_map <root>`
 
 3. State every finding as a claim with `file:line` evidence, tagged **verified by
    reading code** or **inferred**. An inferred claim presented as fact is the
@@ -111,11 +111,11 @@ picture. Do not hand-build a second diagramming path in this skill; that tool ow
 
 4. Check the repo's own evidence (AGENTS.md, tests, `git log -S`/`--follow`,
    CODEOWNERS, `decide.py trace`) before concluding a shape is accidental or wrong.
-   *Enforced by:* `python3 scripts/decide.py trace <path>`
+   *Enforced by:* `100x decide trace <path>`
 
 5. Generate the diagram rather than writing a prose walkthrough, once the rough flow
    is known.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <path> --kind sequence --level 1`
+   *Enforced by:* `100x diagram_from_code <path> --kind sequence --level 1`
 
 6. Stop when you can state the inputs, outputs, failure modes, and the one thing most
    likely to break — not when you have read every file the flow touches.
@@ -125,27 +125,27 @@ picture. Do not hand-build a second diagramming path in this skill; that tool ow
    repeat the investigation — `decide.py new` if it is a decision worth tracking,
    otherwise search first with `ledger.py find` so you are not re-deriving a past
    answer.
-   *Enforced by:* `python3 scripts/ledger.py find "<topic>"`
+   *Enforced by:* `100x ledger find "<topic>"`
 
 ## Verify
 
 ```bash
 # 1. orientation — entry points, most-connected files, docs worth reading (~1s)
-python3 scripts/repo_map.py <root>
+100x repo_map <root>
 
 # 2. trace a specific symbol: definition + every referencing file (~1s)
-python3 scripts/repo_map.py <root> --symbol <Name>
+100x repo_map <root> --symbol <Name>
 
 # 3. why is it shaped this way (~1s each; both need a git repo -- say so if absent)
 git log -S<symbol> --oneline -- <root>
 git log --follow --oneline <path>
 
 # 4. is there a decision or a ledger entry behind this shape already (~1s)
-python3 scripts/decide.py trace <path>
-python3 scripts/ledger.py find "<topic>"
+100x decide trace <path>
+100x ledger find "<topic>"
 
 # 5. the primary comprehension artifact, once the rough flow is known
-python3 scripts/diagram_from_code.py <path> --kind sequence --level 1
+100x diagram_from_code <path> --kind sequence --level 1
 ```
 
 ## Failure modes

@@ -67,7 +67,7 @@ the 76th-99th percentile on a slow phone and a congested network.
 2. Every image ships `width`/`height`, `fill` (with a sized container), or
    `aspect-ratio` — no exceptions. Reserve the space before the image arrives,
    or CLS is guaranteed once it loads.
-   *Enforced by:* `python3 scripts/a11y_check.py --only img-no-dimensions`
+   *Enforced by:* `100x a11y_check --only img-no-dimensions`
 
 3. Load eagerly only the one element that is actually the LCP candidate, and
    lazy-load everything else. Next.js 16 deprecated `priority` in favour of
@@ -122,7 +122,7 @@ script can fully replace.
 
 ```bash
 # mechanical: CLS risk from undimensioned images (shared with the a11y checker)
-python3 scripts/a11y_check.py --only img-no-dimensions --base origin/main
+100x a11y_check --only img-no-dimensions --base origin/main
 
 # client-JS-per-route -- the number that shows a 'use client' boundary crept up
 npx next build 2>&1 | grep -A 20 "Route (app)"

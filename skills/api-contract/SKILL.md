@@ -126,7 +126,7 @@ function call with no external or cross-service consumer.
 ```bash
 # ~1s: unsafe DB migrations underneath the response (destructive+additive in one
 # migration, nullable without default) -- NOT a wire-format check
-python3 scripts/schema_check.py --base origin/main --strict
+100x schema_check --base origin/main --strict
 
 # wire-format contract diff -- use whichever this repo actually emits
 git diff --stat origin/main -- '*.proto' 'openapi*.yaml' 'openapi*.json' '*.graphql'
@@ -182,7 +182,7 @@ This skill rejects:
 If the field or shape in question is a schema decision more than an API one —
 an exposed internal id, a nullable field standing in for a status enum — read
 `data-modeling` next; rule 12 here is the seam between the two skills. Log a
-versioning or deprecation decision with `python3 scripts/decide.py new`. Run
+versioning or deprecation decision with `100x decide new`. Run
 `bloat_check.py` and `design_drift.py` as usual while implementing (see
 `feature-planning`).
 

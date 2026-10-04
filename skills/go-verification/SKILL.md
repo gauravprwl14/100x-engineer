@@ -76,7 +76,7 @@ from other ecosystems. `make verify` chaining independent sub-checks appears in
 6. If your project has a house rule about which packages may be imported, encode it
    in `depguard` rather than a CONTRIBUTING paragraph, and log the ban as a decision
    so the next person knows it was chosen, not defaulted:
-   `python3 scripts/decide.py new "Ban <import path>" --affects ".golangci.yml"`.
+   `100x decide new "Ban <import path>" --affects ".golangci.yml"`.
    *Enforced by:* `depguard` rules in `.golangci.yml`
 
 7. Wrap errors with `%w` and compare with `errors.Is`/`errors.As`. Do not compare
@@ -109,11 +109,11 @@ go test -race -count=1 ./...     # -count=1 defeats the test cache
 go build ./...
 
 # project state vs the corpus baseline
-python3 scripts/stack_audit.py .
-python3 scripts/audit_ci_gates.py .
+100x stack_audit .
+100x audit_ci_gates .
 
 # bind the checks to the code being shipped
-python3 scripts/verified.py --name test -- go test -race ./...
+100x verified --name test -- go test -race ./...
 ```
 
 `gofmt -l .` exits 0 even when it lists files, so in CI assert on empty output:

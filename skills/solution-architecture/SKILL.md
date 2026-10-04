@@ -39,29 +39,29 @@ warns about, one layer up.
 1. Frame the problem before proposing solutions: name who has it, what they do
    today, and give "better" a number and a way to measure it. A PRD nobody can
    evaluate in six months was decoration.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>`
+   *Enforced by:* `100x prd audit prds/<name>`
 
 2. State constraints — team size and skills, existing stack, deadline, budget,
    compliance, what cannot change — before scoring options, not after picking one
    and rationalizing it.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>` (rejects placeholder
+   *Enforced by:* `100x prd audit prds/<name>` (rejects placeholder
    constraint cells)
 
 3. Score every option, **always including do-nothing / the smallest possible
    change**, on the `approach-selection` rubric (reversibility x3, blast radius x3,
    moving parts x2, already-in-use x2, exit cost x1, fit x1). Cross-reference that
    skill's weights and tie-breaks rather than re-deriving them here.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>` (>=2 options, every
+   *Enforced by:* `100x prd audit prds/<name>` (>=2 options, every
    option — including the winner — needs a genuine con)
 
 4. Name the recommendation's single deciding factor, and the observation that
    would change it. "Best overall" is not a deciding factor; it means the options
    were not actually compared.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>`
+   *Enforced by:* `100x prd audit prds/<name>`
 
 5. Score every risk likelihood x impact and give it a mitigation. A risk with no
    mitigation is a worry someone wrote down, not a plan.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>`
+   *Enforced by:* `100x prd audit prds/<name>`
 
 6. Phase the plan: what ships first, what risky assumption it proves, and the kill
    criteria if it fails. Phase 1 is the smallest slice that tests the riskiest
@@ -75,18 +75,18 @@ warns about, one layer up.
    slower to check than the picture. `check_diagrams.py` validates a diagram that
    is there (right type, level budget respected, no placeholder content) — it
    does not fail a PRD for having none; presence is on the reviewer.
-   *Enforced by:* `python3 scripts/check_diagrams.py prds/<name>/prd.md` (validates
+   *Enforced by:* `100x check_diagrams prds/<name>/prd.md` (validates
    content) + review (presence)
 
 7. State what is explicitly out of scope, same discipline as `feature-planning`
    rule 3: out-of-scope is what turns a gap into a decision.
-   *Enforced by:* `python3 scripts/prd.py audit prds/<name>`
+   *Enforced by:* `100x prd audit prds/<name>`
 
 8. Before treating a PRD as final, check it against the spec it feeds: a PRD
    requirement with no spec section is a dropped requirement; a spec section
    implementing nothing in the PRD is undocumented scope creep; a success metric
    with no verification step is a promise nobody wired a check for.
-   *Enforced by:* `python3 scripts/prd.py align prds/<name> specs/<name>`
+   *Enforced by:* `100x prd align prds/<name> specs/<name>`
 
 9. Fit the design to the codebase that exists. A rewrite is justified only when
    **all** of: the current design provably cannot meet a stated constraint (not
@@ -137,27 +137,27 @@ down:
 
 ```bash
 # scaffold: pre-answers the do-nothing option, seeds 3 universal risks
-python3 scripts/prd.py new login --kind auth --stack nestjs
+100x prd new login --kind auth --stack nestjs
 
 # fill sections 1-7, 9-10, then gate on completeness (~10s)
-python3 scripts/prd.py audit prds/login
+100x prd audit prds/login
 
 # the PRD's requirements and metrics must trace into the spec that implements them
-python3 scripts/plan_feature.py new login --kind auth,crud --stack nestjs
-python3 scripts/prd.py align prds/login specs/login       # both directions, ~5s
+100x plan_feature new login --kind auth,crud --stack nestjs
+100x prd align prds/login specs/login       # both directions, ~5s
 
 # a level-1 diagram (<=12 nodes) of the recommended shape — orientation for a
 # reviewer who was not in the room when the options were scored; generate from
 # the closest existing analog, or hand-author + check_diagrams.py if none exists
-python3 scripts/diagram_from_code.py examples/login/src --kind deps --level 1
+100x diagram_from_code examples/login/src --kind deps --level 1
 
 # gate: does the PRD actually contain that diagram, not just describe one in prose
-python3 scripts/check_diagrams.py prds/login/prd.md
+100x check_diagrams prds/login/prd.md
 
 # feature-level choices inside the recommendation still need their own record
-python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
+100x decide new "Session strategy" --affects "src/auth/**" --tag auth
 
-python3 scripts/prd.py index    # prds/INDEX.md
+100x prd index    # prds/INDEX.md
 ```
 
 Reverse-engineering an existing system: `repo_map.py` plus

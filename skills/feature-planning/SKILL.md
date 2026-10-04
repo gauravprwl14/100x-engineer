@@ -47,13 +47,13 @@ Three rules, because a process that asks twenty questions is worse than no proce
 
 1. Scaffold the spec before writing code. The spec seeds the edge cases and decisions
    for the feature kind, so nothing has to be remembered.
-   *Enforced by:* `python3 scripts/plan_feature.py new <name> --kind <kinds>`
+   *Enforced by:* `100x plan_feature new <name> --kind <kinds>`
 
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
    or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
    implementation starts only once this audit passes. That gate is the whole
    mechanism: without it "we'll decide later" silently becomes "nobody decided".
-   *Enforced by:* `python3 scripts/plan_feature.py audit specs/<name>` exits non-zero
+   *Enforced by:* `100x plan_feature audit specs/<name>` exits non-zero
 
 3. State what is explicitly out of scope. Out-of-scope is what turns a gap into a
    decision — and it is where the edge cases you are deliberately not handling go.
@@ -64,12 +64,12 @@ Three rules, because a process that asks twenty questions is worse than no proce
    deliberately" from "nobody looked at it." When a decision has no default, or
    the default's deciding factor does not hold here, hand off to
    `approach-selection` to compare the options, then record its result as the ADR.
-   *Enforced by:* `python3 scripts/decide.py new` + the audit's ADR-reference check
+   *Enforced by:* `100x decide new` + the audit's ADR-reference check
 
 5. Generate a level-2 sequence diagram (≤30 nodes, implementer detail) of the planned
    flow before implementing, and keep it in the spec as the design of record — prose
    describing a multi-step flow hides exactly the branch that turns out to matter.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <analogous-existing-code> --kind sequence --level 2` for an existing analog to model the flow on, or a hand-authored `mermaid` block validated by `python3 scripts/check_diagrams.py specs/<name>/spec.md` when there is no code yet to generate from
+   *Enforced by:* `100x diagram_from_code <analogous-existing-code> --kind sequence --level 2` for an existing analog to model the flow on, or a hand-authored `mermaid` block validated by `100x check_diagrams specs/<name>/spec.md` when there is no code yet to generate from
 
 6. Name the verification command per check, with the gate it runs at. A verification
    plan with no commands is a wish.
@@ -83,34 +83,34 @@ Three rules, because a process that asks twenty questions is worse than no proce
 
 ```bash
 # 1. scaffold: seeds edge cases + pre-answered decisions for the feature kind
-python3 scripts/plan_feature.py new login --kind auth,crud --stack nestjs
+100x plan_feature new login --kind auth,crud --stack nestjs
 #    kinds: universal auth crud payment upload search realtime migration integration
 #    + infra: cache queue cron webhook third-party-api multi-tenancy pii-compliance
 #      batch-job file-storage notification
 #    combine them — a checkout feature is `payment,crud`
 
 # 2. fill sections 1-4 and 8-9, resolve every edge case, then gate on it
-python3 scripts/plan_feature.py audit specs/login      # exits 1 until complete
+100x plan_feature audit specs/login      # exits 1 until complete
 
 # 3. record decisions that depart from the default
-python3 scripts/decide.py new "Session strategy" --affects "src/auth/**" --tag auth
+100x decide new "Session strategy" --affects "src/auth/**" --tag auth
 
 # 3b. embed the level-2 flow diagram in the spec before writing code -- generate
 #     from an analogous existing flow if one exists (there is no new code yet to
 #     generate this feature's own diagram from); example login/auth flow:
-python3 scripts/diagram_from_code.py examples/login/src --kind sequence --level 2
+100x diagram_from_code examples/login/src --kind sequence --level 2
 #     no analog: hand-author the mermaid block instead, then validate it
-python3 scripts/check_diagrams.py specs/login/spec.md
+100x check_diagrams specs/login/spec.md
 
 # 4. during and after implementation
-python3 scripts/design_drift.py specs/login/spec.md src/auth   # design vs code
-python3 scripts/decide.py verify                                # assumptions still hold
-python3 scripts/decide.py drift                                 # decisions gone stale
-python3 scripts/bloat_check.py --base origin/main               # AI bloat in the diff
+100x design_drift specs/login/spec.md src/auth   # design vs code
+100x decide verify                                # assumptions still hold
+100x decide drift                                 # decisions gone stale
+100x bloat_check --base origin/main               # AI bloat in the diff
 
 # 5. the indexes, regenerated not hand-maintained
-python3 scripts/plan_feature.py index    # specs/INDEX.md
-python3 scripts/decide.py index          # decisions/INDEX.md
+100x plan_feature index    # specs/INDEX.md
+100x decide index          # decisions/INDEX.md
 ```
 
 A complete worked example is in `specs/login/` — 31 seeded edge cases resolved as
@@ -139,7 +139,7 @@ This skill rejects:
   in the `test` column actually exercises the edge case. That gap is real and is why
   rule 2 requires a *named* test a reviewer can open.
 - Six defect classes are not detectable by any check here — see
-  `python3 scripts/run_evals.py`, which lists them explicitly. Route those to a
+  `100x run_evals`, which lists them explicitly. Route those to a
   scoped review pass.
 
 ## Next

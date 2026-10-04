@@ -36,51 +36,51 @@ abandoned.
 
 1. Reproduce before theorizing. An RCA built on an assumed mechanism instead of a
    reproduced one is fiction with a timeline attached.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects a record with no reproduction
+   *Enforced by:* `100x rca lint` rejects a record with no reproduction
 
 2. Separate **symptom** (what was observed), **trigger** (the immediate event),
    **mechanism** (how the trigger produces the symptom, step by step), and **root
    cause** (the underlying condition) into four distinct statements. A root cause
    that restates the symptom means the chain never actually ran.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects a root cause identical to the
+   *Enforced by:* `100x rca lint` rejects a root cause identical to the
    symptom, and rejects a missing symptom/trigger/mechanism
 
 3. Reconstruct the timeline before theorizing about mechanism — `git log`,
    `git bisect`, deploy times. Cross-check whether a decision's assumption stopped
    holding underneath the code first.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects no timeline;
-   `python3 scripts/decide.py drift` finds decisions whose governed code moved
+   *Enforced by:* `100x rca lint` rejects no timeline;
+   `100x decide drift` finds decisions whose governed code moved
 
 4. State each hypothesis with what evidence would **falsify** it, before going to get
    that evidence. Reject the first-plausible-cause trap — the first story that fits
    the symptom is rarely checked against alternatives, only confirmed.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects hypotheses with no stated
+   *Enforced by:* `100x rca lint` rejects hypotheses with no stated
    falsifying evidence
 
 5. Run five-whys honestly, with a stated stop condition — and know its failure mode:
    it forces a single causal chain, when real incidents usually have several
    conditions acting together. That is what rule 6 is for.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects fewer than 2 real levels
+   *Enforced by:* `100x rca lint` rejects fewer than 2 real levels
 
 5b. Once the mechanism is hypothesized, draw it as a level-3 diagram — every branch,
    numbered steps, the actual path including the one that failed — instead of
    describing it in prose. "It calls A then B" hides exactly the branch where B was
    skipped; a diagram with a missing arrow does not.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <affected-dir> --kind sequence --level 3`
+   *Enforced by:* `100x diagram_from_code <affected-dir> --kind sequence --level 3`
 
 6. Record contributing factors distinct from the root cause. An empty section here
    claims the root cause acted completely alone, which is rarely true — the "why
    did this reach production" conditions (missing test coverage, a reviewer
    unfamiliar with the flow, an alert that didn't fire) belong here, not folded into
    the root cause itself.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects an empty contributing-factors
+   *Enforced by:* `100x rca lint` rejects an empty contributing-factors
    list
 
 7. The output must name the regression test, and state whether an existing
    decision's assumption was violated. These are what an RCA is actually for —
    everything above exists to earn them honestly.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects no regression-test reference;
-   `python3 scripts/rca.py link RCA-000X --decision ADR-000Y` records the assumption
+   *Enforced by:* `100x rca lint` rejects no regression-test reference;
+   `100x rca link RCA-000X --decision ADR-000Y` records the assumption
    check
 
 8. Keep it blameless. Name the process gap, not the person — "no gate catches a
@@ -92,24 +92,24 @@ abandoned.
 
 ```bash
 # open a record for the incident
-python3 scripts/rca.py new "Sessions dropped after deploy" --affects "src/auth/**" --severity high
+100x rca new "Sessions dropped after deploy" --affects "src/auth/**" --severity high
 
 # reconstruct the timeline
 git log --oneline --since="2026-09-28" -- src/auth
 git bisect start; git bisect bad HEAD; git bisect good <last-known-good-sha>
-python3 scripts/decide.py drift          # decisions whose governed code moved since recorded
+100x decide drift          # decisions whose governed code moved since recorded
 
 # draw the real path once the mechanism is hypothesized
-python3 scripts/diagram_from_code.py src/auth --kind sequence --level 3
+100x diagram_from_code src/auth --kind sequence --level 3
 
 # completeness gate — the point of this skill
-python3 scripts/rca.py lint
+100x rca lint
 
 # if an existing decision's assumption turns out to be the cause
-python3 scripts/rca.py link RCA-0001 --decision ADR-0001 --assumption A1
+100x rca link RCA-0001 --decision ADR-0001 --assumption A1
 
 # regenerate the index, never hand-maintained
-python3 scripts/rca.py index
+100x rca index
 
 # then fix it, with the RCA's regression_test as the failing test bug-fix commits first
 ```

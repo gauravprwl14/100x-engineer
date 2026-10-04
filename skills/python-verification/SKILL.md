@@ -49,7 +49,7 @@ Twelve repos have no type-checker config at all — including `django/django` an
 
 2. Pick one type checker and let it gate, or do not have one. A configured-but-
    advisory checker is the worst of both: it costs setup and catches nothing.
-   *Enforced by:* `python3 scripts/audit_ci_gates.py` (flags `continue-on-error`,
+   *Enforced by:* `100x audit_ci_gates` (flags `continue-on-error`,
    `set +e`, `|| true`, `--exit-zero`, `.disabled` workflows)
 
 3. Curate ruff rules with `extend-select`; do not `select = ["ALL"]`. Corpus repos
@@ -66,7 +66,7 @@ Twelve repos have no type-checker config at all — including `django/django` an
 
 6. Scope type checking honestly, and log the scope as a decision. Blocking on a
    named subset beats claiming repo-wide coverage behind a 90-path ignore list (the
-   `PrefectHQ/prefect` pattern): `python3 scripts/decide.py new "mypy --strict scope"
+   `PrefectHQ/prefect` pattern): `100x decide new "mypy --strict scope"
    --affects "<package>/**"`.
    *Enforced by:* `uv run mypy --strict <package>/` on named packages, in CI
 
@@ -77,16 +77,16 @@ Twelve repos have no type-checker config at all — including `django/django` an
 
 8. Do not trust a coverage percentage as proof tests can fail. Mutation testing is
    confirmed absent from all 50 repos — so the whole corpus shares this blind spot.
-   *Enforced by:* `python3 scripts/bloat_check.py --only assertionless`
+   *Enforced by:* `100x bloat_check --only assertionless`
 
 ## Verify
 
 ```bash
 # what this project has vs the corpus baseline (~1s)
-python3 scripts/stack_audit.py .
+100x stack_audit .
 
 # do this project's gates actually gate? (~1s) -- run this before trusting green CI
-python3 scripts/audit_ci_gates.py .
+100x audit_ci_gates .
 
 # minimum viable: the modal corpus stack
 uv sync
@@ -103,7 +103,7 @@ uv run pytest --doctest-modules -n auto
 uv run pytest --cov=<package> --cov-fail-under=<N>
 
 # bind whichever of the above you rely on to the code being shipped
-python3 scripts/verified.py --name test -- uv run pytest
+100x verified --name test -- uv run pytest
 ```
 
 Runtime: minimum stack is seconds on a small repo. `mypy --strict` on a large

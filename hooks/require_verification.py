@@ -104,7 +104,7 @@ def main():
         return deny(
             f"`{action}` blocked: no verification receipt at {RECEIPT}.\n\n"
             f"Run the project's checks through the receipt wrapper first, e.g.\n"
-            f"    python3 scripts/verified.py --name test -- <your test command>\n\n"
+            f"    100x verified --name test -- <your test command>\n\n"
             f"Then retry. To bypass deliberately, append [skip-verify] to the commit "
             f"message or set VERIFY_SKIP=1.")
     try:
