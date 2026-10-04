@@ -46,6 +46,40 @@ lint_bad 'items["api.rate-limit"]["from_tier"] = "prototype"' "class B is tier-d
 lint_bad 'items["api.rate-limit"]["risk"] = "extreme"' "risk must be one of" "invalid risk"
 lint_bad 'items["api.rate-limit"]["blocks_ready"] = True' "only to class C" "blocks_ready on a non-C item"
 
+lint_bad 'items["api.contract-checked-in"]["class"] = "A"' "class A is always-on, so from_tier must be 'prototype'" "class A starting after prototype"
+lint_bad 'del d["version"]' '"version" must be a positive integer' "missing version"
+lint_bad 'd["schema"] = 2' '"schema" must be 1' "wrong schema"
+lint_bad 'd["_pending_owner_skills"] = []' "unknown top-level key '_pending_owner_skills'" "stale top-level key"
+lint_bad 'items["api.rate-limit"]["since"] = 5' "since must be an integer from 1 to the catalogue version" "since beyond the version"
+lint_bad 'items["api.rate-limit"]["deprecated"] = "yes"' "deprecated must be true or false" "non-boolean deprecated"
+lint_bad 'items["web-ui.reflow-320"]["enforced_by"] = "100x ui_baseline_check --only fixed-width + vibes"' "'vibes' is neither" "a bad part of a compound enforced_by"
+
+# ids are never deleted or renamed: compared with the committed catalogue
+mutate 'd["items"] = [i for i in d["items"] if i["id"] != "api.rate-limit"]'
+python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
+rc_is 1 $? "lint rejects: an id deleted since the committed catalogue"
+has "id(s) removed since the committed catalogue: api.rate-limit"
+mutate 'items["api.rate-limit"]["id"] = "api.rate-limits"'
+python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
+rc_is 1 $? "lint rejects: a renamed id"
+mutate 'items["api.rate-limit"]["deprecated"] = True; d["version"] = 2; d["items"].append(dict(items["api.ssrf-guard"], id="api.new-rule", since=2))'
+python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
+rc_is 0 $? "lint accepts a deprecated item and a newer item with since (no false positive)"
+python3 - "$ROOT" <<'PY' && ok "show/applicable: deprecated items and items past a pin are filtered" || bad "applicable filtering"
+import sys; sys.path.insert(0, sys.argv[1] + "/scripts")
+import baseline as bl
+d = bl.load()
+d["version"] = 2
+d["items"].append(dict(next(i for i in d["items"] if i["id"] == "api.ssrf-guard"), id="api.new-rule", since=2))
+next(i for i in d["items"] if i["id"] == "api.authz-every-endpoint")["deprecated"] = True
+ids = lambda **k: {i["id"] for i in bl.applicable(["api"], "small", "none", d, **k)}
+assert "api.new-rule" in ids() and "api.new-rule" not in ids(upto=1)
+assert "api.authz-every-endpoint" not in ids() and "api.authz-every-endpoint" in ids(deprecated=True)
+PY
+python3 "$B" show --work web-ui --tier prototype --json >"$OUT"
+has '"version": 1'
+has "100x ui_baseline_check --only fixed-width + review"
+
 # no false positive: a pending skill and an external command are accepted
 mutate 'items["api.rate-limit"]["owner_skill"] = "qa-strategy"; items["api.rate-limit"]["enforced_by"] = "npx k6 run load.js"'
 python3 "$B" lint --file "$TMP/b.json" >"$OUT" 2>&1
