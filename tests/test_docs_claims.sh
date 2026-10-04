@@ -17,25 +17,34 @@ import pathlib, re, subprocess, sys
 root, docs = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 errs = []
 
-tools = [l.strip() for l in subprocess.run([str(root / "bin" / "100x"), "list"],
-         capture_output=True, text=True).stdout.splitlines() if l.startswith("  ")]
+def listed(*args):
+    out = subprocess.run([str(root / "bin" / "100x"), "list", *args],
+                         capture_output=True, text=True).stdout
+    return [l.strip() for l in out.splitlines() if l.startswith("  ")]
+# "tools" counts every tool (`100x list --all`); `100x list` hides the maintainer ones.
+tools = listed("--all")
+maintainer = sorted(set(tools) - set(listed()))
 real = {
     "skills": len(list(root.glob("skills/*/SKILL.md"))),
     "agents": len(list(root.glob("agents/*.md"))),
     "tools": len(tools),
+    "maintainer tools": len(maintainer),
     "test suites": len(list(root.glob("tests/test_*.sh"))),
 }
 readme = (docs / "README.md").read_text()
 agents_md = (docs / "AGENTS.md").read_text()
 
 # The stable sentence forms: "**40 skills**" in both files; README also says
-# "the 40 skills", "the 38 command-line tools" and "# 37 test suites".
+# "the 40 skills", "the 38 command-line tools", "the 5 maintainer tools" and
+# "# 37 test suites".
 forms = {
     "README.md": (readme, {"skills": [r"\*\*(\d+) skills\*\*", r"the (\d+) skills"],
                            "agents": [r"\*\*(\d+) agents\*\*", r"the (\d+) specialists"],
                            "tools": [r"\*\*(\d+) tools\*\*", r"the (\d+) command-line tools"],
+                           "maintainer tools": [r"the (\d+) maintainer tools"],
                            "test suites": [r"# (\d+) test suites"]}),
-    "AGENTS.md": (agents_md, {k: [r"\*\*(\d+) " + k + r"\*\*"] for k in real}),
+    "AGENTS.md": (agents_md, {k: [r"\*\*(\d+) " + k + r"\*\*"] for k in real
+                              if k != "maintainer tools"}),
 }
 for fname, (text, pats) in forms.items():
     for what, rxs in pats.items():
@@ -64,6 +73,11 @@ named = set(re.findall(r"`([a-z][a-z0-9_]+)`", readme.split("## Tools", 1)[-1].s
 missing = [t for t in tools if t not in named]
 if missing:
     errs.append(f"README.md tools table is missing: {', '.join(missing)}")
+# ...and the maintainer row names exactly the tools `100x list` hides.
+row = re.search(r"^\| maintainer only[^|]*\|([^\n]*)\|$", readme, re.M)
+in_row = sorted(re.findall(r"`([a-z][a-z0-9_]+)`", row.group(1))) if row else None
+if in_row != maintainer:
+    errs.append(f"README.md 'maintainer only' tools row {in_row} != hidden tools {maintainer}")
 
 # Assertion totals go stale on every new test, so neither file states one, and the
 # prove-it section states no suite count either (the checked sentence above does).
@@ -98,6 +112,8 @@ mutate "README wrong tool count"      README.md 're.sub(r"the (\d+) command-line
 mutate "README drops the skill claim" README.md 're.sub(r"\*\*(\d+) skills\*\*", "many skills", t)'
 mutate "README phase count off by one" README.md 're.sub(r"^\| 4 when broken \| (\d+) \|", lambda m: "| 4 when broken | %d |" % (int(m.group(1))+1), t, count=1, flags=re.M)'
 mutate "README tool missing from table" README.md 't.replace("`vet_dep`, ", "", 1)'
+mutate "README wrong maintainer count" README.md 're.sub(r"the (\d+) maintainer tools", lambda m: "the %d maintainer tools" % (int(m.group(1))+1), t, count=1)'
+mutate "README maintainer row drifts" README.md 're.sub(r"(^\| maintainer only[^|]*\|[^\n]*?)`run_evals`, ", r"\1", t, count=1, flags=re.M)'
 mutate "AGENTS.md stale assertion total" AGENTS.md 't.replace("## Prove-it command\n", "## Prove-it command\n\nFour suites (68 assertions).\n", 1)'
 
 echo

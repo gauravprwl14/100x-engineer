@@ -9,7 +9,7 @@ block "done" without evidence.
 | # | section | what it answers |
 |---|---------|-----------------|
 | 1 | [How a request flows](#how-a-request-flows) | what happens between typing a request and "done" |
-| 2 | [Start here](#start-here) | install, update, and the one command to type |
+| 2 | [Start here](#start-here) | install from GitHub, update, and the one command to type |
 | 3 | [Agents](#agents) | the 11 specialists, and which of them write code |
 | 4 | [Skills by phase](#skills-by-phase) | the 40 skills, grouped by when they fire |
 | 5 | [Gates by phase](#gates-by-phase) | the check that blocks each phase, and how |
@@ -20,6 +20,7 @@ block "done" without evidence.
 | 10 | [Tools](#tools) | the 38 command-line tools, grouped |
 | 11 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
 | 12 | [Research](#research) | the evidence every skill cites |
+| 13 | [Migrating from 0.1](#migrating-from-01) | the new install id, renamed skills and changed commands |
 
 ## How a request flows
 
@@ -41,13 +42,26 @@ Small tasks skip the agents: the router decides when one person in one session i
 
 | step | do | note |
 |---|---|---|
-| 1. install | `claude plugin marketplace add ./100x-engineer` then `claude plugin install 100x-engineer@100x-local` | needs `python3` 3.9 or newer on the PATH; no other dependency |
-| 1b. update | `claude plugin update 100x-engineer@100x-local` | `.claude-plugin/plugin.json`'s `version` pins installs, so an update only arrives after that version is bumped |
+| 1. install | in a session: `/plugin marketplace add gauravprwl14/100x-engineer`, then `/plugin install 100x-engineer@100x-engineer` | needs `git`, and `python3` 3.9 or newer on the PATH; no other dependency |
+| | or from a shell: `claude plugin marketplace add gauravprwl14/100x-engineer`, then `claude plugin install 100x-engineer@100x-engineer` | the install id is `<plugin>@<marketplace>`, and both are named `100x-engineer` |
+| 1b. update | `claude plugin marketplace update 100x-engineer`, then `claude plugin update 100x-engineer@100x-engineer` (in a session: `/plugin marketplace update 100x-engineer`) | see the update table below |
 | 2. ask | `/100x-engineer:100x <what you want>` | e.g. `/100x-engineer:100x Add tagging to albums` |
 | 3. answer | at most five questions, each with a recommendation | or reply "go with your recommendations" |
 
 Everything after that is chosen for you. `docs/PLAYBOOK.md` lists the commands behind
 each task if you want one step rather than the pipeline.
+
+Upgrading from 0.1? The marketplace was renamed from `100x-local` to `100x-engineer`,
+which changes the install id: see [Migrating from 0.1](#migrating-from-01).
+
+How updates reach you:
+
+| situation | what happens |
+|---|---|
+| installed from GitHub | you keep the cached copy until `.claude-plugin/plugin.json`'s `version` changes; new commits without a version bump do not arrive |
+| background auto-update | off by default; turn it on under **Marketplaces** in `/plugin`, select `100x-engineer`, **Enable auto-update** |
+| hold one branch or tag | add the marketplace as `gauravprwl14/100x-engineer#<ref>`; `marketplace update` then follows that ref only |
+| installed from a local clone (`claude plugin marketplace add ./100x-engineer`) | files load in place: edits apply at the next session or after `/reload-plugins`, and `version` plays no part |
 
 ## Agents
 
@@ -207,18 +221,20 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**38 tools**, each run as `100x <tool>` (`100x list` prints them). Python standard library
-and git only.
+**38 tools**, each run as `100x <tool>`. Python standard library and git only.
+`100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
+which check this plugin itself rather than your code. Every tool runs by name either way.
 
 | group | tools |
 |---|---|
 | plan and trace | `prd`, `plan_feature`, `baseline`, `decide`, `testplan`, `ledger`, `check_index` |
-| orchestrate | `plan_dag`, `agent_report`, `agents_lint` |
-| verify | `verified`, `verify_fingerprint`, `audit_ci_gates`, `run_evals` |
+| orchestrate | `plan_dag`, `agent_report` |
+| verify | `verified`, `verify_fingerprint`, `audit_ci_gates` |
 | diff checks | `bloat_check`, `craft_check`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
 | design and diagrams | `design_drift`, `diagram_from_code`, `check_diagrams` |
-| understand and learn | `repo_map`, `stack_audit`, `rca`, `learn` |
-| this repo's own discipline | `lint_skills`, `skill_triggers`, `check_claims`, `check_agents_md`, `audit_agent_config`, `safety_audit` |
+| understand and learn | `repo_map`, `stack_audit`, `rca`, `learn`, `check_claims` |
+| agent configuration | `check_agents_md`, `audit_agent_config` |
+| maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
 bash tests/run_all.sh    # 39 test suites, the seeded-defect evals and the lints
@@ -282,6 +298,53 @@ lint, type, security and agent configurations were read and counted.
 `2x` skills ecosystem, agent-instruction corpus, agent-tool internals, anti-bloat tooling ·
 `3x` per-cluster deep reads: JS, Python, Go, mobile, agentic, security, anti-bloat,
 governance.
+
+## Migrating from 0.1
+
+Three things break silently if you upgrade without reading this: the install id, skill
+names, and the commands your notes or `CLAUDE.md` call. The full list is in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+**1. The install id changed.** The marketplace is now named `100x-engineer`, so the plugin
+is `100x-engineer@100x-engineer`, not `100x-engineer@100x-local`. Re-register it from a
+shell:
+
+```bash
+claude plugin marketplace remove 100x-local        # also uninstalls 100x-engineer@100x-local
+claude plugin marketplace add gauravprwl14/100x-engineer
+claude plugin install 100x-engineer@100x-engineer
+```
+
+| if you | then also |
+|---|---|
+| installed with `--scope project` | run the add and install with `--scope project`, and commit the `.claude/settings.json` they rewrite |
+| listed `100x-engineer@100x-local` under `enabledPlugins` in any settings file by hand | change the key to `100x-engineer@100x-engineer`; the `renames` map Claude Code reads covers plugin names, not a marketplace name |
+| worry about losing state | removing the marketplace deletes the plugin's saved options and data directory, and this plugin keeps neither: receipts live in your repository and the signing key in `~/.config/100x/` |
+
+**2. Seven skills became three.** References by the old name (`/100x-engineer:scoped-review`,
+an agent's `skills:` list, a note in `CLAUDE.md`) stop resolving, and a subagent's unknown
+`skills:` entry is skipped with only a debug-log warning.
+
+| 0.1 skill | 0.2 skill |
+|---|---|
+| `decision-log` | `decision-records` |
+| `engineering-ledger` | `decision-records` |
+| `typescript-verification` | `language-verification` |
+| `python-verification` | `language-verification` |
+| `go-verification` | `language-verification` |
+| `scoped-review` | `diff-review` |
+| `reviewing-others-code` | `diff-review` |
+
+**3. Commands changed.**
+
+| 0.1 | 0.2 |
+|---|---|
+| `python3 scripts/<tool>.py …` (worked only inside this repo) | `100x <tool> …` from any project |
+| `plan_feature new` and `prd new` fell back to a default tier when `--scale` was omitted | `--tier <prototype\|small\|growth\|scale>` is required; `--scale` is still accepted as its alias |
+| records at the top level (`specs/`, `decisions/`, …) | under the records root, `docs/engineering/` by default; set it with `.100x.json` `{"root": "<dir>"}`. Existing top-level collections keep working, with a warning |
+| `.claude/verification-policy.json` `"required_checks": ["test"]` | `"required_checks": {"test": "npm test"}`; the list form still works but checks labels, not commands |
+| an unsigned receipt from 0.1 | rejected; re-run your checks through `100x verified` once |
+| no policy file: the gate was silent | no policy file: the gate warns; `{"mode": "off"}` silences it |
 
 ## Licence
 

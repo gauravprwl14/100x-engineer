@@ -1,14 +1,13 @@
 {
-  "name": "100x-local",
+  "name": "100x-engineer",
   "owner": {
     "name": "gauravprwl14"
   },
+  "description": "The 100x-engineer plugin: a /100x router, eleven specialist agents, built-in engineering defaults and verification gates that turn a plain-English request into planned, tested and verified work. Python stdlib and git only.",
   "plugins": [
     {
       "name": "100x-engineer",
-      "source": "./",
-      "description": "Verification-enforced engineering skills derived from 20k+ star production repositories."
+      "source": "./"
     }
-  ],
-  "description": "Verification-enforced engineering skills derived from a measured 223-repo corpus of production software. Every rule ships a runnable check."
+  ]
 }

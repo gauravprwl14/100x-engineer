@@ -13,16 +13,33 @@ done
 ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 SCRIPTS="$ROOT/scripts"
 
-list_tools() {
+# Tools that check this plugin itself (its skills, agents, evals and safety boundary),
+# not the user's project. Hidden from `100x list`, shown by `100x list --all`, and still
+# runnable by name. tests/test_bin_dispatch.sh fails if a name here stops being a tool.
+MAINTAINER_TOOLS=" agents_lint lint_skills run_evals safety_audit skill_triggers "
+
+all_tools() {
   # Research-pipeline scripts start with a digit and helpers with an underscore;
-  # neither is a user-facing tool.
+  # neither is a tool.
   for f in "$SCRIPTS"/[a-z]*.py; do basename "$f" .py; done
+}
+
+user_tools() {
+  all_tools | while read -r t; do
+    case "$MAINTAINER_TOOLS" in *" $t "*) ;; *) echo "$t" ;; esac
+  done
 }
 
 if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "list" ]; then
   echo "usage: 100x <tool> [args...]   (plugin root: $ROOT)"
-  echo "tools:"
-  list_tools | sed 's/^/  /'
+  if [ "${1:-}" = "list" ] && [ "${2:-}" = "--all" ]; then
+    echo "tools (including maintainer tools):"
+    all_tools | sed 's/^/  /'
+  else
+    echo "tools:"
+    user_tools | sed 's/^/  /'
+    echo "maintainer tools that check this plugin itself: 100x list --all"
+  fi
   [ $# -eq 0 ] && exit 2
   exit 0
 fi
