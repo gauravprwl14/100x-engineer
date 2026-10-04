@@ -2,10 +2,12 @@
 name: project-learning
 description: >
   Use when a mistake cost time, a non-obvious convention was discovered, or a failure
-  mode was hit that will recur — recording it as a project lesson that outlives the
-  conversation. Also use before editing an unfamiliar file, to recall lessons already
-  recorded for it. Not for recording a design choice with alternatives, which is
-  decision-log, and not for a production incident, which is root-cause-analysis.
+  mode was hit that will recur — recording it as a git-tracked project lesson shared
+  with the team, deciding whether it belongs in personal auto-memory, lessons/, or
+  AGENTS.md, and promoting a stable lesson into AGENTS.md. Also use before editing a
+  file, to run `100x learn relevant <file>` and recall lessons recorded for it. Not
+  for a design choice with alternatives (decision-log) or a production incident
+  (root-cause-analysis).
 ---
 
 # Project learning
@@ -26,6 +28,27 @@ file you do not know well.
 **Do not fire when:** the thing is already recorded — in the code, in git history, in
 `CLAUDE.md`, or in an existing lesson. Duplicating what the repo already says makes the
 lesson store noise, and a noisy store stops being read.
+
+## Where it goes: the memory split
+
+```mermaid
+flowchart LR
+  F[something worth remembering] --> Q{who needs it?}
+  Q -->|only me: a personal preference| M[agent auto-memory<br/>per user, not committed]
+  Q -->|anyone touching this code| L[lessons/LESSON-NNNN.md<br/>git-tracked, reviewed, shared]
+  L -->|held long enough to be a standing rule| A[AGENTS.md section<br/>100x learn promote ID --yes]
+```
+
+| store | what goes there | example | written by |
+|---|---|---|---|
+| auto-memory | the user's own preferences, not facts about the code | "Gaurav wants plain-language explanations" | the agent's memory, never this plugin |
+| `lessons/` | project facts and gotchas any teammate or session would hit | "`make proto` reverts hand edits to `src/gen/`" | `100x learn add` |
+| `AGENTS.md` | a lesson that is stable and applies broadly enough to read every session | the same gotcha, after it keeps mattering | `100x learn promote <id> --yes` |
+
+A project fact kept in personal memory is invisible to the next teammate. A personal
+preference committed to `lessons/` puts one person's taste on the whole team. Promotion
+is the only path into `AGENTS.md`, so that file stays short and every line in it traces
+back to a lesson with a source.
 
 ## What a lesson is, and is not
 
@@ -58,8 +81,8 @@ a lesson.
    *Enforced by:* `100x learn lint` (rejects a vague preference with no
    observable trigger)
 
-5. Recall before editing an unfamiliar file. This is the half of the loop that pays —
-   writing lessons nobody reads is a diary.
+5. Before editing a file, run `100x learn relevant <file>` and apply what it returns.
+   This is the half of the loop that pays; writing lessons nobody reads is a diary.
    *Enforced by:* `100x learn relevant <path>`
 
 6. Do not record what the repo already records. Code structure, git history and
@@ -68,8 +91,16 @@ a lesson.
 
 7. Delete a lesson that stops being true. A stale lesson is worse than none, because it
    is trusted.
-   *Enforced by:* `100x learn lint` flags a lesson whose source path no
-   longer exists
+   *Enforced by:* `100x learn lint` rejects a lesson whose source path no longer exists
+
+8. Put personal preferences in the agent's auto-memory and project facts in `lessons/`,
+   never the reverse.
+   *Enforced by:* review
+
+9. Promote a lesson into `AGENTS.md` only through `learn promote`, which refuses a
+   lesson that fails lint, prints the exact snippet and target section, and writes only
+   with `--yes`. Review the printed snippet before confirming.
+   *Enforced by:* `100x learn promote <id>` (no write without `--yes`)
 
 ## Verify
 
@@ -79,12 +110,16 @@ a lesson.
   "Integration suite needs docker compose up db first; otherwise it fails with a DNS error" \
   --kind gotcha --affects "tests/integration/**" --source "tests/integration/conftest.py:14"
 
-# recall it — run this before editing an unfamiliar file
+# recall it — run this before editing a file with prior lessons
 100x learn relevant tests/integration/test_orders.py
+
+# a lesson that keeps mattering: show the AGENTS.md snippet, then write it
+100x learn promote LESSON-0001
+100x learn promote LESSON-0001 --yes
 
 # browse and audit
 100x learn list --kind gotcha
-100x learn lint          # no affects, no source, or vague preference
+100x learn lint          # no affects, no source, stale source path, vague preference
 100x learn index         # regenerates lessons/INDEX.md
 
 # lessons appear in the ledger alongside decisions and RCAs
@@ -108,7 +143,10 @@ This skill rejects:
   rejected options.
 - **A production incident** — that is `root-cause-analysis`, which also demands a
   timeline and a regression test.
-- **A lesson whose source file no longer exists**, flagged by `lint` as probably stale.
+- **A lesson whose source file no longer exists**, rejected by `lint` as stale.
+- **A hand-written `AGENTS.md` line with no lesson behind it**, when the same fact is
+  in `lessons/`: `promote` writes the snippet with its `(LESSON-NNNN)` id so the line
+  can be traced and re-verified.
 
 **Honest limitations:**
 - **Nothing forces recall.** `learn.py relevant` must be run; no hook injects lessons
@@ -116,9 +154,12 @@ This skill rejects:
   why rule 5 exists rather than a mechanism.
 - **Matching is glob-based.** A lesson tagged `src/auth/**` will not surface for a
   caller in `src/api/` that depends on it.
-- **This is not Claude Code's memory.** It is a project-local, git-tracked, reviewable
-  store that travels with the repository. Claude Code's own memory is per-user and
-  separate; this plugin does not write to it.
+- **This is not the agent's auto-memory.** It is a project-local, git-tracked,
+  reviewable store that travels with the repository. Auto-memory is per user; this
+  plugin never writes to it, and nothing mechanical stops a project fact from being
+  saved there instead (rule 8 is review only).
+- **Promotion is not automatic.** Nothing decides a lesson is "stable"; `promote`
+  checks only that it passes lint. Age and how often it mattered are the reviewer's call.
 
 ## Scale
 
@@ -127,6 +168,10 @@ the gotcha. At `small-team` the store becomes onboarding material. At `org` rule
 matters most: an unmaintained lesson store is trusted and wrong.
 
 ## Sources
+- The personal-memory / shared-lesson / AGENTS.md split and `learn promote`:
+  `SOURCE: original`. That instruction files are mostly canonical `AGENTS.md` files
+  with pointers, so one shared file is where standing rules belong:
+  `research/21-findings-agent-instruction-corpus.md`.
 - Lesson records use the same `json meta` fence as decisions and RCAs so `ledger.py`
   discovers them: `scripts/learn.py`, `scripts/ledger.py` — `SOURCE: original`.
 - The rule against storing what the repo already records is the memory discipline in

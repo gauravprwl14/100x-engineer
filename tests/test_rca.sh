@@ -20,6 +20,7 @@ echo x > f.txt; git add -A; git commit -qm init
 python3 "$ROOT/scripts/rca.py" new "Sessions dropped after deploy" --affects "src/auth/**" --severity high \
   >$OUT/rca.out 2>&1
 rc_is 0 $? "new: exits 0"
+has "recorded as SEV2"
 RECFILE=$(ls "$CONS"/rca/RCA-0001-*.md 2>/dev/null | head -1)
 [ -n "$RECFILE" ] && ok "new: record created in the consumer repo" || bad "new: record not created"
 [ ! -d "$ROOT/rca" ] && ok "new: did NOT write into the plugin dir" \
@@ -35,6 +36,10 @@ has "no hypotheses recorded"
 has "five-whys has 0 real level"
 has "contributing-factors section is empty"
 has "no regression test reference"
+has "impact.users_affected missing"
+has "no action items"
+grep -q '"severity": "SEV2"' "$RECFILE" && ok "new: legacy --severity high stored as the SEV2 enum" \
+  || bad "new: severity not normalised to the enum"
 
 # ---------- fill the record completely, in isolation, one violation removed at a time ----------
 fill_complete() {
@@ -52,9 +57,26 @@ meta["root_cause"] = "The SSO callback flow requires SameSite=Lax; nothing enfor
                       "tests that constraint in the auth module."
 meta["reproduction"]["command"] = "bash tests/repro_sso_samesite.sh"
 meta["reproduction"]["verified"] = True
+meta["severity"] = "SEV2"
+meta["status"] = "fixed"
+meta["impact"] = {"users_affected": 1200, "duration_minutes": 65,
+                  "data_impact": "none; sessions only",
+                  "revenue_or_sla_impact": "40% of the monthly login SLO error budget"}
 meta["timeline"] = [
-    {"when": "2026-09-28T14:02:00Z", "event": "deploy abc123 shipped the SameSite change"},
-    {"when": "2026-09-28T15:30:00Z", "event": "git bisect isolated the change to abc123"},
+    {"at": "2026-09-28T14:00:00Z", "type": "started", "event": "deploy abc123 shipped the SameSite change"},
+    {"at": "2026-09-28T14:05:00Z", "type": "detected", "event": "login error-rate alert fired"},
+    {"at": "2026-09-28T14:12:00+00:00", "type": "escalated", "event": "auth on-call paged"},
+    {"at": "2026-09-28T23:20:00+09:00", "type": "note", "event": "git bisect isolated abc123"},
+    {"at": "2026-09-28T14:35:00Z", "type": "mitigated", "event": "rolled back to the previous release"},
+    {"at": "2026-09-28T15:05:00Z", "type": "resolved", "event": "fix shipped with SameSite=Lax"},
+]
+meta["fault_tree"] = None
+meta["lucky"] = ["The deploy happened during low-traffic hours."]
+meta["action_items"] = [
+    {"what": "Add an end-to-end SSO redirect test to CI", "owner": "auth-team",
+     "due": "2026-10-15", "type": "prevent", "ticket": "AUTH-412"},
+    {"what": "Alert on login success rate below 95% for 3 minutes", "owner": "sre-oncall",
+     "due": "2026-10-08", "type": "detect", "ticket": "SRE-88"},
 ]
 meta["hypotheses"] = [
     {"id": "H1", "claim": "Redis session store lost data",
@@ -138,6 +160,107 @@ fill_complete; set_field 'meta["contributing_factors"] = []'
 python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects empty contributing-factors section"
 has "contributing-factors section is empty"
+
+# ---------- incident-standard fields ----------
+fill_complete; set_field 'meta["action_items"][0]["owner"] = ""'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an action item with no owner"
+has "has no owner"
+
+fill_complete; set_field 'del meta["action_items"][1]["due"]'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an action item with no due date"
+has "has no due date"
+
+fill_complete; set_field 'meta["action_items"][1]["due"] = "next sprint"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a due that is not YYYY-MM-DD"
+
+fill_complete; set_field 'meta["action_items"][0]["type"] = "fix"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an action item type outside prevent|detect|mitigate"
+has "not in ('prevent', 'detect', 'mitigate')"
+
+fill_complete; set_field 'del meta["action_items"][0]["type"]'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an action item with no type"
+
+fill_complete; set_field 'meta["action_items"] = []'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a record with no action items"
+
+fill_complete; set_field 'del meta["impact"]'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects missing impact"
+has "no impact recorded"
+
+fill_complete; set_field 'del meta["impact"]["revenue_or_sla_impact"]'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an impact with a missing field"
+has "impact.revenue_or_sla_impact missing"
+
+fill_complete; set_field 'meta["impact"]["duration_minutes"] = "about an hour"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a non-numeric impact duration"
+
+fill_complete; set_field 'meta["severity"] = "high"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a free-text severity"
+has "is free text"
+
+fill_complete; set_field 'meta["timeline"][1]["at"] = "2026-09-28T14:05:00"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a naive (timezone-less) timestamp"
+has "not ISO-8601 with a timezone"
+
+fill_complete; set_field 'meta["timeline"][1]["at"] = "Sept 28, 2pm"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a non-ISO timestamp"
+
+fill_complete; set_field 'meta["timeline"][2]["type"] = "panic"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects an untyped timeline event"
+
+fill_complete; set_field 'meta["timeline"] = [e for e in meta["timeline"] if e["type"] != "resolved"]'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects status fixed with no resolved event"
+has "no 'resolved' event"
+
+fill_complete; set_field 'meta["timeline"][4]["at"] = "2026-09-28T13:00:00Z"'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects mitigation before detection"
+has "timeline order is impossible"
+
+# fault tree may stand in for five whys when several causes combined
+fill_complete; set_field 'meta["five_whys"] = []; meta["fault_tree"] = {"event": "sessions dropped", "gate": "AND", "children": [{"event": "SameSite=Strict shipped"}, {"event": "no SSO e2e test"}]}'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 0 $? "lint: a fault tree with 2 leaf causes replaces five whys"
+fill_complete; set_field 'meta["five_whys"] = []; meta["fault_tree"] = {"event": "sessions dropped", "children": [{"event": "a"}, {"event": "b"}]}'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 1 $? "lint: rejects a fault-tree node with children but no AND/OR gate"
+has "is not AND/OR"
+
+# blameless language warns, never errors
+fill_complete; set_field 'meta["contributing_factors"].append("The engineer should have tested the SSO flow.")'
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+rc_is 0 $? "lint: blame phrasing is a warning, not an error"
+has "blame phrasing 'should have'"
+
+# durations: started 14:00, detected 14:05, mitigated 14:35, resolved 15:05 (UTC)
+fill_complete
+python3 "$ROOT/scripts/rca.py" durations RCA-0001 --json >$OUT/rca.out 2>&1
+rc_is 0 $? "durations: exits 0"
+python3 - "$OUT/rca.out" <<'PY' >$OUT/rca.chk 2>&1
+import json, sys
+d = json.load(open(sys.argv[1]))["RCA-0001"]
+assert d == {"time_to_detect": 5.0, "time_to_mitigate": 30.0, "time_to_resolve": 60.0,
+             "impact_window": 65.0}, d
+PY
+rc_is 0 $? "durations: detect 5m, mitigate 30m, resolve 60m, window 65m"
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
+has "time to mitigate 30m"
+no "blame phrasing"
+no "has no ticket"
 
 # restore a fully complete record for the rest of the suite
 fill_complete
