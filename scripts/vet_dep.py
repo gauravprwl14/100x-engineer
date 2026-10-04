@@ -364,12 +364,12 @@ def _toml_loads(text):
     try:
         import tomllib
         return tomllib.loads(text)
-    except ImportError:
+    except ImportError:  # fail-open: tomllib is 3.11+; fall through to tomli, then the stdlib reader
         pass
     try:
         import tomli
         return tomli.loads(text)
-    except ImportError:
+    except ImportError:  # fail-open: tomli is optional; fall through to the stdlib reader, which raises on what it cannot read
         pass
     return _minimal_pyproject(text)
 

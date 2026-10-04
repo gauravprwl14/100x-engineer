@@ -696,7 +696,7 @@ def main():
         try:
             if p.endswith(SCAN_EXT) and os.path.getsize(p) > MAX_FILE_BYTES:
                 too_big.append(p)
-        except OSError:
+        except OSError:  # fail-open: an unstat-able file is reported when the scan tries to read it
             pass
     if too_big:
         print(f"\n[ADVISORY] file-too-large")

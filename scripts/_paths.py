@@ -164,7 +164,7 @@ def safe_write_text(path, text, repo, origin="write"):
     except BaseException:
         try:
             os.unlink(tmp)
-        except OSError:
+        except OSError:  # fail-open: cleanup of our own temp file; the original error is re-raised below
             pass
         raise
     return real

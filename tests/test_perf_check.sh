@@ -62,6 +62,26 @@ expect 1 "n-plus-one: await in .map callback (js)" --only n-plus-one
 has "np_map.js"
 reset_diff
 
+mkdir -p tests
+cat > tests/viewports.spec.js << 'EOF'
+for (const width of [320, 768, 1280]) {
+  await page.setViewportSize({ width, height: 800 });
+  await page.goto('/');
+}
+EOF
+expect 0 "n-plus-one: a test stepping through viewports is not flagged" --only n-plus-one
+reset_diff
+
+cat > src/np_word.py << 'EOF'
+import re
+def scan(lines):
+    for line in lines:
+        if re.search(r"\bawait\b", line):
+            print(line)
+EOF
+expect 0 "n-plus-one: the word 'await' in a string inside a loop is not I/O" --only n-plus-one
+reset_diff
+
 # clean: pure compute loop, no I/O
 printf 'def total(items):\n    out = 0\n    for x in items:\n        out += x\n    return out\n' > src/clean_loop.py
 expect 0 "n-plus-one: pure compute loop is clean (py)" --only n-plus-one

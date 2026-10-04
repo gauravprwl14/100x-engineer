@@ -188,11 +188,17 @@ def find_js_loop_bodies(src):
         yield m.start(), args, body
 
 
+# A test that awaits inside a loop is usually stepping one page or fixture at a time on
+# purpose; the N+1 cost this rule targets is in request-serving code.
+TEST_FILE_RX = re.compile(r"(^|/)(tests?|__tests__|e2e)/|\.(spec|test)\.[cm]?[jt]sx?$"
+                          r"|(^|/)test_[^/]+\.py$|_test\.(py|go)$")
+
+
 def check_n_plus_one(added, mod, base):
     out = []
     for p in added + mod:
         ext = pathlib.Path(p).suffix
-        if ext not in CODE_EXT:
+        if ext not in CODE_EXT or TEST_FILE_RX.search(p):
             continue
         src = read(p)
         if src is None:
@@ -211,7 +217,9 @@ def check_n_plus_one(added, mod, base):
                 if not span_touched(node.lineno, node.end_lineno, touched):
                     continue
                 seg = ast.get_source_segment(src, node) or ""
-                if re.search(r"\bawait\b", seg):
+                # An Await node, not the word: a loop whose body merely contains the
+                # string "await" (a regex, a message) does no I/O per iteration.
+                if any(isinstance(n, ast.Await) for n in ast.walk(node)):
                     out.append((f"{p}:{node.lineno}",
                                 "await inside a loop -- sequential per-iteration "
                                 "I/O (N+1 shape); batch, prefetch, or gather instead"))

@@ -128,7 +128,7 @@ def actual_changes(cwd, base, exclude=()):
     for ex in exclude:
         try:
             paths.discard(str(pathlib.Path(ex).resolve().relative_to(top.resolve())))
-        except ValueError:
+        except ValueError:  # fail-open: an excluded path outside the worktree simply is not in the change set
             pass
     return sorted(paths), None
 

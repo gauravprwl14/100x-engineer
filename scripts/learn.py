@@ -120,7 +120,7 @@ def norm_path(path):
     if p.is_absolute():
         try:
             p = p.resolve().relative_to(ROOT.resolve())
-        except ValueError:
+        except ValueError:  # fail-open: a path outside the repo is kept as given and matched literally
             pass
     s = str(p).replace("\\", "/")
     return s[2:] if s.startswith("./") else s

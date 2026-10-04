@@ -310,7 +310,7 @@ def package_name(root, d, fileset):
             n = json.loads(read_text(root / d / "package.json") or "{}").get("name")
             if n:
                 return n
-        except ValueError:
+        except ValueError:  # fail-open: an unparsable package.json falls through to the next manifest kind
             pass
     if f"{d}/go.mod" in fileset:
         m = re.search(r"^module\s+(\S+)", read_text(root / d / "go.mod") or "", re.M)
