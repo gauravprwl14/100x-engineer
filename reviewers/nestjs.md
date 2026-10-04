@@ -9,7 +9,7 @@ human can answer yes/no. No adjectives. No "follow best practices".
 | # | section | what it answers | size |
 |---|---------|-----------------|------|
 | 1 | [Applies when](#applies-when) | the file/dependency signals that put this reviewer in scope | 4 lines |
-| 2 | [Blocking rules](#blocking-rules) | the rules that must hold, each with how it is checked | 9 lines |
+| 2 | [Blocking rules](#blocking-rules) | the rules that must hold (validation, auth, throttling, headers/CORS, shutdown, health), each with how it is checked | 14 lines |
 | 3 | [Common AI failure modes in this stack](#common-ai-failure-modes-in-this-stack) | **start here** — what LLMs specifically get wrong here, with a detection method for each | 15 lines |
 | 4 | [Edge cases routinely missed](#edge-cases-routinely-missed) | the scenarios this stack forgets, and the test that catches each | 13 lines |
 | 5 | [Approach selection](#approach-selection) | the recurring architectural choices, each with a DEFAULT so you are not asked | 12 lines |
@@ -30,6 +30,11 @@ human can answer yes/no. No adjectives. No "follow best practices".
 | 4 | `forwardRef()` usage has an inline comment explaining why, or a tracked ticket link | `grep -rn "forwardRef(" src --include=*.ts -B2 \| grep -c "//"` compared to `grep -rc "forwardRef("` — mismatch is a finding, not auto-fail | circular imports papering over a real layering mistake |
 | 5 | `tsc --noEmit` passes with the repo's own `tsconfig.json` (no widening of `strict`) | `npx tsc --noEmit -p tsconfig.json` exits 0 | type errors an LLM introduced silently pass `nest build`'s transpile-only mode |
 | 6 | No `catch` block that only logs and rethrows the original error without an `HttpException`/filter translation | review question: "does every `catch` either rethrow as an `HttpException` subtype, add context, or get handled by the global filter?" | 500s with framework-internal error shapes reaching clients |
+| 7 | Auth is deny-by-default: an auth guard is registered globally (`APP_GUARD`), and a route opts out only with an explicit `@Public()` decorator the guard reads via `Reflector` | `grep -rn "provide: APP_GUARD" src --include=*.module.ts` must list an auth guard; `grep -rn "@Public()" src` is the full, reviewable list of unauthenticated routes | a new controller shipped without `@UseGuards` is publicly reachable; per-route guards fail open by omission |
+| 8 | `@nestjs/throttler` is bound globally (`ThrottlerModule.forRoot` + `ThrottlerGuard` as `APP_GUARD`); any `@SkipThrottle()` carries a reason | `grep -rn "ThrottlerGuard" src --include=*.module.ts` non-empty; `grep -rn "@SkipThrottle" src` reviewed | credential stuffing and enumeration against login/reset endpoints at unbounded rate |
+| 9 | `helmet` is registered in `main.ts` before any other `app.use()` / route setup, and CORS is enabled with an explicit `origin` allowlist — never `enableCors()` with no options, `origin: true` or `'*'` on a credentialed API | `grep -n "helmet()" src/main.ts` non-empty; `grep -rnE "enableCors\(\s*\)\|origin:\s*(true\|'\*')" src` must return empty | missing security headers; any site can read authenticated responses from a browser session |
+| 10 | `app.enableShutdownHooks()` is called at bootstrap, and resources (DB pools, queue consumers) close in `onModuleDestroy`/`onApplicationShutdown` | `grep -n "enableShutdownHooks()" src/main.ts` non-empty | Nest's shutdown hooks are off by default, so `SIGTERM` in a rolling deploy drops in-flight requests and leaks connections (failure mode #2) |
+| 11 | A `@nestjs/terminus` health controller exposes a liveness route (process up) separate from a readiness route that checks real dependencies (`pingCheck` on the DB/queue) | `grep -rln "HealthCheckService" src` non-empty; review: does readiness call a dependency indicator, not return a constant `200`? | the orchestrator routes traffic to a pod that is up but cannot reach Postgres (failure mode #3) |
 
 ## Common AI failure modes in this stack
 | # | what the model does | why it looks right | detection | correct move |
@@ -103,6 +108,12 @@ npx jest --coverage --findRelatedTests $(git diff --name-only --diff-filter=ACM 
 grep -n "new ValidationPipe(" src/main.ts | grep -q "whitelist" || echo "FAIL: no whitelist:true on global ValidationPipe"
 grep -rn "@Body() .*: any\b" src/**/*.controller.ts && echo "FAIL: any-typed request body"
 grep -rln "APP_FILTER\|useGlobalFilters" src/*.module.ts src/main.ts | grep -q . || echo "FAIL: no global exception filter registered"
+grep -rn -A1 "provide: APP_GUARD" src --include='*.module.ts' | grep useClass | grep -qv Throttler || echo "FAIL: no global auth guard (rule 7)"
+grep -rqn "ThrottlerGuard" src --include='*.module.ts' || echo "FAIL: no global ThrottlerGuard (rule 8)"
+grep -qn "helmet()" src/main.ts || echo "FAIL: helmet not registered (rule 9)"
+grep -rnE "enableCors\(\s*\)|origin:\s*(true|'\*')" src && echo "FAIL: CORS without an origin allowlist (rule 9)"
+grep -qn "enableShutdownHooks()" src/main.ts || echo "FAIL: shutdown hooks not enabled (rule 10)"
+grep -rqln "HealthCheckService" src || echo "FAIL: no @nestjs/terminus health check (rule 11)"
 ```
 
 ```js
@@ -182,6 +193,7 @@ Nest app; `jest --coverage` full-repo is the slow one (budget 3-5 min) — alway
 - `novuhq/novu@HEAD:apps/api/src/exception-filter.ts` — `AllExceptionsFilter`, structured `ErrorDto`, fire-and-forget analytics write with explicit `.catch()`.
 - `novuhq/novu@HEAD:apps/api/src` — 28 `forwardRef(` call sites (grep).
 - `novuhq/novu@HEAD:apps/api/src/app/auth/auth.module.ts:14` — the only `@Global()` module in the app.
+- NestJS docs for blocking rules 7–11: global `APP_GUARD` + `@Public()` via `SetMetadata`/`Reflector.getAllAndOverride` (`docs.nestjs.com/recipes/passport`, "Enable authentication globally"); `ThrottlerModule.forRoot` + `ThrottlerGuard` as `APP_GUARD` (`docs.nestjs.com/security/rate-limiting`); "Helmet registered after a route doesn't apply to that route" (`docs.nestjs.com/security/helmet`); `enableCors()` takes a configuration object (`docs.nestjs.com/security/cors`); shutdown hooks "are disabled by default" and need `enableShutdownHooks()` (`docs.nestjs.com/fundamentals/lifecycle-events`); Terminus "provides readiness/liveness health checks", `gracefulShutdownTimeoutMs` (`docs.nestjs.com/recipes/terminus`).
 - `novuhq/novu@HEAD:apps/api/src/bootstrap.ts:186` — `app.enableShutdownHooks();`.
 - `novuhq/novu@HEAD:apps/api/src/app/health/health.controller.ts` — `@nestjs/terminus`-based health check module.
 - `novuhq/novu@HEAD:apps/api/src/app/shared/framework/idempotency.interceptor.ts`, wired at `apps/api/src/app.module.ts:53`.
