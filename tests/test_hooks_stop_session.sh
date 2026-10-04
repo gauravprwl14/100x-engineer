@@ -13,7 +13,6 @@ git init -q; git config user.email t@t; git config user.name t
 echo 'print("ok")' > pass_test.py
 echo 'x = 1' > app.py
 printf '{"required_checks": {"test": "python3 pass_test.py"}}\n' > .claude/verification-policy.json
-printf '.claude/verification-receipt.json\n' > .gitignore
 git add -A; git commit -qm init
 
 PASS=0; FAIL=0
@@ -48,6 +47,18 @@ echo new > notes.md; fresh
 expect none  "verified including a new file: allowed"
 git add -A; git commit -qm work
 expect none  "after committing verified work: allowed"
+[ -z "$(git status --porcelain --untracked-files=all)" ] && [ -f .git/100x/verification-receipt.json ] \
+  && ok "receipt is in the git directory, worktree clean" || bad "receipt is in the git directory, worktree clean"
+W="$TMP/linked"; git worktree add -q -b linked "$W" >/dev/null 2>&1
+echo 'x = 9' > "$W/app.py"
+expect block "linked worktree: unverified edit blocks" "$W"
+(cd "$W" && python3 "$ROOT/scripts/verified.py" --name test >/dev/null 2>&1)
+expect none  "linked worktree: verified in its own git dir, allowed" "$W"
+[ -f "$(cd "$W" && git rev-parse --absolute-git-dir)/100x/verification-receipt.json" ] \
+  && ok "linked worktree: receipt under .git/worktrees/<name>/" || bad "linked worktree receipt location"
+echo legacy > .claude/verification-receipt.json
+expect block "a legacy .claude receipt is content, not a receipt"
+rm .claude/verification-receipt.json
 printf '{"mode": "off"}\n' > .claude/verification-policy.json; git commit -qam off
 echo 'x = 4' > app.py
 expect none  "mode off: never blocks"

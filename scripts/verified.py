@@ -4,18 +4,29 @@ import datetime, hashlib, json, os, pathlib, shlex, subprocess, sys, tempfile, t
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "hooks"))
 from verify_fingerprint import fingerprint, repo_root
-from receipts import (POLICY, RECEIPT, RECEIPT_VERSION, GateError, load_key,
-                      load_policy, sign, signature_ok)
-from _paths import safe_write_text
+from receipts import (POLICY, RECEIPT_VERSION, GateError, legacy_note, load_key,
+                      load_policy, read_receipt, receipt_path, sign, signature_ok)
+from _paths import safe_write_text, show
 
 # Variables that change what a check runs without changing its command line, each able
 # to turn a real suite into a passing no-op: PYTEST_ADDOPTS (`--collect-only`,
 # `-k nothing`), PYTEST_PLUGINS (a plugin that skips everything), NODE_OPTIONS
 # (`--require` a preload that exits 0), GOFLAGS (`-run=^$`), and the two dynamic-loader
-# preloads. The receipt records the command, so a run shaped by any of these would
-# attest to something the command does not say.
+# preloads. BASH_ENV and ENV name a file a non-interactive bash (or sh) sources first,
+# which can `exit 0`. Any npm_config_*shell* variable (script-shell above all) swaps the
+# shell npm runs scripts with, so npm_config_script_shell=/usr/bin/true makes a failing
+# `npm test` pass. The receipt records the command, so a run shaped by any of these
+# would attest to something the command does not say.
 RUNNER_ENV = ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "NODE_OPTIONS", "GOFLAGS",
-              "LD_PRELOAD", "DYLD_INSERT_LIBRARIES")
+              "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "BASH_ENV", "ENV")
+
+
+def runner_env_set():
+    """The runner-altering variables that are set and non-empty."""
+    found = [v for v in RUNNER_ENV if os.environ.get(v)]
+    found += sorted(k for k, v in os.environ.items() if v and
+                    k.lower().startswith("npm_config_") and "shell" in k.lower())
+    return found
 
 USAGE = """100x verified -- run a check and write a signed, content-bound receipt
 
@@ -25,7 +36,9 @@ USAGE = """100x verified -- run a check and write a signed, content-bound receip
     --name LABEL   label for this check (default: "verify"); the receipt records one
                    entry per label, so `test`, `typecheck` and `lint` coexist
 
-Writes .claude/verification-receipt.json binding the command, its exit code and a
+Writes the receipt to the per-worktree git directory, at
+`git rev-parse --git-path 100x/verification-receipt.json` (never inside the worktree,
+so it is not a change and cannot be committed), binding the command, its exit code and a
 fingerprint of the exact file content that was verified, signed with HMAC-SHA256.
 The key is ~/.config/100x/receipt.key (created 0600 on first use; HUNDREDX_KEY_FILE
 overrides it). Any content change -- tracked, staged or a new untracked file --
@@ -42,8 +55,10 @@ Examples:
 
 Refuses (exit 2) when a variable that can turn a check into a no-op is set
 (PYTEST_ADDOPTS, PYTEST_PLUGINS, NODE_OPTIONS, GOFLAGS, LD_PRELOAD,
-DYLD_INSERT_LIBRARIES), when the command's program would come from a PATH entry inside
-the repository or a temp directory, or when .claude/ or the receipt is a symlink.
+DYLD_INSERT_LIBRARIES, BASH_ENV, ENV, npm_config_*shell*), when the command's program,
+or the interpreter its `#!` line names, would come from a PATH entry inside the
+repository or a temp directory, or when the git directory's 100x/ or the receipt is
+a symlink. A .claude/verification-receipt.json left by an older version is ignored.
 
 Exits with the wrapped command's exit code (2 on a usage or policy refusal)."""
 
@@ -68,12 +83,14 @@ def _temp_roots():
     return {os.path.realpath(p) for p in roots if p and os.path.isdir(p)}
 
 
-def _tool_managed(directory):
-    """A virtualenv's or node_modules' bin directory: on PATH inside the repository on
-    purpose, written by the package manager rather than committed."""
+def _tool_managed(directory, root):
+    """A virtualenv's or node_modules' bin directory inside the repository: on PATH on
+    purpose, written by the package manager rather than committed. Only inside the
+    repository: the test is by name, which anyone can recreate in a temp directory."""
     d = pathlib.Path(directory)
-    return (d.parent / "pyvenv.cfg").is_file() or \
-        (d.name == ".bin" and d.parent.name == "node_modules")
+    return _inside(directory, root) and (
+        (d.parent / "pyvenv.cfg").is_file() or
+        (d.name == ".bin" and d.parent.name == "node_modules"))
 
 
 def resolve_executable(name, root):
@@ -96,7 +113,7 @@ def resolve_executable(name, root):
         real = os.path.realpath(cand)
         where = "the repository" if _inside(real, root) else next(
             (t for t in temps if _inside(real, t)), None)
-        if where and not _tool_managed(directory):
+        if where and not _tool_managed(directory, root):
             raise Refusal(f"`{name}` resolves to {real}, inside {where}, ahead of the "
                           f"system's copy on PATH; a program there can fake a pass. "
                           f"Remove {entry or '.'} from PATH, or name the program by "
@@ -105,17 +122,55 @@ def resolve_executable(name, root):
     raise Refusal(f"`{name}` was not found on PATH")
 
 
+def _shebang_interpreter(path):
+    """The program a `#!/usr/bin/env [-S] NAME` line looks up on PATH, else None."""
+    try:
+        with open(path, "rb") as f:
+            line = f.readline(256)
+    except OSError:
+        return None
+    if not line.startswith(b"#!"):
+        return None
+    words = line[2:].decode("utf-8", "replace").split()
+    if not words or os.path.basename(words[0]) != "env":
+        return None
+    rest = [w for w in words[1:] if not w.startswith("-") and "=" not in w]
+    return rest[0] if rest else None
+
+
+def check_executable(name, root):
+    """resolve_executable, plus the same rule for the interpreter an `env` shebang
+    finds on PATH: `npm` is `#!/usr/bin/env node`, so a fake `node` first on PATH
+    decides the result while the receipt names the real npm."""
+    exe, real = resolve_executable(name, root)
+    interp = _shebang_interpreter(real)
+    if interp and os.sep not in interp:
+        resolve_executable(interp, root)
+    return exe, real
+
+
 def _check_receipt_path(root):
-    """The receipt goes under .claude/ at the git root. A committed symlink there
-    (`.claude -> ~/somewhere`, or the receipt itself pointing at a file) would redirect
-    the write, so both are refused before anything is written."""
-    claude = pathlib.Path(root) / ".claude"
-    for p in (claude, pathlib.Path(root) / RECEIPT):
-        if os.path.islink(p):
-            raise Refusal(f"{p} is a symlink; refusing to write the receipt through "
-                          f"it. Replace it with a real directory or file")
-    if claude.exists() and not _inside(claude, root):
-        raise Refusal(f"{claude} resolves outside the repository")
+    """The receipt's path, or raise Refusal when a symlink could redirect the write
+    (receipts.receipt_path refuses one at `100x/` or at the receipt itself)."""
+    try:
+        return receipt_path(root)
+    except GateError as e:
+        raise Refusal(str(e))
+
+
+def _write_receipt(root, text):
+    """Write through _paths.safe_write_text, contained in the resolved git directory
+    rather than the worktree: a linked worktree's git directory is
+    <main>/.git/worktrees/<name>/, outside the worktree it belongs to."""
+    path = _check_receipt_path(root)
+    gitdir = path.parent.parent
+    try:
+        if not path.parent.is_dir():
+            os.mkdir(path.parent, 0o700)
+    except OSError as e:
+        raise Refusal(f"cannot create {path.parent} ({e})")
+    path = _check_receipt_path(root)    # again: nothing may have swapped in a link
+    return safe_write_text(path, text, gitdir, origin="verified")
 
 
 def _display_path(path):
@@ -182,6 +237,9 @@ def main(argv):
         return 2
     for note in (policy or {}).get("notes", []):
         print(f"verified: warning: {note}", file=sys.stderr)
+    legacy = legacy_note(root)
+    if legacy:
+        print(f"verified: note: {legacy}", file=sys.stderr)
 
     bound = (policy or {}).get("required", {}).get(name)
     if not cmd:
@@ -198,13 +256,13 @@ def main(argv):
         return 2
 
     try:
-        set_vars = [v for v in RUNNER_ENV if os.environ.get(v)]
+        set_vars = runner_env_set()
         if set_vars:
             raise Refusal(f"{', '.join(set_vars)} is set; it can change what "
                           f"`{shlex.join(cmd)}` runs without changing the command the "
                           f"receipt records. Unset it and re-run")
         _check_receipt_path(root)
-        exe, exe_real = resolve_executable(cmd[0], root)
+        exe, exe_real = check_executable(cmd[0], root)
     except Refusal as e:
         print(f"verified: refusing to record `{name}`: {e}", file=sys.stderr)
         return 2
@@ -224,13 +282,11 @@ def main(argv):
         print(f"verified: tree changed during '{name}' -- receipt bound to post-run state",
               file=sys.stderr)
 
-    path = pathlib.Path(root) / RECEIPT
-    existing = {}
     try:
-        existing = json.loads(path.read_text()) if path.exists() else {}
-    except (ValueError, OSError):
-        existing = {}
-    old = existing.get("checks") if isinstance(existing, dict) else None
+        existing = read_receipt(root) or {}
+    except GateError:
+        existing = {}                   # replaced below; nothing in it is carried
+    old = existing.get("checks")
     # Carry forward only entries this key signed for this exact content; a stale or
     # foreign entry would otherwise ride along under a fresh signature's file.
     checks = {k: v for k, v in (old or {}).items()
@@ -244,15 +300,14 @@ def main(argv):
     }
     entry["sig"] = sign(key, name, entry)
     checks[name] = entry
-    try:
-        _check_receipt_path(root)       # again: the check itself may have planted one
+    try:                                # re-checked: the check itself may have planted a link
+        path = _write_receipt(root, json.dumps({"version": RECEIPT_VERSION,
+                                                "checks": checks}, indent=2) + "\n")
     except Refusal as e:
         print(f"verified: refusing to record `{name}`: {e}", file=sys.stderr)
         return 2
-    safe_write_text(path, json.dumps({"version": RECEIPT_VERSION, "checks": checks},
-                                     indent=2) + "\n", root, origin="verified")
     status = "PASS" if rc == 0 else f"FAIL(rc={rc})"
-    print(f"verified: {name} {status} in {dur}s -> {RECEIPT}", file=sys.stderr)
+    print(f"verified: {name} {status} in {dur}s -> {show(path, root)}", file=sys.stderr)
     return rc
 
 

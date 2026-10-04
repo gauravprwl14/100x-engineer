@@ -5,6 +5,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
+export HUNDREDX_KEY_FILE="$TMP/key/receipt.key"   # never the user's real signing key
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  ok   %-56s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "$1"; [ -s $OUT/sf.out ] && sed 's/^/       /' $OUT/sf.out | head -4; }
@@ -93,10 +94,12 @@ echo 'not json at all' | python3 "$ROOT/hooks/require_verification.py" >$OUT/sf.
 [ $? -eq 0 ] && ok "hook fails open on malformed input" || bad "hook crashed on bad input"
 
 # ---------- no secret or home path leaks into a record ----------
-mkdir -p .claude
+RCPT="$(git rev-parse --absolute-git-dir)/100x/verification-receipt.json"
 python3 "$ROOT/scripts/verified.py" --name t -- python3 -c "print(1)" >/dev/null 2>&1
-if [ -f .claude/verification-receipt.json ]; then
-  grep -qE "$HOME|/Users/|ghp_|gho_|AKIA" .claude/verification-receipt.json \
+[ -f "$HUNDREDX_KEY_FILE" ] && ok "verified.py signed with the suite's own temp key" \
+  || bad "verified.py did not use HUNDREDX_KEY_FILE"
+if [ -f "$RCPT" ]; then
+  grep -qE "$HOME|/Users/|ghp_|gho_|AKIA" "$RCPT" \
     && bad "receipt leaks a home path or credential" || ok "receipt contains no home path or secret"
 else bad "receipt not written"; fi
 

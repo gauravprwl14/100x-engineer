@@ -63,7 +63,7 @@ them, with a warning that says how to settle it.
 
 | tool | writes | where | guard |
 |---|---|---|---|
-| `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file; written via `safe_write_text`, refused when `.claude/` or the receipt is a symlink |
+| `verified.py` | `verification-receipt.json` | `100x/` in the per-worktree git directory (`git rev-parse --git-path 100x/verification-receipt.json`), never the worktree | scope: one known file; written via `safe_write_text` contained in the resolved git directory, refused when `100x/` or the receipt is a symlink; a leftover `.claude/verification-receipt.json` is ignored with a note, never deleted |
 | `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
 | `plan_feature.py new` | `spec.md`, `INDEX.md` | `<root>/specs/<name>/` | `--dry-run`, name validation |
 | `prd.py new` | `prd.md`, `INDEX.md` | `<root>/prds/<name>/` | `--dry-run`, name validation |
@@ -170,15 +170,20 @@ nothing is gated. The script parses the command line the way one shell would run
 | construct | example |
 |---|---|
 | compound commands, keywords, subshells | `a && b`, `{ git push; }`, `if …; then git push; fi`, `for …; do git push; done`, `(cd x); …` |
+| words as the shell reads them | a backslash-newline joins lines; `#` is a comment only at the start of a word (`issue#12`, `$#`, `page#top` are words); `<<` opens a heredoc only unquoted and outside `(( ))`, ends at the whole delimiter word, and one with no terminator drops nothing |
 | where it runs | `cd` (including `"$PWD"`), `git -C`, `--git-dir`, `GIT_DIR` exported earlier in the line; an unresolvable directory falls back to the session's repository |
-| wrappers, with their option arities | `env -u X`/`-S`/`-C`, `sudo -u`, `doas`, `timeout`, `nice -n`, `stdbuf`, `xargs`, `watch`, `eval`, `command`, `bash -c` |
-| indirection | `G=git; $G commit`, command substitution, `-c alias.ci=commit`, `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, repo and global aliases |
+| wrappers, with their option arities | `env -u X`/`-S`/`-C`, `sudo -u`, `doas`, `timeout`, `nice -n`, `stdbuf`, `xargs`, `watch`, `eval`, `command`, `bash -c` (with `-o`/`-O` values, `-euo pipefail` clusters), `npm`/`pnpm`/`yarn`/`uv` `exec`, `dlx`, `x`, `run` |
+| indirection | `G=git; $G commit`, command substitution, `-c alias.ci=commit`, `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, repo and global aliases, `git config alias.ci …` earlier in the same line; `GIT commit` on macOS, whose filesystem ignores case |
 | programs that run their arguments | `find -exec git commit`, `docker run img git push`: an unrecognised program's argv is scanned |
 | a program name it cannot resolve | `$X commit`, `$(…) push`: gated on the words that follow |
+| a git subcommand it cannot resolve | `git ${C:-commit}`, `git $'commit'`, `git "$(…)"`: denied, since what runs is unknown |
+| text it cannot see | `echo … \| bash`, `bash <(…)`, `source <(…)`: the whole line is word-matched |
 
 It acts on `git commit`, `git merge`, `git push` and `send-pack` (not `--dry-run`), tag
 creation, `commit-tree` and `update-ref`, `gh pr create|merge|ready`, `gh api …/merge`,
-`gh release create` and the publishers, against the repository each one targets.
+`gh release create` and the publishers (`npm`/`pnpm`/`yarn publish`, `twine upload`,
+`uv publish`, `poetry publish`, `hatch publish`, `cargo publish`, `gem push`, and any
+`<program> publish`), against the repository each one targets.
 
 | repository state | result |
 |---|---|
@@ -187,8 +192,9 @@ creation, `commit-tree` and `update-ref`, `gh pr create|merge|ready`, `gh api �
 | policy present | **block**: denied unless a fresh, **signed** receipt covers every required check with the command the policy binds to it |
 | `[skip-verify]` in the command | `ask`: a human approves or refuses; the agent cannot approve its own bypass |
 | `--no-verify` (or an abbreviation), `commit -n`, `core.hooksPath` via `-c` or `GIT_CONFIG_*` | denied (they skip git's own hooks silently) |
-| an earlier part of the same command can change files (`echo x >> f && git commit -am x`) | denied: the gate checks before the line runs, so run edits and verification first, then commit **in a separate command** |
-| `git push` / `gh pr create` | each ref sent must be the checked-out commit, and HEAD's tree must equal the verified content: `git push origin other-branch` or a push with uncommitted verified edits is denied |
+| an earlier part of the same command can change files (`echo x >> f && git commit -am x`) | denied: the gate checks before the line runs, so run edits and verification first, then commit **in a separate command**. A read-only git command stops counting as read-only with `--output` or any `-c`, which can name a program git runs |
+| a push or `gh pr create` after a commit in the same command | denied: that commit has not happened when the gate judges, so the tree the push sends is unknown (a pathspec, `GIT_INDEX_FILE` or a hook can change it) |
+| `git push` / `gh pr create` | each ref sent must be the checked-out commit, and HEAD's tree must equal the verified content: `git push origin other-branch` or a push with uncommitted verified edits is denied. `git push origin :`, `push.default=matching` and `remote.<name>.mirror` (from `-c` or config) count as sending every branch; `remote.<name>.push` refspecs as refs it cannot tell |
 | a commit that changes `.claude/verification-policy.json` | needs a receipt recorded with that policy in place |
 
 **Why it never says `allow`.** An `allow` decision also skips the user's own `ask`
@@ -202,12 +208,16 @@ you, so an agent that deliberately reads the key can still sign; add a deny rule
 others can read or write is refused outright.
 
 **What `100x verified` refuses** (exit 2, nothing recorded): a run with
-`PYTEST_ADDOPTS`, `PYTEST_PLUGINS`, `NODE_OPTIONS`, `GOFLAGS`, `LD_PRELOAD` or
-`DYLD_INSERT_LIBRARIES` set, since each can turn a suite into a passing no-op without
-changing the command the receipt records; a program found first in a PATH entry inside
-the repository or a temp directory (a virtualenv or `node_modules/.bin` is exempt, and a
-symlink there to a system binary is fine); and a symlinked `.claude/` or receipt. The
-receipt records the real path of the executable that ran.
+`PYTEST_ADDOPTS`, `PYTEST_PLUGINS`, `NODE_OPTIONS`, `GOFLAGS`, `LD_PRELOAD`,
+`DYLD_INSERT_LIBRARIES`, `BASH_ENV`, `ENV` or any `npm_config_*shell*` set, since each
+can turn a suite into a passing no-op without changing the command the receipt records;
+a program, or the interpreter its `#!/usr/bin/env` line names, found first in a PATH
+entry inside the repository or a temp directory (the repository's own virtualenv or
+`node_modules/.bin` is exempt, the same names in a temp directory are not, and a symlink
+there to a system binary is fine); and a symlinked `100x/` directory or receipt
+in the git directory. The receipt records the real path of the executable that ran. It
+lives in the per-worktree git directory, so it is never a change in the worktree and
+`git add -A` cannot commit it; each linked worktree has its own.
 
 **The committed policy wins.** When the worktree copy of the policy differs from the
 committed one, the committed one is enforced, so the agent cannot switch the gate off
@@ -227,7 +237,11 @@ by editing or deleting the file.
   `npx`, `python -c "os.system(...)"`, `bash < file`, or `eval "$X"` where `$X` was not
   assigned in the same command line.
 - **Anything not modelled**: shell functions and aliases defined in rc files, a fake
-  `HOME` supplying a global git alias, `PYTHONPATH`/`sitecustomize` shaping a check.
+  `HOME` supplying a global git alias, `PYTHONPATH`/`sitecustomize` shaping a check,
+  `source file` (a script file, like `bash file`), a push target chosen through
+  `include.path` config. Program names fold case only on macOS. `100x verified` checks
+  the program it runs and one `env` shebang interpreter, not every program a test
+  script later finds on PATH.
   History commands that make commits (`rebase`, `cherry-pick`, `revert`, `am`, `pull`)
   are not gated; the push that ships their result is, and is bound to HEAD's content.
 
