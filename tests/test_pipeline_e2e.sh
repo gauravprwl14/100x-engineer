@@ -224,8 +224,9 @@ for ac in AC-1 AC-2 AC-3; do
 done
 run testplan new "$S" --out
 rc_is 0 $? "testplan new --out: exits 0"
-[ -f "$E/testplans/login.md" ] && ok "testplan --out: default path under $E/testplans/" \
-  || bad "testplan --out: default path not under $E"
+[ -f "$E/specs/login/testplan.md" ] && ok "testplan --out: default path beside the spec, $E/specs/login/testplan.md" \
+  || bad "testplan --out: default path not under $E/specs/login/"
+[ ! -e "$E/testplans" ] && ok "testplan --out: no separate testplans/ collection" || bad "testplan --out: testplans/ created"
 
 # ---------------------------------------------------------------- 4. task graph
 PLAN="$E/specs/login/plan.json"
@@ -240,8 +241,14 @@ cat > "$PLAN" <<'JSON'
    "files": ["tests/**"], "acceptance": ["AC-3"], "verify": ["test -f tests/login.test.ts"]}
 ]}
 JSON
+# the login spec above is still a draft with unfilled tables: no plan may be cut from it
 run plan_dag lint "$PLAN" --spec "$S"
-rc_is 0 $? "plan_dag lint --spec: every AC owned by a task"
+rc_is 1 $? "plan_dag lint --spec: a draft, unaudited spec is rejected"
+has "does not pass \`100x plan_feature audit\`"
+no "covered by no task"
+run plan_dag stamp "$PLAN"
+rc_is 1 $? "plan_dag stamp: refuses to stamp against a draft spec"
+has "is not an approved spec"
 python3 - "$PLAN" "$OUT/gap.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); d["tasks"][2]["acceptance"] = ["AC-1"]
@@ -250,6 +257,65 @@ PY
 run plan_dag lint "$OUT/gap.json" --spec "$S"
 rc_is 1 $? "plan_dag lint --spec: a plan dropping AC-3 fails"
 has "AC-3 in $S is covered by no task"
+
+# ---------------------------------------------------------------- 4b. approved spec -> stamp -> lint
+# An audited, ready spec (this plugin's worked example, with no PRD link) as feature
+# `session`: plan beside it, stamp records spec + sha256 + base, lint passes; an edit
+# after stamping, or a spec put back to draft, fails.
+SS="$E/specs/session/spec.md"; SPLAN="$E/specs/session/plan.json"
+mkdir -p "$E/specs/session"
+sed -e 's#^| prd | examples/login |#| prd | none |#' -e 's#^| feature | login |#| feature | session |#' \
+  "$ROOT/specs/login/spec.md" > "$SS"
+run plan_feature audit session
+rc_is 0 $? "plan_feature audit: the session spec is ready"
+has "spec is ready to implement"
+cat > "$SPLAN" <<'JSON'
+{"schema": 1, "feature": "session", "tier": "small", "tasks": [
+  {"id": "T0", "title": "session contract", "owner": "backend-engineer", "depends_on": [],
+   "files": ["src/session/dto/**"], "acceptance": ["AC-1", "AC-2"], "verify": ["test -d src/session/dto"], "contract": true},
+  {"id": "T1", "title": "session service", "owner": "backend-engineer", "depends_on": ["T0"],
+   "consumes": ["T0"], "files": ["src/session/service/**"], "acceptance": ["AC-3", "AC-4", "AC-5", "AC-6"],
+   "verify": ["test -f src/session/service/session.service.ts"]}
+]}
+JSON
+run plan_dag lint "$SPLAN" --spec "$SS"
+rc_is 1 $? "plan_dag lint: an unstamped plan fails"
+has "plan is not stamped"
+run plan_dag stamp "$SPLAN"
+rc_is 0 $? "plan_dag stamp: records the approved spec"
+python3 - "$SPLAN" "$(git rev-parse HEAD)" >$OUT/e.out 2>&1 <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["spec"] == "docs/engineering/specs/session/spec.md" and d["base"] == sys.argv[2], d
+assert len(d["spec_sha256"]) == 64
+PY
+rc_is 0 $? "plan_dag stamp: spec path from the repo root, base = HEAD"
+run plan_dag lint "$SPLAN"
+rc_is 0 $? "plan_dag lint: the stamped plan passes against its recorded spec"
+no "WARN"
+cp "$SS" "$OUT/session.bak"
+printf '\nAC-7 was considered and dropped.\n' >> "$SS"
+run plan_dag lint "$SPLAN"
+rc_is 1 $? "plan_dag lint: a spec edited after stamping fails"
+has "changed since the plan was stamped"
+has "re-plan or re-approve"
+sed 's#^| status | \*\*ready\*\* |#| status | **draft — not ready to implement** |#' "$OUT/session.bak" > "$SS"
+run plan_dag lint "$SPLAN"
+rc_is 1 $? "plan_dag lint: a spec put back to draft fails"
+has "not \`ready\`"
+cp "$OUT/session.bak" "$SS"
+python3 - "$SPLAN" "$OUT/undef.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["tasks"][0]["acceptance"].append("AC-9")
+json.dump(d, open(sys.argv[2], "w"))
+PY
+cp "$OUT/undef.json" "$E/specs/session/undef.json"
+run plan_dag lint "$E/specs/session/undef.json"
+rc_is 1 $? "plan_dag lint: an AC the spec does not define is an error"
+has "AC-9 is claimed by T0"
+rm "$E/specs/session/undef.json"
+run plan_dag lint "$SPLAN"
+rc_is 0 $? "plan_dag lint: restored spec passes again"
 
 # ---------------------------------------------------------------- 5. trace
 mkdir -p tests
@@ -294,8 +360,9 @@ done
 for args in "testplan new $S" "testplan new specs/login/spec.md" "testplan new login" \
             "testplan trace $S --tests tests" "testplan trace specs/login/spec.md --tests tests" \
             "testplan trace login --tests tests" \
-            "plan_dag lint $PLAN --spec $S" "plan_dag lint $PLAN --spec specs/login/spec.md" \
-            "plan_dag lint $PLAN --spec login" "plan_dag waves $PLAN" "plan_dag next $PLAN"; do
+            "plan_dag lint $SPLAN --spec $SS" "plan_dag lint $SPLAN --spec specs/session/spec.md" \
+            "plan_dag lint $SPLAN --spec session" "plan_dag lint $SPLAN" \
+            "plan_dag waves $PLAN" "plan_dag next $PLAN"; do
   run $args; rc_is 0 $? "gate: 100x $args"
 done
 
@@ -387,6 +454,22 @@ run decide new "A choice"
 [ -f eng/records/decisions/ADR-0001-a-choice.md ] && ok "root: .100x.json root is used" \
   || bad "root: .100x.json ignored"
 [ ! -e docs ] && ok "root: nothing written to the default root" || bad "root: default root used despite config"
+
+# the config's own keys: schema 1 and root are optional, anything else is refused
+newrepo "$TMP/cfg2"; printf '{"schema": 1}\n' > .100x.json
+run decide new "A choice"
+rc_is 0 $? "root: a config without root is accepted"
+[ -f docs/engineering/decisions/ADR-0001-a-choice.md ] && ok "root: a config without root uses docs/engineering" \
+  || bad "root: rootless config did not default"
+printf '{"rot": "eng"}\n' > .100x.json
+run decide new "Another"
+rc_is 2 $? "root: an unknown config key is refused"
+has "unknown key 'rot' -- did you mean 'root'?"
+printf '{"schema": 2, "root": "eng"}\n' > .100x.json
+run decide new "Another"
+rc_is 2 $? "root: config schema 2 is refused"
+has "is not supported"
+[ ! -e eng ] && ok "root: nothing written by a refused config" || bad "root: a refused config still wrote"
 
 # environment variable
 newrepo "$TMP/env"
