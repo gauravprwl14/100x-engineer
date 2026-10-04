@@ -301,12 +301,13 @@ def audit_options(text, rec, errs):
     return real
 
 
-def cmd_audit(a):
-    p = md.find_record(a.dir, "prds", "prd.md", ROOT, RECORDS)
-    if p is None:
-        print(md.not_found(a.dir, "prds", "prd.md", RECORDS, rel), file=sys.stderr)
-        return 2
-    text = p.read_text()
+def audit_prd(path):
+    """(errors, warnings, info) for the prd.md at `path`, without printing or exiting.
+
+    `info` carries the summary counts and the header `status` word; plan_feature's
+    spec audit calls this for the PRD a spec links, so the two audits cannot disagree."""
+    p = pathlib.Path(path)
+    text = p.read_text(errors="replace")
     errs, warns = [], []
     status_ready = re.search(r"^\|\s*status\s*\|\s*\*?\*?ready", text, re.I | re.M)
 
@@ -411,12 +412,24 @@ def cmd_audit(a):
             errs.append(f"section '{sec}' is blank — 'N/A because <reason>' is allowed, "
                         f"empty is not")
 
+    info = {"tier": tier_val, "risk": risk_val, "metrics": len(real_metrics),
+            "options": len(real_opts), "risks": len(risks), "requirements": len(real_reqs),
+            "status": md.status_field(text), "ready": bool(status_ready)}
+    return errs, warns, info
+
+
+def cmd_audit(a):
+    p = md.find_record(a.dir, "prds", "prd.md", ROOT, RECORDS)
+    if p is None:
+        print(md.not_found(a.dir, "prds", "prd.md", RECORDS, rel), file=sys.stderr)
+        return 2
+    errs, warns, info = audit_prd(p)
     print(f"audit {rel(p)}")
-    print(f"  scale tier      : {tier_val or '(none declared)'}   risk: {risk_val or '-'}")
-    print(f"  success metrics : {len(real_metrics)}")
-    print(f"  options         : {len(real_opts)}")
-    print(f"  risks           : {len(risks)}")
-    print(f"  requirements    : {len(real_reqs)}")
+    print(f"  scale tier      : {info['tier'] or '(none declared)'}   risk: {info['risk'] or '-'}")
+    print(f"  success metrics : {info['metrics']}")
+    print(f"  options         : {info['options']}")
+    print(f"  risks           : {info['risks']}")
+    print(f"  requirements    : {info['requirements']}")
     for w in warns:
         print(f"  WARN  {w}")
     for e in errs:
@@ -424,7 +437,7 @@ def cmd_audit(a):
     if errs:
         print(f"\nPRD is NOT ready: {len(errs)} blocking issue(s)")
         return 1
-    if not status_ready:
+    if not info["ready"]:
         print("\nno blocking issues — set `status` to `ready` in the header table")
         return 0
     print("\nPRD is ready")
