@@ -30,6 +30,8 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, os, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 TSX_EXT = (".tsx", ".jsx")
 TS_EXT = (".ts", ".js")
 CODE_EXT = TSX_EXT + TS_EXT
@@ -473,6 +475,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("fe_layers_check", args.base) is None:
+        return 2
     added, mod = changed(args.base)
     if not added and not mod:
         print("fe_layers_check: no changes to inspect")

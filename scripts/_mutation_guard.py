@@ -1,7 +1,8 @@
 """Shared helpers for the record-writing tools' safety surface.
 
 Not a standalone tool -- imported by plan_feature.py, prd.py, decide.py, rca.py,
-ledger.py and check_index.py, all of which live in this same directory, so a plain
+ledger.py and check_index.py, and (for `enter_git_root` only) by the diff
+checkers, all of which live in this same directory, so a plain
 `import _mutation_guard` resolves without any sys.path surgery (Python puts the
 running script's own directory on sys.path[0]).
 
@@ -17,9 +18,15 @@ copies is how a safety guarantee quietly stops being true:
      steered outside the records directory it is meant to create inside.
   3. `--dry-run` plumbing: a unified diff for in-place edits, and a plain
      "would create/write" line for new files, with nothing touching disk.
+  4. `enter_git_root` for the read-only diff checkers. `git diff --name-status`
+     prints repo-root-relative paths while file reads and `git diff -- <path>`
+     resolve against cwd, so run from a monorepo subfolder every changed file was
+     silently unreadable and the checker passed a diff it never saw.
 """
 import difflib
+import os
 import re
+import subprocess
 import sys
 
 # name segments accepted for a record's own directory/file (feature name, decision
@@ -77,3 +84,28 @@ def print_diff_or_noop(old_text, new_text, label):
     else:
         print(f"no change: {label}")
     return bool(d)
+
+
+def enter_git_root(tool, base=None):
+    """chdir to the repository root so diff paths and file reads agree.
+
+    Returns the root, or None after printing why (caller exits 2). Outside a git
+    repo, or with a --base that does not resolve, the diff would come back empty
+    and the checker would report "no changes" -- a pass on input it never read.
+    """
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        print(f"{tool}: {os.getcwd()} is not inside a git repository -- there is no "
+              f"diff to inspect, so nothing was checked.", file=sys.stderr)
+        return None
+    root = r.stdout.strip()
+    os.chdir(root)
+    if base is not None:
+        v = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
+                            f"{base}^{{commit}}"], capture_output=True, text=True)
+        if v.returncode != 0:
+            print(f"{tool}: --base {base!r} does not resolve to a commit -- nothing "
+                  f"was checked.", file=sys.stderr)
+            return None
+    return root

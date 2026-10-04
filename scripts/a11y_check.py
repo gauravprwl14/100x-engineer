@@ -32,6 +32,8 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 JSX_EXT = (".tsx", ".jsx")
 HTML_EXT = (".html", ".htm")
 MARKUP_EXT = JSX_EXT + HTML_EXT
@@ -538,6 +540,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("a11y_check", args.base) is None:
+        return 2
     added, mod = changed(args.base)
     files = added + mod
     if not files:

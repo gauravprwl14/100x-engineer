@@ -20,6 +20,8 @@ Python stdlib only.
 """
 import argparse, json, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 # (id, question, applies-to predicate key, what a "no" means)
 QUESTIONS = [
  ("R1", "Is every new abstraction (interface, base class, wrapper, factory) used by "
@@ -87,6 +89,8 @@ def main():
     ap.add_argument("--base", default=None)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
+    if enter_git_root("review_scope", a.base) is None:
+        return 2
     rng = [a.base] if a.base else ["HEAD"]
 
     status = sh(["git", "diff", "--name-status", "--diff-filter=AMR"] + rng)

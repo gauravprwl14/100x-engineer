@@ -23,6 +23,8 @@ Exit 1 if any blocking (non-advisory) check finds a violation.
 """
 import argparse, ast, os, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs"}
 DEP_FILES = {"package.json", "requirements.txt", "pyproject.toml", "Pipfile"}
 
@@ -555,6 +557,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("perf_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
     if not added and not mod:
         print("perf_check: no changes to inspect")

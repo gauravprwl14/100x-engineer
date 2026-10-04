@@ -14,6 +14,8 @@ Exit 1 if any enabled check finds a violation.
 """
 import argparse, ast, os, re, subprocess, sys, pathlib, collections
 
+from _mutation_guard import enter_git_root
+
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
 DOC_OK = ("docs/", "doc/", ".github/", "research/", "skills/", "agents/", "commands/")
@@ -241,6 +243,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("bloat_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
     if not added and not mod:
         print("bloat_check: no changes to inspect")
