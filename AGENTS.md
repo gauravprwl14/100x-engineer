@@ -15,7 +15,7 @@ A Claude Code plugin. `skills/` holds SKILL.md files; `agents/` the specialist
 subagents; `scripts/` and `hooks/` the tools those skills invoke; `tests/` their
 regression suites; `research/` the evidence every claim is sourced from.
 
-Current size: **40 skills**, **11 agents**, **38 tools** (`100x list`), **39 test suites**
+Current size: **40 skills**, **11 agents**, **38 tools** (`100x list --all`), **39 test suites**
 (`tests/test_*.sh`). `tests/test_docs_claims.sh` fails when these drift.
 
 ## Prove-it command
@@ -44,12 +44,12 @@ it is the repo top level. In a user's project it defaults to `docs/engineering`.
 | stage | command | gate |
 |---|---|---|
 | intake | `baseline show --work <types> --tier <t>` | C items asked, never defaulted |
-| plan | `plan_feature new <name> --kind <kinds> --tier <t> --work <types>` | `--tier` is required |
-| audit the plan | `plan_feature audit <name>` (the path, from the git root, under `<root>`, or the bare name) | blocks implementation, including any `AC-<n>` rule and a deleted seeded edge-case or decision row; warns on baseline items newer than the spec's `\| baseline \| <n> \|` pin |
+| plan | `plan_feature new <name> --tier <t> --work <types> [--kind <kinds>]` | `--tier` is required; `--kind` defaults to `universal`; §6 seeds at most five asks and defers the rest |
+| audit the plan | `plan_feature audit <name>` (the path, from the git root, under `<root>`, or the bare name) | blocks implementation, including any `AC-<n>` rule, a deleted seeded edge-case or decision row, `covered`/`applied` evidence that cites no proof, and (from `growth`) a linked PRD that fails `prd audit`; warns on baseline items newer than the spec's `\| baseline \| <n> \|` pin |
 | record choices | `decide new` then `decide lint` | blocks one option, an option with no `fit`, a chosen option that fails fit |
-| orchestrate | `plan_dag lint plan.json --spec <spec>`, then per task `agent_report lint <report> --graph plan.json --cwd <wt>` + `agent_report replay <report> --graph plan.json --cwd <wt> --yes` | blocks an uncovered AC, overlapping files, an unknown plan field, a verify command that needs a shell or ships something; a file git shows changed outside the task's `files`; `done` without every declared verify command at exit 0; a declared command whose exit code does not replay |
+| orchestrate | `plan_dag stamp plan.json`, `plan_dag lint plan.json` (plan.json beside the spec in `<root>/specs/<feature>/`), then per task `agent_report lint <report> --graph plan.json --cwd <wt>` + `agent_report replay <report> --graph plan.json --cwd <wt> --yes` | blocks a spec that is not audited and `ready` or changed since the stamp, an uncovered or undefined AC, overlapping files, an unknown plan field, a verify command that needs a shell or ships something; a file git shows changed outside the task's `files`; `done` without every declared verify command at exit 0; a report not from the task's owner; a declared command whose exit code does not replay |
 | implement | — | — |
-| test plan | `testplan new <spec> --out`, `testplan trace <spec> --tests <dirs>` | every AC has a live test tagged `<feature>/AC-<n>`; bare `AC-<n>` and skipped tests do not count |
+| test plan | `testplan new <spec> --out` (writes `testplan.md` beside the spec), `testplan trace <spec> --tests <dirs>` | every AC has a live test tagged `<feature>/AC-<n>`; bare `AC-<n>` and skipped tests do not count |
 | bloat check | `bloat_check.py --base origin/main` | blocks |
 | design drift | `design_drift.py <root>/specs/<n>/spec.md <dir>` | blocks |
 | assumptions | `decide.py verify && decide.py drift` | blocks |
@@ -127,7 +127,9 @@ it is the repo top level. In a user's project it defaults to `docs/engineering`.
     `[lint: check_index.py]`
 
 17. **Do not index what is trivial.** A file under 150 lines, a fixed-structure file
-    (`SKILL.md`), or a generated index does not get a Contents table. An index on a
+    (`SKILL.md`, or a `spec.md`/`prd.md` that `plan_feature new`/`prd new` generated,
+    recognised by the header table it still carries), or a generated index does not get
+    a Contents table; `check_index.py` does not ask for one. An index on a
     short file is ceremony, and ceremony is what gets the whole convention abandoned.
     `[review]`
 
