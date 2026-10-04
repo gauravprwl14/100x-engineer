@@ -124,7 +124,7 @@ for k in $EXPECT_KINDS; do
   name="feat-$(echo "$k" | tr -cd 'a-z0-9')"
   python3 "$ROOT/scripts/plan_feature.py" new "$name" --kind "$k" --tier small > "$OUT" 2>&1
   rc=$?
-  if [ "$rc" -ne 0 ] || [ ! -f "$CONS/specs/$name/spec.md" ]; then
+  if [ "$rc" -ne 0 ] || [ ! -f "$CONS/docs/engineering/specs/$name/spec.md" ]; then
     FAILED_KINDS="$FAILED_KINDS $k"
   fi
 done
@@ -146,7 +146,7 @@ python3 "$ROOT/scripts/plan_feature.py" new bogus --kind notarealkind --tier sma
 rc_is 2 $? "plan_feature.py new: unknown kind still rejected after merge"
 
 # ---------- 9. audit runs against a spec scaffolded from an infra-only kind ----------
-python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/feat-cache" > "$OUT" 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/docs/engineering/specs/feat-cache" > "$OUT" 2>&1
 rc_is 1 $? "plan_feature.py audit: fresh infra-kind spec correctly fails (TODO cases)"
 has "still TODO"
 

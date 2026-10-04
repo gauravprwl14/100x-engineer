@@ -38,36 +38,20 @@ than the lesson sitting unread in `lessons/` until someone remembers to grep it.
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, subprocess, sys
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
-def project_root():
-    """Where the USER's lessons/ live: the git root of the current directory, not
-    the plugin's own directory. Copied from decide.py -- see its docstring for why
-    resolving against the plugin root is the wrong default.
-    """
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip())
-    return pathlib.Path.cwd()
-
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT = project_root()
-DIR = ROOT / "lessons"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); lessons live under
+# the records root (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, _ = _paths.git_root()
+DIR = _paths.resolve(ROOT)[0] / "lessons"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 KINDS = ("gotcha", "convention", "failure", "preference")
 TRIGGER_RX = re.compile(r"\b(when|if|before|after|during|until)\b", re.I)
@@ -216,7 +200,7 @@ def cmd_index(a):
             "- `learn.py lint` — every lesson is attached (affects or source) and, "
             "if a preference, states an observable trigger.", ""]
     (DIR / "INDEX.md").write_text("\n".join(out))
-    print(f"wrote lessons/INDEX.md ({len(rows)} lesson(s)"
+    print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} lesson(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
 

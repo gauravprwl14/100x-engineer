@@ -79,6 +79,36 @@ expect 2 "new: missing file exits 2" new nope.md
 printf '# Spec\n```\nAC-9: inside a code fence is an example, not a criterion\n```\n' > fenced.md
 expect 1 "new: AC inside a code fence is not a definition" new fenced.md
 
+# the canonical plan_feature shape: links are metadata, not wording to derive cases from
+cat > canon.md <<'EOF'
+# Spec
+## 2b. Acceptance criteria
+AC-1: Only the album owner can delete a tag. (R2, S1)
+AC-2: A comment holds at most 280 characters. (R3)
+EOF
+expect 0 "new: canonical AC lines with (R, S) links parse" new canon.md
+has "2 acceptance criteria"
+has "\| AC-2 \| unit \| boundary value \| value = 281 \|"
+nothas "\(R2, S1\)"                                        # links stripped from case text
+nothas "value = 2 \|"                                       # 'R2' is not a boundary number
+python3 -c "
+import sys; sys.path.insert(0, '$ROOT/scripts')
+from testplan import parse_criteria
+c = parse_criteria(open('canon.md').read())
+assert [x['links'] for x in c] == [['R2', 'S1'], ['R3']], c
+" && { PASS=$((PASS+1)); echo "  ok   parse_criteria returns the R/S links"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL parse_criteria links"; }
+
+# a bare --out files the plan under the records root, named for the feature
+mkdir -p feat/work/billing && cp canon.md feat/work/billing/spec.md
+(cd feat && git init -q && "$TX" testplan new work/billing/spec.md --out >$OUT/tp.out 2>&1)
+[ -f feat/docs/engineering/testplans/billing.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out writes docs/engineering/testplans/billing.md"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL bare --out did not write under the records root"; cat $OUT/tp.out; }
+printf '{"root": "eng"}\n' > feat/.100x.json
+(cd feat && "$TX" testplan new work/billing/spec.md --out >$OUT/tp.out 2>&1)
+[ -f feat/eng/testplans/billing.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out follows .100x.json"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL bare --out ignored .100x.json"; cat $OUT/tp.out; }
+
 # ===================================================================== trace
 mkdir -p t/e2e t/api src t/.maestro t/node_modules/pkg
 cat > t/e2e/tag.spec.ts <<'EOF'

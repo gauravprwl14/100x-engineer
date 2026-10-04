@@ -19,7 +19,7 @@ information, never short ones or fixed-structure files like SKILL.md.
     check_index.py --gen-terms           # write TERMS.md, the back-of-book term index
     check_index.py --check-terms         # exit 1 if TERMS.md is stale
     check_index.py --register docs/engineering/architecture/auth.md
-                                         # add/update its row in docs/engineering/INDEX.md
+                                         # add/update its row in <records root>/INDEX.md
 
 The term index (docs/OPERATING-MODEL.md section 8) maps each term to every file#anchor
 where it is defined or used as a section title. A term is any of:
@@ -518,11 +518,20 @@ def main():
                     help=f"where the term index lives (default: {TERMS_FILE} at the root)")
     ap.add_argument("--register", metavar="FILE",
                     help="add or update FILE's row in the --index catalogue")
-    ap.add_argument("--index", default="docs/engineering/INDEX.md",
-                    help="catalogue that --register writes (default: docs/engineering/INDEX.md)")
+    ap.add_argument("--index", default=None,
+                    help="catalogue that --register writes (default: INDEX.md at the "
+                         "records root -- docs/engineering/ unless .100x.json or "
+                         "HUNDREDX_ROOT_DIR says otherwise)")
     a = ap.parse_args()
     terms_rc = 0
     if a.register:
+        if a.index is None:
+            # Imported here, not at the top: only --register writes a record, and the
+            # resolver can warn or refuse on a bad .100x.json, which must not break a
+            # plain contents check.
+            import _paths
+            records, _ = _paths.resolve(ROOT)
+            a.index = _paths.show(records / "INDEX.md", ROOT).as_posix()
         terms_rc = register(a.register, a.index)
         if terms_rc:
             return terms_rc

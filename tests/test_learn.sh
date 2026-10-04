@@ -51,7 +51,7 @@ python3 "$L" add "Generated client is rebuilt by make proto; hand edits are sile
 python3 "$L" lint >$OUT/l.out 2>&1
 rc_is 1 $? "lint: rejects a lesson with no affects glob"
 has "no \`affects\` glob"
-python3 - "$C/lessons" <<'PY'
+python3 - "$C/docs/engineering/lessons" <<'PY'
 import json, re, pathlib, sys
 for p in pathlib.Path(sys.argv[1]).glob("LESSON-0003-*.md"):
     t = p.read_text(); m = re.search(r"```json meta\n(.*?)\n```", t, re.S)
@@ -63,7 +63,7 @@ rc_is 1 $? "lint: rejects a lesson with no source"
 has "no \`source\`"
 has "matches no tracked file"
 
-python3 - "$C/lessons" <<'PY'
+python3 - "$C/docs/engineering/lessons" <<'PY'
 import json, re, pathlib, sys
 for p in pathlib.Path(sys.argv[1]).glob("LESSON-0003-*.md"):
     t = p.read_text(); m = re.search(r"```json meta\n(.*?)\n```", t, re.S)
@@ -74,7 +74,7 @@ python3 "$L" lint >$OUT/l.out 2>&1
 rc_is 1 $? "lint: rejects a lesson whose source path no longer exists"
 has "no longer exists"
 
-python3 - "$C/lessons" <<'PY'
+python3 - "$C/docs/engineering/lessons" <<'PY'
 import json, re, pathlib, sys
 for p in pathlib.Path(sys.argv[1]).glob("LESSON-0003-*.md"):
     t = p.read_text(); m = re.search(r"```json meta\n(.*?)\n```", t, re.S)
@@ -85,14 +85,14 @@ python3 "$L" lint >$OUT/l.out 2>&1
 rc_is 0 $? "lint: an ADR-id source is not treated as a missing path"
 
 # ---------- promote: prints, writes nothing without --yes ----------
-before=$(shasum AGENTS.md lessons/LESSON-0001-*.md | shasum)
+before=$(shasum AGENTS.md docs/engineering/lessons/LESSON-0001-*.md | shasum)
 python3 "$L" promote LESSON-0001 >$OUT/l.out 2>&1
 rc_is 0 $? "promote: without --yes exits 0"
 has "target : AGENTS.md"
 has "end of section '## Gotchas'"
 has "(LESSON-0001)"
 has "Nothing has changed"
-after=$(shasum AGENTS.md lessons/LESSON-0001-*.md | shasum)
+after=$(shasum AGENTS.md docs/engineering/lessons/LESSON-0001-*.md | shasum)
 [ "$before" = "$after" ] && ok "promote: without --yes wrote nothing" || bad "promote: WROTE without --yes"
 
 python3 "$L" promote LESSON-0001 --yes >$OUT/l.out 2>&1
@@ -107,7 +107,7 @@ assert t.index("- Existing gotcha.") < snip
 print("snippet inside Gotchas")
 PY
 rc_is 0 $? "promote --yes: snippet lands at the end of '## Gotchas'"
-grep -q '"promoted_to": "AGENTS.md#gotchas"' lessons/LESSON-0001-*.md \
+grep -q '"promoted_to": "AGENTS.md#gotchas"' docs/engineering/lessons/LESSON-0001-*.md \
   && ok "promote --yes: lesson marked promoted_to" || bad "promote --yes: lesson not marked"
 
 python3 "$L" promote LESSON-0001 --yes >$OUT/l.out 2>&1

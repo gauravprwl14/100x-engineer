@@ -21,7 +21,7 @@ python3 "$ROOT/scripts/rca.py" new "Sessions dropped after deploy" --affects "sr
   >$OUT/rca.out 2>&1
 rc_is 0 $? "new: exits 0"
 has "recorded as SEV2"
-RECFILE=$(ls "$CONS"/rca/RCA-0001-*.md 2>/dev/null | head -1)
+RECFILE=$(ls "$CONS"/docs/engineering/rca/RCA-0001-*.md 2>/dev/null | head -1)
 [ -n "$RECFILE" ] && ok "new: record created in the consumer repo" || bad "new: record not created"
 [ ! -d "$ROOT/rca" ] && ok "new: did NOT write into the plugin dir" \
   || bad "new: leaked an rca/ dir into the plugin dir"
@@ -274,15 +274,15 @@ grep -q "no decision link recorded" $OUT/rca.out && ok "lint: warns (not errors)
 # ---------- index ----------
 python3 "$ROOT/scripts/rca.py" index >$OUT/rca.out 2>&1
 rc_is 0 $? "index: regenerates cleanly for a complete record"
-[ -f "$CONS/rca/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
-grep -qE "^\| \[RCA-0001\]" "$CONS/rca/INDEX.md" 2>/dev/null \
+[ -f "$CONS/docs/engineering/rca/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
+grep -qE "^\| \[RCA-0001\]" "$CONS/docs/engineering/rca/INDEX.md" 2>/dev/null \
   && ok "index: table contains the RCA row" || bad "index: RCA row missing"
-grep -qE "\| yes \|" "$CONS/rca/INDEX.md" 2>/dev/null \
+grep -qE "\| yes \|" "$CONS/docs/engineering/rca/INDEX.md" 2>/dev/null \
   && ok "index: reports regression test present" || bad "index: regression-test column wrong"
 
 # ---------- link ----------
-mkdir -p "$CONS/decisions"
-cat > "$CONS/decisions/ADR-0001-session-strategy.md" <<'MD'
+mkdir -p "$CONS/docs/engineering/decisions"
+cat > "$CONS/docs/engineering/decisions/ADR-0001-session-strategy.md" <<'MD'
 # ADR-0001: Session strategy
 ```json meta
 {"id":"ADR-0001","title":"Session strategy","status":"accepted",

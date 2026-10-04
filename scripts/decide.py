@@ -21,41 +21,20 @@ Python stdlib only.
 """
 import argparse, datetime, fnmatch, json, pathlib, re, subprocess, sys
 import _mutation_guard as mg
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
-def project_root():
-    """Where the USER's decisions/specs live: the git root of the current directory,
-    not the plugin's own directory.
-
-    Resolving these against the plugin root meant a consumer project's records were
-    written into the installed plugin — invisible to their repo and lost on upgrade.
-
-    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT, IN_GIT_REPO = project_root()
-DIR = ROOT / "decisions"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); decisions live under
+# the records root (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, IN_GIT_REPO = _paths.git_root()
+DIR = _paths.resolve(ROOT)[0] / "decisions"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("proposed", "accepted", "superseded", "rejected", "revisit")
 
@@ -107,7 +86,12 @@ TEMPLATE = '''# {id}: {title}
 
 <!-- One subsection per option. For each: what it is, and the concrete reason it
      was or was not chosen. An option with no stated downside was not really
-     considered. -->
+     considered. `fit` in the meta block is a pass/fail filter applied FIRST: an
+     option that does not solve the problem is out, whatever it would score. Only
+     fit-passing options are compared; to compare them by number, give each a
+     "scores" object (1-5 on reversibility, blast radius, moving parts,
+     already-in-use, exit cost -- the approach-selection weights) and the chosen
+     one must be the top weighted score or carry an "override_reason". -->
 
 ### Option A — <name>
 ### Option B — <name>
@@ -155,8 +139,10 @@ def cmd_new(a):
              "confidence": "medium"}
         ],
         "options": [
-            {"name": "<option A>", "chosen": False, "why_not": "<concrete reason>"},
-            {"name": "<option B>", "chosen": True, "why": "<deciding factor>"}
+            {"name": "<option A>", "fit": "<pass|fail>", "chosen": False,
+             "why_not": "<concrete reason>"},
+            {"name": "<option B>", "fit": "<pass|fail>", "chosen": True,
+             "why": "<deciding factor>"}
         ],
         "supersedes": None,
         "revisit_by": None,
@@ -166,7 +152,7 @@ def cmd_new(a):
     if dry:
         old_text = path.read_text() if path.exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
-        print(f"[dry-run] would also regenerate decisions/INDEX.md; nothing written")
+        print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
     path.write_text(new_text)
     print(f"created {rel(path)}")
@@ -215,10 +201,10 @@ def cmd_index(a):
     new_text = "\n".join(out)
     if dry:
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "decisions/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
     (DIR / "INDEX.md").write_text(new_text)
-    print(f"wrote decisions/INDEX.md ({len(rows)} decisions"
+    print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} decisions"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
 
@@ -308,6 +294,66 @@ def cmd_trace(a):
     return 0
 
 
+# approach-selection weights, fit excluded (fit is the pass/fail filter applied first).
+# prd.py imports these, so a PRD's options table and the ADR recording the same choice
+# cannot score it differently.
+WEIGHTS = [("reversibility", 3), ("blast radius", 3), ("moving parts", 2),
+           ("already-in-use", 2), ("exit cost", 1)]
+
+
+def lint_fit(name, opts, override):
+    """Apply fit as a pass/fail filter before any weighted comparison. Returns the
+    number of errors printed."""
+    errs = 0
+    fits = {}
+    for o in opts:
+        f = str(o.get("fit", "")).strip().lower()
+        if f not in ("pass", "fail"):
+            print(f"  ERROR {name}: option {o.get('name')!r} has fit {o.get('fit')!r} — "
+                  f"set \"fit\": \"pass\" or \"fail\" (does it solve the problem at all?)")
+            errs += 1
+        fits[id(o)] = f
+    if opts and fits and not any(f == "pass" for f in fits.values()):
+        print(f"  ERROR {name}: no option passes the fit filter — none solves the problem")
+        errs += 1
+    for o in opts:
+        if o.get("chosen") and fits.get(id(o)) == "fail":
+            print(f"  ERROR {name}: chosen option {o.get('name')!r} fails the fit filter — "
+                  f"it does not solve the problem, whatever it scores")
+            errs += 1
+    scored = {}
+    for o in opts:
+        sc = o.get("scores")
+        if sc is None:
+            continue
+        vals = [sc.get(k) if isinstance(sc, dict) else None for k, _ in WEIGHTS]
+        if not all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5
+                   for v in vals):
+            print(f"  ERROR {name}: option {o.get('name')!r} scores must give an integer "
+                  f"1-5 for each of {', '.join(k for k, _ in WEIGHTS)}")
+            errs += 1
+            continue
+        total = sum(v * w for v, (_, w) in zip(vals, WEIGHTS))
+        if "score" in o and o["score"] != total:
+            print(f"  ERROR {name}: option {o.get('name')!r} score {o['score']!r} does not "
+                  f"match the recomputed {total}")
+            errs += 1
+        if fits.get(id(o)) == "pass":
+            scored[o.get("name")] = (total, bool(o.get("chosen")))
+    if len(scored) >= 2:
+        top = max(v[0] for v in scored.values())
+        chosen = [(n, v[0]) for n, v in scored.items() if v[1]]
+        has_override = isinstance(override, str) and override.strip() \
+            and not override.startswith("<")
+        if chosen and chosen[0][1] < top and not has_override:
+            best = max(scored, key=lambda n: scored[n][0])
+            print(f"  ERROR {name}: chosen option {chosen[0][0]!r} ({chosen[0][1]}) is not "
+                  f"the top fit-passing score ({best!r}, {top}) and no override_reason is "
+                  f"recorded")
+            errs += 1
+    return errs
+
+
 def cmd_lint(a):
     """Reject a decision record that documents a choice without documenting the choosing.
 
@@ -333,6 +379,7 @@ def cmd_lint(a):
         if len(chosen) != 1:
             print(f"  ERROR {name}: {len(chosen)} options marked chosen, expected exactly 1")
             errs += 1
+        errs += lint_fit(name, opts, r.get("override_reason"))
         for o in opts:
             if o.get("chosen"):
                 if not (o.get("why") or "").strip() or (o.get("why") or "").startswith("<"):

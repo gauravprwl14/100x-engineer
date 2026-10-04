@@ -4,6 +4,7 @@
 |---|---|
 | kinds | auth, crud |
 | stack | nestjs |
+| prd | examples/login |
 | created | 2026-09-29 |
 | status | **ready** |
 
@@ -21,12 +22,13 @@ harness scores against. Every table below is machine-audited by
 | 0b | [0b. Implicit requirements](#0b-implicit-requirements) | the 29 baseline defaults this API inherits, each resolved, and the C questions answered or assumed | 36 lines |
 | 1 | [1. Outcome](#1-outcome) | what a user can do after this ships that they cannot do now | 6 lines |
 | 2 | [2. In scope / out of scope](#2-in-scope--out-of-scope) | the boundary — out-of-scope is what turns a gap into a decision | 12 lines |
+| 2b | [2b. Acceptance criteria](#2b-acceptance-criteria) | the six observable outcomes, each traced to the PRD requirement and in-scope row it delivers | 12 lines |
 | 3 | [3. Interfaces touched](#3-interfaces-touched) | every surface changed, and whether the change is backward compatible | 10 lines |
 | 4 | [4. Sequence](#4-sequence) | the mermaid diagram that `design_drift.py` checks the code against | 25 lines |
 | 5 | [5. Decisions required](#5-decisions-required) | 10 choices, each pre-answered with a default; 7 accepted as-is | 17 lines |
 | 6 | [6. Open questions](#6-open-questions) | the 3 questions that do not block work, each typed and carrying a recommendation | 9 lines |
 | 7 | [7. Edge cases](#7-edge-cases) | **the point of the document** — 31 seeded cases, each covered, accepted or deferred | 38 lines |
-| 8 | [8. Verification plan](#8-verification-plan) | the command per check and the gate it runs at | 20 lines |
+| 8 | [8. Verification plan](#8-verification-plan) | the command per check, the gate it runs at, and which acceptance criteria it proves | 22 lines |
 | 9 | [9. Rollout and reversal](#9-rollout-and-reversal) | the flag, the migration shape, and the exact rollback step | 9 lines |
 | 10 | [10. Security](#10-security) | assets, trust boundaries and the control for each abuse case | 11 lines |
 | 11 | [11. Privacy](#11-privacy) | which personal data is touched, how long it is kept, and where | 8 lines |
@@ -105,6 +107,18 @@ MFA — see out-of-scope.
 
 O2 is the one a reader assumes is included. It is not, and the edge cases it owns are
 marked `deferred` below rather than silently dropped.
+
+## 2b. Acceptance criteria
+
+Each line names the PRD requirement (`examples/login/prd.md` §6) and the in-scope row
+above that it delivers. Ids are never renumbered: tests are tagged with them.
+
+AC-1: A returning user who submits a correct email and password gets a 204 response with an httpOnly, Secure `sid` session cookie. (R1, S1)
+AC-2: A wrong password and an unknown email return the same 401 status and body, so the response does not reveal which accounts exist. (R1, S1)
+AC-3: Logout with `scope=device` ends only that device's session, `scope=all` ends every session of the user, and a request carrying an ended session gets 401. (R2, S2)
+AC-4: After a password change or an admin ban, every existing session of that user gets 401 on its next request. (R3, S3)
+AC-5: The 6th failed login for one account within 60 seconds returns 429 with `Retry-After`, and the lockout lifts after 15 minutes. (R4, S4)
+AC-6: A user can sign in with Google through OAuth, and a callback with a replayed `state` or a missing PKCE verifier is rejected. (R5, S5)
 
 ## 3. Interfaces touched
 
@@ -212,17 +226,21 @@ test, 3 accepted as not-applicable with a reason, 2 deferred to a tracked follow
 
 ## 8. Verification plan
 
-| # | check | command | gate |
-|---|---|---|---|
-| V1 | types | `npx tsc --noEmit` | pre-commit |
-| V2 | lint and module boundaries | `npx eslint . --max-warnings=0 && npx depcruise --config .dependency-cruiser.cjs src` | pre-commit |
-| V3 | unit | `npx jest --selectProjects unit` | pre-commit |
-| V4 | integration against real redis and postgres | `npx jest --selectProjects integration` | pre-PR |
-| V5 | the edge cases above | `npx jest --selectProjects e2e` | pre-PR |
-| V6 | AI-bloat and assertion-free tests | `python3 scripts/bloat_check.py --base origin/main` | pre-PR |
-| V7 | decision assumptions still hold | `python3 scripts/decide.py verify && python3 scripts/decide.py drift` | pre-PR |
-| V8 | sequence diagram matches code | `python3 scripts/design_drift.py specs/login/spec.md src/auth` | pre-PR |
-| V9 | no secrets committed | `gitleaks detect --redact` | pre-commit |
+`covers` names the acceptance criteria each check proves; `—` marks a check that proves
+none directly.
+
+| # | check | command | gate | covers |
+|---|---|---|---|---|
+| V1 | types | `npx tsc --noEmit` | pre-commit | — |
+| V2 | lint and module boundaries | `npx eslint . --max-warnings=0 && npx depcruise --config .dependency-cruiser.cjs src` | pre-commit | — |
+| V3 | unit | `npx jest --selectProjects unit` | pre-commit | AC-2, AC-6 |
+| V4 | integration against real redis and postgres | `npx jest --selectProjects integration` | pre-PR | AC-1, AC-3, AC-4 |
+| V5 | the edge cases above | `npx jest --selectProjects e2e` | pre-PR | AC-1, AC-2, AC-3, AC-4, AC-5 |
+| V6 | AI-bloat and assertion-free tests | `python3 scripts/bloat_check.py --base origin/main` | pre-PR | — |
+| V7 | decision assumptions still hold | `python3 scripts/decide.py verify && python3 scripts/decide.py drift` | pre-PR | AC-3, AC-4 |
+| V8 | sequence diagram matches code | `python3 scripts/design_drift.py specs/login/spec.md src/auth` | pre-PR | — |
+| V9 | no secrets committed | `gitleaks detect --redact` | pre-commit | — |
+| V10 | every acceptance criterion has a tagged test | `100x testplan trace specs/login/spec.md --tests test` | pre-PR | AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 |
 
 Bind them so a pass cannot be reused after an edit:
 

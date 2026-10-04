@@ -38,6 +38,22 @@ lint_fails consumes-non-contract  "T3: consumes T1, which is not a contract task
 lint_fails missing-ac             "AC-4 in $EX/spec.md is covered by no task" --spec "$EX/spec.md"
 grep -qE '^  1\. ' "$O" && ok "lint: messages are numbered" || bad "lint: messages not numbered"
 
+# only DEFINED criteria count: a verification row or prose that mentions AC-9 is not one
+cp "$EX/spec.md" "$TMP/mention.md"
+printf '\n| V1 | unit | npm test | pre-PR | AC-9 |\nSee AC-9 in the follow-up, not this spec.\n' >> "$TMP/mention.md"
+python3 "$P" lint "$EX/plan.json" --spec "$TMP/mention.md" >"$O" 2>&1
+rc_is 0 $? "lint --spec: a mentioned-but-undefined id is not required (no false positive)"
+no "AC-9"
+# the canonical plan_feature line, with its requirement links, is parsed the same way
+printf '# s\n\n## 2b. Acceptance criteria\n\nAC-1: one (R1, S1)\nAC-2: two (R2, S1)\nAC-3: three (R1)\nAC-4: four (S2)\nAC-5: five (R3, S2)\n' > "$TMP/canon.md"
+python3 "$P" lint "$EX/plan.json" --spec "$TMP/canon.md" >"$O" 2>&1
+rc_is 1 $? "lint --spec: canonical AC lines are parsed (AC-5 uncovered)"
+has "AC-5 in $TMP/canon.md is covered by no task"
+printf '# s\n\nNo criteria here.\n' > "$TMP/noac.md"
+python3 "$P" lint "$EX/plan.json" --spec "$TMP/noac.md" >"$O" 2>&1
+rc_is 1 $? "lint --spec: a spec defining no AC fails instead of checking nothing"
+has "defines no acceptance criteria"
+
 # without --spec the same plan has nothing to check AC coverage against
 python3 "$P" lint "$EX/invalid/missing-ac.json" >"$O" 2>&1; rc_is 0 $? "lint: AC coverage only checked with --spec"
 

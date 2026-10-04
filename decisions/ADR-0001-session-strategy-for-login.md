@@ -41,16 +41,19 @@
   "options": [
     {
       "name": "Stateless JWT in a cookie",
+      "fit": "fail",
       "chosen": false,
       "why_not": "cannot revoke before expiry without a denylist, which reintroduces the state it was meant to avoid"
     },
     {
       "name": "Opaque server session id in an httpOnly cookie",
+      "fit": "pass",
       "chosen": true,
       "why": "revocation is a single delete; the deciding factor is A1"
     },
     {
       "name": "JWT access token + refresh token rotation",
+      "fit": "pass",
       "chosen": false,
       "why_not": "correct for third-party API clients; unnecessary complexity for a first-party web app with a shared store"
     }

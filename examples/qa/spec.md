@@ -6,13 +6,11 @@ only in a fixtures file, which `trace` must not count.
 
 ## Acceptance criteria
 
-| id | criterion |
-|---|---|
-| AC-1 | A member can tag up to 10 people on a photo from the photo page. |
-| AC-2 | Only the album owner can delete a tag. |
-| AC-3 | A draft album moves to published once the owner confirms. |
-| AC-4 | A tag comment must be between 1 and 280 characters. |
-| AC-5 | Tagged people receive a notification within 60 seconds. |
+AC-1: A member can tag up to 10 people on a photo from the photo page.
+AC-2: Only the album owner can delete a tag.
+AC-3: A draft album moves to published once the owner confirms.
+AC-4: A tag comment must be between 1 and 280 characters.
+AC-5: Tagged people receive a notification within 60 seconds.
 
 AC-2 depends on AC-1 (a tag must exist before it can be deleted); this line
 mentions ids but defines nothing.

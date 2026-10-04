@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """Turn a spec's acceptance criteria into a test plan, and prove every AC has a test.
 
-    testplan.py new specs/tagging/spec.md [--out docs/engineering/testplans/tagging.md]
+    testplan.py new specs/tagging/spec.md [--out [docs/engineering/testplans/tagging.md]]
     testplan.py trace specs/tagging/spec.md --tests backend/test,frontend/e2e [--json]
     testplan.py matrix --work web-ui --tier small [--json]
 
-An acceptance criterion is a line that STARTS with its id, `AC-<n>`, in any of the
-shapes a spec or PRD writes them:
+An acceptance criterion is a line that STARTS with its id, `AC-<n>`. The canonical
+shape is the one `100x plan_feature new` writes in a spec's "Acceptance criteria"
+section, and the one its audit enforces there:
+
+    AC-1: A member can tag up to 10 people on a photo. (R1, S1)
+
+The trailing parenthesis links the criterion to the PRD requirement(s) it satisfies
+(`R<k>`) and the spec's in-scope row(s) it delivers (`S<k>`). Two older shapes are
+still read, so a PRD or hand-written spec keeps working:
 
     - **AC-1** A member can tag up to 10 people on a photo.
     | AC-2 | Only the album owner can delete a tag. |
-    AC-3: A draft album moves to published once the owner confirms.
+
+This module is the ONE parser for those lines: prd.py (align), plan_feature.py
+(audit) and plan_dag.py (lint --spec) import `parse_criteria` / `parse_acs` from here,
+so the four tools cannot disagree about which criteria a spec defines.
 
 `new` derives cases mechanically from each AC's wording (numbers become boundary
 rows, ownership words become authz rows, state words become transition rows). It is
@@ -24,22 +34,29 @@ Python stdlib only.
 import argparse, json, os, pathlib, re, subprocess, sys
 
 import _mutation_guard as mg
+import _paths
 
 AC_DEF = re.compile(
     r"^\s*(?:[-*+]\s+|\d+\.\s+)?\|?\s*(?:\*\*|__)?\[?(AC-(\d+))\]?(?:\*\*|__)?\s*[:.)|—–-]*\s*(.*)$")
 AC_TAG = re.compile(r"(?<![A-Za-z0-9])@?AC-(\d+)(?![0-9])")
+# Trailing "(R1, S2)" on a definition: the PRD requirements and in-scope rows it traces to.
+AC_LINKS = re.compile(r"\s*\(\s*((?:[RS]\d+)(?:\s*[,;]\s*[RS]\d+)*)\s*\)\s*$")
 NFR_ID = re.compile(r"`?\b([a-z][a-z0-9]*\.[a-z0-9][a-z0-9-]*)\b`?")
+
+AUTO_OUT = "\0auto"
 
 HOW_TO_WRITE = """\
 no acceptance criteria found. Write each one on its own line, starting with a stable id:
 
-    - **AC-1** A member can tag up to 10 people on a photo.
-    | AC-2 | Only the album owner can delete a tag. |
-    AC-3: A draft album moves to published once the owner confirms.
+    AC-1: A member can tag up to 10 people on a photo. (R1, S1)
+    AC-2: Only the album owner can delete a tag. (R2, S2)
+
+(`- **AC-1** ...` bullets and `| AC-1 | ... |` table rows are also read.)
 
 One observable outcome per AC, numbered once and never renumbered — the id is what
 tests reference (`test('AC-1 tags ten people', ...)`, `# AC-2`, `@AC-3`), so
-renumbering silently breaks `testplan.py trace`."""
+renumbering silently breaks `testplan.py trace`. A removed AC leaves a gap; its id is
+not reused."""
 
 
 # ---------------------------------------------------------------------------
@@ -54,23 +71,41 @@ def read_doc(path):
     return p.read_text(errors="replace")
 
 
-def parse_acs(text):
-    """Ordered {id: text} from definition lines. The first defining line wins; later
-    lines that merely mention an id (`see AC-2`) do not start with it, so they are
-    not definitions."""
-    acs, fence = {}, False
-    for line in text.splitlines():
+def parse_criteria(text):
+    """Every AC definition line in document order, duplicates included:
+    [{"id", "num", "text", "links", "line", "raw"}].
+
+    `text` has the trailing link parenthesis removed (so "(R1)" never reads as a
+    boundary number); `links` is the list of R/S ids it named. Lines that merely
+    mention an id (`see AC-2`) do not start with it, so they are not definitions, and
+    a fenced code block is an example, not a criterion."""
+    out, fence = [], False
+    for n, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith("```"):
             fence = not fence
             continue
         if fence:
             continue
         m = AC_DEF.match(line)
-        if not m or m.group(1) in acs:
+        if not m:
             continue
         body = m.group(3).strip().rstrip("|").strip()
         body = re.sub(r"\s*\|\s*", " — ", body).strip(" —")
-        acs[m.group(1)] = body or "(no text)"
+        links = []
+        lm = AC_LINKS.search(body)
+        if lm:
+            links = re.findall(r"[RS]\d+", lm.group(1))
+            body = body[:lm.start()].rstrip()
+        out.append({"id": m.group(1), "num": int(m.group(2)), "text": body,
+                    "links": links, "line": n, "raw": line})
+    return out
+
+
+def parse_acs(text):
+    """Ordered {id: text}; the first defining line of an id wins."""
+    acs = {}
+    for c in parse_criteria(text):
+        acs.setdefault(c["id"], c["text"] or "(no text)")
     return dict(sorted(acs.items(), key=lambda kv: int(kv[0][3:])))
 
 
@@ -263,6 +298,13 @@ def cmd_new(a):
                 "Responsive, accessibility and performance cases still apply per "
                 "`100x testplan matrix`."]
     doc = "\n".join(out) + "\n"
+    if a.out == AUTO_OUT:
+        # A bare --out files the plan next to the other records, named after the
+        # feature directory the spec lives in (specs/<feature>/spec.md).
+        src = pathlib.Path(a.doc)
+        feature = src.parent.name if src.stem == "spec" and src.parent.name else src.stem
+        records, _ = _paths.resolve()
+        a.out = str(_paths.show(records / "testplans" / f"{feature}.md", pathlib.Path.cwd()))
     if a.out:
         p = pathlib.Path(a.out)
         if p.exists() and not a.force:
@@ -531,7 +573,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     n = sub.add_parser("new", help="generate a test plan from a spec/PRD's AC ids")
     n.add_argument("doc")
-    n.add_argument("--out")
+    n.add_argument("--out", nargs="?", const=AUTO_OUT,
+                   help="write the plan to this file; bare --out writes "
+                        "<records root>/testplans/<feature>.md")
     n.add_argument("--owner", default="qa-engineer")
     n.add_argument("--force", action="store_true")
     n.add_argument("--dry-run", action="store_true", help="say what --out would write")

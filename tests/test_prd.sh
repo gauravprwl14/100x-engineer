@@ -34,17 +34,17 @@ echo x > f.txt; git add -A; git commit -qm init
 python3 "$ROOT/scripts/prd.py" new notier --kind auth --stack nestjs >$OUT/pd.out 2>&1
 rc_is 2 $? "new: refused without --tier"
 has "--tier is required"
-[ ! -d "$CONS/prds/notier" ] && ok "new: nothing written without a tier" || bad "new: wrote a PRD with no tier"
+[ ! -d "$CONS/docs/engineering/prds/notier" ] && ok "new: nothing written without a tier" || bad "new: wrote a PRD with no tier"
 
 python3 "$ROOT/scripts/prd.py" new demo --kind auth --stack nestjs --tier small >$OUT/pd.out 2>&1
-[ -f "$CONS/prds/demo/prd.md" ] && ok "new: prd.md created in the consumer repo" \
+[ -f "$CONS/docs/engineering/prds/demo/prd.md" ] && ok "new: prd.md created in the consumer repo" \
   || bad "new: prd.md not created in the consumer repo"
 [ ! -f "$ROOT/prds/demo/prd.md" ] && ok "new: did NOT write into the plugin dir" \
   || bad "new: leaked a prds/ dir into the plugin dir"
 has "risk elevated (raised from none by kind)"
 has "optional below the growth tier"
 
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/docs/engineering/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: fresh PRD fails"
 has "placeholder"
 has "no out-of-scope"
@@ -54,7 +54,7 @@ has "likelihood and impact must be integers 1-5"
 # A hand-filled baseline PRD — fully passing, so each test below breaks ONE
 # rule at a time from a known-good state.
 fill_all() {
-  cat > "$CONS/prds/demo/prd.md" <<'MD'
+  cat > "$CONS/docs/engineering/prds/demo/prd.md" <<'MD'
 # demo — PRD
 
 | field | value |
@@ -196,8 +196,8 @@ Product owner role.
 No existing code; new feature.
 MD
 }
-P="$CONS/prds/demo/prd.md"
-audit_demo() { python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1; }
+P="$CONS/docs/engineering/prds/demo/prd.md"
+audit_demo() { python3 "$ROOT/scripts/prd.py" audit "$CONS/docs/engineering/prds/demo" >$OUT/pd.out 2>&1; }
 
 fill_all; audit_demo
 rc_is 0 $? "audit: a fully filled PRD passes"
@@ -350,8 +350,10 @@ has "below the floor"
 fill_all
 
 # ---------- align ----------
-mkdir -p "$CONS/specs/demo"
-cat > "$CONS/specs/demo/spec.md" <<'MD'
+# id-level: each AC names the requirement it satisfies; each metric cites a V row.
+write_spec() { # write_spec <AC lines> <verification row>
+  mkdir -p "$CONS/docs/engineering/specs/demo"
+  cat > "$CONS/docs/engineering/specs/demo/spec.md" <<MD
 # demo — spec
 
 ## 2. In scope / out of scope
@@ -360,53 +362,68 @@ cat > "$CONS/specs/demo/spec.md" <<'MD'
 |---|---|---|---|---|
 | S1 | email login for returning users | | O1 | signup |
 
+## 2b. Acceptance criteria
+
+$1
+
 ## 8. Verification plan
 
-| # | check | command | gate |
-|---|---|---|---|
-| V1 | conversion dashboard check | manual review of the analytics dashboard | pre-PR |
+| # | check | command | gate | covers |
+|---|---|---|---|---|
+$2
 MD
+}
+GOOD_AC="AC-1: A returning user signs in with email and password and gets a session. (R1, S1)"
+GOOD_V="| V1 | conversion | manual review of the analytics dashboard | pre-PR | AC-1, M1 |"
+ALIGN() { python3 "$ROOT/scripts/prd.py" align "$CONS/docs/engineering/prds/demo" "$CONS/docs/engineering/specs/demo" >$OUT/pd.out 2>&1; }
 
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
-rc_is 0 $? "align: matched requirement and metric pass clean"
-has "keyword-level matching"
-has "0 requirement(s) with no spec coverage"
+write_spec "$GOOD_AC" "$GOOD_V"
+ALIGN; rc_is 0 $? "align: linked requirement, AC and metric pass clean"
+has "id-level tracing"
+has "OK    R1"
+has "OK    AC-1  -> R1"
+has "OK    S1"
+has "OK    M1"
+has "0 requirement(s) with no spec coverage, 0 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step, 0 acceptance criterion/criteria tracing to no requirement"
+
+# a shared word is no longer enough: an AC with no R link traces to nothing
+write_spec "AC-1: A returning user signs in with email login and gets a session. (S1)" "$GOOD_V"
+ALIGN; rc_is 1 $? "align: AC without an R link is an orphan, keywords do not rescue it"
+has "MISS  R1"
+has "MISS  AC-1"
+has "names no requirement"
+has "MISS  S1"
+has "1 requirement(s) with no spec coverage, 1 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step, 1 acceptance criterion/criteria tracing to no requirement"
+
+# an AC linking a requirement the PRD does not have
+write_spec "$GOOD_AC
+AC-2: An admin can export the sign-in audit log as CSV. (R7, S1)" "$GOOD_V"
+ALIGN; rc_is 1 $? "align: AC naming a requirement absent from the PRD is detected"
+has "names R7, not in"
+
+# a metric whose method cites no V row and no row names it
+write_spec "$GOOD_AC" "| V1 | unit | npm test | pre-commit | AC-1 |"
+ALIGN; rc_is 1 $? "align: metric with no verification row is detected"
+has "MISS  M1"
+# ...and citing the row from the PRD side clears it
+swap "$CONS/docs/engineering/prds/demo/prd.md" "| tracked via analytics dashboard |" "| tracked via analytics dashboard (spec V1) |"
+ALIGN; rc_is 0 $? "align: metric citing spec V1 from the PRD passes"
+fill_all
+
+# a spec with no acceptance criteria cannot be aligned at all
+write_spec "Acceptance: login works." "$GOOD_V"
+ALIGN; rc_is 1 $? "align: spec without AC ids fails"
+has "defines no acceptance criteria"
 
 # no spec yet: align must not error, and must say so
-rm -rf "$CONS/specs/demo"
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
-rc_is 0 $? "align: no spec yet is not an error"
+rm -rf "$CONS/docs/engineering/specs/demo"
+ALIGN; rc_is 0 $? "align: no spec yet is not an error"
 has "nothing to check"
-
-# an intentionally unmatched requirement must be detected
-mkdir -p "$CONS/specs/demo"
-cat > "$CONS/specs/demo/spec.md" <<'MD'
-# demo — spec
-
-## 2. In scope / out of scope
-
-| # | in scope | | # | explicitly OUT of scope |
-|---|---|---|---|---|
-| S1 | email login for returning users | | O1 | signup |
-
-## 8. Verification plan
-
-| # | check | command | gate |
-|---|---|---|---|
-| V1 | conversion dashboard check | manual review of the analytics dashboard | pre-PR |
-MD
-swap "$CONS/prds/demo/prd.md" \
-  "| R1 | must support email login | core ask |" \
-  "| R1 | must support hardware security key WebAuthn | zzz |"
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "align: an unmatched requirement is detected"
-has "MISS  R1"
-has "1 requirement(s) with no spec coverage"
 
 # ---------- index ----------
 python3 "$ROOT/scripts/prd.py" index >$OUT/pd.out 2>&1
 rc_is 0 $? "index: regenerates"
-[ -f "$CONS/prds/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
+[ -f "$CONS/docs/engineering/prds/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
@@ -415,7 +432,7 @@ rc_is 0 $? "audit: the worked example (examples/login/prd.md) passes"
 
 python3 "$ROOT/scripts/prd.py" align "$ROOT/examples/login" "$ROOT/specs/login" >$OUT/pd.out 2>&1
 rc_is 0 $? "align: the worked example aligns clean against specs/login"
-has "0 requirement(s) with no spec coverage, 0 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step"
+has "0 requirement(s) with no spec coverage, 0 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step, 0 acceptance criterion/criteria tracing to no requirement"
 
 echo
 echo "prd: $PASS passed, $FAIL failed"
