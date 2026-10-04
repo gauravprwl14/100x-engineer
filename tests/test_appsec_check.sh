@@ -193,6 +193,36 @@ printf 'API_TOKEN="q8Fz3Lm7Rt4Vw8Yz1Ab3CdEf"\n' > config.example
 expect 0 "hardcoded-secret: env lookups, names, URLs, placeholders, fixtures clean" --only hardcoded-secret --strict
 reset_diff
 
+# ------------------------------------------- pathological input stays linear
+timed() { # timed <max-seconds> <exit> <label> [args...]: whole run under the bound
+  local max="$1" exp="$2" label="$3"; shift 3
+  local secs; secs=$(python3 -c '
+import subprocess, sys, time
+t = time.monotonic()
+with open(sys.argv[2], "w") as f:
+    rc = subprocess.run([sys.executable, sys.argv[1]] + sys.argv[3:], stdout=f, stderr=subprocess.STDOUT).returncode
+print(f"{time.monotonic() - t:.2f} {rc}")' "$AS" "$OUT/a.out" "$@")
+  local el="${secs% *}" got="${secs#* }"
+  if [ "$got" -eq "$exp" ] && python3 -c "import sys; sys.exit(not float(sys.argv[1]) < float(sys.argv[2]))" "$el" "$max"; then
+    PASS=$((PASS+1)); printf '  ok   %-66s\n' "$label (${el}s)"
+  else FAIL=$((FAIL+1)); printf '  FAIL %-66s exit exp=%s got=%s in %ss (max %ss)\n' "$label" "$exp" "$got" "$el" "$max"; sed 's/^/       /' "$OUT/a.out" | head -20; fi
+}
+python3 -c 'print("const s = \"" + "token-" * 8500 + "\";")' > src/redos_secret.ts
+printf 'export const config = { apiKey: "q8Fz3Lm7Rt4Vw8Yz1Ab3CdEf" };\n' >> src/redos_secret.ts
+timed 3 1 "redos: 50KB token-token-... line, full run, secret still caught"
+has "src/redos_secret.ts:2: credential-looking literal"
+reset_diff
+
+python3 -c 'print("a" * 200000)' > src/redos_word.ts
+timed 1 0 "redos: 200KB single word, full run" --strict
+reset_diff
+
+python3 -c 'print("db.query(\"" + "select " * 60000 + "\" + id);")' > src/redos_sql.ts
+printf 'export const q = (id) => db.query(`SELECT * FROM t WHERE id = ${id}`);\n' >> src/redos_sql.ts
+timed 1 1 "redos: 420KB of SQL verbs with no clause, full run, concat still caught"
+has "src/redos_sql.ts:2: SQL built from interpolated values"
+reset_diff
+
 # --------------------------------------------------- nest-controller-no-guard
 printf "@Controller('albums')\nexport class AlbumsController {}\n" > src/albums.controller.ts
 expect 0 "nest-controller-no-guard: advisory without a global guard" --only nest-controller-no-guard

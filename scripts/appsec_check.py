@@ -139,7 +139,9 @@ TAINT_SRC = (r"\b(?:req|request|ctx\.request|ctx)\.(?:body|query|params|args|for
              r"GET|POST|data|values)\b|\bevent\.(?:body|queryStringParameters|pathParameters)\b"
              r"|\brequest\.get_json\(")
 TAINT_SRC_RX = re.compile(TAINT_SRC)
-ASSIGN_RX = re.compile(r"(?:\b(?:const|let|var)\s+)?(\{[^{}=]*\}|[A-Za-z_$][\w$]*)\s*=(?!=)\s*([^\n;]*)")
+# `(?<![\w$])` starts a name only at its first character; without it a long word is
+# retried from every offset and the scan goes quadratic.
+ASSIGN_RX = re.compile(r"(?:\b(?:const|let|var)\s+)?(\{[^{}=]*\}|(?<![\w$])[A-Za-z_$][\w$]*)\s*=(?!=)\s*([^\n;]*)")
 NEST_PARAM_RX = re.compile(r"@(?:Body|Query|Param)\([^)]*\)\s*([A-Za-z_$][\w$]*)")
 
 
@@ -271,14 +273,18 @@ def check_unsafe_html(files, base):
 
 
 # --- sql concatenation -------------------------------------------------------
-SQL_WORD = r"(?i:\b(?:select|insert|update|delete|with|merge|replace)\b[\s\S]*\b(?:from|into|set|where|values|table)\b)"
+# Anchored, and the first verb is captured inside a lookahead, which Python never
+# re-enters: a verb with no clause after it is not retried from every later verb.
+# The first verb has the longest tail, so no match is lost.
+SQL_WORD = (r"(?i:^(?=([\s\S]*?\b(?:select|insert|update|delete|with|merge|replace)\b))\1"
+            r"[\s\S]*\b(?:from|into|set|where|values|table)\b)")
 SQL_SINK_RX = re.compile(
     r"(?:\.(?:query|raw|execute|executemany|exec|\$queryRawUnsafe|\$executeRawUnsafe)|\b(?:knex\.raw|sequelize\.query))\s*\(")
 WHERE_SINK_RX = re.compile(r"\.(?:where|andWhere|orWhere|having)\s*\(")
 TEMPLATE_INTERP_RX = re.compile(r"^`[^`]*\$\{[^`]*`$", re.S)
 PY_INTERP_RX = re.compile(r"""^[fF][rR]?(?:"[^"]*\{[^"]*"|'[^']*\{[^']*')|^(?:"[^"]*"|'[^']*')\s*(?:%|\.format\s*\()""", re.S)
 CONCAT_RX = re.compile(r"""(?:^(?:'[^']*'|"[^"]*"|`[^`]*`)\s*\+)|(?:\+\s*(?:'[^']*'|"[^"]*"|`[^`]*`)\s*$)""", re.S)
-SQL_ASSIGN_RX = re.compile(r"(?:\b(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)")
+SQL_ASSIGN_RX = re.compile(r"(?:\b(?:const|let|var)\s+)?((?<![\w$])[A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)")
 
 
 def built_sql(expr):
@@ -313,10 +319,12 @@ def check_sql_concat(files, base):
 # AWS and private-key shapes are gitleaks' own rules (config/gitleaks.toml ids
 # aws-access-token, private-key); the generic rule is narrower than gitleaks'
 # and adds an entropy floor so a 16-character English identifier is not a key.
+# The name around the keyword is bounded ({0,40}): unbounded runs on both sides went
+# cubic on one long `token-token-...` line.
 AWS_RX = re.compile(r"\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b")
 PEM_RX = re.compile(r"-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----")
 GENERIC_RX = re.compile(
-    r"""(?i)\b[\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d)[\w-]*["']?\s*[:=]\s*["']([A-Za-z0-9/_+=.-]{16,})["']""")
+    r"""(?i)(?:api[_-]?key|secret|token|passw(?:or)?d)[\w-]{0,40}["']?\s*[:=]\s*["']([A-Za-z0-9/_+=.-]{16,})["']""")
 # `user_password_input_1` is a name, not a key: words joined by _ - . with at most a short number.
 WORDY_RX = re.compile(r"(?:[A-Za-z]{2,}|\d{1,3})(?:[_.-](?:[A-Za-z]{2,}|\d{1,3}))+")
 PLACEHOLDER_RX = re.compile(r"(?i)example|changeme|placeholder|dummy|your[_-]|xxxx|redacted|<|\.\.\.|^\$\{|process\.env")
