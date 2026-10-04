@@ -3,6 +3,18 @@
 Contract: every rule below is either a runnable check or a precise review question a
 human can answer yes/no. No adjectives. No "follow best practices".
 
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Applies when](#applies-when) | the manifest/chart/workflow signals that put this reviewer in scope | 4 lines |
+| 2 | [Blocking rules](#blocking-rules) | the six rules that must hold, each with the tool finding that proves it | 8 lines |
+| 3 | [Common AI failure modes in this stack](#common-ai-failure-modes-in-this-stack) | **start here**: what LLMs get wrong in manifests, with real-repo evidence and a detection for each | 18 lines |
+| 4 | [Edge cases routinely missed](#edge-cases-routinely-missed) | drain, image-pull, autoscaler, rollback, quota and clock-skew scenarios and how each is caught | 13 lines |
+| 5 | [Approach selection](#approach-selection) | authoring, GitOps, secrets, ingress, mesh, database and cluster choices, each with a DEFAULT | 11 lines |
+| 6 | [Verify](#verify) | kubeconform, trivy, kube-score and a tested conftest policy, diff-scoped | 74 lines |
+| 7 | [Sources](#sources) | pinned policy libraries, reference manifests, Kubernetes docs and tool versions | 13 lines |
+
 ## Applies when
 - Any file matches `apiVersion:` + `kind: (Deployment|StatefulSet|DaemonSet|Pod|Job|CronJob|Service|Ingress|HorizontalPodAutoscaler|NetworkPolicy)`.
 - `Chart.yaml` exists anywhere in the repo (Helm chart).
