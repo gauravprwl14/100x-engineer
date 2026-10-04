@@ -134,6 +134,45 @@ rc_is 2 $? "show: unknown tier rejected"
 python3 "$B" show --work api >"$OUT" 2>&1
 rc_is 2 $? "show: tier is required"
 
+# ---------- question scoping: when_any clauses and door ----------
+lint_bad 'items["ask.rpo-rto"]["when_any"] = []' "when_any: must be a non-empty list" "empty when_any"
+lint_bad 'items["ask.rpo-rto"]["when_any"] = [{"tier": "growth"}]' "unknown key 'tier'" "when_any clause with an unknown key"
+lint_bad 'items["ask.rpo-rto"]["when_any"] = [{"from_tier": "huge"}]' "from_tier must be one of" "when_any clause with a bad tier"
+lint_bad 'items["ask.rpo-rto"]["when_any"] = [{"kinds": ["nosuchkind"]}]' "unknown kind(s) ['nosuchkind']" "when_any clause with an unknown kind"
+lint_bad 'items["ask.rpo-rto"]["when_any"] = [{"work": ["desktop"]}]' "work must be a subset" "when_any clause with an unknown work type"
+lint_bad 'items["ask.rpo-rto"]["door"] = "revolving"' "door must be one of" "invalid door"
+lint_bad 'items["api.rate-limit"]["door"] = "one-way"' "door applies only to class C" "door on a non-C item"
+mutate 'items["ask.rpo-rto"]["when_any"] = [{"kinds": ["payment"]}, {"risk": "regulated"}]'
+python3 "$B" lint --file "$TMP/b.json" >"$OUT" 2>&1
+rc_is 0 $? "lint accepts a well-formed when_any (no false positive)"
+
+python3 - "$ROOT" >"$OUT" 2>&1 <<'PY2' && ok "applies: when_any needs one matching clause; kinds scope it" || bad "when_any semantics"
+import sys; sys.path.insert(0, sys.argv[1] + "/scripts")
+import baseline as bl
+d = bl.load()
+ids = lambda w, t, r, k=None: {i["id"] for i in bl.applicable(w, t, r, d, kinds=k)}
+assert "ask.rpo-rto" not in ids(["api"], "small", "none")
+assert "ask.rpo-rto" in ids(["api"], "small", "elevated")
+assert "ask.rpo-rto" in ids(["api"], "growth", "none")
+assert "ask.rpo-rto" not in ids(["web-ui"], "growth", "elevated")   # its own work still gates
+assert "ask.supported-locales" not in ids(["web-ui"], "small", "none")
+assert "ask.supported-locales" in ids(["web-ui"], "growth", "none")
+item = next(i for i in d["items"] if i["id"] == "ask.rpo-rto")
+item["when_any"] = [{"kinds": ["payment"]}]
+assert "ask.rpo-rto" not in ids(["api"], "small", "none") and "ask.rpo-rto" not in ids(["api"], "growth", "none")
+assert "ask.rpo-rto" in ids(["api"], "small", "none", ["crud", "payment"])
+order = [i["id"] for i in bl.ask_order(bl.applicable(["api", "web-ui"], "small", "none", bl.load()))]
+assert order[0] == "ask.cost-ceiling" and order.index("ask.tenancy-isolation") < order.index("ask.unusual-targets"), order
+PY2
+python3 "$B" show --work api --tier small --risk none --json >"$OUT"
+no '"id": "ask.rpo-rto"'
+python3 "$B" show --work api --tier small --risk none --kind payment --json >"$OUT"
+has '"kinds": ['
+grep -q "owner decision (c)" "$ROOT/scripts/data/baseline.json" && bad "a source still reads 'owner decision (c)' (looks like class C)" \
+  || ok "sources say 'owner decision, defaults bundle', not '(c)'"
+grep -q "owner decision, defaults bundle" "$ROOT/scripts/data/baseline.json" && ok "the reworded source is present" \
+  || bad "the reworded source is missing"
+
 echo
 echo "baseline: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

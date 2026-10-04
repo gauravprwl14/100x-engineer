@@ -20,6 +20,13 @@ id is never renamed or deleted: a retired item stays, marked `"deprecated": true
 pinned specs that list it still resolve. `lint` compares against the committed copy
 (`--against`, default HEAD) and fails when an id disappears.
 
+Two optional keys scope the class C questions, because a batch is capped at five
+(docs/OPERATING-MODEL.md section 5) and an irrelevant ask crowds out a relevant one:
+`when_any` is a list of clauses, each a subset of {kinds, work, from_tier, risk}; the
+item applies only when its own work/from_tier/risk match AND at least one clause
+matches every key it names. `door` (one-way | two-way) ranks the questions after the
+blocking ones: `ask_order` is blocking first, then one-way doors, then catalogue order.
+
 Python stdlib only.
 """
 import argparse, json, pathlib, re, shlex, subprocess, sys
@@ -32,6 +39,9 @@ _tiers = json.loads((DATA / "scale_tiers.json").read_text())
 TIER_ORDER = _tiers["_order"]
 RISK_ORDER = _tiers["_risk"]["order"]
 RISK_BY_KIND = _tiers["_risk"]["implied_by_kind"]
+# Feature kinds a `when_any` clause may name: both edge-case catalogues' keys.
+KNOWN_KINDS = {k for f in ("edge_cases.json", "edge_cases_infra.json") if (DATA / f).exists()
+               for k in json.loads((DATA / f).read_text()) if not k.startswith("_")}
 
 # Skills being written in parallel; an owner_skill naming one of these is not an
 # error yet. Once the skill directory exists, lint asks for it to leave this list.
@@ -47,7 +57,9 @@ WORK_ALIASES = {"public-api": "api"}
 CLASSES = ("A", "B", "C")
 REQUIRED_KEYS = ("id", "work", "class", "from_tier", "default", "assumption_text",
                  "source", "enforced_by", "owner_skill", "waivable")
-OPTIONAL_KEYS = ("risk", "ask", "blocks_ready", "since", "deprecated")
+OPTIONAL_KEYS = ("risk", "ask", "blocks_ready", "since", "deprecated", "when_any", "door")
+CLAUSE_KEYS = ("kinds", "work", "from_tier", "risk")
+DOORS = ("one-way", "two-way")
 TOP_KEYS = ("_doc", "_work_types", "schema", "version", "items")
 ID_RX = re.compile(r"^[a-z][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$")
 
@@ -90,22 +102,47 @@ def risk_floor(kinds, risk):
     return floor
 
 
-def applies(item, work, tier, risk):
+def _clause_matches(clause, work, tier, risk, kinds):
+    if "kinds" in clause and not set(clause["kinds"]) & set(kinds):
+        return False
+    if "work" in clause and not set(clause["work"]) & set(work):
+        return False
+    if "from_tier" in clause and TIER_ORDER.index(tier) < TIER_ORDER.index(clause["from_tier"]):
+        return False
+    return "risk" not in clause or RISK_ORDER.index(risk) >= RISK_ORDER.index(clause["risk"])
+
+
+def applies(item, work, tier, risk, kinds=None):
+    """`kinds` are the feature kinds (edge_cases*.json); None means none declared,
+    so a `when_any` clause naming kinds does not match."""
     if "*" not in item["work"] and not set(item["work"]) & set(work):
         return False
     if TIER_ORDER.index(tier) < TIER_ORDER.index(item["from_tier"]):
         return False
-    return RISK_ORDER.index(risk) >= RISK_ORDER.index(item.get("risk", "none"))
+    if RISK_ORDER.index(risk) < RISK_ORDER.index(item.get("risk", "none")):
+        return False
+    clauses = item.get("when_any")
+    return not clauses or any(_clause_matches(c, work, tier, risk, kinds or [])
+                              for c in clauses)
 
 
-def applicable(work, tier, risk, data=None, upto=None, deprecated=False):
-    """Items that apply to work x tier x risk. `upto` keeps only items that existed
-    in that catalogue version (a spec's pin); deprecated items are dropped unless
-    asked for."""
+def applicable(work, tier, risk, data=None, upto=None, deprecated=False, kinds=None):
+    """Items that apply to work x tier x risk (x kinds, for `when_any` clauses).
+    `upto` keeps only items that existed in that catalogue version (a spec's pin);
+    deprecated items are dropped unless asked for."""
     data = data or load()
-    return [i for i in data["items"] if applies(i, work, tier, risk)
+    return [i for i in data["items"] if applies(i, work, tier, risk, kinds)
             and (deprecated or not i.get("deprecated"))
             and (upto is None or since(i) <= upto)]
+
+
+def ask_order(items):
+    """Class C items in the order a question batch takes them (OPERATING-MODEL.md
+    section 5): blocking first, then one-way doors (section 4), then catalogue order,
+    which is the tie-break."""
+    cs = [i for i in items if i.get("class") == "C"]
+    return sorted(cs, key=lambda i: (not i.get("blocks_ready"),
+                                     i.get("door") != "one-way", cs.index(i)))
 
 
 def blocking_ids(data=None):
@@ -126,10 +163,11 @@ def cmd_show(a):
     if a.risk not in RISK_ORDER:
         print(f"unknown risk '{a.risk}'. available: {RISK_ORDER}", file=sys.stderr)
         return 2
-    items = applicable(work, a.tier, a.risk, data)
+    kinds = [k.strip() for k in (a.kind or "").split(",") if k.strip()]
+    items = applicable(work, a.tier, a.risk, data, kinds=kinds)
     if a.json:
         print(json.dumps({"version": version(data), "work": work, "tier": a.tier,
-                          "risk": a.risk, "items": items},
+                          "risk": a.risk, "kinds": kinds, "items": items},
                          indent=2, ensure_ascii=False))
         return 0
     print(f"baseline v{version(data)} for work={','.join(work) or '(cross-cutting only)'} "
@@ -200,6 +238,32 @@ def committed_ids(path, rev):
         return None
 
 
+def clause_errors(clauses, valid_work):
+    """Problems with a `when_any` value; [] when it is well formed."""
+    if not isinstance(clauses, list) or not clauses:
+        return ["must be a non-empty list of clauses"]
+    out = []
+    for n, c in enumerate(clauses):
+        if not isinstance(c, dict) or not c:
+            out.append(f"clause {n} must be a non-empty object")
+            continue
+        for k, v in c.items():
+            if k not in CLAUSE_KEYS:
+                out.append(f"clause {n}: unknown key '{k}' (known: {', '.join(CLAUSE_KEYS)})")
+            elif k in ("kinds", "work") and (not isinstance(v, list) or not v
+                                              or not all(isinstance(x, str) for x in v)):
+                out.append(f"clause {n}: {k} must be a non-empty list of names")
+            elif k == "kinds" and not set(v) <= KNOWN_KINDS:
+                out.append(f"clause {n}: unknown kind(s) {sorted(set(v) - KNOWN_KINDS)}")
+            elif k == "work" and not set(v) <= valid_work:
+                out.append(f"clause {n}: work must be a subset of {sorted(valid_work)}")
+            elif k == "from_tier" and v not in TIER_ORDER:
+                out.append(f"clause {n}: from_tier must be one of {TIER_ORDER}")
+            elif k == "risk" and v not in RISK_ORDER:
+                out.append(f"clause {n}: risk must be one of {RISK_ORDER}")
+    return out
+
+
 def lint(data, previous_ids=None):
     errs, warns = [], []
     items = data.get("items")
@@ -256,6 +320,8 @@ def lint(data, previous_ids=None):
                 e(f"class {cls} needs assumption_text")
             if i.get("blocks_ready"):
                 e("blocks_ready applies only to class C")
+            if "door" in i:
+                e("door applies only to class C: it ranks questions")
         if cls == "B" and i.get("from_tier") == "prototype":
             e("class B is tier-dependent; from_tier 'prototype' makes it always-on (use A)")
         if cls == "A" and i.get("from_tier") not in (None, "prototype"):
@@ -266,6 +332,11 @@ def lint(data, previous_ids=None):
             e(f"since must be an integer from 1 to the catalogue version ({ver})")
         if "deprecated" in i and not isinstance(i["deprecated"], bool):
             e("deprecated must be true or false")
+        if "door" in i and i["door"] not in DOORS:
+            e(f"door must be one of {DOORS}")
+        if "when_any" in i:
+            for why in clause_errors(i["when_any"], valid_work):
+                e(f"when_any: {why}")
         ok, why = enforced_ok(str(i.get("enforced_by", "")))
         if not ok:
             e(f"enforced_by: {why}")
@@ -329,6 +400,8 @@ def main():
                    "omit for cross-cutting items only")
     s.add_argument("--tier", required=True, help="|".join(TIER_ORDER))
     s.add_argument("--risk", default="none", help="|".join(RISK_ORDER))
+    s.add_argument("--kind", default="", help="comma-separated feature kinds; scopes the "
+                   "items whose `when_any` names kinds")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_show)
     li = sub.add_parser("lint")
