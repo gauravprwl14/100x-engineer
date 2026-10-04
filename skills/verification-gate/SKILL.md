@@ -75,9 +75,9 @@ listed under Failure modes.
    Claude Code starts from is the human-only off switch.
    *Enforced by:* `bash tests/test_verification_gate.sh`
 
-7. Never chain an edit, or the checks, into the same command line as the commit or
-   push: the gate judges before the line runs, so `echo x >> f && git commit -am x`
-   would ship content it never saw. Edit and verify, then commit in a separate command.
+7. Never chain an edit, the checks, or a commit before a push into one command line:
+   the gate judges before the line runs, so `echo x >> f && git commit -am x` would
+   ship content it never saw. Edit and verify, commit, then push, each separately.
    *Enforced by:* the `PreToolUse` hook (denies a gated action after any earlier segment
    that is not read-only)
 

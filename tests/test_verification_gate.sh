@@ -103,6 +103,8 @@ HUNDREDX_KEY_FILE="$TMP/otherkey" expect deny "receipt signed with another key d
 chmod 644 "$HUNDREDX_KEY_FILE"
 expect deny   "group/world-readable key refused"    "$C" "$R" "0600"
 chmod 600 "$HUNDREDX_KEY_FILE"
+printf '\377\376%.0s' $(seq 32) > "$TMP/binkey"; chmod 600 "$TMP/binkey"
+HUNDREDX_KEY_FILE="$TMP/binkey" expect deny "non-UTF-8 key is malformed, not a fail-open" "$C" "$R" "malformed"
 
 echo "--- policy binds labels to commands"
 (cd "$R" && python3 "$VERIFIED" --name test -- true >/dev/null 2>&1); rc=$?
@@ -196,13 +198,41 @@ expect deny   "an abbreviated long option is still the evasion" 'git commit --no
 expect deny   "core.hooksPath via GIT_CONFIG_* is evasion" \
   'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x' "$R" "hooks"
 
+echo "--- review repros: each of these reached no decision before (no receipt: denied)"
+NL=$'\n'
+REVIEW=('echo issue#12 && git commit -m x' 'echo ${#PATH} && git commit -m x'
+  'curl -s https://example.com/page#top >/dev/null; git push origin main'
+  '[ $# -eq 0 ] && git commit -am x' 'open http://localhost:3000/#/home && git push'
+  "git -C . \\${NL}commit -am x" "git -c user.name=x \\${NL}push origin main" "gh \\${NL}pr merge 1"
+  "echo \"a <<EOF\"${NL}git commit -m x" "echo \$((a<<b))${NL}git commit -m x"
+  "git commit -m \"use <<EOF heredocs\"${NL}git push origin HEAD" "echo \"a<<EOF\"${NL}git commit -am x"
+  "cat <<EOF-X${NL}EOF-X${NL}git commit -am x${NL}EOF"
+  "bash -o pipefail -c 'git commit -am x'" "bash -euo pipefail -c 'git commit -am x'"
+  "bash -O extglob -c 'git commit -am x'" "sh +o nounset -c 'git push'"
+  'poetry publish' 'hatch publish' 'cargo publish' 'cargo +nightly publish' 'gem push x.gem'
+  'mytool publish' 'git ${C:-commit} -m x' "git \$'commit' -m x" 'git "$(echo commit)" -m x'
+  'git $(echo commit) -am x' 'git ${S:-commit} -m x' "git co\$'mmit' -m x"
+  'pnpm exec git commit -am x' 'npm exec -- git commit -m x' 'uv run git commit -m x'
+  'yarn dlx git push' 'source <(echo git commit -am x)' '. <(echo git push)'
+  'git config alias.ci commit && git ci -m x')
+for c in "${REVIEW[@]}"; do expect deny "gated: ${c//$'\n'/ | }" "$c"; done
+if [ "$(uname)" = Darwin ]; then
+  expect deny "case-insensitive filesystem: GIT commit" 'GIT commit -am x'
+  expect deny "case-insensitive filesystem: Git push"   'Git push origin main'
+fi
+
 echo "--- no false positives on look-alikes"
 QUIET=('echo git commit' 'printf "%s\n" "git push origin main"' 'grep -rn "git push" .'
   'git log --grep commit' 'ls .github' 'echo $(git rev-parse HEAD)' 'cat <<< "git push"'
   'git merge --abort' 'git update-ref -d refs/heads/x' 'gh api repos/o/r/pulls'
   'command -v git' 'man git-push' 'git push -n origin main' 'npm run build'
   'for f in commit push; do echo $f; done' 'git config alias.ci' 'brew install git gh'
-  "$(printf 'cat > n.md <<EOF\n$ git push origin main\nEOF')")
+  "$(printf 'cat > n.md <<EOF\n$ git push origin main\nEOF')"
+  'ls # git commit -m x' 'echo hi   # then git push' "$(printf 'ls\n# git push origin main')"
+  'echo "a#b git commit"' "git status \\${NL}--short" "bash -o pipefail -c 'echo hi'"
+  'npm exec -- prettier --check .' 'uv run pytest' 'cargo build' 'poetry install' 'gem list'
+  'echo publish' 'git config alias.ci commit' "$(printf "cat <<'EOF'\ngit push\nEOF")"
+  "$(printf 'cat <<EOF-X\ngit push\nEOF-X')" 'echo $((1<<3))')
 for c in "${QUIET[@]}"; do expect silent "not gated: ${c//$'\n'/ | }" "$c"; done
 mv "$TMP/receipt.bak" "$RCPT"
 
@@ -214,7 +244,7 @@ PASSING=('timeout 60 git commit -am x' 'nice -n 5 git commit -m x' 'eval git com
   'env -u FOO git push' 'sudo -u me git push' 'G=git; $G commit -m x'
   'git -c alias.ci=commit ci -m x' "export GIT_DIR=$R/.git; git commit -m x"
   'git status && git commit -m x' 'git add -A && git commit -m x'
-  'git diff --stat; git commit -m x 2>/dev/null' 'git commit -m x && git push'
+  'git diff --stat; git commit -m x 2>/dev/null'
   'cd "$(git rev-parse --show-toplevel)" && git commit -m x')
 for c in "${PASSING[@]}"; do expect message "passes when verified: $c" "$c" "$R" "PASSED"; done
 
@@ -227,6 +257,11 @@ expect deny   "edit inside bash -c before commit"  "bash -c 'echo evil > app.py;
 expect deny   "edit in a substitution"             'git commit -m "$(echo evil > app.py)"' "$R" "$T"
 expect deny   "edit before push"                   'echo evil >> app.py; git push' "$R" "$T"
 expect message "redirect to /dev/null is not an edit" 'echo x > /dev/null && git commit -m x' "$R" "PASSED"
+expect deny   "git diff --output writes a file"    'git diff --output=a.txt && git commit -am x' "$R" "$T"
+expect deny   "git log --output writes a file"     'git log --output a.txt && git commit -am x' "$R" "$T"
+expect deny   "-c config on a read-only git can run code" "git -c core.fsmonitor='touch zz' status && git commit -m x" "$R" "$T"
+expect deny   "-c filter on git add can run code"  "git -c filter.x.clean='touch zz' add . && git commit -m x" "$R" "$T"
+expect message "plain git diff is still read-only" 'git diff && git commit -m x' "$R" "PASSED"
 
 echo "--- every publish variant is routed by hooks.json and decided by the script"
 PUBLISH=('git push origin main' 'git tag v1.0.0' 'git tag -a v1 -m rel' 'gh pr create --fill'
@@ -285,6 +320,17 @@ expect deny   "push bad:main"                       'git push origin bad:main' "
 expect deny   "push +bad:main"                      'git push -f origin +bad:main' "$R" "not the checked-out"
 expect deny   "push --tags with a tag elsewhere"    'git push --tags' "$R" "old-release"
 expect deny   "push --all with another branch"      'git push --all origin' "$R" "bad"
+expect deny   "push origin : (matching) sends every branch" 'git push origin :' "$R" "bad"
+expect deny   "-c push.default=matching widens a plain push" 'git -c push.default=matching push origin' "$R" "bad"
+expect deny   "-c remote.origin.mirror=true is a mirror push" 'git -c remote.origin.mirror=true push origin' "$R" "old-release"
+expect deny   "-c remote.origin.push refspecs: refs unknown" 'git -c remote.origin.push=bad:main push origin' "$R" "cannot tell"
+git config push.default matching
+expect deny   "push.default=matching from repo config" 'git push origin' "$R" "bad"
+git config --unset push.default
+git remote add origin "$TMP/nowhere.git"; git config remote.origin.mirror true
+expect deny   "remote.origin.mirror from repo config" 'git push' "$R" "old-release"
+git remote remove origin
+expect message "push.default=simple is not widened" 'git -c push.default=simple push origin main' "$R" "PASSED"
 expect deny   "push an unknown ref"                 'git push origin nosuch' "$R" "local commit"
 expect deny   "gh pr create --head bad"             'gh pr create --head bad --fill' "$R" "not the checked-out"
 expect deny   "unresolvable program pushing bad"    '$(echo git) push origin bad' "$R" "not the checked-out"
@@ -293,8 +339,12 @@ git tag good-release; expect message "push a tag at HEAD" 'git push origin good-
 echo 'x = 9' > app.py; fresh
 expect deny   "uncommitted verified edits: push denied" 'git push origin main' "$R" "uncommitted"
 expect deny   "uncommitted verified edits: gh pr create denied" 'gh pr create --fill' "$R" "uncommitted"
-expect message "commit -am && push sends the verified tree" 'git commit -am x && git push' "$R" "PASSED"
+expect deny   "commit -am && push: the commit has not happened yet" 'git commit -am x && git push' "$R" "separate command"
 expect deny   "commit (not -a) && push would send less" 'git commit -m x && git push' "$R" "separate command"
+expect deny   "pathspec commit && push"            'git commit -m x b.txt && git push origin main' "$R" "separate command"
+expect deny   "commit; push"                       'git commit -m x; git push origin main' "$R" "separate command"
+expect deny   "GIT_INDEX_FILE commit && push"      'GIT_INDEX_FILE=/tmp/nope git commit -m x && git push origin main' "$R" "separate command"
+expect deny   "commit && gh pr create"             'git commit -am x && gh pr create --fill' "$R" "separate command"
 git commit -qam "app 9"; fresh
 
 echo "--- P5: a commit that changes the policy needs a receipt taken with it"
@@ -306,6 +356,11 @@ fresh
 expect message "re-verified with the new policy in place" "$C" "$R" "PASSED"
 git commit -qm "policy: max age"; fresh
 expect message "no policy change: old receipts still fine" "$C" "$R" "PASSED"
+printf '{"mode": "off"}\n' > .claude/verification-policy.json
+expect message "unstaged policy edit, plain commit: the policy is not committed" "$C" "$R" "PASSED"
+expect deny   "git add -A && commit weakens the policy" 'git add -A && git commit -m weaken' "$R" "changes .claude/verification-policy.json"
+expect deny   "git add .claude && commit weakens the policy" 'git add .claude && git commit -m weaken' "$R" "changes .claude"
+git show HEAD:.claude/verification-policy.json > .claude/verification-policy.json
 
 echo "--- B2: the receipt write cannot be redirected by a symlink"
 mkdir -p "$TMP/outside"; echo precious > "$TMP/victim.txt"
@@ -366,7 +421,7 @@ mv "$TMP/linked.bak" "$WGP"
 
 echo "--- S3: runner-altering environment and PATH shadowing are refused"
 cp "$RCPT" "$TMP/receipt.keep"
-for v in PYTEST_ADDOPTS NODE_OPTIONS GOFLAGS; do
+for v in PYTEST_ADDOPTS NODE_OPTIONS GOFLAGS BASH_ENV ENV npm_config_script_shell NPM_CONFIG_SCRIPT_SHELL; do
   (cd "$R" && env "$v=--x" python3 "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
   [ "$rc" -eq 2 ] && grep -q "$v" "$TMP/err" && ok "$v set: refused (exit 2)" || bad "$v set: refused (rc=$rc)"
 done
@@ -382,10 +437,29 @@ mkdir -p "$R/bin"; cp "$TMP/evil/python3" "$R/bin/python3"
 [ "$rc" -eq 2 ] && grep -q "repository" "$TMP/err" && ok "python3 shadowed from inside the repo: refused" \
   || bad "python3 shadowed from inside the repo: refused (rc=$rc)"
 rm -rf "$R/bin"
+mkdir -p "$TMP/x/node_modules/.bin"; cp "$TMP/evil/python3" "$TMP/x/node_modules/.bin/python3"
+(cd "$R" && PATH="$TMP/x/node_modules/.bin:$PATH" "$PYBIN" "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q "inside" "$TMP/err" && ok "a temp dir named node_modules/.bin is not exempt" \
+  || bad "a temp dir named node_modules/.bin is not exempt (rc=$rc)"
+mkdir -p "$TMP/venv/bin"; touch "$TMP/venv/pyvenv.cfg"; cp "$TMP/evil/python3" "$TMP/venv/bin/python3"
+(cd "$R" && PATH="$TMP/venv/bin:$PATH" "$PYBIN" "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q "inside" "$TMP/err" && ok "a temp dir beside a fake pyvenv.cfg is not exempt" \
+  || bad "a temp dir beside a fake pyvenv.cfg is not exempt (rc=$rc)"
+printf '#!/usr/bin/env python3\nimport sys; sys.exit(1)\n' > "$R/check.sh"; chmod +x "$R/check.sh"
+(cd "$R" && PATH="$TMP/evil:$PATH" "$PYBIN" "$VERIFIED" --name shebang -- ./check.sh >/dev/null 2>"$TMP/err"); rc=$?
+[ "$rc" -eq 2 ] && grep -q "python3" "$TMP/err" && grep -q "inside" "$TMP/err" \
+  && ok "a fake interpreter for an env shebang is refused" || bad "a fake interpreter for an env shebang is refused (rc=$rc)"
+rm "$R/check.sh"
 REALPY="$(python3 -c 'import os,shutil; print(os.path.realpath(shutil.which("python3")))')"
 mkdir -p "$TMP/link"; ln -s "$REALPY" "$TMP/link/python3"
 (cd "$R" && PATH="$TMP/link:$PATH" python3 "$VERIFIED" --name test >/dev/null 2>&1) \
   && ok "a temp-dir symlink to the real python3 is accepted" || bad "a temp-dir symlink to the real python3 is accepted"
+mkdir -p "$R/node_modules/.bin"; printf '#!/bin/sh\nexec "%s" "$@"\n' "$REALPY" > "$R/node_modules/.bin/python3"
+chmod +x "$R/node_modules/.bin/python3"
+(cd "$R" && PATH="$R/node_modules/.bin:$PATH" "$PYBIN" "$VERIFIED" --name test >/dev/null 2>&1) \
+  && ok "the repository's own node_modules/.bin stays exempt" || bad "the repository's own node_modules/.bin stays exempt"
+rm -rf "$R/node_modules"
+(cd "$R" && python3 "$VERIFIED" --name test >/dev/null 2>&1)
 python3 - "$REALPY" "$RCPT" <<'PY' && ok "receipt records the executable's real path" || bad "receipt records the executable's real path"
 import json, sys
 e = json.load(open(sys.argv[2]))["checks"]["test"]

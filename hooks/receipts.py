@@ -58,17 +58,17 @@ def load_key(create=False):
                         f"on first use")
     except OSError as e:
         raise GateError(f"receipt signing key {path} is unreadable or a symlink ({e})")
-    with os.fdopen(fd, "r") as f:
+    with os.fdopen(fd, "rb") as f:
         st = os.fstat(f.fileno())
         # A key others can read or replace signs nothing: anyone could mint receipts.
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() \
                 or st.st_mode & 0o077:
             raise GateError(f"receipt signing key {path} must be a regular file owned "
                             f"by you with mode 0600 (fix: chmod 600 {path})")
-        text = f.read().strip()
+        raw = f.read()
     try:
-        key = bytes.fromhex(text)
-    except ValueError:
+        key = bytes.fromhex(raw.decode("ascii").strip())
+    except ValueError:              # includes UnicodeDecodeError: deny, never fail open
         key = b""
     if len(key) < 32:
         raise GateError(f"receipt signing key {path} is malformed; move it aside and "

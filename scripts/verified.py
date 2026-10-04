@@ -12,10 +12,21 @@ from _paths import safe_write_text, show
 # to turn a real suite into a passing no-op: PYTEST_ADDOPTS (`--collect-only`,
 # `-k nothing`), PYTEST_PLUGINS (a plugin that skips everything), NODE_OPTIONS
 # (`--require` a preload that exits 0), GOFLAGS (`-run=^$`), and the two dynamic-loader
-# preloads. The receipt records the command, so a run shaped by any of these would
-# attest to something the command does not say.
+# preloads. BASH_ENV and ENV name a file a non-interactive bash (or sh) sources first,
+# which can `exit 0`. Any npm_config_*shell* variable (script-shell above all) swaps the
+# shell npm runs scripts with, so npm_config_script_shell=/usr/bin/true makes a failing
+# `npm test` pass. The receipt records the command, so a run shaped by any of these
+# would attest to something the command does not say.
 RUNNER_ENV = ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "NODE_OPTIONS", "GOFLAGS",
-              "LD_PRELOAD", "DYLD_INSERT_LIBRARIES")
+              "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "BASH_ENV", "ENV")
+
+
+def runner_env_set():
+    """The runner-altering variables that are set and non-empty."""
+    found = [v for v in RUNNER_ENV if os.environ.get(v)]
+    found += sorted(k for k, v in os.environ.items() if v and
+                    k.lower().startswith("npm_config_") and "shell" in k.lower())
+    return found
 
 USAGE = """100x verified -- run a check and write a signed, content-bound receipt
 
@@ -44,8 +55,9 @@ Examples:
 
 Refuses (exit 2) when a variable that can turn a check into a no-op is set
 (PYTEST_ADDOPTS, PYTEST_PLUGINS, NODE_OPTIONS, GOFLAGS, LD_PRELOAD,
-DYLD_INSERT_LIBRARIES), when the command's program would come from a PATH entry inside
-the repository or a temp directory, or when the git directory's 100x/ or the receipt is
+DYLD_INSERT_LIBRARIES, BASH_ENV, ENV, npm_config_*shell*), when the command's program,
+or the interpreter its `#!` line names, would come from a PATH entry inside the
+repository or a temp directory, or when the git directory's 100x/ or the receipt is
 a symlink. A .claude/verification-receipt.json left by an older version is ignored.
 
 Exits with the wrapped command's exit code (2 on a usage or policy refusal)."""
@@ -71,12 +83,14 @@ def _temp_roots():
     return {os.path.realpath(p) for p in roots if p and os.path.isdir(p)}
 
 
-def _tool_managed(directory):
-    """A virtualenv's or node_modules' bin directory: on PATH inside the repository on
-    purpose, written by the package manager rather than committed."""
+def _tool_managed(directory, root):
+    """A virtualenv's or node_modules' bin directory inside the repository: on PATH on
+    purpose, written by the package manager rather than committed. Only inside the
+    repository: the test is by name, which anyone can recreate in a temp directory."""
     d = pathlib.Path(directory)
-    return (d.parent / "pyvenv.cfg").is_file() or \
-        (d.name == ".bin" and d.parent.name == "node_modules")
+    return _inside(directory, root) and (
+        (d.parent / "pyvenv.cfg").is_file() or
+        (d.name == ".bin" and d.parent.name == "node_modules"))
 
 
 def resolve_executable(name, root):
@@ -99,13 +113,40 @@ def resolve_executable(name, root):
         real = os.path.realpath(cand)
         where = "the repository" if _inside(real, root) else next(
             (t for t in temps if _inside(real, t)), None)
-        if where and not _tool_managed(directory):
+        if where and not _tool_managed(directory, root):
             raise Refusal(f"`{name}` resolves to {real}, inside {where}, ahead of the "
                           f"system's copy on PATH; a program there can fake a pass. "
                           f"Remove {entry or '.'} from PATH, or name the program by "
                           f"its path in the policy")
         return cand, real
     raise Refusal(f"`{name}` was not found on PATH")
+
+
+def _shebang_interpreter(path):
+    """The program a `#!/usr/bin/env [-S] NAME` line looks up on PATH, else None."""
+    try:
+        with open(path, "rb") as f:
+            line = f.readline(256)
+    except OSError:
+        return None
+    if not line.startswith(b"#!"):
+        return None
+    words = line[2:].decode("utf-8", "replace").split()
+    if not words or os.path.basename(words[0]) != "env":
+        return None
+    rest = [w for w in words[1:] if not w.startswith("-") and "=" not in w]
+    return rest[0] if rest else None
+
+
+def check_executable(name, root):
+    """resolve_executable, plus the same rule for the interpreter an `env` shebang
+    finds on PATH: `npm` is `#!/usr/bin/env node`, so a fake `node` first on PATH
+    decides the result while the receipt names the real npm."""
+    exe, real = resolve_executable(name, root)
+    interp = _shebang_interpreter(real)
+    if interp and os.sep not in interp:
+        resolve_executable(interp, root)
+    return exe, real
 
 
 def _check_receipt_path(root):
@@ -215,13 +256,13 @@ def main(argv):
         return 2
 
     try:
-        set_vars = [v for v in RUNNER_ENV if os.environ.get(v)]
+        set_vars = runner_env_set()
         if set_vars:
             raise Refusal(f"{', '.join(set_vars)} is set; it can change what "
                           f"`{shlex.join(cmd)}` runs without changing the command the "
                           f"receipt records. Unset it and re-run")
         _check_receipt_path(root)
-        exe, exe_real = resolve_executable(cmd[0], root)
+        exe, exe_real = check_executable(cmd[0], root)
     except Refusal as e:
         print(f"verified: refusing to record `{name}`: {e}", file=sys.stderr)
         return 2
