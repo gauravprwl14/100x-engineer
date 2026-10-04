@@ -319,10 +319,10 @@ def check_sql_concat(files, base):
 # AWS and private-key shapes are gitleaks' own rules (config/gitleaks.toml ids
 # aws-access-token, private-key); the generic rule is narrower than gitleaks'
 # and adds an entropy floor so a 16-character English identifier is not a key.
-# The name around the keyword is bounded ({0,40}): unbounded runs on both sides went
-# cubic on one long `token-token-...` line.
 AWS_RX = re.compile(r"\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b")
 PEM_RX = re.compile(r"-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----")
+# The name after the keyword is bounded ({0,40}): unbounded runs around it went
+# cubic on one long `token-token-...` line.
 GENERIC_RX = re.compile(
     r"""(?i)(?:api[_-]?key|secret|token|passw(?:or)?d)[\w-]{0,40}["']?\s*[:=]\s*["']([A-Za-z0-9/_+=.-]{16,})["']""")
 # `user_password_input_1` is a name, not a key: words joined by _ - . with at most a short number.
