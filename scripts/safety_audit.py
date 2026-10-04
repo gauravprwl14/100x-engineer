@@ -49,7 +49,7 @@ GUARD_HINTS = ("dry_run", "--yes", "getattr(a, \"yes\"", "tempfile", "TemporaryD
 # not by a flag. Each entry states the only path it writes.
 SCOPED_WRITERS = {
     "verified.py": ".claude/verification-receipt.json",
-    "learn.py": "lessons/ (records + generated INDEX.md)",
+    "learn.py": "<root>/lessons/ (records + generated INDEX.md); AGENTS.md only via promote --yes",
     "01_harvest_candidates.py": "research/raw/ (one-shot research pipeline)",
     "02_enrich.py": "research/raw/",
     "02_enrich_gql.py": "research/raw/",

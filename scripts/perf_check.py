@@ -2,7 +2,7 @@
 """Diff-scoped checks for the performance shapes an LLM reliably produces.
 
 Per skills/performance-budgets/SKILL.md, the plugin already gates bundle bytes
-(typescript-verification) and binary bytes (mobile-release-safety). Neither catches
+(language-verification) and binary bytes (mobile-release-safety). Neither catches
 runtime cost: N+1 loops, unbounded queries, missing timeouts, unbounded
 concurrency, or a heavy dependency slipped into a diff. This fills that gap,
 scoped to the current diff so it is runnable on a large existing codebase.

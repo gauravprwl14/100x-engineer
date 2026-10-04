@@ -1,7 +1,7 @@
 # Safety
 
 What this plugin can and cannot change on your machine, verified by reading the code
-and by `tests/test_safety.sh` (22 assertions).
+and by `tests/test_safety.sh`.
 
 **Threat model:** you run `claude --dangerously-skip-permissions`. Nothing prompts.
 Every mutation happens silently, so the only protection is what the code refuses to do.
@@ -11,10 +11,10 @@ Every mutation happens silently, so the only protection is what the code refuses
 | # | section | what it answers | size |
 |---|---------|-----------------|------|
 | 1 | [What this plugin never does](#what-this-plugin-never-does) | the destructive operations it contains zero instances of | 20 lines |
-| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands, and what guards it | 30 lines |
-| 3 | [Operations that require --yes](#operations-that-require---yes) | the two that move or rewrite existing files | 20 lines |
-| 4 | [Refusals](#refusals) | path traversal and non-git directories | 20 lines |
-| 5 | [The hooks](#the-hooks) | when each hook blocks, what it trusts, and how it fails | 45 lines |
+| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root), and what guards it | 40 lines |
+| 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run recorded commands | 25 lines |
+| 4 | [Refusals](#refusals) | path traversal, a records root outside the repo, and non-git directories | 25 lines |
+| 5 | [The hooks](#the-hooks) | gate modes, signed receipts and their limit, skip-verify, Stop and SessionStart, fail-open | 55 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
 | 7 | [Residual risks](#residual-risks) | what is still on you | 20 lines |
 
@@ -49,19 +49,36 @@ detects a command from a call that runs one.
 
 Every path this plugin writes to. Nothing else is touched.
 
+`<root>` is the records root, resolved by `scripts/_paths.py`, first match wins:
+
+| order | source | example |
+|---|---|---|
+| 1 | `.100x.json` at the git root | `{"root": "docs/engineering"}`; this plugin's own repo commits `{"root": "."}` |
+| 2 | env `HUNDREDX_ROOT_DIR` | a one-off run or CI |
+| 3 | default | `docs/engineering` |
+
+A repo that already holds top-level `prds/`, `specs/`, `decisions/`, `rca/`, `lessons/`,
+`reviews/` or `ledger/` records, with no config and no `docs/engineering/`, keeps using
+them, with a warning that says how to settle it.
+
 | tool | writes | where | guard |
 |---|---|---|---|
 | `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file |
 | `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
-| `plan_feature.py new` | `spec.md`, `INDEX.md` | `specs/<name>/` | `--dry-run`, name validation |
-| `prd.py new` | `prd.md`, `INDEX.md` | `prds/<name>/` | `--dry-run`, name validation |
-| `decide.py new` | `ADR-NNNN-*.md`, `INDEX.md` | `decisions/` | `--dry-run`, name validation |
-| `rca.py new` / `link` | `RCA-NNNN-*.md`, `INDEX.md` | `rca/` | `--dry-run`, name validation |
-| `learn.py add` | `LESSON-NNNN-*.md`, `INDEX.md` | `lessons/` | scope: one directory |
-| `ledger.py index` / `map` | `INDEX.md`, `MAP.md` | `ledger/` | generated files only |
-| `ledger.py shard` | **moves existing records** | `decisions/YYYY/QN/` etc. | **requires `--yes`** |
+| `plan_feature.py new` | `spec.md`, `INDEX.md` | `<root>/specs/<name>/` | `--dry-run`, name validation |
+| `prd.py new` | `prd.md`, `INDEX.md` | `<root>/prds/<name>/` | `--dry-run`, name validation |
+| `testplan.py new --out` | a test plan | the path given, or bare `--out` → `<root>/testplans/<feature>.md` | `--dry-run`, refuses to overwrite without `--force`, git root required |
+| `decide.py new` | `ADR-NNNN-*.md`, `INDEX.md` | `<root>/decisions/` | `--dry-run`, name validation |
+| `rca.py new` / `link` | `RCA-NNNN-*.md`, `INDEX.md` | `<root>/rca/` | `--dry-run`, name validation |
+| `learn.py add` | `LESSON-NNNN-*.md`, `INDEX.md` | `<root>/lessons/` | scope: one directory |
+| `learn.py promote` | **appends a lesson to an existing file** | `AGENTS.md` (else `CLAUDE.md`, or `--file`) | **requires `--yes`** |
+| `ledger.py index` / `map` | `INDEX.md`, `MAP.md` | `<root>/ledger/` | generated files only |
+| `ledger.py shard` | **moves existing records** | `<root>/decisions/YYYY/QN/` etc. | **requires `--yes`** |
+| `check_index.py --register` | one catalogue row | `<root>/INDEX.md` (or `--index`) | adds or updates one row |
 | `check_index.py --gen-collections` | `INDEX.md` | `research/`, `reviewers/`, `skills/` | generated files only |
+| `check_index.py --gen-terms` | `TERMS.md` | the git root (or `--terms-out`) | generated file only |
 | `check_index.py --fix-stubs` | **rewrites existing docs in place** | matched markdown | **requires `--yes`** |
+| `agent_report.py extract -o` | one report JSON | the path given | scope: one named file |
 | `diagram_from_code.py` | a `.mmd` file | `tempfile.mkdtemp()` | temp dir, removed |
 | `run_evals.py` | scratch repos | `tempfile.TemporaryDirectory()` | temp dir, removed |
 | everything else | nothing | — | read-only |
@@ -71,8 +88,8 @@ records land in your project and travel with it.
 
 ## Operations that require `--yes`
 
-Two operations change files that already exist, so both print a plan and do nothing
-without explicit consent:
+These change files that already exist, or run commands a record names, so each prints
+a plan and does nothing without explicit consent:
 
 ```bash
 100x ledger shard              # prints the moves, changes nothing
@@ -80,6 +97,12 @@ without explicit consent:
 
 100x check_index --fix-stubs           # lists what it would rewrite
 100x check_index --fix-stubs --yes     # rewrites in place
+
+100x learn promote LESSON-0001         # shows the lines it would append
+100x learn promote LESSON-0001 --yes   # appends them to AGENTS.md
+
+100x agent_report replay report.json        # prints the evidence commands
+100x agent_report replay --yes report.json  # runs them and compares exit codes
 ```
 
 `shard` moves records into date directories once a folder exceeds 40 entries. Ids live
@@ -104,6 +127,10 @@ only fallback is the current directory, which could be `$HOME` or anywhere the s
 happened to be — too easy to litter by accident, so the tools refuse and say so. Run
 `git init`, or `cd` into your project.
 
+**A records root outside the repository.** A `.100x.json` root or `HUNDREDX_ROOT_DIR`
+that is absolute or contains `..` is refused with exit 2, so a committed config file
+cannot make the record writers write outside the project.
+
 ## The hooks
 
 Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
@@ -113,7 +140,7 @@ Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 |---|---|---|
 | `require_verification.py` | `PreToolUse` (Bash) | `deny`, `ask`, or nothing; never `allow` |
 | `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
-| `session_start.py` | `SessionStart` | add five lines of context; reads nothing in your repo |
+| `session_start.py` | `SessionStart` | add five lines of context naming `/100x-engineer:100x`, `100x list`, the operating model and the receipt rule; reads nothing in your repo |
 
 **When the PreToolUse gate acts.** `hooks.json` routes any Bash command mentioning
 `git`, `gh`, or a publisher (`npm`/`pnpm`/`yarn publish`, `twine upload`,
@@ -125,10 +152,10 @@ Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 
 | repository state | result |
 |---|---|
-| no `.claude/verification-policy.json` | passes, with a warning that the gate is not configured |
+| no `.claude/verification-policy.json` | **warn**: passes, with a warning that the gate is not configured |
 | policy `{"mode": "off"}` | silent |
-| policy present | denied unless a fresh, **signed** receipt covers every required check with the command the policy binds to it |
-| `[skip-verify]` in the command | `ask`: a human approves or refuses; the agent cannot |
+| policy present | **block**: denied unless a fresh, **signed** receipt covers every required check with the command the policy binds to it |
+| `[skip-verify]` in the command | `ask`: a human approves or refuses; the agent cannot approve its own bypass |
 | `--no-verify`, `commit -n`, `-c core.hooksPath=` | denied (they skip git's own hooks silently) |
 
 **Why it never says `allow`.** An `allow` decision also skips the user's own `ask`
@@ -162,7 +189,7 @@ executable:
 
 ```bash
 100x safety_audit     # fails if a destructive primitive appears
-bash tests/test_safety.sh           # 22 assertions, including a planted rmtree
+bash tests/test_safety.sh           # includes a planted rmtree the audit must catch
 ```
 
 The suite plants a `shutil.rmtree` into a script and asserts the audit catches it, so
@@ -184,7 +211,7 @@ Honest list of what is still on you:
   runs `git commit`, or a heredoc piped into a shell. The gate stops the shortcut, not
   an agent determined to evade it.
 - **Nothing here protects against the model's own edits.** The gates check *evidence*
-  before a commit; they do not review the diff. That is what `scoped-review` and the
+  before a commit; they do not review the diff. That is what `diff-review` and the
   stack reviewers are for, and they are advisory.
 - **Generated indexes overwrite.** `INDEX.md` and `MAP.md` are outputs; hand edits are
   lost on regeneration. They say so in their headers.

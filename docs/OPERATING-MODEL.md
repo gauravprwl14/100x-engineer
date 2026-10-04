@@ -13,9 +13,9 @@ agent definition and this file disagree, this file wins.
 | 3 | [Report contract](#3-report-contract) | the exact shape of an agent's result and what makes it valid | ~45 lines |
 | 4 | [Decision policy](#4-decision-policy) | which decisions an agent may take alone, and the tie-break order | ~35 lines |
 | 5 | [Question policy](#5-question-policy) | when to ask the user, how many questions, and in what form | ~20 lines |
-| 6 | [Orchestration](#6-orchestration) | how a plan becomes parallel tasks without two agents colliding | ~45 lines |
+| 6 | [Orchestration](#6-orchestration) | the AC-<n> format, and how a plan becomes parallel tasks without two agents colliding | ~60 lines |
 | 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~20 lines |
-| 8 | [Indexing](#8-indexing) | how every written artifact stays findable, like a book | ~20 lines |
+| 8 | [Indexing](#8-indexing) | where records live (the records root) and how every written artifact stays findable | ~35 lines |
 
 ## 1. Roles
 
@@ -63,9 +63,11 @@ Every specialist runs these steps in order and may not skip one.
 3. **Challenge the plan.** Check the task is executable as written: missing contract,
    wrong owner, hidden dependency, a cheaper approach, a risk nobody named. Record each as a
    `plan_issue`.
-4. **Stop if blocked.** Any unresolved C item or any blocking `plan_issue` ends the task
-   with `status: needs-decision`. Assuming past it is the failure this protocol exists to
-   prevent.
+4. **Stop if blocked.** Only a blocking item ends the task with `status: needs-decision`:
+   an unanswered C item on data residency, compliance regime, retention or money (cost
+   ceiling), or any blocking `plan_issue`. Any other unanswered C item proceeds on its
+   recommendation as a non-blocking question marked `ASSUMED`. Assuming past a blocking
+   item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Stay inside the task's owned files.
 6. **Verify.** Run the task's verify commands and record each with its exit code.
 7. **Report** in the §3 shape. Prose outside the report is optional; the report is not.
@@ -83,7 +85,7 @@ re-runs every evidence command and fails if any exit code differs from the one c
   "task_id": "T3",
   "status": "done | needs-decision | blocked | failed",
   "understanding": "one to three sentences",
-  "inputs_read": ["specs/tagging/spec.md#api", "backend/src/album/album.service.ts"],
+  "inputs_read": ["docs/engineering/specs/tagging/spec.md#api", "backend/src/album/album.service.ts"],
   "assumptions": [{"id": "A1", "text": "...", "class": "A | B", "basis": "baseline:api.authz-every-endpoint"}],
   "questions": [{"id": "Q1", "question": "...", "why_it_matters": "...",
                  "options": ["...", "..."], "recommendation": "...", "blocking": true}],
@@ -152,6 +154,20 @@ which block the `ready` audit until answered.
 The orchestrate skill turns an approved spec into a task graph, `plan.json`, and
 `100x plan_dag lint` must pass before any task starts.
 
+Acceptance ids are the join key from PRD to test. A spec defines them in its `## 2b.
+Acceptance criteria` section, one line each, and nowhere else:
+
+```text
+AC-<n>: <observable outcome> (R<k>, S<k>)
+```
+
+`R<k>` is the PRD requirement it satisfies (required when the spec's `| prd |` header
+field or `<root>/prds/<feature>/` names a PRD); `S<k>` is the in-scope row it delivers.
+Ids are unique and never renumbered. The verification plan's `covers` column names the
+ACs each row proves. `100x plan_feature audit` enforces all of it; `100x prd align` traces
+R ↔ AC ↔ S by id, which proves a link was declared, not that the AC satisfies the
+requirement.
+
 ```json
 {
   "feature": "album-tagging",
@@ -173,7 +189,7 @@ The orchestrate skill turns an approved spec into a task graph, `plan.json`, and
 | every task has `files`, `verify` and at least one acceptance id | `plan_dag lint` |
 | two tasks with no dependency path between them own disjoint files | `plan_dag lint` |
 | shared contracts (types, API schema, DB schema) are `contract: true` tasks; a task names the contracts it builds on in `consumes`, must depend on them, and must not own their files | `plan_dag lint` |
-| every acceptance id in the spec is covered by some task | `plan_dag lint --spec` |
+| every acceptance id the spec **defines** is covered by some task; a spec that defines none fails | `plan_dag lint --spec` |
 | each running task gets its own git worktree; the main session merges and re-verifies | review |
 
 `100x plan_dag waves` prints the tasks that can run together. A task that returns
@@ -203,5 +219,17 @@ front of a long document, a catalogue per collection, and a term index at the ba
 | catalogue | an `INDEX.md` per collection listing every record | `100x check_index --gen-collections`, `100x ledger index` |
 | term index | `TERMS.md`: each defined term → every file and section that uses it | `100x check_index --gen-terms` |
 
-In a user's project, everything the plugin writes lives under one root, `docs/engineering/`
-(configurable), with one `INDEX.md` and one `TERMS.md` at that root.
+In a user's project, every record the plugin writes lives under one records root, `<root>`,
+resolved by `scripts/_paths.py`, first match wins:
+
+| order | source | example |
+|---|---|---|
+| 1 | `.100x.json` at the git root, committed | `{"root": "docs/engineering"}` |
+| 2 | env `HUNDREDX_ROOT_DIR` | a one-off run or CI |
+| 3 | default | `docs/engineering` |
+
+Layout: `<root>/{prds,specs,decisions,rca,lessons,reviews,ledger,testplans}/` plus
+`<root>/INDEX.md` (`100x check_index --register`). A root that is absolute or uses `..` is
+refused. A repo with legacy top-level record directories and no config keeps using them,
+with a warning. This plugin's own repo commits `{"root": "."}`, so its examples sit at
+`specs/`, `decisions/` and `ledger/`.
