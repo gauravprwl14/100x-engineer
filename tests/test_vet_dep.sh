@@ -117,7 +117,32 @@ assert d['pypi'] == ['click', 'pydantic', 'requests'], d
 " 2>$OUT/vd.jsonerr4 && { PASS=$((PASS+1)); printf '  ok   %-58s\n' "no tomllib: minimal reader finds the same 3 pypi deps"; } \
   || { FAIL=$((FAIL+1)); printf '  FAIL %-58s\n' "no tomllib: minimal reader finds the same 3 pypi deps"; sed 's/^/       /' $OUT/vd.out; }
 
-BADD="$(mktemp -d)"; EMPTYD="$(mktemp -d)"; trap 'rm -rf "$OUT" "$TMPD" "$BADD" "$EMPTYD"' EXIT
+SRCD="$(mktemp -d)"; trap 'rm -rf "$OUT" "$TMPD" "$SRCD"' EXIT
+cat > "$SRCD/pyproject.toml" <<'EOF'
+[tool.poetry.dependencies]
+python = "^3.9"
+click = "^8.0"
+
+[[tool.poetry.source]]
+name = "internal"
+url = "https://pypi.example.invalid/simple"
+priority = "supplemental"
+EOF
+( cd "$SRCD" && python3 -c '
+import runpy, sys
+sys.modules["tomllib"] = None; sys.modules["tomli"] = None
+sys.argv = ["vet_dep.py", "--check-manifest", "--list-only", "--json"]
+runpy.run_path("'"$V"'", run_name="__main__")
+' >$OUT/vd.out 2>&1 ); got=$?
+python3 -c "
+import json
+d = json.load(open('$OUT/vd.out'))
+assert d['pypi'] == ['click'], d
+" 2>$OUT/vd.jsonerr5 && [ "$got" -eq 0 ] \
+  && { PASS=$((PASS+1)); printf '  ok   %-58s\n' "no tomllib: [[tool.poetry.source]] after deps is a new section"; } \
+  || { FAIL=$((FAIL+1)); printf '  FAIL %-58s got=%s\n' "no tomllib: [[tool.poetry.source]] after deps is a new section" "$got"; sed 's/^/       /' $OUT/vd.out; }
+
+BADD="$(mktemp -d)"; EMPTYD="$(mktemp -d)"; trap 'rm -rf "$OUT" "$TMPD" "$BADD" "$EMPTYD" "$SRCD"' EXIT
 printf '[project]\ndependencies = [\n  "pydantic>=2.0",\n' > "$BADD/pyproject.toml"
 for mode in tomllib minimal; do
   ( cd "$BADD" && python3 -c '

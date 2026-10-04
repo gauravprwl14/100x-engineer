@@ -412,9 +412,11 @@ def _minimal_pyproject(text):
             continue
         if not line:
             continue
-        h = re.match(r"^\[\s*([^\[\]]+?)\s*\]$", line)
+        # `[[tool.poetry.source]]` is an array-of-tables header: it ends the section
+        # above it just as a `[table]` header does.
+        h = re.match(r"^\[\[\s*([^\[\]]+?)\s*\]\]$|^\[\s*([^\[\]]+?)\s*\]$", line)
         if h:
-            section = h.group(1).replace(" ", "").replace('"', "")
+            section = (h.group(1) or h.group(2)).replace(" ", "").replace('"', "")
             sub = re.match(r"^tool\.poetry\.dependencies\.(.+)$", section)
             if sub:
                 poetry[sub.group(1)] = {}
