@@ -102,6 +102,45 @@ assert d['pypi'] == ['click', 'pydantic', 'requests'], d
   || { FAIL=$((FAIL+1)); printf '  FAIL %-58s\n' "--check-manifest --list-only --json is exact"; cat $OUT/vd.jsonerr3 | sed 's/^/       /'; }
 
 echo
+echo "=== pyproject without tomllib/tomli (python 3.9) is still read, never dropped ==="
+# None in sys.modules makes `import tomllib` raise ImportError, as on 3.9.
+( cd "$TMPD" && python3 -c '
+import runpy, sys
+sys.modules["tomllib"] = None; sys.modules["tomli"] = None
+sys.argv = ["vet_dep.py", "--check-manifest", "--list-only", "--json"]
+runpy.run_path("'"$V"'", run_name="__main__")
+' >$OUT/vd.out 2>&1 )
+python3 -c "
+import json
+d = json.load(open('$OUT/vd.out'))
+assert d['pypi'] == ['click', 'pydantic', 'requests'], d
+" 2>$OUT/vd.jsonerr4 && { PASS=$((PASS+1)); printf '  ok   %-58s\n' "no tomllib: minimal reader finds the same 3 pypi deps"; } \
+  || { FAIL=$((FAIL+1)); printf '  FAIL %-58s\n' "no tomllib: minimal reader finds the same 3 pypi deps"; sed 's/^/       /' $OUT/vd.out; }
+
+BADD="$(mktemp -d)"; EMPTYD="$(mktemp -d)"; trap 'rm -rf "$OUT" "$TMPD" "$BADD" "$EMPTYD"' EXIT
+printf '[project]\ndependencies = [\n  "pydantic>=2.0",\n' > "$BADD/pyproject.toml"
+for mode in tomllib minimal; do
+  ( cd "$BADD" && python3 -c '
+import runpy, sys
+if sys.argv[1] == "minimal":
+    sys.modules["tomllib"] = None; sys.modules["tomli"] = None
+sys.argv = ["vet_dep.py", "--check-manifest", "--list-only"]
+runpy.run_path("'"$V"'", run_name="__main__")
+' "$mode" >$OUT/vd.out 2>&1 ); got=$?
+  if [ "$got" -eq 2 ]; then PASS=$((PASS+1)); printf '  ok   %-58s\n' "malformed pyproject ($mode): exit 2, not a clean pass"
+  else FAIL=$((FAIL+1)); printf '  FAIL %-58s got=%s\n' "malformed pyproject ($mode): exit 2, not a clean pass" "$got"; sed 's/^/       /' $OUT/vd.out; fi
+  has "could not parse"
+done
+printf '{"dependencies": ' > "$BADD/package.json"; rm -f "$BADD/pyproject.toml"
+( cd "$BADD" && python3 "$V" --check-manifest --list-only >$OUT/vd.out 2>&1 ); got=$?
+if [ "$got" -eq 2 ]; then PASS=$((PASS+1)); printf '  ok   %-58s\n' "malformed package.json: exit 2"
+else FAIL=$((FAIL+1)); printf '  FAIL %-58s got=%s\n' "malformed package.json: exit 2" "$got"; fi
+( cd "$EMPTYD" && python3 "$V" --check-manifest >$OUT/vd.out 2>&1 ); got=$?
+if [ "$got" -eq 2 ]; then PASS=$((PASS+1)); printf '  ok   %-58s\n' "no manifest at all: exit 2, nothing vetted"
+else FAIL=$((FAIL+1)); printf '  FAIL %-58s got=%s\n' "no manifest at all: exit 2, nothing vetted" "$got"; fi
+has "nothing was vetted"
+
+echo
 echo "=== no network: fails closed, never silently ==="
 ( export VET_DEP_NPM_REGISTRY="http://127.0.0.1:1"
   export VET_DEP_NPM_DOWNLOADS="http://127.0.0.1:1/dl"
