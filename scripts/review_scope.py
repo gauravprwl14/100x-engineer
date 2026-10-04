@@ -20,7 +20,7 @@ Python stdlib only.
 """
 import argparse, json, re, subprocess, sys, pathlib
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, unreadable
 
 # (id, question, applies-to predicate key, what a "no" means)
 QUESTIONS = [
@@ -91,18 +91,10 @@ def main():
     a = ap.parse_args()
     if enter_git_root("review_scope", a.base) is None:
         return 2
-    rng = [a.base] if a.base else ["HEAD"]
-
-    status = sh(["git", "diff", "--name-status", "--diff-filter=AMR"] + rng)
-    added, modified = [], []
-    for line in status.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else modified).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
+    rng = [diff_rev(a.base)]
+    added, modified = changed_files(a.base, "review_scope")
+    if unreadable(added + modified, "review_scope"):
+        return 2
     files = added + modified
     if not files:
         print("review_scope: no changes to review")
@@ -113,7 +105,10 @@ def main():
     # handed noise stops reading.
     per_file = {}
     cur = None
-    for l in sh(["git", "diff", "--unified=0"] + rng).splitlines():
+    # quotepath off: a non-ASCII path otherwise arrives C-quoted in `+++ b/...` and
+    # never matches the file list, so its added lines went unattributed.
+    for l in sh(["git", "-c", "core.quotepath=off", "diff", "-M", "--unified=0"]
+                + rng).splitlines():
         if l.startswith("+++ b/"):
             cur = l[6:]
             per_file.setdefault(cur, [])

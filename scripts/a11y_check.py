@@ -32,7 +32,7 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, re, subprocess, sys, pathlib
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 JSX_EXT = (".tsx", ".jsx")
 HTML_EXT = (".html", ".htm")
@@ -50,25 +50,15 @@ def sh(args):
 
 
 def changed(base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "a11y_check")
 
 
 def touched_lines(path, base):
     """Line numbers (new-file numbering) this diff added. None means 'treat the
     whole file as touched' -- true for a brand-new/untracked file."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         return None
     lines = set()
@@ -619,6 +609,8 @@ def main():
     if enter_git_root("a11y_check", args.base) is None:
         return 2
     added, mod = changed(args.base)
+    if unreadable(added + mod, "a11y_check"):
+        return 2
     files = added + mod
     if not files:
         print("a11y_check: no changes to inspect")
@@ -630,6 +622,7 @@ def main():
             res = checks[n](files, args.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue

@@ -10,8 +10,8 @@ a greenfield one.
 Covers these shapes, on purpose (see the data-modeling skill's Honest limitations
 for what is deliberately NOT covered):
   - SQL migrations (*.sql)          -- CREATE/ALTER/DROP/RENAME TABLE, indexes, views
-  - JS/TS migrations                -- SQL passed to queryRunner.query / knex.raw /
-                                       sequelize.query in up(), run through the SQL checks
+  - JS/TS migrations                -- SQL passed to any `<receiver>.query(...)` /
+                                       `.raw(...)` outside down(), run through the SQL checks
   - TypeORM entities (@Entity)      -- @Column float/double/real types (money-float only)
   - Prisma schemas (*.prisma)       -- model blocks, field/model attributes
   - Python ORM models (*.py)        -- Django-style and SQLAlchemy-style classes
@@ -21,9 +21,12 @@ for what is deliberately NOT covered):
     schema_check.py --only money-float,tenant-index
     schema_check.py --strict            # treat advisory checks as failures too
 
-Exit 1 if any blocking check finds a violation.
+Exit 1 if any blocking check finds a violation; exit 2 outside a git repository,
+with an unresolvable --base, or when a changed file cannot be read.
 """
 import argparse, bisect, pathlib, re, subprocess, sys
+
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 MONEY_RX = re.compile(r"\b\w*(price|amount|total|balance|cost|fee|salary)\w*\b", re.I)
 CURRENCY_RX = re.compile(r"\b\w*(currency|ccy|curr_code)\w*\b", re.I)
@@ -42,8 +45,12 @@ NON_PG_RX = re.compile(r"`|\bENGINE\s*=|\bAUTO_?INCREMENT\b|\bUNSIGNED\b|\bALGOR
                        r"\bLOCK\s*=\s*NONE\b", re.I)
 SERIAL_RX = re.compile(r"^(SMALL|BIG)?SERIAL\d?$", re.I)
 JS_EXTS = (".ts", ".js", ".mjs", ".cjs")
-JS_SQL_CALL_RX = re.compile(r"\b(?:queryRunner|knex|trx|sequelize)\s*\.\s*(?:schema\s*\.\s*)?"
-                            r"(?:query|raw)\s*\(")
+# Any receiver, not a fixed list of names: TypeORM's up() names its QueryRunner
+# whatever the author likes (`up(q: QueryRunner)`), and a name list silently skipped
+# every migration that did not use the conventional one. Only migration files are
+# parsed with this, and only literal arguments are taken as SQL.
+JS_SQL_CALL_RX = re.compile(r"(?<![\w$.])[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*"
+                            r"\s*\.\s*(?:query|raw)\s*\(")
 JS_DOWN_RX = re.compile(r"\bfunction\s+down\s*\(|"
                         r"\b(?:async\s+)?down\s*\([^)]*\)\s*(?::\s*[\w<>\[\]]+\s*)?\{|"
                         r"\bdown\s*[:=]\s*(?:async\s+)?(?:function\b[^{]*\{|(?:\([^)]*\)|\w+)\s*=>)")
@@ -56,19 +63,8 @@ def sh(args):
 
 
 def changed(base):
-    """(added, modified) paths in the diff. Mirrors bloat_check.py's semantics."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "schema_check")
 
 
 def added_line_numbers(path, base):
@@ -78,14 +74,10 @@ def added_line_numbers(path, base):
     this pre-existing schema have the thing' -- the difference between a useful
     diff-scoped gate and a whole-repo scan that gets disabled on day one.
     """
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
-        try:
-            n = len(pathlib.Path(path).read_text(errors="replace").splitlines())
-        except OSError:
-            return set()
-        return set(range(1, n + 1))
+        return set(range(1, len(read(path).splitlines()) + 1))
     nums = set()
     for m in re.finditer(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", out, re.M):
         start = int(m.group(1))
@@ -95,10 +87,9 @@ def added_line_numbers(path, base):
 
 
 def read(path):
-    try:
-        return pathlib.Path(path).read_text(errors="replace")
-    except OSError:
-        return ""
+    # No fallback: an unreadable changed file is reported by main() as exit 2,
+    # never parsed as empty and passed.
+    return pathlib.Path(path).read_text(errors="replace")
 
 
 def any_added(spans, added_set):
@@ -1028,13 +1019,21 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("schema_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
-    relevant = [p for p in added + mod if is_schema_file(p)]
-    if not relevant:
-        print("schema_check: no SQL/Prisma/ORM changes to inspect")
-        return 0
-
-    facts = gather_facts(added, mod, a.base)
+    if unreadable(added + mod, "schema_check"):
+        return 2
+    try:
+        relevant = [p for p in added + mod if is_schema_file(p)]
+        if not relevant:
+            print("schema_check: no SQL/Prisma/ORM changes to inspect")
+            return 0
+        facts = gather_facts(added, mod, a.base)
+    except OSError as e:
+        print(f"schema_check: cannot read {e.filename}: {e.strerror} -- nothing was "
+              f"checked.", file=sys.stderr)
+        return 2
 
     hard = advisory = 0
     for n in names:

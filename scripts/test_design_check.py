@@ -21,7 +21,7 @@ Exit 1 if any blocking check finds a violation (or any enabled check, --strict).
 """
 import argparse, ast, json, os, pathlib, re, subprocess, sys
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
@@ -40,24 +40,13 @@ def sh(args):
 
 
 def changed(base):
-    """(added, modified) paths in the diff. Same shape as bloat_check.py's."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "test_design_check")
 
 
 def added_lines(path, base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         try:
             return pathlib.Path(path).read_text(errors="replace").splitlines()
@@ -68,8 +57,8 @@ def added_lines(path, base):
 
 def diff_pm_lines(path, base):
     """(added_lines, removed_lines) — the only check needing both sides (refactor-behaviour)."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     add_l, rem_l = [], []
     for l in out.splitlines():
         if l.startswith("+++") or l.startswith("---"):
@@ -432,6 +421,8 @@ def main():
     if enter_git_root("test_design_check", a.base) is None:
         return 2
     added, mod = changed(a.base)
+    if unreadable(added + mod, "test_design_check"):
+        return 2
     if not added and not mod:
         print("test_design_check: no changes to inspect")
         return 0
@@ -442,6 +433,7 @@ def main():
             res = CHECKS[n](added, mod, a.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue
