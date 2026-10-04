@@ -32,7 +32,12 @@ end up with three HTTP clients.
 
 ## The method
 
-Score each option 1-5 on these, in this order of weight:
+**Step 1 — fit filter (pass/fail).** Does the option actually solve the stated problem,
+not a bigger one, within the stated constraints? A failing option is out, whatever it
+would score: a cheap, reversible option that does not solve the problem must not win on
+points. Do-nothing is usually `fail` unless the status quo is now acceptable.
+
+**Step 2 — score the survivors 1-5**, in this order of weight:
 
 | weight | criterion | the question |
 |--:|---|---|
@@ -41,9 +46,9 @@ Score each option 1-5 on these, in this order of weight:
 | ×2 | **moving parts** | how many new things can now break or need operating? |
 | ×2 | **already in use** | does this repo/team already run it in production? |
 | ×1 | **exit cost** | how much of the design leaks into the rest of the system? |
-| ×1 | **fit** | does it actually solve the stated problem, not a bigger one? |
 
-Highest weighted score wins. On a tie, apply the tie-breaks in order:
+Highest weighted score among fit-passing options wins; choosing another needs a
+recorded override reason. On a tie, apply the tie-breaks in order:
 
 1. The **reversible** option.
 2. The option with **fewer moving parts**.
@@ -86,6 +91,10 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
    slightly weaker one you can.
    *Enforced by:* the spec's verification plan must name a command for the chosen path
 
+8. Apply fit as a pass/fail filter before scoring, and choose the top fit-passing score
+   or record why not. In a PRD the audit recomputes every weighted score.
+   *Enforced by:* `100x prd audit prds/<name>`
+
 ## Verify
 
 ```bash
@@ -117,6 +126,10 @@ This skill rejects:
 - **A rejected option with no `why_not`** — it was listed, not considered.
 - **A winner with no deciding factor.**
 - **An assumption with no `revisit_when`**, so nothing will ever prompt a re-check.
+- **A winner that fails fit** — high reversibility and few moving parts, but it does not
+  solve the problem. Points cannot buy back a failed filter.
+- **A chosen option below the top score with no override reason**, or a weighted score
+  that does not add up.
 - **Choosing for unstated scale.** A queue introduced for throughput nobody specified
   is three new failure modes bought with imaginary money.
 - **Silently re-deciding a settled question**, producing a second way to do the same
@@ -154,4 +167,5 @@ the people, which is when rule 3 becomes the important one.
 - Per-feature-kind decision defaults: `scripts/data/decisions_required.json`.
 - Precedent for recording rejected proposals rather than only accepted ones:
   `research/37-findings-review-governance.md` (ADR/RFC practice).
-- The reversibility-first weighting and the default bias: `SOURCE: original`.
+- The reversibility-first weighting, the default bias, and fit as a pass/fail filter
+  (owner-approved decision e): `SOURCE: original`.
