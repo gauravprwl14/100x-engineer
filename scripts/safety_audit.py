@@ -39,6 +39,8 @@ ALLOWLIST = [
     ("run_evals.py", "shutil", "operates only inside tempfile.TemporaryDirectory()"),
     ("run_workflow_evals.py", "shutil", "operates only inside a temp dir"),
     ("safety_audit.py", "*", "this file names the patterns in order to forbid them"),
+    ("_paths.py", "unlink(tmp)", "removes only the O_EXCL temp file safe_write_text created "
+                                 "moments earlier, after a failed write; never a user file"),
 ]
 # Writes must be guarded: either under a temp dir, or behind dry-run/--yes, or into a
 # known records path. This catches a new write that slipped in unguarded.
