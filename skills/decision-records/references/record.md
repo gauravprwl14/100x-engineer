@@ -15,6 +15,9 @@ decision — it cannot be re-evaluated, which is the only reason to keep it. Eve
 record carries:
 
 - **≥2 options**, each rejected one with a concrete `why_not`
+- **`"fit": "pass"` or `"fail"` on every option** — fit is a filter, not a weight. Optional
+  `"scores"` (1-5 on reversibility ×3, blast radius ×3, moving parts ×2, already-in-use ×2,
+  exit cost ×1) rank the fit-passing options
 - the **deciding factor** for the winner
 - **assumptions**, each with a shell command that fails when it stops being true, and
   a `revisit_when` describing the observable event that invalidates it
@@ -28,6 +31,8 @@ This skill rejects:
 - **A single-option record** — `decide.py lint` reports "a decision with one option is
   not a decision".
 - **A rejected option with no `why_not`.**
+- **An option with no `fit`, no option passing fit, or a chosen option that fails it.**
+- **A chosen option below the top fit-passing score** with no `override_reason`.
 - **A record with no assumptions**, claiming the choice rests on nothing.
 - **An assumption with no `revisit_when`**, which guarantees it is never revisited.
 - **An unverifiable assumption presented as verified** — `verify` reports these as

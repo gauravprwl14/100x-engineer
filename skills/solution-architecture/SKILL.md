@@ -27,39 +27,43 @@ spec" — go straight to `feature-planning`. Re-litigating a settled choice at t
 PRD altitude for a one-file change is the same overhead problem `feature-planning`
 warns about, one layer up.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+This repo pins `{"root": "."}`, so its own examples are `prds/login`, `specs/login`.
+
 ## Rules
 
 1. Frame the problem before proposing solutions: name who has it, what they do
    today, and give "better" a number and a way to measure it. A PRD nobody can
    evaluate in six months was decoration.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 2. State constraints — team size and skills, existing stack, deadline, budget,
    compliance, residency, retention, what cannot change — before scoring options. Every
    number and constraint carries a `source` (`user | assumed | default | code`); a
    `ready` PRD may not rest on an `assumed` target or constraint.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 3. Evaluate every option, **always including do-nothing**, with the `approach-selection`
    method: fit is a pass/fail filter first, then reversibility x3, blast radius x3,
    moving parts x2, already-in-use x2, exit cost x1. Choose the top fit-passing score or
    record an override reason.
-   *Enforced by:* `100x prd audit prds/<name>` (>=2 options, a con on each, scores
+   *Enforced by:* `100x prd audit <root>/prds/<name>` (>=2 options, a con on each, scores
    recomputed, chosen option checked against the top fit-passing score)
 
 4. Name the recommendation's single deciding factor, and the observation that
    would change it. "Best overall" is not a deciding factor; it means the options
    were not actually compared.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 5. Score every risk likelihood x impact as integers 1-5 and give it a mitigation. A
    risk with no mitigation is a worry someone wrote down, not a plan.
-   *Enforced by:* `100x prd audit prds/<name>` (recomputes L x I)
+   *Enforced by:* `100x prd audit <root>/prds/<name>` (recomputes L x I)
 
 5b. Fill the design-doc sections — goals, design overview, security, privacy,
    observability, rollout/rollback, migration, test plan, cost, dependencies, open
    questions/assumptions, approvers. `N/A because <reason>` is allowed; blank is not.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 6. Phase the plan: what ships first, what risky assumption it proves, and the kill
    criteria if it fails. Phase 1 is the smallest slice that tests the riskiest
@@ -73,18 +77,18 @@ warns about, one layer up.
    slower to check than the picture. `check_diagrams.py` validates a diagram that
    is there (right type, level budget respected, no placeholder content) — it
    does not fail a PRD for having none; presence is on the reviewer.
-   *Enforced by:* `100x check_diagrams prds/<name>/prd.md` (validates
+   *Enforced by:* `100x check_diagrams <root>/prds/<name>/prd.md` (validates
    content) + review (presence)
 
 7. State what is explicitly out of scope, same discipline as `feature-planning`
    rule 3: out-of-scope is what turns a gap into a decision.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 8. Before treating a PRD as final, check it against the spec it feeds: a PRD
    requirement with no spec section is a dropped requirement; a spec section
    implementing nothing in the PRD is undocumented scope creep; a success metric
    with no verification step is a promise nobody wired a check for.
-   *Enforced by:* `100x prd align prds/<name> specs/<name>`
+   *Enforced by:* `100x prd align <root>/prds/<name> <root>/specs/<name>`
 
 9. Fit the design to the codebase that exists. A rewrite is justified only when
    **all** of: the current design provably cannot meet a stated constraint (not
@@ -138,22 +142,22 @@ down:
 100x prd new login --kind auth --stack nestjs --tier small
 
 # fill every section, then gate on completeness (~1s)
-100x prd audit prds/login
+100x prd audit <root>/prds/login
 
 # the PRD's requirements and metrics must trace into the spec that implements them
 100x plan_feature new login --kind auth,crud --work api --tier small --stack nestjs
-100x prd align prds/login specs/login       # both directions, ~1s
+100x prd align <root>/prds/login <root>/specs/login   # R<->AC<->S and metric->V, ~1s
 
 # a level-1 diagram (<=12 nodes) of the recommended shape, from the closest analog
 100x diagram_from_code examples/login/src --kind deps --level 1
 
 # gate: does the PRD actually contain that diagram, not just describe one in prose
-100x check_diagrams prds/login/prd.md
+100x check_diagrams <root>/prds/login/prd.md
 
 # feature-level choices inside the recommendation still need their own record
 100x decide new "Session strategy" --affects "src/auth/**" --tag auth
 
-100x prd index    # prds/INDEX.md
+100x prd index    # <root>/prds/INDEX.md
 ```
 
 Reverse-engineering an existing system: `repo_map.py` plus
@@ -161,7 +165,7 @@ Reverse-engineering an existing system: `repo_map.py` plus
 picture to write down, before proposing what changes.
 
 A complete worked example is `examples/login/prd.md`, audited clean and aligned
-0/0/0 against `specs/login/spec.md`.
+0/0/0 against this repo's `specs/login/spec.md`.
 
 ## Failure modes
 
@@ -181,17 +185,17 @@ This skill rejects:
 - **A rewrite recommended on "the code is old" alone** — rule 9's three criteria
   are conjunctive on purpose; a rewrite that only clears one or two is a refactor
   wearing a bigger word.
-- **A PRD nobody checked against its spec** — `align` lists PRD requirements
-  that share no significant word with the spec, and spec in-scope items that
-  share none with the PRD. It is a lead for review: one shared word is enough to
-  report a requirement as covered when the spec never implements it.
+- **A PRD nobody checked against its spec** — `align` traces by id: each PRD
+  requirement `R<k>` to the acceptance criteria that name it, each `AC-<n>` back to
+  an `R<k>`, each spec in-scope `S<k>` through its ACs to the PRD, and each success
+  metric to the verification row (`V<k>`) its measurement method cites. A missing
+  link in any direction is reported as `MISS`.
 
 **Honest limitations:**
-- `prd.py align` is **name-level, not semantic** — it matches shared significant
-  words between the PRD and the spec. A real match phrased in different words is
-  missed; an accidental shared word can produce a false "OK". Treat every finding
-  as a lead for a human to check, not proof either way. It says this in its own
-  output every time it runs.
+- `prd.py align` is **id-level, not semantic** — a declared `(R<k>, S<k>)` link
+  proves the trace exists, not that the criterion actually satisfies the
+  requirement. A wrong link reads as `OK`; review the wording. It says this in its
+  own output every time it runs.
 - Nothing checks that a metric is measured in production, only that the spec names a
   verification step for it (`examples/login/prd.md` §23 records that gap).
 - `check_diagrams.py` exits 0 on a PRD with no diagram at all ("no mermaid blocks

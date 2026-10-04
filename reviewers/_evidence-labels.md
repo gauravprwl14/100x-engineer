@@ -1,7 +1,7 @@
 # Evidence labels
 
 A shared vocabulary for marking where a statement came from. Used by
-`codebase-comprehension`, `reviewing-others-code`, `root-cause-analysis` and every
+`codebase-comprehension`, `diff-review`, `root-cause-analysis` and every
 document under `research/`.
 
 The problem it solves: an inferred claim presented as a fact is the most expensive

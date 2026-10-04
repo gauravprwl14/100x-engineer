@@ -41,9 +41,13 @@ built before their contract, or a launch with no way back.
 
 ## Gates to run
 
-`100x prd audit prds/<name>`, `100x prd align prds/<name> specs/<name>`, `100x plan_feature audit
-specs/<name>`, `100x plan_dag lint plan.json --spec <spec>` on a task graph, `100x decide lint` on recorded
-choices. Each is evidence in your report.
+`100x prd audit <root>/prds/<name>`, `100x prd align <root>/prds/<name> <root>/specs/<name>`, `100x plan_feature audit
+<root>/specs/<name>`, `100x plan_dag lint plan.json --spec <spec>` on a task graph, `100x decide lint` on recorded
+choices. Each is evidence in your report. `<root>` is the records root: `docs/engineering/` by
+default, or `.100x.json` `{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (§8). `prd align`
+traces ids (R<k> ↔ AC-<n> ↔ S<k>, metric → V<k>): a declared link proves the trace exists, not that
+the AC satisfies the requirement, so read the wording. `decide lint` needs `"fit": "pass"|"fail"`
+on every option, a fit-passing chosen option, and the top fit-passing score or an `override_reason`.
 
 ## Reviewing a diff for design fit
 
@@ -61,8 +65,11 @@ If that path reached you unsubstituted, `100x root` prints the plugin root.
    apply per tier, list as assumption), C (the user's call — ask, never default).
 3. **Challenge the plan.** Missing contract, wrong owner, hidden dependency, a cheaper approach, an
    unnamed risk: each becomes a `plan_issue` with impact and a proposal.
-4. **Stop if blocked.** Any unresolved C item or blocking `plan_issue` ends the task with
-   `status: needs-decision`. Assuming past it is the failure this protocol exists to prevent.
+4. **Stop if blocked.** Only a blocking item ends the task with `status: needs-decision`:
+   an unanswered C item on data residency, compliance regime, retention or money (cost
+   ceiling), or any blocking `plan_issue`. Any other unanswered C item proceeds on its
+   recommendation as a non-blocking question marked `ASSUMED`. Assuming past a blocking
+   item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Touch only the task's owned files.
 6. **Verify.** Run the task's verify commands; record each with its exit code and output tail.
 7. **Report** in the §3 shape.

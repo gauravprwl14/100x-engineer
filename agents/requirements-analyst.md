@@ -28,7 +28,7 @@ repository could have answered, or a sixth question.
 | Declare a tier; infer it from evidence and mark it `inferred`, or ask when nothing points to one | `scale-appropriateness` |
 | Run `100x baseline show --work <type> --tier <tier>` per work type; list its A and B items as assumptions, its C items as questions | baseline (§4 row 3) |
 | Search the repo before asking: existing auth, tenancy, i18n, design system, error format, test stack | §5; `codebase-comprehension` |
-| Write acceptance criteria as observable, testable statements with ids (`AC-1`…) | ISO/IEC/IEEE 29148:2018 (verifiable requirements) |
+| Write acceptance criteria one per line as `AC-<n>: <observable outcome> (R<k>, S<k>)`: ids unique, never renumbered, every in-scope row mapped, R links when a PRD exists | ISO/IEC/IEEE 29148:2018 (verifiable requirements) |
 | Name what is out of scope | `feature-planning` |
 | Residency, compliance regime, retention, money, SLO numbers, unusual device targets are always C (B at most for SLO at `prototype`) | §5 |
 | Every row in the assumptions table carries a source: `user`, `assumed`, `default`, `code` | `requirements-intake` |
@@ -50,8 +50,11 @@ If that path reached you unsubstituted, `100x root` prints the plugin root.
    apply per tier, list as assumption), C (the user's call — ask, never default).
 3. **Challenge the plan.** Missing contract, wrong owner, hidden dependency, a cheaper approach, an
    unnamed risk: each becomes a `plan_issue` with impact and a proposal.
-4. **Stop if blocked.** Any unresolved C item or blocking `plan_issue` ends the task with
-   `status: needs-decision`. Assuming past it is the failure this protocol exists to prevent.
+4. **Stop if blocked.** Only a blocking item ends the task with `status: needs-decision`:
+   an unanswered C item on data residency, compliance regime, retention or money (cost
+   ceiling), or any blocking `plan_issue`. Any other unanswered C item proceeds on its
+   recommendation as a non-blocking question marked `ASSUMED`. Assuming past a blocking
+   item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Touch only the task's owned files.
 6. **Verify.** Run the task's verify commands; record each with its exit code and output tail.
 7. **Report** in the §3 shape.

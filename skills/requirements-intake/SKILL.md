@@ -51,7 +51,7 @@ flowchart LR
 | 5 classify | every gap tagged A, B or C with its basis |
 | 6 questions | at most five, ordered by how much the answer changes the plan |
 | 7 assumptions | one row per applied default, with a source |
-| 8 hand-off | `100x prd new <name> --scale <tier>` or `100x plan_feature new <name> --kind <kinds> --scale <tier>` |
+| 8 hand-off | `100x prd new <name> --tier <tier>` (requirements as `R<k>` rows) or `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`; the spec's `AC-<n>: <observable outcome> (R<k>, S<k>)` lines link back to them |
 
 ### Tier
 
@@ -88,14 +88,17 @@ candidate question). A C item appears here only once the user has answered it (s
 unanswered non-blocking C item stays in the question list, marked `ASSUMED` with its recommendation,
 because `100x agent_report lint` rejects a class C assumption.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. Restate the goal before listing anything else, and state what is out of scope.
-   *Enforced by:* `100x prd audit prds/<name>` (rejects an empty problem or out-of-scope section)
+   *Enforced by:* `100x prd audit <root>/prds/<name>` (rejects an empty problem or out-of-scope section)
 
 2. Detect every work type and declare one tier; an inferred tier is confirmed in the question batch,
    never silently used.
-   *Enforced by:* `100x plan_feature audit specs/<name>` (rejects an unfilled tier / NFR table)
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` (rejects an unfilled tier / NFR table)
 
 3. Pull implicit requirements from the baseline for each work type, not from memory.
    *Enforced by:* `100x baseline show --work <type> --tier <tier>` — its output is cited as the basis
@@ -113,7 +116,7 @@ because `100x agent_report lint` rejects a class C assumption.
 
 7. Ask at most five questions, in one batch, ordered by impact, each with why it matters, options and
    a recommendation.
-   *Enforced by:* `100x plan_feature audit specs/<name>` (rejects an open question with no
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` (rejects an open question with no
    recommendation); the count of five is review
 
 8. Every assumption carries a source: `user`, `assumed`, `default` or `code`.
@@ -127,12 +130,13 @@ because `100x agent_report lint` rejects a class C assumption.
 100x baseline show --work web-ui --tier small
 
 # the intake landed in a spec/PRD that audits clean (~0.2s each)
-100x plan_feature new album-tagging --kind crud,multi-tenancy --scale small --dry-run
-100x plan_feature audit specs/album-tagging
-100x prd audit prds/album-tagging
+100x plan_feature new album-tagging --kind crud,multi-tenancy --work api --tier small --dry-run
+100x plan_feature audit <root>/specs/album-tagging
+100x prd audit <root>/prds/album-tagging
 
-# no more than five open questions in the spec's §6 table (rows are `| Q1 |`, `| Q2 |`, ...)
-test "$(grep -cE '^\| Q[0-9]+ \|' specs/album-tagging/spec.md)" -le 5
+# no more than five open questions in the spec's §6 table (rows are `| Q1 |`, `| Q2 |`, ...);
+# the path shown is the default root
+test "$(grep -cE '^\| Q[0-9]+ \|' docs/engineering/specs/album-tagging/spec.md)" -le 5
 ```
 
 ## Failure modes
@@ -143,8 +147,8 @@ This skill rejects:
   permissions? Do you want input validation?" Each is class A: apply it, list it, move on.
 - **Silently assuming a C item.** A spec that says "logs retained 30 days" when nobody asked the user
   about retention. That number is a question with options, not a default.
-- **A sixth question**, or questions dribbled across several turns. One batch, at most five, the
-  rest proceed on recommendations marked `ASSUMED`.
+- **A sixth question**, or questions dribbled across several turns. One batch, at most five; the
+  rest wait for the next batch, blocking ones first.
 - **Asking what the repo answers.** "Which auth system do you use?" when `backend/src/auth/` exists.
   Search first; record the path as the source.
 - **A question with no recommendation** — it hands the user your homework.
@@ -154,8 +158,8 @@ This skill rejects:
 
 **Honest limitations:** the baseline is a floor, not domain knowledge; a novel domain still needs the
 user's judgement on what counts as a C item. The five-question cap can hide a sixth question that
-mattered — when more than five C items exist, ask the five with the largest blast radius and list the
-rest as `ASSUMED` with recommendations, visibly.
+mattered — when more than five C items exist, ask the five with the largest blast radius and defer
+the rest to the next batch, blocking ones first, visibly listed as pending.
 
 ## Scale
 

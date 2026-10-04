@@ -31,20 +31,22 @@ lesson store noise, and a noisy store stops being read.
 flowchart LR
   F[something worth remembering] --> Q{who needs it?}
   Q -->|only me: a personal preference| M[agent auto-memory<br/>per user, not committed]
-  Q -->|anyone touching this code| L[lessons/LESSON-NNNN.md<br/>git-tracked, reviewed, shared]
+  Q -->|anyone touching this code| L[lessons/LESSON-NNNN.md under the records root<br/>git-tracked, reviewed, shared]
   L -->|held long enough to be a standing rule| A[AGENTS.md section<br/>100x learn promote ID --yes]
 ```
 
 | store | what goes there | example | written by |
 |---|---|---|---|
 | auto-memory | the user's own preferences, not facts about the code | "Gaurav wants plain-language explanations" | the agent's memory, never this plugin |
-| `lessons/` | project facts and gotchas any teammate or session would hit | "`make proto` reverts hand edits to `src/gen/`" | `100x learn add` |
+| `<root>/lessons/` | project facts and gotchas any teammate or session would hit | "`make proto` reverts hand edits to `src/gen/`" | `100x learn add` |
 | `AGENTS.md` | a lesson that is stable and applies broadly enough to read every session | the same gotcha, after it keeps mattering | `100x learn promote <id> --yes` |
 
 A project fact kept in personal memory is invisible to the next teammate. A personal
-preference committed to `lessons/` puts one person's taste on the whole team. Promotion
+preference committed to `<root>/lessons/` puts one person's taste on the whole team. Promotion
 is the only path into `AGENTS.md`, so that file stays short and every line in it traces
-back to a lesson with a source.
+back to a lesson with a source. `<root>` is the records root: `docs/engineering/` by
+default, or `.100x.json` `{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR`
+(`docs/OPERATING-MODEL.md` §8).
 
 ## What a lesson is, and is not
 
@@ -89,7 +91,7 @@ a lesson.
    is trusted.
    *Enforced by:* `100x learn lint` rejects a lesson whose source path no longer exists
 
-8. Put personal preferences in the agent's auto-memory and project facts in `lessons/`,
+8. Put personal preferences in the agent's auto-memory and project facts in `<root>/lessons/`,
    never the reverse.
    *Enforced by:* review
 
@@ -116,7 +118,7 @@ a lesson.
 # browse and audit
 100x learn list --kind gotcha
 100x learn lint          # no affects, no source, stale source path, vague preference
-100x learn index         # regenerates lessons/INDEX.md
+100x learn index         # regenerates <root>/lessons/INDEX.md
 
 # lessons appear in the ledger alongside decisions and RCAs
 100x ledger find "docker compose"
@@ -141,7 +143,7 @@ This skill rejects:
   timeline and a regression test.
 - **A lesson whose source file no longer exists**, rejected by `lint` as stale.
 - **A hand-written `AGENTS.md` line with no lesson behind it**, when the same fact is
-  in `lessons/`: `promote` writes the snippet with its `(LESSON-NNNN)` id so the line
+  in `<root>/lessons/`: `promote` writes the snippet with its `(LESSON-NNNN)` id so the line
   can be traced and re-verified.
 
 **Honest limitations:**

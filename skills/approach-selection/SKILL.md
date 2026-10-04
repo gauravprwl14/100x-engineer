@@ -42,7 +42,11 @@ points. Do-nothing is usually `fail` unless the status quo is now acceptable.
 | ×1 | **exit cost** | how much of the design leaks into the rest of the system? |
 
 Highest weighted score among fit-passing options wins; choosing another needs a
-recorded override reason. On a tie, apply the tie-breaks in order:
+recorded override reason. Fit is a filter, never a weight. In an ADR (`decide new`)
+every option carries `"fit": "pass"` or `"fail"`, and may carry `"scores"` (1-5 per
+criterion above); `decide lint` rejects a record where no option passes, a chosen
+option that fails fit, or a chosen option below the top fit-passing score with no
+`override_reason`. On a tie, apply the tie-breaks in order:
 
 1. The **reversible** option.
 2. The option with **fewer moving parts**.
@@ -55,6 +59,9 @@ Absent a specific reason, prefer: **the boring, reversible, already-present opti
 with the fewest new moving parts.** State the reason when you depart from it. This
 bias exists because the failure mode of agent-chosen architecture is uniformly
 *over*-selection — a queue where a function call works, a service where a module works.
+
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
 
 ## Rules
 
@@ -87,7 +94,7 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
 
 8. Apply fit as a pass/fail filter before scoring, and choose the top fit-passing score
    or record why not. In a PRD the audit recomputes every weighted score.
-   *Enforced by:* `100x prd audit prds/<name>`
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
 
 ## Verify
 
@@ -99,7 +106,8 @@ grep -rniE "redis|kafka|rabbit|postgres|mysql|mongo" --include="*.json" --includ
 # record the decision with its options and scores
 100x decide new "Cache layer for product reads" --affects "src/catalog/**" --tag backend
 
-# the record must survive lint: >=2 options, why_not on every reject, falsifiable assumption
+# the record must survive lint: >=2 options, fit on each, why_not on every reject,
+# falsifiable assumption, chosen = top fit-passing score or override_reason
 100x decide lint
 
 # recurring stack-level choices already have defaults — check before deriving one

@@ -81,6 +81,9 @@ The same login flow drawn at all three is `reviewers/_diagram-levels.md` — rea
 that before drawing your first L3 diagram; the difference is visible there, not
 just described.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. A diagram used in a spec or design doc is fenced `mermaid` text, not a
@@ -119,17 +122,18 @@ just described.
 
 8. A sequence diagram in a feature spec stays current against the implementation —
    this skill supplies the diagram discipline `feature-planning` rule 5 depends on.
-   *Enforced by:* `100x design_drift specs/<name>/spec.md <code-dir>`
+   *Enforced by:* `100x design_drift <root>/specs/<name>/spec.md <code-dir>`
 
 ## Verify
 
 ```bash
-# single spec, ~1s
+# single spec, ~1s -- specs/login is this repo's own example (its <root> is "."); in a
+# project the path is <root>/specs/<name>/spec.md
 100x check_diagrams specs/login/spec.md
 # force-check against a stricter level than declared/inferred, ~1s
 100x check_diagrams specs/login/spec.md --level 3
 # every mermaid block under a directory, ~1s for this repo
-100x check_diagrams specs/
+100x check_diagrams specs/            # in a project: <root>/specs/
 # the worked example — all three levels must pass clean
 100x check_diagrams reviewers/_diagram-levels.md
 # regression suite against the real fixture + deliberately broken blocks, ~2s

@@ -44,6 +44,20 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 3. **An unanswered C item may proceed as `ASSUMED(<recommendation>)`**, except
    residency, retention, compliance regime and cost, which block `ready`.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+This plugin's own repo pins `{"root": "."}`, so its worked example is `specs/login/`.
+
+## Acceptance criteria — the one id from PRD to test
+
+Spec §2b holds one line per criterion, `AC-<n>: <observable outcome> (R<k>, S<k>)`;
+the header's `| prd |` field names the PRD, and the §8 verification plan's `covers`
+column lists the ACs each row proves. `plan_feature audit` requires: at least one AC,
+every AC on its own canonical line, ids unique and never renumbered, an outcome a test
+can observe, every in-scope `S<k>` row mapped to an AC, `R<k>` links that exist when a
+PRD is linked, and every AC covered by a verification row. `plan_dag lint --spec` and
+`testplan trace` read the same parser, so only defined ACs count.
+
 ## Rules
 
 1. Scaffold the spec before writing code, declaring the load tier (no default exists),
@@ -56,13 +70,13 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
    `applied` with evidence, `accepted`, `deferred` with a follow-up, `waived(<reason>)`
    (only if waivable), `n/a(<reason>)`, or for class C `ASK(<answer>)` /
    `ASSUMED(<recommendation>)`.
-   *Enforced by:* `100x plan_feature audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
    or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
    implementation starts only once this audit passes. That gate is the whole
    mechanism: without it "we'll decide later" silently becomes "nobody decided".
-   *Enforced by:* `100x plan_feature audit specs/<name>` exits non-zero
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` exits non-zero
 
 3. State what is explicitly out of scope. Out-of-scope is what turns a gap into a
    decision — and it is where the edge cases you are deliberately not handling go.
@@ -70,7 +84,7 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 
 3b. Write the design-doc sections — Security (threat model), Privacy, Observability,
    Migration, Cost. `N/A because <reason>` is fine; blank is not.
-   *Enforced by:* `100x plan_feature audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
 4. Any decision that departs from the recommended default needs an ADR. Accepting a
    default is also recorded, as `default`, so a later reader can tell "we chose this
@@ -82,7 +96,7 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 5. Generate a level-2 sequence diagram (≤30 nodes, implementer detail) of the planned
    flow before implementing, and keep it in the spec as the design of record — prose
    describing a multi-step flow hides exactly the branch that turns out to matter.
-   *Enforced by:* `100x diagram_from_code <analogous-existing-code> --kind sequence --level 2` for an existing analog to model the flow on, or a hand-authored `mermaid` block validated by `100x check_diagrams specs/<name>/spec.md` when there is no code yet to generate from
+   *Enforced by:* `100x diagram_from_code <analogous-existing-code> --kind sequence --level 2` for an existing analog to model the flow on, or a hand-authored `mermaid` block validated by `100x check_diagrams <root>/specs/<name>/spec.md` when there is no code yet to generate from
 
 6. Name the verification command per check, with the gate it runs at. A verification
    plan with no commands is a wish.
@@ -107,7 +121,7 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 #    combine them — a checkout feature is `payment,crud`
 
 # 2. fill §0b and sections 1-14, resolve every edge case, then gate on it
-100x plan_feature audit specs/login      # exits 1 until complete
+100x plan_feature audit <root>/specs/login      # exits 1 until complete
 
 # 3. record decisions that depart from the default
 100x decide new "Session strategy" --affects "src/auth/**" --tag auth
@@ -117,20 +131,20 @@ Three axes feed the spec, so the gaps are generated rather than remembered:
 #     generate this feature's own diagram from); example login/auth flow:
 100x diagram_from_code examples/login/src --kind sequence --level 2
 #     no analog: hand-author the mermaid block instead, then validate it
-100x check_diagrams specs/login/spec.md
+100x check_diagrams <root>/specs/login/spec.md
 
 # 4. during and after implementation
-100x design_drift specs/login/spec.md src/auth   # design vs code
+100x design_drift <root>/specs/login/spec.md src/auth   # design vs code
 100x decide verify                                # assumptions still hold
 100x decide drift                                 # decisions gone stale
 100x bloat_check --base origin/main               # AI bloat in the diff
 
 # 5. the indexes, regenerated not hand-maintained
-100x plan_feature index    # specs/INDEX.md
-100x decide index          # decisions/INDEX.md
+100x plan_feature index    # <root>/specs/INDEX.md
+100x decide index          # <root>/decisions/INDEX.md
 ```
 
-A complete worked example is in `specs/login/` — tier `small`, risk `elevated`, 29
+A complete worked example is in this repo's `specs/login/` (its `<root>` is `.`) — tier `small`, risk `elevated`, 29
 baseline items resolved, 31 edge cases (26 covered, 3 accepted, 2 deferred), 10
 decisions of which 7 accept the default.
 

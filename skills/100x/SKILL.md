@@ -95,16 +95,19 @@ Orchestration stays in the main session (§1): agents never talk to the user, an
 back in their reports. Batch every open question from every agent into one message. A task that
 returns `needs-decision` pauses only its dependents (§6).
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. Classify the intent and state it, with the tier and work types, before changing any file.
    *Enforced by:* review — the first reply names the intent
 
 2. Build, plan-PRD, change-untested and QA requests go through `requirements-intake` before design.
-   *Enforced by:* `100x plan_feature audit specs/<name>` (blocks implementation on an unfilled spec)
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` (blocks implementation on an unfilled spec)
 
 3. Ask at most five questions, only plan-changing ones, each with options and a recommendation.
-   *Enforced by:* `100x plan_feature audit specs/<name>` (rejects a question with no
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>` (rejects a question with no
    recommendation); the count is review
 
 4. Apply baseline defaults without asking, and say which were applied.
@@ -127,8 +130,8 @@ returns `needs-decision` pauses only its dependents (§6).
 ```bash
 100x list                                          # the plugin's tools resolve (~0.1s)
 100x baseline show --work api --tier small         # the defaults this router applies (~0.1s)
-100x plan_feature audit specs/<name>               # intake and spec complete (~0.2s)
-100x plan_dag lint plan.json --spec specs/<name>/spec.md   # task graph valid before agents start
+100x plan_feature audit <root>/specs/<name>               # intake and spec complete (~0.2s)
+100x plan_dag lint plan.json --spec <root>/specs/<name>/spec.md   # task graph valid before agents start
 100x agent_report lint report.json && 100x agent_report replay --yes report.json   # per agent result
 ```
 

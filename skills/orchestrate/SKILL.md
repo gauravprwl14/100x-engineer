@@ -46,8 +46,11 @@ flowchart TD
 1. **Draft `plan.json`** in the §6 shape, or ask the solution-architect agent to. Put
    every shared type, API schema and DB schema in a `"contract": true` task, and list it
    in each consumer's `"consumes"` and `"depends_on"`.
-2. **Lint it:** `100x plan_dag lint plan.json --spec spec.md`. Fix every numbered error;
-   nothing starts on a red plan.
+2. **Lint it:** `100x plan_dag lint plan.json --spec <root>/specs/<feature>/spec.md`
+   (`<root>` is the records root, `docs/engineering/` by default; `docs/OPERATING-MODEL.md`
+   §8). `--spec` counts only ACs the spec *defines* (`AC-<n>: <outcome> (R<k>, S<k>)` in
+   §2b), so a mention like "see AC-3" never counts, and a spec that defines none fails.
+   Fix every numbered error; nothing starts on a red plan.
 3. **Waves:** `100x plan_dag waves plan.json`. Every task in a wave runs at once.
 4. **Per task, one worktree:**
    `git worktree add ../wt-<task-id> -b wt/<feature>-<task-id>`.
@@ -146,6 +149,7 @@ This skill rejects:
   on it".
 - **A consumer quietly editing the contract.** "consumer owns contract T0's files".
 - **An acceptance criterion nobody owns.** "AC-4 in spec.md is covered by no task".
+- **A spec with no defined criteria.** "--spec spec.md defines no acceptance criteria".
 - **Trusting a report without replay.** An agent claims `exit_code: 0` for a test that
   fails: `agent_report replay` prints "MISMATCH … claimed exit 0, actual 1" and the
   real output tail.

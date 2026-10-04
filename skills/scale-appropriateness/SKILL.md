@@ -63,6 +63,9 @@ what licenses an agent to keep things simple without arguing:
 
 Without that list, "we might need it later" wins every argument.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. Declare the tier and risk before designing. They are recorded in the spec's section
@@ -77,7 +80,7 @@ Without that list, "we might need it later" wins every argument.
 
 2. A missing tier, an invalid risk, a risk below its kind's floor, or an unfilled
    non-functional-requirements table blocks implementation.
-   *Enforced by:* `100x plan_feature audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
 3. Derive requirements from the tier, never from imagination. If a design element is not
    in the tier's `required` list, name the specific failure it prevents or drop it.
@@ -91,7 +94,7 @@ Without that list, "we might need it later" wins every argument.
 
 5. Keep the PRD's tier and the spec's tier the same. A silent mismatch means two
    documents describe different systems.
-   *Enforced by:* `100x prd align prds/<name> specs/<name>`
+   *Enforced by:* `100x prd align <root>/prds/<name> <root>/specs/<name>`
 
 6. A tier change is a re-plan, not a patch. Moving up invalidates decisions made under
    the old tier — supersede them rather than editing them.
@@ -109,13 +112,13 @@ Without that list, "we might need it later" wins every argument.
 ```bash
 # declare tier and risk; payment raises risk to at least `elevated` (~1s)
 100x plan_feature new checkout --kind payment --work api --tier growth --risk regulated
-100x plan_feature audit specs/checkout          # blocks on tier, risk, NFR, baseline
+100x plan_feature audit <root>/specs/checkout          # blocks on tier, risk, NFR, baseline
 
 # what do this tier and risk add, by work type?
 100x baseline show --work api,iac --tier small --risk regulated
 
 # PRD and spec must agree on the tier
-100x prd align prds/checkout specs/checkout
+100x prd align <root>/prds/checkout <root>/specs/checkout
 
 # decisions whose `affects` files changed since they were recorded (a lead for
 # rule 6, not a tier-change detector: it never reads the tier)
