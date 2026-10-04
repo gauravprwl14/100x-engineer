@@ -18,49 +18,56 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*git *)",
+            "if": "Bash(*git*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*gh *)",
+            "if": "Bash(*gh*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*npm *publish*)",
+            "if": "Bash(*commit*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*pnpm *publish*)",
+            "if": "Bash(*push*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*yarn *publish*)",
+            "if": "Bash(*merge*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*twine *upload*)",
+            "if": "Bash(*publish*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
           },
           {
             "type": "command",
-            "if": "Bash(*uv *publish*)",
+            "if": "Bash(*twine*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*upload*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."

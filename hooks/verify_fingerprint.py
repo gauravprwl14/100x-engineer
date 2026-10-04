@@ -125,15 +125,43 @@ def snapshot(cwd=None, git_args=()):
     for path, blob in _hash_paths(root, git_args, to_hash).items():
         entries[path][1] = blob
 
+    unstaged = sorted(p for p in changed if p in entries and p in index
+                      and index[p][1] != entries[p][1])
+    return {"fingerprint": _digest(entries), "root": root, "unstaged": unstaged,
+            "untracked": sorted(p for p in untracked if p in entries)}
+
+
+def _digest(entries):
     h = hashlib.sha256()
     for path in sorted(entries):
         mode, blob = entries[path]
         h.update(path.encode("utf-8", "surrogateescape") + b"\0" +
                  mode.encode() + b"\0" + (blob or "").encode() + b"\0")
-    unstaged = sorted(p for p in changed if p in entries and p in index
-                      and index[p][1] != entries[p][1])
-    return {"fingerprint": h.hexdigest(), "root": root, "unstaged": unstaged,
-            "untracked": sorted(p for p in untracked if p in entries)}
+    return h.hexdigest()
+
+
+def tree_fingerprint(cwd=None, git_args=(), rev="HEAD"):
+    """Fingerprint of a commit's tree in snapshot()'s format.
+
+    A push sends commits, not the working tree, so the push gate needs to know whether
+    the commit being sent holds exactly the content a receipt was taken against. Equal
+    to fingerprint() precisely when `rev` contains the working tree's content, with the
+    same exclusions. Returns None when `rev` does not name a commit.
+    """
+    root = repo_root(cwd, git_args)
+    if not root:
+        return None
+    out = _git(["ls-tree", "-r", "-z", "--full-tree", rev], root, git_args)
+    if out is None:
+        return None
+    entries = {}
+    for rec in _z(out):
+        meta, _, path = rec.partition("\t")
+        parts = meta.split()
+        if len(parts) != 3 or path in EXCLUDE:
+            continue
+        entries[path] = [parts[0], parts[2]]
+    return _digest(entries)
 
 
 def fingerprint(cwd=None, git_args=()):

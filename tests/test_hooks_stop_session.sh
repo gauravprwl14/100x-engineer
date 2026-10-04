@@ -81,6 +81,17 @@ cmds = {ev: [x["command"] for g in h[ev] for x in g["hooks"]] for ev in ("Stop",
 assert any("${CLAUDE_PLUGIN_ROOT}/hooks/stop_gate.py" in c for c in cmds["Stop"]), cmds
 assert any("${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py" in c for c in cmds["SessionStart"]), cmds
 PY
+python3 - "$ROOT/hooks/hooks.json" <<'PY' && ok "PreToolUse routes on bare substrings (no space required after git/gh)" || bad "PreToolUse routing patterns"
+import json, sys
+h = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]
+pats = {x.get("if") for g in h for x in g["hooks"]
+        if "${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py" in x["command"]}
+# `$(echo git) commit` has no "git " with a trailing space; a pattern that needs one
+# never runs the script, so the parser never gets to decide.
+for need in ("Bash(*git*)", "Bash(*gh*)", "Bash(*commit*)", "Bash(*push*)", "Bash(*publish*)"):
+    assert need in pats, (need, pats)
+assert not any(p and " " in p for p in pats), pats
+PY
 
 echo
 echo "hooks-stop-session: $PASS passed, $FAIL failed"
