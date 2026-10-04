@@ -13,7 +13,7 @@ Design constraints taken from how this gets used in practice:
     silently become "nobody decided".
 
     plan_feature.py new login --kind auth --work api,web-ui --tier small --stack nestjs
-    plan_feature.py audit docs/engineering/specs/login
+    plan_feature.py audit docs/engineering/specs/login   # or specs/login, or login
 
 Specs live under the root `_paths.py` resolves (docs/engineering/ by default).
     plan_feature.py index
@@ -21,10 +21,11 @@ Specs live under the root `_paths.py` resolves (docs/engineering/ by default).
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
+import _md as md
 import _mutation_guard as mg
 import _paths
 import baseline as bl
-from testplan import parse_criteria, AC_TAG
+from _md import AC_TAG, parse_criteria, rows_of, section_body
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -163,9 +164,11 @@ def cmd_new(a):
     prd_link = str(rel(prd_dir)) if (prd_dir / "prd.md").exists() else "none"
     s = [f"# {a.name} — spec", "",
          f"| field | value |", "|---|---|",
+         f"| feature | {a.name} |",
          f"| kinds | {', '.join(kinds)} |",
          f"| stack | {a.stack or 'unspecified'} |",
          f"| prd | {prd_link} |",
+         f"| baseline | {bl.version(BASELINE)} |",
          f"| created | {today} |",
          f"| status | **draft — not ready to implement** |", "",
          "Status becomes `ready` only when `100x plan_feature audit` passes. "
@@ -289,8 +292,7 @@ def cmd_new(a):
         print(f"[dry-run] would also regenerate {rel(SPECS / 'INDEX.md')}; nothing written")
         return 0
 
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "spec.md").write_text(new_text)
+    _paths.safe_write_text(d / "spec.md", new_text, ROOT, "plan_feature new")
 
     print(f"created {rel(d / 'spec.md')}")
     print(f"  scale tier: {tier_name} (p95 starting point {tier['p95_budget_ms']}ms)")
@@ -310,38 +312,6 @@ def cmd_new(a):
     return 0
 
 
-TABLE_RX = re.compile(r"^\|(.+)\|\s*$")
-
-
-CELL_SPLIT = re.compile(r"(?<!\\)\|")
-
-
-def _cells(inner):
-    r"""Split a markdown table row on unescaped pipes; a cell may legitimately
-    contain an escaped pipe, e.g. an options list 'a \| b \| c'."""
-    return [c.strip().replace("\\|", "|") for c in CELL_SPLIT.split(inner)]
-
-
-def rows_of(text, header_contains):
-    """Extract data rows of the markdown table whose header contains a marker."""
-    lines = text.splitlines()
-    out, in_tbl = [], False
-    for i, l in enumerate(lines):
-        m = TABLE_RX.match(l)
-        if not m:
-            in_tbl = False
-            continue
-        cells = _cells(m.group(1))
-        if header_contains in l:
-            in_tbl = True
-            continue
-        if in_tbl:
-            if set("".join(cells)) <= set("-: "):
-                continue
-            out.append(cells)
-    return out
-
-
 def parse_status(cell):
     """('covered', None) | ('n/a', 'reason') | (None, None) when not in the allowlist."""
     c = cell.strip()
@@ -358,22 +328,22 @@ def no_evidence(cell):
     return not c or c in ("-", "—") or c.startswith("_suggested:")
 
 
-def section_body(text, heading):
-    """Body of '## <heading>' up to the next '## ', fenced blocks included."""
-    lines = text.splitlines()
-    try:
-        start = next(i for i, l in enumerate(lines) if l.strip() == f"## {heading}")
-    except StopIteration:
-        return None
-    out = []
-    for l in lines[start + 1:]:
-        if l.startswith("## "):
-            break
-        out.append(l)
-    return "\n".join(out).strip()
-
-
 NA_BARE = re.compile(r"^n/?a\.?$", re.I)
+
+
+def pinned_baseline(text, errs, warns):
+    """The catalogue version the spec was written against (`| baseline | <n> |`). A
+    spec without the field predates pinning and is checked against the current one."""
+    current = bl.version(BASELINE)
+    raw = md.header_field(text, "baseline")
+    if not raw:
+        warns.append(f"no `| baseline | <n> |` header field — checked against the current "
+                     f"baseline v{current}; add `| baseline | {current} |` to pin it")
+        return current
+    if not raw.isdigit() or not 1 <= int(raw) <= current:
+        errs.append(f"`| baseline | {raw} |` is not a baseline version (1..{current})")
+        return current
+    return int(raw)
 
 
 def audit_baseline(text, work, tier, risk, errs, warns):
@@ -382,15 +352,25 @@ def audit_baseline(text, work, tier, risk, errs, warns):
         errs.append("no '## 0b. Implicit requirements' table — regenerate with "
                     "`100x plan_feature new <name> --tier ... --work ...` and merge")
         return rows
-    expected = {i["id"] for i in bl.applicable(work, tier, risk, BASELINE)}
+    pin = pinned_baseline(text, errs, warns)
+    expected = {i["id"] for i in bl.applicable(work, tier, risk, BASELINE, upto=pin)}
+    newer = sorted({i["id"] for i in bl.applicable(work, tier, risk, BASELINE)} - expected)
     present = {r[0] for r in rows if r}
     missing = sorted(expected - present)
     if missing:
         errs.append(f"{len(missing)} applicable baseline item(s) missing from §0b "
                     f"(first: {missing[0]})")
+    later = [x for x in newer if x not in present]
+    if later:
+        warns.append(f"{len(later)} baseline item(s) added after the pinned v{pin}: "
+                     f"{', '.join(later)} — add them and bump `| baseline |`, or record "
+                     f"why not")
     unknown = sorted(present - set(BASE_BY_ID))
     if unknown:
         warns.append(f"§0b row(s) not in scripts/data/baseline.json: {', '.join(unknown)}")
+    retired = sorted(x for x in present if BASE_BY_ID.get(x, {}).get("deprecated"))
+    if retired:
+        warns.append(f"§0b row(s) for deprecated baseline item(s): {', '.join(retired)}")
     blocking = bl.blocking_ids(BASELINE)
     bad, todo, unanswered, assumed_block, wrong_class, no_ev, nowaive = ([] for _ in range(7))
     for r in rows:
@@ -441,23 +421,8 @@ def audit_baseline(text, work, tier, risk, errs, warns):
     return rows
 
 
-AC_SECTION_RX = re.compile(r"^##\s+(?:\d+[a-z]?\.\s+)?Acceptance criteria\s*$", re.I)
 AC_CANONICAL = re.compile(r"^AC-\d+: \S")
 MIN_OUTCOME_WORDS = 3
-
-
-def section_by_rx(text, rx):
-    """(first line number, body) of the '## ' section whose heading matches rx."""
-    lines = text.splitlines()
-    for i, l in enumerate(lines):
-        if rx.match(l.strip()):
-            body = []
-            for m in lines[i + 1:]:
-                if m.startswith("## "):
-                    break
-                body.append(m)
-            return i + 2, "\n".join(body)
-    return None, None
 
 
 def linked_prd(text, spec_dir):
@@ -484,7 +449,7 @@ def audit_acceptance(text, spec_dir, errs, warns):
     AC ids are the join key of the whole pipeline -- PRD requirement -> AC -> task in
     plan.json -> tagged test -- so a missing link here is a gap every later tool
     inherits silently."""
-    start, body = section_by_rx(text, AC_SECTION_RX)
+    _, body = md.ac_section(text)
     if body is None:
         errs.append("no '## 2b. Acceptance criteria' section — write each criterion as "
                     "`AC-<n>: <observable outcome> (R<k>, S<k>)`")
@@ -498,7 +463,7 @@ def audit_acceptance(text, spec_dir, errs, warns):
         if not AC_CANONICAL.match(c["raw"]):
             errs.append(f"{c['id']}: write it as `{c['id']}: <observable outcome> "
                         f"(R<k>, S<k>)` on its own line (got {c['raw'].strip()[:50]!r})")
-    everywhere = parse_criteria(text)
+    everywhere = parse_criteria(text, scoped=False)
     counts = {}
     for c in everywhere:
         counts[c["id"]] = counts.get(c["id"], 0) + 1
@@ -563,14 +528,33 @@ def audit_acceptance(text, spec_dir, errs, warns):
     return crits
 
 
+def audit_seeded(text, kinds, edges, decisions, errs):
+    """Mirror of the §0b missing-row rule for §7 and §5: a seeded row is answered
+    (n/a(<reason>), waived(<reason>), a chosen option), never deleted, or the audit
+    would pass a spec that dropped the edge case nobody wanted to think about."""
+    def norm(s):
+        return re.sub(r"\s+", " ", s).strip().lower()
+    want_e, want_d = gather([k for k in kinds if k in KINDS])
+    have_e = {norm(r[2]) for r in edges if len(r) > 2}
+    have_d = {norm(r[1]) for r in decisions if len(r) > 1}
+    gone_e = [w for _, w, *_ in want_e if norm(w) not in have_e]
+    gone_d = [n for _, n, *_ in want_d if norm(n) not in have_d]
+    if gone_e:
+        errs.append(f"{len(gone_e)} seeded edge case(s) deleted from §7 (first: "
+                    f"{gone_e[0][:60]!r}) — mark a row n/a(<reason>) or waived(<reason>) "
+                    f"instead of removing it")
+    if gone_d:
+        errs.append(f"{len(gone_d)} seeded decision(s) deleted from §5 (first: "
+                    f"{gone_d[0][:60]!r}) — keep the row and accept the default or "
+                    f"record a choice")
+
+
 def cmd_audit(a):
-    d = pathlib.Path(a.dir)
-    if not d.is_absolute():
-        d = ROOT / d
-    sp = d / "spec.md"
-    if not sp.exists():
-        print(f"no spec.md at {d}", file=sys.stderr)
+    sp = md.find_record(a.dir, "specs", "spec.md", ROOT, RECORDS)
+    if sp is None:
+        print(md.not_found(a.dir, "specs", "spec.md", RECORDS, rel), file=sys.stderr)
         return 2
+    d = sp.parent
     text = sp.read_text()
     errs, warns = [], []
 
@@ -648,6 +632,12 @@ def cmd_audit(a):
     if nodeferref:
         errs.append(f"{len(nodeferref)} edge case(s) deferred with no follow-up reference")
 
+    unknown_kinds = [k for k in kinds if k not in KINDS]
+    if unknown_kinds:
+        errs.append(f"unknown kind(s) in the header: {', '.join(unknown_kinds)}; "
+                    f"available: {', '.join(KINDS)}")
+    audit_seeded(text, kinds, edges, rows_of(text, "| # | decision |"), errs)
+
     # open questions: at most five, each typed, each with a recommendation
     qs = [r for r in rows_of(text, "| # | type | question |") if r and r[0]]
     if "## 6. Open questions" in text and not qs and rows_of(text, "| # | question |"):
@@ -722,8 +712,6 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "plan_feature.py index", ROOT):
         return 2
-    if not dry:
-        SPECS.mkdir(parents=True, exist_ok=True)
     rows = []
     for sp in sorted(SPECS.glob("*/spec.md")):
         t = sp.read_text()
@@ -741,13 +729,13 @@ def cmd_index(a):
     for n, k, st, stat, ne, nt, link in rows:
         out.append(f"| [{n}]({link}) | {k} | {st} | {stat} | {ne} | {nt} |")
     out += ["", "A spec with TODO edge cases is not implementable; "
-            "`plan_feature.py audit specs/<name>` explains why.", ""]
+            "`100x plan_feature audit <name>` explains why.", ""]
     new_text = "\n".join(out)
     if dry:
         old_text = (SPECS / "INDEX.md").read_text() if (SPECS / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(SPECS / "INDEX.md")))
         return 0
-    (SPECS / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(SPECS / "INDEX.md", new_text, ROOT, "plan_feature index")
     print(f"wrote {rel(SPECS / 'INDEX.md')} ({len(rows)} specs)")
     return 0
 
@@ -771,7 +759,10 @@ def main():
     n.add_argument("--dry-run", action="store_true",
                     help="print what would be created/changed; write nothing")
     n.set_defaults(fn=cmd_new)
-    au = sub.add_parser("audit"); au.add_argument("dir"); au.set_defaults(fn=cmd_audit)
+    au = sub.add_parser("audit")
+    au.add_argument("dir", help="the spec directory, its spec.md, specs/<name> under the "
+                                "records root, or the bare name")
+    au.set_defaults(fn=cmd_audit)
     ix = sub.add_parser("index")
     ix.add_argument("--dry-run", action="store_true",
                      help="print the index diff; write nothing")

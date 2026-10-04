@@ -22,8 +22,8 @@ Design constraints, matching plan_feature.py:
     semantic coverage is worse than no check at all.
 
     prd.py new login --kind auth --tier small
-    prd.py audit docs/engineering/prds/login
-    prd.py align docs/engineering/prds/login docs/engineering/specs/login
+    prd.py audit docs/engineering/prds/login          # or prds/login, or login
+    prd.py align prds/login specs/login               # or: prd.py align login login
 
 Records live under the root `_paths.py` resolves (docs/engineering/ by default).
     prd.py index
@@ -31,10 +31,11 @@ Records live under the root `_paths.py` resolves (docs/engineering/ by default).
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
+import _md as md
 import _mutation_guard as mg
 import _paths
 import baseline as bl
-from testplan import parse_criteria
+from _md import find_section, kv_table, parse_criteria, rows_of
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -60,54 +61,6 @@ RISK_ORDER = TIERS["_risk"]["order"]
 STACK_HINT = ("NestJS | Next.js/React | React Native/Expo | Flutter | native "
               "(Swift/Kotlin) | Kubernetes | AWS | GCP | Python")
 
-TABLE_RX = re.compile(r"^\|(.+)\|\s*$")
-CELL_SPLIT = re.compile(r"(?<!\\)\|")
-
-
-def _cells(inner):
-    r"""Split a markdown table row on unescaped pipes; a cell may legitimately
-    contain an escaped pipe, e.g. an options list 'a \| b \| c'."""
-    return [c.strip().replace("\\|", "|") for c in CELL_SPLIT.split(inner)]
-
-
-def rows_of(text, header_contains):
-    """Extract data rows of the markdown table whose header contains a marker."""
-    lines = text.splitlines()
-    out, in_tbl = [], False
-    for l in lines:
-        m = TABLE_RX.match(l)
-        if not m:
-            in_tbl = False
-            continue
-        cells = _cells(m.group(1))
-        if header_contains in l:
-            in_tbl = True
-            continue
-        if in_tbl:
-            if set("".join(cells)) <= set("-: "):
-                continue
-            out.append(cells)
-    return out
-
-
-def kv_table(sec_text):
-    """Parse a two-column `| field | value |` table into a dict keyed by field."""
-    d = {}
-    for l in sec_text.splitlines():
-        m = TABLE_RX.match(l)
-        if not m:
-            continue
-        cells = _cells(m.group(1))
-        if len(cells) != 2:
-            continue
-        if set("".join(cells)) <= set("-: "):
-            continue
-        if cells[0].strip().lower() in ("field", "constraint"):
-            continue
-        d[cells[0].strip().lower()] = cells[1].strip()
-    return d
-
-
 def is_placeholder(s):
     return not s or "<!--" in s or s.strip() in ("", "-", "—")
 
@@ -119,21 +72,6 @@ def esc(x):
 # ---------------------------------------------------------------------------
 # new
 # ---------------------------------------------------------------------------
-
-def find_section(text, name):
-    """Body of '## [N. ]<name>' (number-agnostic, case-insensitive), or None."""
-    rx = re.compile(rf"^##\s+(?:\d+[a-z]?\.\s+)?{re.escape(name)}\s*$", re.I)
-    lines = text.splitlines()
-    for i, l in enumerate(lines):
-        if rx.match(l.strip()):
-            out = []
-            for m in lines[i + 1:]:
-                if m.startswith("## "):
-                    break
-                out.append(m)
-            return "\n".join(out)
-    return None
-
 
 SOURCES = ("user", "assumed", "default", "code")
 # Sections a design document carries (owner decision d). Each may say
@@ -291,8 +229,7 @@ def cmd_new(a):
         print(f"[dry-run] would also regenerate {rel(PRDS / 'INDEX.md')}; nothing written")
         return 0
 
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "prd.md").write_text(new_text)
+    _paths.safe_write_text(d / "prd.md", new_text, ROOT, "prd new")
     print(f"created {rel(d / 'prd.md')}")
     print(f"  tier {tier_name}, risk {risk}"
           + (f" (raised from {a.risk} by kind)" if risk != a.risk else ""))
@@ -365,12 +302,9 @@ def audit_options(text, rec, errs):
 
 
 def cmd_audit(a):
-    d = pathlib.Path(a.dir)
-    if not d.is_absolute():
-        d = ROOT / d
-    p = d / "prd.md"
-    if not p.exists():
-        print(f"no prd.md at {d}", file=sys.stderr)
+    p = md.find_record(a.dir, "prds", "prd.md", ROOT, RECORDS)
+    if p is None:
+        print(md.not_found(a.dir, "prds", "prd.md", RECORDS, rel), file=sys.stderr)
         return 2
     text = p.read_text()
     errs, warns = [], []
@@ -514,18 +448,14 @@ V_ID = re.compile(r"\bV\d+\b")
 
 
 def cmd_align(a):
-    prd_dir = pathlib.Path(a.prd_dir)
-    if not prd_dir.is_absolute():
-        prd_dir = ROOT / prd_dir
-    spec_dir = pathlib.Path(a.spec_dir)
-    if not spec_dir.is_absolute():
-        spec_dir = ROOT / spec_dir
-    prd_path = prd_dir / "prd.md"
-    spec_path = spec_dir / "spec.md"
-
-    if not prd_path.exists():
-        print(f"no prd.md at {prd_dir}", file=sys.stderr)
+    prd_path = md.find_record(a.prd_dir, "prds", "prd.md", ROOT, RECORDS)
+    if prd_path is None:
+        print(md.not_found(a.prd_dir, "prds", "prd.md", RECORDS, rel), file=sys.stderr)
         return 2
+    prd_dir = prd_path.parent
+    spec_path = (md.find_record(a.spec_dir, "specs", "spec.md", ROOT, RECORDS)
+                 or RECORDS / "specs" / pathlib.Path(a.spec_dir).name / "spec.md")
+    spec_dir = spec_path.parent
 
     print(f"PRD <-> spec alignment: {rel(prd_dir)} <-> {rel(spec_dir)}")
     print("(id-level tracing: the R<k> links on each acceptance criterion and the V<k> "
@@ -671,8 +601,6 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "prd.py index", ROOT):
         return 2
-    if not dry:
-        PRDS.mkdir(parents=True, exist_ok=True)
     rows = []
     for p in sorted(PRDS.glob("*/prd.md")):
         t = p.read_text()
@@ -694,14 +622,14 @@ def cmd_index(a):
     for n, k, st, nr, rec, sp, link in rows:
         out.append(f"| [{n}]({link}) | {k} | {st} | {nr} | {rec} | {sp} |")
     out += ["", "A PRD with `spec exists = yes` should pass "
-            "`python3 scripts/prd.py align prds/<name> specs/<name>` before either "
+            "`100x prd align <name> <name>` before either "
             "document is trusted.", ""]
     new_text = "\n".join(out)
     if dry:
         old_text = (PRDS / "INDEX.md").read_text() if (PRDS / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(PRDS / "INDEX.md")))
         return 0
-    (PRDS / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(PRDS / "INDEX.md", new_text, ROOT, "prd index")
     print(f"wrote {rel(PRDS / 'INDEX.md')} ({len(rows)} PRDs)")
     return 0
 
@@ -722,9 +650,14 @@ def main():
     n.add_argument("--dry-run", action="store_true",
                     help="print what would be created; write nothing")
     n.set_defaults(fn=cmd_new)
-    au = sub.add_parser("audit"); au.add_argument("dir"); au.set_defaults(fn=cmd_audit)
+    au = sub.add_parser("audit")
+    au.add_argument("dir", help="the PRD directory, its prd.md, prds/<name> under the "
+                                "records root, or the bare name")
+    au.set_defaults(fn=cmd_audit)
     al = sub.add_parser("align")
-    al.add_argument("prd_dir"); al.add_argument("spec_dir")
+    al.add_argument("prd_dir", help="as for audit")
+    al.add_argument("spec_dir", help="the spec directory, its spec.md, specs/<name>, or "
+                                     "the bare name")
     al.set_defaults(fn=cmd_align)
     ix = sub.add_parser("index")
     ix.add_argument("--dry-run", action="store_true",

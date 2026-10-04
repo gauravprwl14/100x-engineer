@@ -395,6 +395,56 @@ grep -q "no changes to review" $OUT/pt.out && ok "review_scope: quiet with no ch
   || bad "review_scope: noisy with no changes"
 cd "$ROOT"
 
+# ---------- plan_feature: record arguments, seeded rows, pinned baseline ----------
+cd "$CONS"
+grep -q "^| feature | thing |" docs/engineering/specs/thing/spec.md && grep -q "^| baseline | 1 |" docs/engineering/specs/thing/spec.md \
+  && ok "plan: new spec pins feature and baseline version in the header" || bad "plan: header lacks feature/baseline"
+for arg in docs/engineering/specs/thing specs/thing thing docs/engineering/specs/thing/spec.md; do
+  python3 "$ROOT/scripts/plan_feature.py" audit "$arg" >$OUT/pt.out 2>&1
+  rc_is 1 $? "plan: audit $arg resolves (exit 1 = audited, not 2)"
+done
+(cd "$CONS/docs" && python3 "$ROOT/scripts/plan_feature.py" audit specs/thing >$OUT/pt.out 2>&1)
+rc_is 1 $? "plan: audit specs/thing resolves from a subdirectory"
+python3 "$ROOT/scripts/plan_feature.py" audit nosuch >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: audit of an unknown spec is exit 2"
+has "no spec.md for 'nosuch'"
+
+fresh; grep -v "| Clock skew, DST boundary" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; rc_is 1 $? "audit: a deleted seeded edge case is rejected"
+has "seeded edge case(s) deleted from §7"
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys, pathlib, re
+p = pathlib.Path(sys.argv[1]); t = p.read_text()
+rows = [l for l in t.splitlines() if re.match(r"^\| D\d+ \|", l)]
+p.write_text(t.replace(rows[0] + "\n", "", 1))
+PY2
+audit_w; rc_is 1 $? "audit: a deleted seeded decision is rejected"
+has "seeded decision(s) deleted from §5"
+fresh; audit_w; no "deleted from"
+
+python3 - "$ROOT" "$W/spec.md" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, copy
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import plan_feature as pf
+text = open(sys.argv[2]).read()
+new = copy.deepcopy(pf.BASE_BY_ID["api.ssrf-guard"]); new["id"] = "api.new-rule"; new["since"] = 2
+pf.BASELINE["version"] = 2; pf.BASELINE["items"].append(new); pf.BASE_BY_ID[new["id"]] = new
+e, w = [], []; pf.audit_baseline(text, ["api"], "small", "elevated", e, w)
+assert not e and any("added after the pinned v1: api.new-rule" in x for x in w), (e, w)
+e, w = [], []; pf.audit_baseline(text.replace("| baseline | 1 |", "| baseline | 2 |"), ["api"], "small", "elevated", e, w)
+assert any("missing from §0b (first: api.new-rule)" in x for x in e), e
+pf.BASE_BY_ID["api.ssrf-guard"]["deprecated"] = True
+e, w = [], []; pf.audit_baseline(text, ["api"], "small", "elevated", e, w)
+assert any("deprecated baseline item(s): api.ssrf-guard" in x for x in w), w
+lines = [l for l in text.splitlines() if not l.startswith("| api.ssrf-guard |")]
+e, w = [], []; pf.audit_baseline("\n".join(lines), ["api"], "small", "elevated", e, w)
+assert not any("missing" in x for x in e), e
+e, w = [], []; pf.audit_baseline(text.replace("| baseline | 1 |", "| baseline | 9 |"), ["api"], "small", "elevated", e, w)
+assert any("is not a baseline version" in x for x in e), e
+PY2
+rc_is 0 $? "audit: pinned baseline — newer items warn, pinned items required, deprecated optional"
+cd "$ROOT"
+
 echo
 echo "planning-tools: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
