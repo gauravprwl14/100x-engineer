@@ -36,6 +36,24 @@ git -C "$REPO" add -A
 [ "$("$BIN" root)" = "$ROOT" ] && ok "100x root prints the plugin root" || bad "100x root"
 "$BIN" list | grep -qx "  a11y_check" && ok "100x list names the tools" || bad "100x list"
 
+# maintainer tools check this plugin, not the user's project: hidden from `list`,
+# shown by `list --all`, still runnable by name
+MAINT="$(sed -n 's/^MAINTAINER_TOOLS="\(.*\)"$/\1/p' "$BIN")"
+[ -n "$MAINT" ] && ok "bin/100x declares its maintainer tools" || bad "MAINTAINER_TOOLS not found in bin/100x"
+"$BIN" list >"$OUT/list.out"; "$BIN" list --all >"$OUT/all.out"
+for t in $MAINT; do
+  [ -f "$ROOT/scripts/$t.py" ] || bad "maintainer tool '$t' has no scripts/$t.py"
+  grep -qx "  $t" "$OUT/list.out" && bad "100x list shows maintainer tool $t"
+  grep -qx "  $t" "$OUT/all.out" || bad "100x list --all omits maintainer tool $t"
+done
+grep -qx "  lint_skills" "$OUT/list.out" || ok "100x list hides maintainer tools"
+grep -qx "  lint_skills" "$OUT/all.out" && ok "100x list --all shows maintainer tools" || bad "list --all"
+grep -qx "  a11y_check" "$OUT/all.out" && ok "100x list --all still shows user tools" || bad "list --all drops user tools"
+grep -q "100x list --all" "$OUT/list.out" && ok "100x list points at list --all" || bad "list hint missing"
+n_all=$(grep -c '^  ' "$OUT/all.out"); n_scripts=$(ls "$ROOT"/scripts/[a-z]*.py | wc -l | tr -d ' ')
+[ "$n_all" = "$n_scripts" ] && ok "list --all names every tool script ($n_all)" || bad "list --all $n_all != $n_scripts scripts"
+"$BIN" lint_skills >/dev/null 2>&1 && ok "a hidden maintainer tool still runs by name" || bad "hidden tool not runnable"
+
 # a symlinked bin (how a PATH entry may point at it) still resolves the root
 ln -s "$BIN" "$OUT/100x-link"
 [ "$("$OUT/100x-link" root)" = "$ROOT" ] && ok "symlinked entry resolves the real root" || bad "symlink root"

@@ -207,18 +207,20 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**38 tools**, each run as `100x <tool>` (`100x list` prints them). Python standard library
-and git only.
+**38 tools**, each run as `100x <tool>`. Python standard library and git only.
+`100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
+which check this plugin itself rather than your code. Every tool runs by name either way.
 
 | group | tools |
 |---|---|
 | plan and trace | `prd`, `plan_feature`, `baseline`, `decide`, `testplan`, `ledger`, `check_index` |
-| orchestrate | `plan_dag`, `agent_report`, `agents_lint` |
-| verify | `verified`, `verify_fingerprint`, `audit_ci_gates`, `run_evals` |
+| orchestrate | `plan_dag`, `agent_report` |
+| verify | `verified`, `verify_fingerprint`, `audit_ci_gates` |
 | diff checks | `bloat_check`, `craft_check`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
 | design and diagrams | `design_drift`, `diagram_from_code`, `check_diagrams` |
-| understand and learn | `repo_map`, `stack_audit`, `rca`, `learn` |
-| this repo's own discipline | `lint_skills`, `skill_triggers`, `check_claims`, `check_agents_md`, `audit_agent_config`, `safety_audit` |
+| understand and learn | `repo_map`, `stack_audit`, `rca`, `learn`, `check_claims` |
+| agent configuration | `check_agents_md`, `audit_agent_config` |
+| maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
 bash tests/run_all.sh    # 39 test suites, the seeded-defect evals and the lints
