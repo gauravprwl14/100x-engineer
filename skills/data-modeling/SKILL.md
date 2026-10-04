@@ -22,7 +22,7 @@ that made them.
 
 **Fire when:** writing or reviewing a migration, a Prisma `model` block, a
 SQLAlchemy/Django model, a TypeORM entity, or any DDL; adding a money, PII, or
-tenant-scoped column; adding a nullable column to an existing table; designing
+tenant-scoped column; adding a column or index to an existing table; designing
 soft delete or an audit trail.
 
 **Do not fire when:** the change is read-only (a query, a report) with no schema
@@ -94,25 +94,30 @@ impact, or the change is to the API layer only — that's `api-contract`.
    (convention: reviewers reject an un-recorded denormalization on sight)
 
 10. Every table that can be read by more than one tenant carries `tenant_id` (or
-    equivalent), and every unique constraint and every index built for a lookup
-    path includes it. A unique index that omits the tenant column is not just a
+    `company_id`, `organization_id`, `org_id`, `account_id`, `workspace_id`), and
+    every unique constraint and every index built for a lookup path includes it. A unique index that omits the tenant column is not just a
     missing optimization — it is a promise that no two tenants can ever collide
     on that value, which is almost never true and is a cross-tenant leak the
     day it's false.
-    *Enforced by:* `python3 scripts/schema_check.py --only tenant-index` (blocking)
+    *Enforced by:* `python3 scripts/schema_check.py --only tenant-index` (blocking,
+    unique constraints), `--only tenant-lookup-index` (advisory, non-unique
+    indexes; one leading with an FK column is exempt)
 
 11. A foreign-key column has an index on the referencing side. Most databases do
     not create one automatically for you (Postgres/SQLAlchemy do not; Django's
-    `ForeignKey` does).
+    `ForeignKey` does). A tenant-first composite `(tenant_id, fk_col)` counts.
     *Enforced by:* `python3 scripts/schema_check.py --only fk-index` (advisory)
 
-12. A destructive change (`DROP COLUMN`, `DROP TABLE`, a narrowing `ALTER COLUMN
-    ... TYPE`) never ships in the same migration as an additive one. Old code
-    must be able to run against the new schema for the length of a deploy —
-    expand in one migration, contract in a later one once nothing reads the old
-    shape.
-    *Enforced by:* `python3 scripts/schema_check.py --only expand-contract`
-    (blocking)
+12. A destructive change (`DROP`/`RENAME COLUMN`, `DROP`/`RENAME TABLE`, `ALTER
+    COLUMN ... TYPE`) ships only after readers have moved. Old code must run
+    against the new schema for the length of a deploy: expand, migrate readers
+    and backfill, then contract in a later deploy. A change to an existing table
+    must not fail on its rows or hold a long write lock: no `ADD COLUMN ... NOT
+    NULL` without a `DEFAULT`; `CREATE INDEX CONCURRENTLY`; FKs `NOT VALID`,
+    then `VALIDATE`.
+    *Enforced by:* `python3 scripts/schema_check.py --only expand-contract` and
+    `--only not-null-no-default` (blocking); `--only index-concurrently`,
+    `--only fk-not-valid` (advisory, Postgres)
 
 13. PII columns are classified on the way in (what regulatory category, what
     residency requirement), and high-sensitivity fields are encrypted or
@@ -151,8 +156,10 @@ This skill rejects:
   nothing without knowing if it's USD cents or JPY yen.
 - **A new table with no primary key**, or one whose public API leaks a raw
   incrementing id.
-- **A migration that drops a column and adds one in the same file** — the
-  expand/contract violation that breaks the currently-running old code.
+- **A migration that drops or renames a column or table**, alone or beside an
+  additive change — it breaks the old code still running mid-deploy.
+- **`ADD COLUMN ... NOT NULL` with no `DEFAULT` on an existing table** — fails
+  outright on any table that already has rows.
 - **A unique index on a multi-tenant table that omits the tenant column** — two
   different tenants' data colliding on a "unique" value.
 - **A foreign key with no index on the referencing column** — every cascade
@@ -173,9 +180,15 @@ This skill rejects:
   column will not be flagged, because the tool has no whole-schema context.
   This is a deliberate false-negative bias: the alternative is a whole-repo
   schema loader, which is out of scope for a diff-scoped stdlib tool.
-- ORM coverage is SQL, Prisma, and Python (Django-style and SQLAlchemy-style)
-  models. TypeORM, Sequelize, and Medusa-style JS/TS model files are not yet
-  covered — absence, not a claim they're fine.
+- Coverage is SQL, Prisma, Python (Django/SQLAlchemy-style) models, JS/TS
+  migrations and TypeORM entities. In a migration (`migrations/` dir,
+  `*Migration*`, or a `<digits>-`/`_` name) only literal SQL passed to
+  `queryRunner`/`knex`/`trx`/`sequelize` `.query()`/`.raw()` is read, and
+  `down()` is skipped. Not covered: Knex schema-builder and Sequelize
+  `queryInterface` calls, SQL built in variables, Sequelize/Medusa models.
+  Entities get money-float only; `not-null-no-default` skips Python models.
+  Postgres is assumed unless the file shows MySQL/SQLite markers (backticks,
+  `ENGINE=`, `AUTO_INCREMENT`) — absence, not a claim the rest is fine.
 
 ## Next
 
