@@ -17,15 +17,74 @@ harness scores against. Every table below is machine-audited by
 
 | # | section | what it answers | size |
 |---|---------|-----------------|------|
+| 0 | [0. Non-functional requirements](#0-non-functional-requirements) | the declared load tier and risk level, and what each requires and rules out | 18 lines |
+| 0b | [0b. Implicit requirements](#0b-implicit-requirements) | the 29 baseline defaults this API inherits, each resolved, and the C questions answered or assumed | 36 lines |
 | 1 | [1. Outcome](#1-outcome) | what a user can do after this ships that they cannot do now | 6 lines |
 | 2 | [2. In scope / out of scope](#2-in-scope--out-of-scope) | the boundary — out-of-scope is what turns a gap into a decision | 12 lines |
 | 3 | [3. Interfaces touched](#3-interfaces-touched) | every surface changed, and whether the change is backward compatible | 10 lines |
 | 4 | [4. Sequence](#4-sequence) | the mermaid diagram that `design_drift.py` checks the code against | 25 lines |
 | 5 | [5. Decisions required](#5-decisions-required) | 10 choices, each pre-answered with a default; 7 accepted as-is | 17 lines |
-| 6 | [6. Open questions](#6-open-questions) | the 3 questions that do not block work, each with a recommendation | 9 lines |
+| 6 | [6. Open questions](#6-open-questions) | the 3 questions that do not block work, each typed and carrying a recommendation | 9 lines |
 | 7 | [7. Edge cases](#7-edge-cases) | **the point of the document** — 31 seeded cases, each covered, accepted or deferred | 38 lines |
-| 8 | [8. Verification plan](#8-verification-plan) | the command per check and the gate it runs at | 19 lines |
+| 8 | [8. Verification plan](#8-verification-plan) | the command per check and the gate it runs at | 20 lines |
 | 9 | [9. Rollout and reversal](#9-rollout-and-reversal) | the flag, the migration shape, and the exact rollback step | 9 lines |
+| 10 | [10. Security](#10-security) | assets, trust boundaries and the control for each abuse case | 11 lines |
+| 11 | [11. Privacy](#11-privacy) | which personal data is touched, how long it is kept, and where | 8 lines |
+| 12 | [12. Observability](#12-observability) | the signals and alerts that prove login works in production | 9 lines |
+| 13 | [13. Migration](#13-migration) | the expand/contract shape and how it is reversed | 5 lines |
+| 14 | [14. Cost](#14-cost) | why no new recurring spend is added | 3 lines |
+
+## 0. Non-functional requirements
+
+| field | value |
+|---|---|
+| scale tier | small |
+| risk | elevated |
+| work types | api |
+| expected users / requests | < 10,000 users; low tens of requests/sec at peak |
+| data volume | up to low millions of rows per table / tens of GB total |
+| p95 latency budget | 300ms — STARTING POINT, not an SLO: the end-to-end user-facing budget. Basis: reviewers/_latency-numbers.md 'A worked budget example' (300 ms p95 save action: browser -> gateway -> app -> DB). |
+| availability target | single-region uptime; manual or semi-automated failover is fine, not automatic |
+| required at this tier | indexes on the query paths actually used; EXPLAIN before merging a new query against a non-trivial table; bounded/paginated list queries (unbounded pagination is a correctness bug at any size, not a growth-tier nicety); a deliberately sized connection pool, not the driver default; a stated p95 budget split across hops; basic uptime/error-rate monitoring |
+| explicitly NOT required at this tier | multi-region deployment; a dedicated cache layer (Redis/Memcached) unless a measured hot path needs it; horizontal autoscaling or Kubernetes; a dedicated search index (OpenSearch/Meilisearch/Typesense); a 24/7 on-call rotation; a capacity or soak-testing regime |
+
+Risk is `elevated` because the kind is `auth` (the floor for auth, payment and pii-compliance). It adds the PII, encryption and residency/retention/compliance rows below without adding any capacity item.
+
+## 0b. Implicit requirements
+
+29 baseline items for work=api, tier=small, risk=elevated (`100x baseline show --work api --tier small --risk elevated`). Class C rows that block `ready` (residency, retention, compliance regime, cost) are answered from the PRD's constraints table; the other two proceed on a recorded assumption.
+
+| id | default | status | evidence |
+|---|---|---|---|
+| api.authz-every-endpoint | object-level and function-level authorization checked on every endpoint, server-side, from the authenticated identity | covered | E6 `session.guard.spec.ts` → `tenant A session cannot read tenant B profile` |
+| api.property-authz-mass-assignment | request bodies bind to an allowlisted DTO; responses expose only fields the caller may read | covered | E29 `login.dto.spec.ts` → extra `isAdmin` field rejected |
+| api.boundary-validation | every input is validated at the trust boundary for type, range, length and format, with explicit size limits | covered | E8 `login.dto.spec.ts`; D10 validates at DTO, service and schema |
+| api.resource-caps | list endpoints have a maximum page size; request bodies and uploads have a maximum size | accepted | no list endpoint in this feature (E30); request bodies fall under the service-wide JSON body limit |
+| api.problem-details-errors | errors use RFC 9457 problem details and never leak stack traces or internal identifiers | deferred | FOLLOW-UP-004 — RFC 9457 shape lands with the API-wide error format; this feature returns one generic 401 body (E16) |
+| api.idempotency-timeouts-retries | unsafe retried operations accept an idempotency key; every outbound call has a timeout; retries are bounded with backoff | covered | E1 `auth.e2e-spec.ts` (duplicate login), E3 `session.store.spec.ts` (redis timeout) |
+| api.health-graceful-shutdown | separate liveness and readiness endpoints; SIGTERM drains in-flight work before exit | n/a(no new process — the existing service keeps its probes and shutdown hook) | — |
+| api.contract-checked-in | the OpenAPI or protobuf contract is checked in and linted in CI | deferred | FOLLOW-UP-005 — add `/auth/*` to the checked-in OpenAPI document |
+| api.ssrf-guard | any server-side fetch of a user-supplied URL uses an allowlist and blocks private, loopback and metadata addresses | n/a(no server-side fetch of a user-supplied URL; the OAuth endpoints are fixed provider URLs, E23) | — |
+| all.no-secrets-in-code | no secrets in code or config files; secrets come from the environment or a secret manager, and secret scanning runs on every push | covered | V9 `gitleaks detect --redact`; OAuth client secret read from the environment |
+| all.sast-deps-pinned-actions | SAST in CI, automated dependency update PRs, and third-party CI actions pinned by commit SHA | deferred | FOLLOW-UP-006 — repo-wide CI hardening, not specific to this feature |
+| all.threat-model-paragraph | the spec's security section names the assets, the trust boundaries crossed and the top abuse cases | covered | §10 Security |
+| all.pii-out-of-logs | personal data, credentials and session tokens are never written to logs, traces or error reports | covered | E24 `log-redaction.spec.ts` |
+| all.golden-signals-tracing | latency, traffic, errors and saturation are measured; logs are structured; trace context propagates across hops | covered | §12 Observability |
+| all.tests-in-same-change | tests ship in the same change as the code, and they are deterministic (no sleeps, no wall-clock, no network) | covered | §8 V3–V5 ship with the code |
+| all.e2e-critical-journeys | an end-to-end test covers each critical user journey, and only those | covered | V5 `npx jest --selectProjects e2e` — sign in, sign out, revoked session |
+| all.flags-tested-rollback | risky behaviour ships behind a feature flag, and the rollback step is written and has been executed once | covered | §9 flag `auth.v2_login`; E10 `migrate.spec.ts` → up, down, up |
+| all.small-changes | work lands as small, self-contained changes | applied | PRD §9 phases P1–P3 land as separate changes; V6 `100x bloat_check` |
+| all.readme-adrs | the README states how to run and test; architecturally significant choices are recorded as ADRs | covered | ADR-0001 (session strategy), ADR-0002 (MFA deferral) |
+| all.time-unicode | timestamps stored in UTC (RFC 3339 on the wire), zones from the IANA tz database, DST transitions tested, text handled as Unicode with normalisation where compared | covered | E7 `session.ttl.spec.ts` (DST), E8 `login.dto.spec.ts` (unicode) |
+| all.copyleft-review | a dependency under a copyleft licence (GPL, AGPL, LGPL, MPL, EPL family) is flagged for licence review before adoption | accepted | only new dependency is the argon2 binding (D2); vetted with `100x vet_dep argon2` before it is added |
+| all.encryption-in-transit | TLS 1.2+ on every hop that carries personal or credential data, including internal service-to-service | applied | TLS terminates at the existing gateway; app-to-Redis and app-to-Postgres connections use TLS (§10) |
+| ask.data-residency | ASK: In which country or region must personal data be stored and processed? | ASK(single region: the existing Postgres and Redis region — PRD §4, source user) | — |
+| ask.retention-period | ASK: How long is each class of personal data kept, and what deletes it? | ASK(session rows deleted at expiry; failed-login counters expire after 15 minutes — PRD §4, source user) | — |
+| ask.compliance-regime | ASK: Which legal or contractual regime applies (GDPR, APPI, HIPAA, PCI DSS, SOC 2, none)? | ASK(none — PRD §4, source user) | — |
+| ask.cost-ceiling | ASK: What recurring spend may this add (a monthly ceiling, or 'existing infrastructure only')? | ASK(existing infrastructure only, no new paid service — PRD §4, source user) | — |
+| ask.rpo-rto | ASK: How much data may be lost (RPO) and how long may the service be down (RTO) after a disaster? | ASSUMED(sessions are disposable — losing them signs users out; users table follows the existing Postgres backup policy) | — |
+| ask.tenancy-isolation | ASK: Is this multi-tenant, and is isolation by row, schema, database or deployment? | ASSUMED(row-level by tenant id, matching the existing session guard — E6) | — |
+| ask.api-audience | ASK: Is this API public (third parties, versioned contract) or internal (own clients only)? | ASK(internal — first-party web and mobile clients only; PRD §4 names the mobile client) | — |
 
 ## 1. Outcome
 
@@ -104,11 +163,11 @@ accepted deliberately — it is recorded, not unanswered.
 
 ## 6. Open questions
 
-| # | question | why it matters | recommendation (proceeding with this) | answered |
-|---|---|---|---|---|
-| Q1 | Session idle timeout and absolute lifetime? | changes the TTL and the refresh behaviour | 30 day absolute, 7 day idle, sliding on use — matches a consumer web app; tighten to 12h/1h if this becomes admin tooling | no |
-| Q2 | Is redis guaranteed present in every deploy target? | ADR-0001 assumption A2 depends on it | proceed assuming yes; the store is behind a `SessionStore` interface so a Postgres implementation is a drop-in if A2 fails | no |
-| Q3 | Which OAuth provider first? | changes only the provider adapter, not the flow | Google — largest coverage for the stated user base | no |
+| # | type | question | why it matters | recommendation (proceeding with this) | answered |
+|---|---|---|---|---|---|
+| Q1 | default | Session idle timeout and absolute lifetime? | changes the TTL and the refresh behaviour | 30 day absolute, 7 day idle, sliding on use — matches a consumer web app; tighten to 12h/1h if this becomes admin tooling | no |
+| Q2 | default | Is redis guaranteed present in every deploy target? | ADR-0001 assumption A2 depends on it | proceed assuming yes; the store is behind a `SessionStore` interface so a Postgres implementation is a drop-in if A2 fails | no |
+| Q3 | default | Which OAuth provider first? | changes only the provider adapter, not the flow | Google — largest coverage for the stated user base | no |
 
 None of these block implementation, which is the test for whether a question belongs here.
 
@@ -163,6 +222,7 @@ test, 3 accepted as not-applicable with a reason, 2 deferred to a tracked follow
 | V6 | AI-bloat and assertion-free tests | `python3 scripts/bloat_check.py --base origin/main` | pre-PR |
 | V7 | decision assumptions still hold | `python3 scripts/decide.py verify && python3 scripts/decide.py drift` | pre-PR |
 | V8 | sequence diagram matches code | `python3 scripts/design_drift.py specs/login/spec.md src/auth` | pre-PR |
+| V9 | no secrets committed | `gitleaks detect --redact` | pre-commit |
 
 Bind them so a pass cannot be reused after an edit:
 
@@ -180,3 +240,40 @@ python3 scripts/verified.py --name test      -- npx jest --selectProjects unit i
 | rollback | disable the flag (instant); the migration is additive and reversible via `npm run migrate:down -- 1` |
 | blast radius if wrong | every user who cannot sign in; mitigated by the flag and by keeping the previous auth path live until the flag is fully rolled out |
 
+## 10. Security
+
+Assets: password hashes, session ids, OAuth tokens. Trust boundaries crossed: browser → API
+(untrusted input, CSRF), API → OAuth provider (untrusted response), API → Redis and Postgres
+(internal, TLS). Top abuse cases and their control: credential stuffing → per-account and
+per-IP throttling with decaying lockout (E9, E13, E21); user enumeration → identical body,
+status and timing for unknown user and wrong password (E14, E16); session theft →
+httpOnly + Secure + SameSite cookie, rotation on login and elevation (E17, E20); OAuth
+replay → state and PKCE (E23); open redirect → same-origin return paths only (E18).
+
+## 11. Privacy
+
+Personal data touched: email address and password hash in `users`; user id, IP and user
+agent in `sessions`. Lawful basis is performance of the account contract. Session rows
+are deleted at expiry and failed-login counters after 15 minutes (§0b
+`ask.retention-period`). Data stays in the existing single region (§0b
+`ask.data-residency`). Nothing personal is logged (E24).
+
+## 12. Observability
+
+Golden signals on `POST /auth/login` and `POST /auth/logout`: request rate, error rate
+split by 401 / 429 / 5xx, p95 and p99 latency against the 300 ms starting point (§0), and
+Redis connection saturation. Structured log events `auth.login_succeeded`,
+`auth.login_failed` (reason code, never the email), `auth.locked`, `auth.revoked`; the
+request id propagates as trace context. Alert on a 5xx rate above the service's existing
+threshold and on any lockout spike, each linked to the service runbook.
+
+## 13. Migration
+
+Expand/contract on `users` (§9): add nullable `password_hash` and `locked_until`, ship
+code that writes both, backfill, then add NOT NULL in a later migration. `sessions` is a
+new table, additive. Reversible with `npm run migrate:down -- 1`; tested by E10.
+
+## 14. Cost
+
+N/A because it adds no paid service: sessions reuse the existing Redis cluster and the
+OAuth integration adds no new infrastructure (§0b `ask.cost-ceiling`).

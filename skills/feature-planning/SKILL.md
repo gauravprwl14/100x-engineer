@@ -33,21 +33,35 @@ feature and code has drifted from it — that's `codebase-comprehension` +
 
 ## How this avoids interrogating you
 
-Three rules, because a process that asks twenty questions is worse than no process:
+Three axes feed the spec, so the gaps are generated rather than remembered:
 
-1. **Every decision ships a default.** 24 recurring decisions across 8 feature kinds
-   are pre-answered with a recommendation and the factor that would change it. The
-   agent proceeds on defaults and records that it did.
-2. **A question only appears if its answer changes the design.** Anything else is a
-   preference and gets a default instead.
-3. **Every question carries a recommendation**, so work continues while it is
-   unanswered rather than blocking on you.
+| axis | flag | catalogue |
+|---|---|---|
+| feature kind | `--kind auth,crud` | edge cases + 24 pre-answered decisions |
+| work type | `--work web-ui,api` | implicit requirements (`scripts/data/baseline.json`) |
+| load tier + risk | `--tier small --risk elevated` | what is required and what is not |
+
+1. **Every decision ships a default.** Class A/B baseline items are applied silently and
+   listed; decisions carry a recommendation. The agent proceeds and records it.
+2. **Only class C items are asked** — residency, retention, compliance regime, cost,
+   SLO numbers, unusual targets. At most five questions, each tagged `must-ask` or
+   `default`, each with a recommendation.
+3. **An unanswered C item may proceed as `ASSUMED(<recommendation>)`**, except
+   residency, retention, compliance regime and cost, which block `ready`.
 
 ## Rules
 
-1. Scaffold the spec before writing code. The spec seeds the edge cases and decisions
-   for the feature kind, so nothing has to be remembered.
-   *Enforced by:* `100x plan_feature new <name> --kind <kinds>`
+1. Scaffold the spec before writing code, declaring the load tier (no default exists),
+   the risk level and the work types. `auth`, `payment` and `pii-compliance` raise risk
+   to at least `elevated`.
+   *Enforced by:* `100x plan_feature new <name> --kind <kinds> --work <types> --tier <tier>`
+   exits 2 without `--tier`
+
+1b. Resolve every §0b implicit requirement with an allowlisted status: `covered` or
+   `applied` with evidence, `accepted`, `deferred` with a follow-up, `waived(<reason>)`
+   (only if waivable), `n/a(<reason>)`, or for class C `ASK(<answer>)` /
+   `ASSUMED(<recommendation>)`.
+   *Enforced by:* `100x plan_feature audit specs/<name>`
 
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
    or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
@@ -57,7 +71,11 @@ Three rules, because a process that asks twenty questions is worse than no proce
 
 3. State what is explicitly out of scope. Out-of-scope is what turns a gap into a
    decision — and it is where the edge cases you are deliberately not handling go.
-   *Enforced by:* the audit rejects placeholder cells in the scope table
+   *Enforced by:* the audit rejects a template placeholder anywhere in the spec
+
+3b. Write the design-doc sections — Security (threat model), Privacy, Observability,
+   Migration, Cost. `N/A because <reason>` is fine; blank is not.
+   *Enforced by:* `100x plan_feature audit specs/<name>`
 
 4. Any decision that departs from the recommended default needs an ADR. Accepting a
    default is also recorded, as `default`, so a later reader can tell "we chose this
@@ -82,14 +100,18 @@ Three rules, because a process that asks twenty questions is worse than no proce
 ## Verify
 
 ```bash
-# 1. scaffold: seeds edge cases + pre-answered decisions for the feature kind
-100x plan_feature new login --kind auth,crud --stack nestjs
+# 0. what does this work type inherit at this tier and risk?
+100x baseline show --work api --tier small --risk elevated
+
+# 1. scaffold: seeds §0b baseline, edge cases + pre-answered decisions
+100x plan_feature new login --kind auth,crud --work api --tier small --stack nestjs
+#    work: web-ui mobile api worker data-pipeline cli iac (public-api = api, public)
 #    kinds: universal auth crud payment upload search realtime migration integration
 #    + infra: cache queue cron webhook third-party-api multi-tenancy pii-compliance
 #      batch-job file-storage notification
 #    combine them — a checkout feature is `payment,crud`
 
-# 2. fill sections 1-4 and 8-9, resolve every edge case, then gate on it
+# 2. fill §0b and sections 1-14, resolve every edge case, then gate on it
 100x plan_feature audit specs/login      # exits 1 until complete
 
 # 3. record decisions that depart from the default
@@ -113,22 +135,27 @@ Three rules, because a process that asks twenty questions is worse than no proce
 100x decide index          # decisions/INDEX.md
 ```
 
-A complete worked example is in `specs/login/` — 31 seeded edge cases resolved as
-26 covered, 3 accepted, 2 deferred, with 10 decisions of which 7 accept the default.
+A complete worked example is in `specs/login/` — tier `small`, risk `elevated`, 29
+baseline items resolved, 31 edge cases (26 covered, 3 accepted, 2 deferred), 10
+decisions of which 7 accept the default.
 
 ## Failure modes
 
 This skill rejects:
 
 - **Code before a spec** for anything non-trivial.
+- **A spec with no declared tier**, or a risk below the floor its kind implies.
+- **A §0b status outside the allowlist** — `n/a` with no reason, `done?`, `TODO`.
+- **Residency, retention, compliance regime or cost left `ASSUMED`.**
+- **More than five open questions**, or one not tagged `must-ask` / `default`.
+- **A blank Security, Privacy, Observability, Migration or Cost section.**
 - **An edge case left `TODO`.** The audit names the first one and exits non-zero.
 - **"Covered" with no test reference** — a claim with no evidence.
 - **"Deferred" with no follow-up** — that is a dropped requirement wearing a label.
 - **A decision that departs from the default with no ADR**, so the reasoning is lost.
 - **A verification plan with no commands.**
-- **A placeholder left in any table cell**, which is how a spec looks finished while
-  being empty.
-- **A sequence diagram still containing template text.**
+- **A template placeholder anywhere** — table, prose or diagram — which is how a spec
+  looks finished while being empty.
 
 **Honest limitations:**
 - The catalogue covers 19 kinds and 140 edge cases: 9 kinds (including `universal`)
@@ -157,6 +184,9 @@ which is cheaper to review than a diff. At `org` the decision log matters more t
 the spec, because the expensive question becomes "why is it like this" years later.
 
 ## Sources
+- Implicit-requirements baseline, each item citing its standard (WCAG 2.2, OWASP ASVS
+  5.0.0, OWASP API Top 10 2023, Google SRE book, NIST SSDF v1.1, Android vitals):
+  `scripts/data/baseline.json`; question classes A/B/C: `docs/OPERATING-MODEL.md` §5.
 - Edge-case catalogue (140 cases, 19 kinds) and required-decision defaults (24
   decisions, 8 kinds): `scripts/data/edge_cases.json`, `edge_cases_infra.json`,
   `scripts/data/decisions_required.json` —

@@ -42,25 +42,30 @@ warns about, one layer up.
    *Enforced by:* `100x prd audit prds/<name>`
 
 2. State constraints — team size and skills, existing stack, deadline, budget,
-   compliance, what cannot change — before scoring options, not after picking one
-   and rationalizing it.
-   *Enforced by:* `100x prd audit prds/<name>` (rejects placeholder
-   constraint cells)
+   compliance, residency, retention, what cannot change — before scoring options. Every
+   number and constraint carries a `source` (`user | assumed | default | code`); a
+   `ready` PRD may not rest on an `assumed` target or constraint.
+   *Enforced by:* `100x prd audit prds/<name>`
 
-3. Score every option, **always including do-nothing / the smallest possible
-   change**, on the `approach-selection` rubric (reversibility x3, blast radius x3,
-   moving parts x2, already-in-use x2, exit cost x1, fit x1). Cross-reference that
-   skill's weights and tie-breaks rather than re-deriving them here.
-   *Enforced by:* `100x prd audit prds/<name>` (>=2 options, every
-   option — including the winner — needs a genuine con)
+3. Evaluate every option, **always including do-nothing**, with the `approach-selection`
+   method: fit is a pass/fail filter first, then reversibility x3, blast radius x3,
+   moving parts x2, already-in-use x2, exit cost x1. Choose the top fit-passing score or
+   record an override reason.
+   *Enforced by:* `100x prd audit prds/<name>` (>=2 options, a con on each, scores
+   recomputed, chosen option checked against the top fit-passing score)
 
 4. Name the recommendation's single deciding factor, and the observation that
    would change it. "Best overall" is not a deciding factor; it means the options
    were not actually compared.
    *Enforced by:* `100x prd audit prds/<name>`
 
-5. Score every risk likelihood x impact and give it a mitigation. A risk with no
-   mitigation is a worry someone wrote down, not a plan.
+5. Score every risk likelihood x impact as integers 1-5 and give it a mitigation. A
+   risk with no mitigation is a worry someone wrote down, not a plan.
+   *Enforced by:* `100x prd audit prds/<name>` (recomputes L x I)
+
+5b. Fill the design-doc sections — goals, design overview, security, privacy,
+   observability, rollout/rollback, migration, test plan, cost, dependencies, open
+   questions/assumptions, approvers. `N/A because <reason>` is allowed; blank is not.
    *Enforced by:* `100x prd audit prds/<name>`
 
 6. Phase the plan: what ships first, what risky assumption it proves, and the kill
@@ -123,12 +128,12 @@ down:
 
 1. Read the code's actual behavior and any spec/ADRs that exist for it — those are
    the "what they do today" and "constraints" rows; do not invent them.
-2. Write Requirements (`prd.py new` §5) as what the code *currently* does, not what
+2. Write Requirements (`prd.py new` §6) as what the code *currently* does, not what
    it was probably meant to do — a requirement with no code and no stated reason
    behind it is speculation, not reverse-engineering.
-3. Success metrics are usually the gap: shipped code frequently has no instrumented
-   metric at all. Recording that gap explicitly (proposed, not measured) is itself
-   the finding — see `examples/login/prd.md` §11 for a worked instance.
+3. Success metrics are usually the gap: shipped code rarely has an instrumented
+   metric. Record the gap as an open question rather than inventing a target — see
+   `examples/login/prd.md` §4 and §23.
 4. Run `prd.py align` against the real spec once both exist. A reverse-engineered
    PRD that fails its own alignment check found a real divergence, not a bug in
    the tool.
@@ -136,19 +141,17 @@ down:
 ## Verify
 
 ```bash
-# scaffold: pre-answers the do-nothing option, seeds 3 universal risks
-100x prd new login --kind auth --stack nestjs
+# scaffold: tier required; a PRD is optional below the growth tier
+100x prd new login --kind auth --stack nestjs --tier small
 
-# fill sections 1-7, 9-10, then gate on completeness (~10s)
+# fill every section, then gate on completeness (~1s)
 100x prd audit prds/login
 
 # the PRD's requirements and metrics must trace into the spec that implements them
-100x plan_feature new login --kind auth,crud --stack nestjs
-100x prd align prds/login specs/login       # both directions, ~5s
+100x plan_feature new login --kind auth,crud --work api --tier small --stack nestjs
+100x prd align prds/login specs/login       # both directions, ~1s
 
-# a level-1 diagram (<=12 nodes) of the recommended shape — orientation for a
-# reviewer who was not in the room when the options were scored; generate from
-# the closest existing analog, or hand-author + check_diagrams.py if none exists
+# a level-1 diagram (<=12 nodes) of the recommended shape, from the closest analog
 100x diagram_from_code examples/login/src --kind deps --level 1
 
 # gate: does the PRD actually contain that diagram, not just describe one in prose
@@ -171,12 +174,12 @@ A complete worked example is `examples/login/prd.md`, audited clean and aligned
 
 This skill rejects:
 
-- **A success metric with no number** ("increase engagement") or **no measurement
-  method** — unfalsifiable in six months, same failure `research/00` Part G names
-  for the whole research process.
-- **An options table with one option**, or a winning option with no stated
-  con — a choice "considered" with no downside listed was not actually compared,
-  just picked.
+- **A success metric with no number** ("increase engagement"), **no measurement
+  method**, or an **`assumed` target in a `ready` PRD** — an invented number looks
+  exactly like a measured one unless its source is written next to it.
+- **A chosen option that fails fit, or trails the top score with no override.**
+- **A blank design-doc section**, or a non-numeric risk score.
+- **An options table with one option**, or a winning option with no stated con.
 - **A recommendation with no deciding factor** — "the team liked it" is not
   reproducible reasoning.
 - **A risk recorded with no mitigation.**
@@ -189,8 +192,6 @@ This skill rejects:
   that share no significant word with the spec, and spec in-scope items that
   share none with the PRD. It is a lead for review: one shared word is enough to
   report a requirement as covered when the spec never implements it.
-- **A recommendation described only in prose**, with no diagram a reviewer who
-  wasn't in the room can check the options table against.
 
 **Honest limitations:**
 - `prd.py align` is **name-level, not semantic** — it matches shared significant
@@ -198,16 +199,12 @@ This skill rejects:
   missed; an accidental shared word can produce a false "OK". Treat every finding
   as a lead for a human to check, not proof either way. It says this in its own
   output every time it runs.
-- Nothing here checks whether a success metric is actually being measured in
-  production, only whether the spec names a verification step for it. A metric can
-  pass `align` and still have no real telemetry behind it — see
-  `examples/login/prd.md` §11, which records exactly that gap rather than hiding it.
+- Nothing checks that a metric is measured in production, only that the spec names a
+  verification step for it (`examples/login/prd.md` §23 records that gap).
 - `check_diagrams.py` exits 0 on a PRD with no diagram at all ("no mermaid blocks
   found" is not an error) — it validates content, not presence. Rule 6b's presence
   requirement is enforced by review only; a clean run is not proof one was included.
-- Rule 9's rewrite criteria are a judgement call codified as a checklist, not a
-  formula. The check forces the criteria to be named; it cannot verify they are
-  true.
+- Rule 9's rewrite criteria are a judgement call; the check cannot verify them.
 
 ## Next
 
@@ -246,5 +243,7 @@ the original context has moved to a different team.
   (`scripts/design_drift.py`) or decision staleness (`scripts/decide.py drift`):
   `SOURCE: original`.
 - `diagram_from_code.py`/`check_diagrams.py` and the level-1/2/3 detail scale:
-  built by a sibling effort in this plugin, referenced here rather than duplicated
-  — same convention `skills/codebase-comprehension/SKILL.md` uses.
+  referenced, not duplicated (`skills/codebase-comprehension/SKILL.md` convention).
+- Design-doc cross-cutting sections (security, privacy, observability, rollout,
+  migration, test plan, cost) and the source column: owner-approved decision (d);
+  Goals/Non-Goals from the KEP template above.

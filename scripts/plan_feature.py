@@ -12,7 +12,7 @@ Design constraints taken from how this gets used in practice:
   - `audit` is mechanical: an incomplete spec fails, so "we'll decide later" cannot
     silently become "nobody decided".
 
-    plan_feature.py new login --kind auth --stack nestjs
+    plan_feature.py new login --kind auth --work api,web-ui --tier small --stack nestjs
     plan_feature.py audit specs/login
     plan_feature.py index
 
@@ -20,6 +20,7 @@ Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
 import _mutation_guard as mg
+import baseline as bl
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
@@ -79,8 +80,23 @@ DECS = json.loads((DATA / "decisions_required.json").read_text())
 KINDS = [k for k in EDGE if not k.startswith("_")]
 
 TIERS = json.loads((DATA / "scale_tiers.json").read_text())
-TIER_ORDER = TIERS.get("_order", [k for k in TIERS if not k.startswith("_")])
-DEFAULT_TIER = TIERS.get("_default", TIER_ORDER[0] if TIER_ORDER else "small")
+TIER_ORDER = TIERS["_order"]
+RISK_ORDER = TIERS["_risk"]["order"]
+BASELINE = bl.load()
+BASE_BY_ID = {i["id"]: i for i in BASELINE["items"]}
+
+# Status vocabulary for the implicit-requirements and edge-case tables. Anything
+# else is rejected, so a cell cannot drift into "done?", "mostly" or "later".
+PLAIN_STATUS = ("covered", "accepted", "deferred", "applied")
+ARG_STATUS = ("waived", "n/a", "ASK", "ASSUMED")
+STATUS_RX = re.compile(r"^(?P<word>waived|n/a|ASK|ASSUMED)\((?P<arg>.*)\)$", re.S)
+
+# Design-doc cross-cutting sections every spec carries (owner decision d). Testing
+# plan is §8, rollout/rollback §9 and open questions §6; these are the rest.
+DESIGN_SECTIONS = ["10. Security", "11. Privacy", "12. Observability", "13. Migration",
+                   "14. Cost"]
+QUESTION_TYPES = ("must-ask", "default")
+MAX_QUESTIONS = 5
 
 
 def gather(kinds):
@@ -95,17 +111,51 @@ def gather(kinds):
     return edges, decs
 
 
+def esc(x):
+    return str(x).replace("|", "\\|")
+
+
+def baseline_rows(work, tier, risk, prefilled):
+    """§0b rows: every applicable baseline item, C items as unanswered ASK rows."""
+    rows = []
+    for i in bl.applicable(work, tier, risk, BASELINE):
+        if i["class"] == "C":
+            default = f"ASK: {i['ask']}"
+            status = prefilled.get(i["id"], "ASK")
+            evidence = f"source: {i['source']}"
+        else:
+            default = i["default"]
+            status = "TODO"
+            evidence = f"_suggested:_ {i['enforced_by']}"
+        rows.append(f"| {i['id']} | {esc(default)} | {esc(status)} | {esc(evidence)} |")
+    return rows
+
+
 def cmd_new(a):
     kinds = [k.strip() for k in a.kind.split(",") if k.strip()]
     bad = [k for k in kinds if k not in KINDS]
     if bad:
         print(f"unknown kind(s): {bad}. available: {KINDS}", file=sys.stderr)
         return 2
-    tier_name = (a.scale or DEFAULT_TIER).strip()
+    if not a.tier:
+        print(f"--tier is required: one of {TIER_ORDER}. There is no default tier; "
+              f"declaring one is the point (skills/scale-appropriateness/SKILL.md)",
+              file=sys.stderr)
+        return 2
+    tier_name = a.tier.strip()
     if tier_name not in TIER_ORDER:
-        print(f"unknown --scale tier '{tier_name}'. available: {TIER_ORDER} "
+        print(f"unknown --tier '{tier_name}'. available: {TIER_ORDER} "
               f"(see skills/scale-appropriateness/SKILL.md)", file=sys.stderr)
         return 2
+    if a.risk not in RISK_ORDER:
+        print(f"unknown --risk '{a.risk}'. available: {RISK_ORDER}", file=sys.stderr)
+        return 2
+    work, bad_work = bl.parse_work(a.work, BASELINE)
+    if bad_work:
+        print(f"unknown --work type(s): {bad_work}. available: {bl.work_types(BASELINE)} "
+              f"(aliases: {bl.WORK_ALIASES})", file=sys.stderr)
+        return 2
+    risk = bl.risk_floor(kinds, a.risk)
     tier = TIERS[tier_name]
     if mg.safe_record_name(a.name, "plan_feature.py new") is None:
         return 2
@@ -118,9 +168,12 @@ def cmd_new(a):
         return 2
     edges, decs = gather(kinds)
     today = datetime.date.today().isoformat()
-
-    def esc(x):
-        return str(x).replace("|", "\\|")
+    prefilled = {}
+    if "public-api" in (a.work or ""):
+        prefilled["ask.api-audience"] = "ASK(public — declared with --work public-api)"
+    base = baseline_rows(work, tier_name, risk, prefilled)
+    n_ask = sum(1 for r in base if "| ASK: " in r)
+    work_arg = ",".join(work) or '""'
 
     s = [f"# {a.name} — spec", "",
          f"| field | value |", "|---|---|",
@@ -128,16 +181,17 @@ def cmd_new(a):
          f"| stack | {a.stack or 'unspecified'} |",
          f"| created | {today} |",
          f"| status | **draft — not ready to implement** |", "",
-         "Status becomes `ready` only when `plan_feature.py audit` passes. "
+         "Status becomes `ready` only when `100x plan_feature audit` passes. "
          "Until then the spec is incomplete by definition, not by opinion.", "",
          "## 0. Non-functional requirements", "",
-         "A scale tier is DECLARED here, with a sane default, rather than asked about — "
-         "see `skills/scale-appropriateness/SKILL.md`. Everything below is derived from "
-         "the tier, not invented per-feature. Changing tier after this spec is written "
-         "is a re-plan, not a patch: it needs an ADR (`scripts/decide.py new`) because it "
-         "invalidates decisions made under the old tier.", "",
+         "Load tier and risk are DECLARED here, never defaulted — see "
+         "`skills/scale-appropriateness/SKILL.md`. Risk adds security and compliance "
+         "items without adding capacity items. Changing either after this spec is "
+         "written is a re-plan: it needs an ADR (`100x decide new`).", "",
          "| field | value |", "|---|---|",
          f"| scale tier | {tier_name} |",
+         f"| risk | {risk} |",
+         f"| work types | {', '.join(work) or 'none (cross-cutting baseline only)'} |",
          f"| expected users / requests | {esc(tier['users_requests'])} |",
          f"| data volume | {esc(tier['data_volume'])} |",
          f"| p95 latency budget | {tier['p95_budget_ms']}ms — {esc(tier['p95_note'])} |",
@@ -145,9 +199,15 @@ def cmd_new(a):
          f"| required at this tier | {esc('; '.join(tier['required']))} |",
          f"| explicitly NOT required at this tier | {esc('; '.join(tier['not_required']))} |",
          "",
-         "Latency budget REASONING (per-hop split, percentiles, capacity arithmetic) is "
-         "owned by `skills/performance-budgets/SKILL.md` — this table states the tier's "
-         "starting number, it does not replace that skill's rules.", "",
+         "## 0b. Implicit requirements", "",
+         f"{len(base)} baseline item(s) for work={work_arg}, "
+         f"tier={tier_name}, risk={risk} (`100x baseline show --work "
+         f"{work_arg} --tier {tier_name} --risk {risk}`). Status is one of "
+         "covered, applied, accepted, deferred, waived(<reason or ADR>), n/a(<reason>), "
+         "ASK(<answer>), ASSUMED(<recommendation>). Class C rows are asked, never "
+         "defaulted; residency, retention, compliance regime and cost must be answered "
+         "with ASK(<answer>) before the spec is ready.", "",
+         "| id | default | status | evidence |", "|---|---|---|---|", *base, "",
          "## 1. Outcome", "",
          "<!-- One paragraph. What a user can do after this ships that they cannot do now."
          " Not a description of the implementation. -->", "",
@@ -163,7 +223,7 @@ def cmd_new(a):
          "  participant C as Client", "  participant A as API", "  participant D as Store",
          "  U->>C: <!-- action -->", "  C->>A: <!-- request -->",
          "  A->>D: <!-- write -->", "  A-->>C: <!-- response -->", "```", "",
-         "`scripts/design_drift.py` checks that every participant and message here has a "
+         "`100x design_drift` checks that every participant and message here has a "
          "counterpart in the implementation, and reports what drifted.", "",
          "## 5. Decisions required", "",
          "Each row has a recommended DEFAULT. Accept it by leaving `chosen` as `default`, "
@@ -176,18 +236,20 @@ def cmd_new(a):
                  f"{esc(default)} | default | — |")
     s += ["", "Record any decision that departs from the default, or that is "
           "architecturally load-bearing, with:", "",
-          "```bash", f"python3 scripts/decide.py new \"<decision>\" --affects \"<glob>\" --tag {kinds[0]}",
+          "```bash", f"100x decide new \"<decision>\" --affects \"<glob>\" --tag {kinds[0]}",
           "```", "",
           "## 6. Open questions", "",
-          "Only questions whose answer changes the design belong here, and each must "
-          "carry a recommendation so work continues while it is unanswered.", "",
-          "| # | question | why it matters | recommendation (proceeding with this) | answered |",
-          "|---|---|---|---|---|",
-          "| Q1 | <!-- --> | <!-- --> | <!-- --> | no |", "",
+          f"At most {MAX_QUESTIONS}, ordered by impact. `type` is `must-ask` (a class C "
+          "item: the user's call) or `default` (proceeding on the recommendation). Every "
+          "question carries a recommendation so work continues while it is unanswered.", "",
+          "| # | type | question | why it matters | recommendation (proceeding with this) | answered |",
+          "|---|---|---|---|---|---|",
+          "| Q1 | <!-- must-ask or default --> | <!-- --> | <!-- --> | <!-- --> | no |", "",
           "## 7. Edge cases", "",
           f"{len(edges)} seeded from the catalogue for kinds: {', '.join(kinds)}. "
-          "Every row needs a `status` of `covered`, `accepted`, or `deferred`, and a "
-          "`test` reference when covered. `deferred` requires a follow-up reference.", "",
+          "Every row needs a `status` of `covered` (with a test reference), `accepted`, "
+          "`deferred` (with a follow-up reference), `n/a(<reason>)` or "
+          "`waived(<reason or ADR>)`.", "",
           "| # | source | edge case | why it gets missed | status | test / reference |",
           "|---|---|---|---|---|---|"]
     for i, (kind, what, why, test) in enumerate(edges, 1):
@@ -199,14 +261,27 @@ def cmd_new(a):
           "| V2 | unit | <!-- --> | pre-commit |",
           "| V3 | integration | <!-- --> | pre-PR |",
           "| V4 | the edge cases above | <!-- --> | pre-PR |", "",
-          "Bind these to the code with `scripts/verified.py` so a passing result cannot "
+          "Bind these to the code with `100x verified` so a passing result cannot "
           "be reused after an edit.", "",
           "## 9. Rollout and reversal", "",
           "| aspect | plan |", "|---|---|",
           "| feature flag | <!-- name, default off --> |",
           "| migration | <!-- expand/contract? reversible? --> |",
           "| rollback | <!-- the exact command or step --> |",
-          "| blast radius if wrong | <!-- who is affected and how badly --> |", ""]
+          "| blast radius if wrong | <!-- who is affected and how badly --> |", "",
+          "## 10. Security", "",
+          "<!-- Threat model paragraph: assets, trust boundaries crossed, top abuse cases "
+          "and the control for each. 'N/A because <reason>' is allowed; blank is not. -->", "",
+          "## 11. Privacy", "",
+          "<!-- Personal data touched, lawful basis or consent, retention, where it is "
+          "stored. 'N/A because <reason>' is allowed; blank is not. -->", "",
+          "## 12. Observability", "",
+          "<!-- Signals, dashboards and alerts that prove this works in production. -->", "",
+          "## 13. Migration", "",
+          "<!-- Schema or data migration shape, backfill, reversibility; or 'N/A because "
+          "<reason>'. -->", "",
+          "## 14. Cost", "",
+          "<!-- New recurring spend and what drives it; or 'N/A because <reason>'. -->", ""]
     new_text = "\n".join(s) + "\n"
 
     if dry:
@@ -219,11 +294,19 @@ def cmd_new(a):
     (d / "spec.md").write_text(new_text)
 
     print(f"created {(d / 'spec.md').relative_to(ROOT)}")
-    print(f"  scale tier: {tier_name} (p95 {tier['p95_budget_ms']}ms) "
-          f"— change with --scale {{{'|'.join(TIER_ORDER)}}}")
+    print(f"  scale tier: {tier_name} (p95 starting point {tier['p95_budget_ms']}ms)")
+    if risk != a.risk:
+        print(f"  risk: {risk} (raised from {a.risk}: kinds {', '.join(kinds)} imply "
+              f"at least {risk})")
+    else:
+        print(f"  risk: {risk}")
+    if not work:
+        print("  no --work given: only cross-cutting baseline items were seeded "
+              f"(work types: {', '.join(bl.work_types(BASELINE))})")
+    print(f"  {len(base)} implicit requirements seeded ({n_ask} to ask)")
     print(f"  {len(decs)} decisions pre-answered with defaults")
     print(f"  {len(edges)} edge cases seeded (all TODO)")
-    print(f"\nNext: fill sections 1-4 and 8-9, then `plan_feature.py audit specs/{a.name}`")
+    print(f"\nNext: fill §0b and sections 1-14, then `100x plan_feature audit specs/{a.name}`")
     cmd_index(a)
     return 0
 
@@ -260,6 +343,105 @@ def rows_of(text, header_contains):
     return out
 
 
+def parse_status(cell):
+    """('covered', None) | ('n/a', 'reason') | (None, None) when not in the allowlist."""
+    c = cell.strip()
+    if c in PLAIN_STATUS:
+        return c, None
+    m = STATUS_RX.match(c)
+    if m and m.group("arg").strip() and "<!--" not in m.group("arg"):
+        return m.group("word"), m.group("arg").strip()
+    return None, None
+
+
+def no_evidence(cell):
+    c = cell.strip()
+    return not c or c in ("-", "—") or c.startswith("_suggested:")
+
+
+def section_body(text, heading):
+    """Body of '## <heading>' up to the next '## ', fenced blocks included."""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == f"## {heading}")
+    except StopIteration:
+        return None
+    out = []
+    for l in lines[start + 1:]:
+        if l.startswith("## "):
+            break
+        out.append(l)
+    return "\n".join(out).strip()
+
+
+NA_BARE = re.compile(r"^n/?a\.?$", re.I)
+
+
+def audit_baseline(text, work, tier, risk, errs, warns):
+    rows = rows_of(text, "| id | default | status | evidence |")
+    if "## 0b. Implicit requirements" not in text or not rows:
+        errs.append("no '## 0b. Implicit requirements' table — regenerate with "
+                    "`100x plan_feature new <name> --tier ... --work ...` and merge")
+        return rows
+    expected = {i["id"] for i in bl.applicable(work, tier, risk, BASELINE)}
+    present = {r[0] for r in rows if r}
+    missing = sorted(expected - present)
+    if missing:
+        errs.append(f"{len(missing)} applicable baseline item(s) missing from §0b "
+                    f"(first: {missing[0]})")
+    unknown = sorted(present - set(BASE_BY_ID))
+    if unknown:
+        warns.append(f"§0b row(s) not in scripts/data/baseline.json: {', '.join(unknown)}")
+    blocking = bl.blocking_ids(BASELINE)
+    bad, todo, unanswered, assumed_block, wrong_class, no_ev, nowaive = ([] for _ in range(7))
+    for r in rows:
+        if len(r) < 4:
+            bad.append(r[0] if r else "?")
+            continue
+        iid, status_cell, ev = r[0], r[2], r[3]
+        item = BASE_BY_ID.get(iid, {})
+        word, arg = parse_status(status_cell)
+        if word is None:
+            cell = status_cell.strip()
+            (unanswered if cell == "ASK" else todo if cell == "TODO" else bad).append(iid)
+            continue
+        is_c = item.get("class") == "C"
+        if is_c and word not in ("ASK", "ASSUMED", "n/a"):
+            wrong_class.append(f"{iid} is class C: answer it with ASK(<answer>), not {word}")
+        if not is_c and word in ("ASK", "ASSUMED"):
+            wrong_class.append(f"{iid} is class {item.get('class', '?')}: "
+                               f"{word}(...) is only for class C questions")
+        if word == "ASSUMED" and iid in blocking:
+            assumed_block.append(iid)
+        if word in ("covered", "applied", "deferred") and no_evidence(ev):
+            no_ev.append(f"{iid} ({word})")
+        if word == "waived" and item and not item.get("waivable", True):
+            nowaive.append(iid)
+    if bad:
+        errs.append(f"{len(bad)} §0b status(es) outside the allowlist "
+                    f"covered|applied|accepted|deferred|waived(..)|n/a(..)|ASK(..)|"
+                    f"ASSUMED(..) (first: {bad[0]}) — a bare n/a or waived needs a reason")
+    if todo:
+        errs.append(f"{len(todo)} of {len(rows)} §0b implicit requirement(s) still TODO "
+                    f"(first: {todo[0]})")
+    if unanswered:
+        errs.append(f"{len(unanswered)} class C question(s) unanswered in §0b "
+                    f"(first: {unanswered[0]}) — ASK(<answer>) or ASSUMED(<recommendation>)")
+    if assumed_block:
+        errs.append(f"{len(assumed_block)} blocking question(s) only ASSUMED: "
+                    f"{', '.join(assumed_block)} — residency, retention, compliance regime "
+                    f"and cost must be answered (ASK(<answer>)) before `ready`")
+    for w in wrong_class:
+        errs.append(w)
+    if no_ev:
+        errs.append(f"{len(no_ev)} §0b row(s) with no evidence (first: {no_ev[0]}) — "
+                    f"covered/applied need a test or check, deferred a follow-up")
+    if nowaive:
+        errs.append(f"{len(nowaive)} non-waivable baseline item(s) waived: "
+                    f"{', '.join(nowaive)}")
+    return rows
+
+
 def cmd_audit(a):
     d = pathlib.Path(a.dir)
     if not d.is_absolute():
@@ -271,29 +453,47 @@ def cmd_audit(a):
     text = sp.read_text()
     errs, warns = [], []
 
-    # placeholders left behind
-    ph = [l for l in text.splitlines() if "<!--" in l and "-->" in l
-          and not l.strip().startswith("<!-- ") is False]
-    unfilled = [l.strip()[:80] for l in text.splitlines()
-                if re.search(r"\|\s*<!--", l)]
-    if unfilled:
-        errs.append(f"{len(unfilled)} table cell(s) still contain a placeholder comment")
+    # template comments anywhere — prose, tables or diagrams — mean an unfilled spec
+    ph = [l.strip()[:70] for l in text.splitlines() if "<!--" in l]
+    if ph:
+        errs.append(f"{len(ph)} line(s) still contain a template placeholder "
+                    f"(first: {ph[0]})")
+    tbd = [l.strip()[:70] for l in text.splitlines()
+           if re.search(r"\|\s*(TBD|FIXME)\s*\|", l)]
+    if tbd:
+        errs.append(f"{len(tbd)} table cell(s) still TBD/FIXME (first: {tbd[0]})")
 
-    # scale tier / non-functional requirements (section 0). Only enforced when the
-    # section exists at all -- a spec written before this mechanism existed has no
-    # tier declared and is treated as legacy, not broken (warn, don't block).
     def nfr_field(name):
-        m = re.search(rf"\|\s*{re.escape(name)}\s*\|\s*(.+?)\s*\|", text, re.I)
+        m = re.search(rf"^\|\s*{re.escape(name)}\s*\|\s*(.+?)\s*\|\s*$", text, re.I | re.M)
         return m.group(1).strip() if m else ""
 
     def is_blank(v):
         return not v or v in ("", "-", "—") or "<!--" in v
 
-    if "## 0. Non-functional requirements" in text:
-        tier_val = nfr_field("scale tier")
-        if tier_val not in TIER_ORDER:
-            errs.append(f"scale tier {tier_val!r} is not one of the four declared "
-                        f"tiers {TIER_ORDER} (scripts/data/scale_tiers.json)")
+    kinds = [k.strip() for k in nfr_field("kinds").split(",") if k.strip()]
+    tier_val = nfr_field("scale tier")
+    risk_val = nfr_field("risk")
+    work, bad_work = bl.parse_work(nfr_field("work types").split("(")[0]
+                                   .replace("none", ""), BASELINE)
+    tier_ok = "## 0. Non-functional requirements" in text and tier_val in TIER_ORDER
+    if "## 0. Non-functional requirements" not in text:
+        errs.append("no '## 0. Non-functional requirements' section — a load tier must be "
+                    "declared (skills/scale-appropriateness/SKILL.md)")
+    elif tier_val not in TIER_ORDER:
+        errs.append(f"scale tier {tier_val or '(missing)'!r} is not one of {TIER_ORDER}")
+    if risk_val not in RISK_ORDER:
+        errs.append(f"risk {risk_val or '(missing)'!r} is not one of {RISK_ORDER}")
+        risk_val = "none"
+    else:
+        floor = bl.risk_floor(kinds, risk_val)
+        if floor != risk_val:
+            errs.append(f"risk '{risk_val}' is below the floor '{floor}' implied by "
+                        f"kinds {', '.join(kinds)}")
+            risk_val = floor
+    if bad_work:
+        errs.append(f"unknown work type(s) {bad_work}; available: "
+                    f"{bl.work_types(BASELINE)}")
+    if tier_ok:
         nfr_fields = ["expected users / requests", "data volume", "p95 latency budget",
                       "availability target", "required at this tier",
                       "explicitly NOT required at this tier"]
@@ -301,30 +501,45 @@ def cmd_audit(a):
         if empty_nfr:
             errs.append(f"non-functional requirements table has {len(empty_nfr)} "
                         f"unfilled field(s): {', '.join(empty_nfr)}")
+        base_rows = audit_baseline(text, work, tier_val, risk_val, errs, warns)
     else:
-        warns.append("no '## 0. Non-functional requirements' section — this spec "
-                     "predates scale-tier declaration; add one before treating scale "
-                     "as considered (skills/scale-appropriateness/SKILL.md)")
+        base_rows = []
 
     # edge cases
     edges = rows_of(text, "| # | source | edge case |")
     todo = [r for r in edges if len(r) > 4 and r[4].upper() == "TODO"]
     covered = [r for r in edges if len(r) > 4 and r[4].lower() == "covered"]
+    off_list = [r for r in edges if len(r) > 4 and r[4].upper() != "TODO"
+                and (parse_status(r[4])[0] not in ("covered", "accepted", "deferred",
+                                                   "n/a", "waived"))]
     nodeferref = [r for r in edges if len(r) > 5 and r[4].lower() == "deferred"
-                  and (not r[5] or r[5].startswith("_suggested:"))]
+                  and no_evidence(r[5])]
     noref = [r for r in edges if len(r) > 5 and r[4].lower() == "covered"
-             and (not r[5] or r[5].startswith("_suggested:"))]
+             and no_evidence(r[5])]
     if todo:
         errs.append(f"{len(todo)} of {len(edges)} edge cases still TODO "
                     f"(first: {todo[0][2][:60]})")
+    if off_list:
+        errs.append(f"{len(off_list)} edge case status(es) outside the allowlist "
+                    f"(first: {off_list[0][0]} '{off_list[0][4]}')")
     if noref:
         errs.append(f"{len(noref)} edge case(s) marked covered with no test reference")
     if nodeferref:
         errs.append(f"{len(nodeferref)} edge case(s) deferred with no follow-up reference")
 
-    # open questions must carry a recommendation
-    qs = rows_of(text, "| # | question |")
-    noreco = [r for r in qs if len(r) > 3 and (not r[3] or "<!--" in r[3])]
+    # open questions: at most five, each typed, each with a recommendation
+    qs = [r for r in rows_of(text, "| # | type | question |") if r and r[0]]
+    if "## 6. Open questions" in text and not qs and rows_of(text, "| # | question |"):
+        errs.append("open questions table has no `type` column — each question must be "
+                    "tagged must-ask or default")
+    if len(qs) > MAX_QUESTIONS:
+        errs.append(f"{len(qs)} open questions; at most {MAX_QUESTIONS} — batch by impact, "
+                    f"default the rest")
+    untyped = [r for r in qs if len(r) > 1 and r[1] not in QUESTION_TYPES]
+    if untyped:
+        errs.append(f"{len(untyped)} open question(s) not tagged must-ask|default "
+                    f"(first: {untyped[0][0]})")
+    noreco = [r for r in qs if len(r) > 4 and (not r[4] or "<!--" in r[4])]
     if noreco:
         errs.append(f"{len(noreco)} open question(s) with no recommendation — the agent "
                     f"cannot proceed independently on these")
@@ -336,7 +551,7 @@ def cmd_audit(a):
     defaults = [r for r in ds if len(r) > 5 and r[5].lower() == "default"]
     if dep:
         errs.append(f"{len(dep)} decision(s) depart from the default with no ADR "
-                    f"reference (run scripts/decide.py new)")
+                    f"reference (run `100x decide new`)")
 
     # verification plan must name commands
     vs = rows_of(text, "| # | check |")
@@ -344,16 +559,24 @@ def cmd_audit(a):
     if novcmd:
         errs.append(f"{len(novcmd)} verification row(s) with no command")
 
-    # sequence diagram present and non-placeholder
     if "sequenceDiagram" not in text:
         warns.append("no mermaid sequenceDiagram — design_drift.py has nothing to check")
-    elif text.count("<!-- action -->") or text.count("<!-- request -->"):
-        errs.append("sequence diagram still contains template placeholders")
+
+    # design-doc cross-cutting sections: present, and not blank or a bare N/A
+    for sec in DESIGN_SECTIONS:
+        body = section_body(text, sec)
+        if body is None:
+            errs.append(f"missing section '## {sec}' — write it, or 'N/A because <reason>'")
+        elif not re.sub(r"<!--.*?-->", "", body, flags=re.S).strip() or NA_BARE.match(body):
+            errs.append(f"section '## {sec}' is blank — 'N/A because <reason>' is allowed, "
+                        f"empty is not")
 
     status_ready = re.search(r"\|\s*status\s*\|\s*\*?\*?ready", text, re.I)
 
     print(f"audit {rel(sp)}")
-    print(f"  scale tier : {nfr_field('scale tier') or '(none declared)'}")
+    print(f"  scale tier : {tier_val or '(none declared)'}   risk: {risk_val}   "
+          f"work: {', '.join(work) or '-'}")
+    print(f"  baseline   : {len(base_rows)} implicit requirement row(s)")
     print(f"  edge cases : {len(edges)} total, {len(covered)} covered, {len(todo)} TODO")
     print(f"  decisions  : {len(ds)} total, {len(defaults)} accepted as default")
     print(f"  questions  : {len(qs)}")
@@ -411,9 +634,15 @@ def main():
     n = sub.add_parser("new"); n.add_argument("name")
     n.add_argument("--kind", required=True, help=f"comma-separated: {','.join(KINDS)}")
     n.add_argument("--stack", default=None)
-    n.add_argument("--scale", default=None,
-                    help=f"scale tier, default '{DEFAULT_TIER}': {'|'.join(TIER_ORDER)} "
+    n.add_argument("--tier", "--scale", dest="tier", default=None,
+                    help=f"REQUIRED load tier: {'|'.join(TIER_ORDER)} "
                          f"(see skills/scale-appropriateness/SKILL.md)")
+    n.add_argument("--risk", default="none",
+                    help=f"risk axis: {'|'.join(RISK_ORDER)}; kinds "
+                         f"{','.join(bl.RISK_BY_KIND)} raise it to at least elevated")
+    n.add_argument("--work", default="",
+                    help=f"comma-separated work types: {','.join(bl.work_types(BASELINE))} "
+                         f"(alias public-api -> api); selects the implicit-requirement baseline")
     n.add_argument("--force", action="store_true")
     n.add_argument("--dry-run", action="store_true",
                     help="print what would be created/changed; write nothing")

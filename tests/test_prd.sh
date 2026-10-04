@@ -8,7 +8,7 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %-54s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s $OUT/pd.out ] && sed 's/^/       /' $OUT/pd.out | head -8; }
 rc_is(){ [ "$2" -eq "$1" ] && ok "$3" || bad "$3 (exit exp=$1 got=$2)"; }
-has()  { grep -qF "$1" $OUT/pd.out && ok "reports: $1" || bad "does NOT report: $1"; }
+has()  { grep -qF -- "$1" $OUT/pd.out && ok "reports: $1" || bad "does NOT report: $1"; }
 
 # Literal (non-regex) find-and-replace of one line in a file — avoids sed/perl
 # regex-escaping bugs for cells containing '+', '(', '.', etc.
@@ -31,17 +31,25 @@ CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
 git init -q; git config user.email e@e; git config user.name e
 echo x > f.txt; git add -A; git commit -qm init
 
-python3 "$ROOT/scripts/prd.py" new demo --kind auth --stack nestjs >$OUT/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" new notier --kind auth --stack nestjs >$OUT/pd.out 2>&1
+rc_is 2 $? "new: refused without --tier"
+has "--tier is required"
+[ ! -d "$CONS/prds/notier" ] && ok "new: nothing written without a tier" || bad "new: wrote a PRD with no tier"
+
+python3 "$ROOT/scripts/prd.py" new demo --kind auth --stack nestjs --tier small >$OUT/pd.out 2>&1
 [ -f "$CONS/prds/demo/prd.md" ] && ok "new: prd.md created in the consumer repo" \
   || bad "new: prd.md not created in the consumer repo"
 [ ! -f "$ROOT/prds/demo/prd.md" ] && ok "new: did NOT write into the plugin dir" \
   || bad "new: leaked a prds/ dir into the plugin dir"
+has "risk elevated (raised from none by kind)"
+has "optional below the growth tier"
 
 python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: fresh PRD fails"
 has "placeholder"
 has "no out-of-scope"
 has "no requirements recorded"
+has "likelihood and impact must be integers 1-5"
 
 # A hand-filled baseline PRD — fully passing, so each test below breaks ONE
 # rule at a time from a known-good state.
@@ -53,6 +61,8 @@ fill_all() {
 |---|---|
 | kind | auth |
 | stack | nestjs |
+| scale tier | small |
+| risk | elevated |
 | linked spec | specs/demo/spec.md |
 | created | 2026-09-29 |
 | status | **ready** |
@@ -65,147 +75,276 @@ fill_all() {
 | what they do today | nothing, no login exists |
 | what "better" means, measurably | see success metrics |
 
-Users cannot sign back in today.
-
 ## 2. Users
 
 | # | segment | current workaround | why they would adopt this |
 |---|---|---|
 | U1 | returning users | none | to access their account |
 
-## 3. Success metrics
+## 3. Goals
 
-| # | metric | target (must include a number) | baseline | measurement method |
-|---|---|---|---|---|
-| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard |
+| # | goal | measured by |
+|---|---|---|
+| G1 | users can sign in | M1 |
 
-## 4. Constraints
+## 4. Success metrics
 
-| constraint | value |
-|---|---|
-| team size and skills | 3 backend engineers, know NestJS |
-| existing stack | nestjs |
-| deadline | none stated |
-| budget | none stated |
-| compliance / regulatory | none |
-| what cannot change | public API |
+| # | metric | target (must include a number) | baseline | measurement method | source |
+|---|---|---|---|---|---|
+| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard | user |
 
-## 5. Requirements
+## 5. Constraints
+
+| constraint | value | source |
+|---|---|---|
+| team size and skills | 3 backend engineers, know NestJS | user |
+| existing stack | nestjs | code |
+| deadline | none stated | user |
+| budget | existing infrastructure only | user |
+| compliance / regulatory | none | user |
+| what cannot change | public API | code |
+
+## 6. Requirements
 
 | # | requirement | why it matters |
 |---|---|---|
 | R1 | must support email login | core ask |
 
-## 6. Options analysis
+## 7. Options analysis
 
-| # | option | pros | cons | reversibility x3 | blast radius x3 | moving parts x2 | already-in-use x2 | exit cost x1 | fit x1 | weighted score |
+| # | option | pros | cons | reversibility x3 | blast radius x3 | moving parts x2 | already-in-use x2 | exit cost x1 | fit (pass/fail) | weighted score |
 |---|---|---|---|---|---|---|---|---|---|---|
-| O1 | Do nothing / smallest possible change | zero new moving parts | doesn't solve the problem | 5 | 5 | 5 | 5 | 5 | 1 | 56 |
-| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | 5 | 35 |
+| O1 | Do nothing / smallest possible change | zero new moving parts | doesn't solve the problem | 5 | 5 | 5 | 5 | 5 | fail | 55 |
+| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | pass | 27 |
+| O3 | Hosted auth vendor | no password storage | new vendor to operate | 2 | 3 | 2 | 1 | 2 | pass | 23 |
 
-## 7. Recommendation
+## 8. Recommendation
 
 | field | answer |
 |---|---|
 | chosen option | O2 |
 | single deciding factor | fit |
 | what would change it | if do-nothing turned out acceptable |
+| override reason (if not the top fit-passing score) | none |
 
-## 8. Risks
+## 9. Design overview
 
-| # | risk | likelihood (1-5) | impact (1-5) | L x I | mitigation |
+N/A because the design is a single new controller on the existing service.
+
+## 10. Risks
+
+| # | risk | likelihood (1-5) | impact (1-5) | L x I | mitigation | source |
+|---|---|---|---|---|---|---|
+| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | ship behind a flag to a small cohort first | assumed |
+| RI2 | Effort estimate is wrong | 2 | 2 | 4 | timebox phase 1 | assumed |
+| RI3 | Existing codebase costs more than scored | 2 | 3 | 6 | spike the riskiest integration point | assumed |
+
+## 11. Phasing
+
+| # | phase | ships | proves | kill criteria | source |
 |---|---|---|---|---|---|
-| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | ship behind a flag to a small cohort first |
-| RI2 | Effort estimate is wrong | 2 | 2 | 4 | timebox phase 1 |
-| RI3 | Existing codebase costs more than scored | 2 | 3 | 6 | spike the riskiest integration point |
+| P1 | Phase 1 | email login only | core assumption | conversion stays flat after 2 weeks | assumed |
 
-## 9. Phasing
-
-| # | phase | ships | proves | kill criteria |
-|---|---|---|---|---|
-| P1 | Phase 1 | email login only | core assumption | conversion stays flat after 2 weeks |
-
-## 10. Out of scope
+## 12. Non-goals (out of scope)
 
 | # | explicitly out of scope |
 |---|---|
 | X1 | MFA is out of scope |
 
-## 11. Existing-code note
+## 13. Security
+
+Throttled login; generic error body.
+
+## 14. Privacy
+
+Email only, single region.
+
+## 15. Observability
+
+Login success and failure counters.
+
+## 16. Rollout / rollback
+
+Flag, then widen; rollback is the flag.
+
+## 17. Migration
+
+N/A because no schema change.
+
+## 18. Test plan
+
+Unit and e2e for login.
+
+## 19. Cost
+
+N/A because no new spend.
+
+## 20. Dependencies
+
+None beyond the existing service.
+
+## 21. Open questions / assumptions
+
+Risk scores are assumed.
+
+## 22. Approvers
+
+Product owner role.
+
+## 23. Existing-code note
 
 No existing code; new feature.
 MD
 }
+P="$CONS/prds/demo/prd.md"
+audit_demo() { python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1; }
 
-fill_all
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
+fill_all; audit_demo
 rc_is 0 $? "audit: a fully filled PRD passes"
+has "PRD is ready"
 
 # --- metric with no number ---
 fill_all
-swap "$CONS/prds/demo/prd.md" \
-  "| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard |" \
-  "| M1 | login success rate | improves a lot | 20% baseline | tracked via analytics dashboard |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: metric with no number is rejected"
+swap "$P" "| M1 | login success rate | +15% conversion |" "| M1 | login success rate | improves a lot |"
+audit_demo; rc_is 1 $? "audit: metric with no number is rejected"
 has "no number in the target"
 
 # --- metric with no measurement method ---
 fill_all
-swap "$CONS/prds/demo/prd.md" \
-  "| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard |" \
-  "| M1 | login success rate | +15% conversion | 20% baseline | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: metric with no measurement method is rejected"
+swap "$P" "| tracked via analytics dashboard | user |" "| <!-- --> | user |"
+audit_demo; rc_is 1 $? "audit: metric with no measurement method is rejected"
 has "no measurement method"
+
+# --- source column ---
+fill_all
+swap "$P" "| tracked via analytics dashboard | user |" "| tracked via analytics dashboard | assumed |"
+audit_demo; rc_is 1 $? "audit: assumed target in a ready PRD is rejected"
+has "rest on an \`assumed\` source in a \`ready\` PRD"
+
+fill_all
+swap "$P" "| budget | existing infrastructure only | user |" "| budget | existing infrastructure only | assumed |"
+audit_demo; rc_is 1 $? "audit: assumed constraint in a ready PRD is rejected"
+
+fill_all
+swap "$P" "| tracked via analytics dashboard | user |" "| tracked via analytics dashboard | assumed |"
+swap "$P" "| status | **ready** |" "| status | **draft** |"
+audit_demo; rc_is 0 $? "audit: assumed target allowed while draft"
+has "allowed in a draft"
+
+fill_all
+swap "$P" "| budget | existing infrastructure only | user |" "| budget | existing infrastructure only | someone said |"
+audit_demo; rc_is 1 $? "audit: source outside the allowlist is rejected"
+has "no source in user|assumed|default|code"
 
 # --- option with no con ---
 fill_all
-swap "$CONS/prds/demo/prd.md" \
-  "| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | 5 | 35 |" \
-  "| O2 | Build new auth service | flexible | <!-- --> | 3 | 3 | 2 | 1 | 3 | 5 | 35 |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: option with no con is rejected"
+swap "$P" "| flexible | more moving parts to operate |" "| flexible | <!-- --> |"
+audit_demo; rc_is 1 $? "audit: option with no con is rejected"
 has "no con"
 
 # --- options table with fewer than 2 real options ---
 fill_all
-swap "$CONS/prds/demo/prd.md" \
-  "| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | 5 | 35 |" \
-  "| O2 | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: fewer than 2 options is rejected"
+python3 - "$P" <<'PY2'
+import sys, pathlib
+p = pathlib.Path(sys.argv[1]); t = p.read_text()
+t = "\n".join(l for l in t.splitlines() if not l.startswith(("| O2 ", "| O3 "))) + "\n"
+p.write_text(t)
+PY2
+audit_demo; rc_is 1 $? "audit: fewer than 2 options is rejected"
 has "need >=2"
+
+# --- fit filter and recomputed scores ---
+fill_all
+swap "$P" "| pass | 27 |" "| pass | 40 |"
+audit_demo; rc_is 1 $? "audit: wrong weighted score is rejected"
+has "does not match the recomputed 27"
+
+fill_all
+swap "$P" "| chosen option | O2 |" "| chosen option | O3 |"
+audit_demo; rc_is 1 $? "audit: chosen non-top option without override is rejected"
+has "is not the top fit-passing score"
+
+fill_all
+swap "$P" "| chosen option | O2 |" "| chosen option | O3 |"
+swap "$P" "| override reason (if not the top fit-passing score) | none |" "| override reason (if not the top fit-passing score) | security team mandates a vendor |"
+audit_demo; rc_is 0 $? "audit: chosen non-top option WITH override passes"
+
+fill_all
+swap "$P" "| chosen option | O2 |" "| chosen option | O1 |"
+audit_demo; rc_is 1 $? "audit: chosen option failing the fit filter is rejected"
+has "fails the fit filter"
+
+fill_all
+swap "$P" "| 5 | fail | 55 |" "| 5 | maybe | 55 |"
+audit_demo; rc_is 1 $? "audit: fit must be pass or fail"
+has "fit must be pass or fail"
 
 # --- no recommendation ---
 fill_all
-swap "$CONS/prds/demo/prd.md" "| chosen option | O2 |" "| chosen option | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: no recommendation is rejected"
+swap "$P" "| chosen option | O2 |" "| chosen option | <!-- --> |"
+audit_demo; rc_is 1 $? "audit: no recommendation is rejected"
 has "no recommendation named"
 
 # --- no deciding factor ---
 fill_all
-swap "$CONS/prds/demo/prd.md" "| single deciding factor | fit |" "| single deciding factor | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: no deciding factor is rejected"
+swap "$P" "| single deciding factor | fit |" "| single deciding factor | <!-- --> |"
+audit_demo; rc_is 1 $? "audit: no deciding factor is rejected"
 has "no deciding factor named"
 
-# --- risk with no mitigation ---
+# --- risks ---
 fill_all
-swap "$CONS/prds/demo/prd.md" \
-  "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | ship behind a flag to a small cohort first |" \
-  "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: risk with no mitigation is rejected"
+swap "$P" "| 3 | 3 | 9 | ship behind a flag to a small cohort first |" "| 3 | 3 | 9 | <!-- --> |"
+audit_demo; rc_is 1 $? "audit: risk with no mitigation is rejected"
 has "no mitigation"
+
+fill_all
+swap "$P" "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 |" "| RI1 | Adoption is lower than assumed | high | 3 | 9 |"
+audit_demo; rc_is 1 $? "audit: non-numeric risk likelihood is rejected"
+has "integers 1-5"
+
+fill_all
+swap "$P" "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 |" "| RI1 | Adoption is lower than assumed | 3 | 3 | 12 |"
+audit_demo; rc_is 1 $? "audit: wrong L x I is rejected"
+has "does not match 9"
 
 # --- no out-of-scope ---
 fill_all
-swap "$CONS/prds/demo/prd.md" "| X1 | MFA is out of scope |" "| X1 | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
-rc_is 1 $? "audit: no out-of-scope is rejected"
+swap "$P" "| X1 | MFA is out of scope |" "| X1 | <!-- --> |"
+audit_demo; rc_is 1 $? "audit: no out-of-scope is rejected"
 has "no out-of-scope items"
+
+# --- design-doc sections ---
+fill_all
+swap "$P" "Login success and failure counters." ""
+audit_demo; rc_is 1 $? "audit: blank design-doc section is rejected"
+has "section 'Observability' is blank"
+
+fill_all
+swap "$P" "N/A because no new spend." "N/A"
+audit_demo; rc_is 1 $? "audit: bare N/A section is rejected"
+has "section 'Cost' is blank"
+
+fill_all
+swap "$P" "## 22. Approvers" "## 22. Sign-off"
+audit_demo; rc_is 1 $? "audit: missing design-doc section is rejected"
+has "missing section 'Approvers'"
+
+# --- placeholder in prose, not a table ---
+fill_all
+swap "$P" "Email only, single region." "<!-- fill in --> Email only."
+audit_demo; rc_is 1 $? "audit: placeholder in prose is rejected"
+has "placeholder comment"
+
+# --- tier and risk ---
+fill_all
+swap "$P" "| scale tier | small |" "| scale tier | huge |"
+audit_demo; rc_is 1 $? "audit: invalid tier is rejected"
+has "a tier must be declared"
+
+fill_all
+swap "$P" "| risk | elevated |" "| risk | none |"
+audit_demo; rc_is 1 $? "audit: risk below the auth floor is rejected"
+has "below the floor"
 
 # restore a passing baseline for the align tests below
 fill_all
