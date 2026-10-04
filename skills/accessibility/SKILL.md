@@ -172,14 +172,17 @@ gap is real and is why rule 15 exists: 57% automated coverage means the other
 
 ## Scale
 
-`solo`: rules 1, 4, 5, 6, 8, 9 — fully mechanical, near-zero cost, catches the
-defects a solo builder repeats across every new component.
-`small-team (2-10)`: add 3, 13, and a keyboard-only pass before merging any new
-interactive component (rule 15).
-`org` / `high-blast-radius`: add 10, 11, 12, 14 and a scheduled screen-reader
-pass; a public-facing org is also a legal-exposure surface (ADA/EN 301 549) —
-that isn't this skill's claim to make, but the WCAG 2.2 AA numbers above are
-the bar those regulations point to.
+**Every tier, `solo` included: rules 1–14.** WCAG 2.2 AA (contrast, focus
+management, live regions, target size) is a correctness floor, not a scale
+feature: a solo-built checkout a screen-reader user cannot complete is broken
+at any team size. Rules 1, 4–6, 8, 9 and 13 are mechanical and near-free; 10,
+11, 12 and 14 are a review question per new component.
+What scales is rule 15's manual cadence: `small-team (2-10)` adds a keyboard-
+only pass before merging any new interactive component; `org` /
+`high-blast-radius` adds a scheduled screen-reader pass (VoiceOver/NVDA) and a
+periodic audit. A public-facing org is also a legal-exposure surface (ADA/EN
+301 549) — not this skill's claim to make, but WCAG 2.2 AA is the bar those
+regulations point to.
 
 ## Sources
 
