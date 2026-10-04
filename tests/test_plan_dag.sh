@@ -57,9 +57,69 @@ has "defines no acceptance criteria"
 # without --spec the same plan has nothing to check AC coverage against
 python3 "$P" lint "$EX/invalid/missing-ac.json" >"$O" 2>&1; rc_is 0 $? "lint: AC coverage only checked with --spec"
 
-# --- unknown fields warn, never fail ---
-python3 "$P" lint "$EX/invalid/unknown-field.json" >"$O" 2>&1; rc_is 0 $? "lint: unknown fields do not fail"
-has "WARN  unknown top-level field 'owner_team'"; has "WARN  T1: unknown field 'priority'"
+# --- unknown fields are errors, with a did-you-mean ---
+lint_fails unknown-field          "T3: unknown field 'depend_on' — did you mean 'depends_on'?"
+has "unknown top-level field 'owner_team'"; has "T1: unknown field 'priority'"
+no "WARN"
+
+# --- top level: feature required, tier from scale_tiers.json, schema ---
+top() { # top <python expr mutating d> -> lint of the mutated valid plan
+  python3 - "$EX/plan.json" "$TMP/top.json" "$1" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); exec(sys.argv[3]); json.dump(d, open(sys.argv[2], "w"))
+PY
+  python3 "$P" lint "$TMP/top.json" >"$O" 2>&1
+}
+top 'del d["feature"]';        rc_is 1 $? "lint: a plan with no feature fails"; has 'missing top-level "feature"'
+top 'd["tier"] = "huge"';      rc_is 1 $? "lint: an unknown tier fails"; has '"tier": '"'huge'"' is not one of prototype, small, growth, scale'
+top 'del d["tier"]';           rc_is 0 $? "lint: tier is optional"
+top 'del d["schema"]';         rc_is 0 $? "lint: a missing schema is read as 1"; has 'WARN  no "schema" field'
+top 'd["schema"] = 2';         rc_is 1 $? "lint: schema 2 fails"; has '"schema": 2 is not supported'
+top 'd["tasks"][1]["files"] = ["backend/src/tagging/{services,repo}/**"]'
+rc_is 1 $? "lint: brace globs are rejected"; has "uses {a,b} braces"
+
+# --- verify commands must replay without a shell, and never ship anything ---
+for bad in 'pnpm test && pnpm lint|shell syntax' 'pnpm test > out.txt|shell syntax' \
+           'CI=1 pnpm test|starts with an assignment' 'echo $HOME|expansion' \
+           'git push origin main|gated action (git push)' 'npm publish|gated action (npm publish)' \
+           "sh -c 'pnpm test && git commit -m x'|gated action (git commit)"; do
+  cmd="${bad%|*}"; msg="${bad#*|}"
+  top "d['tasks'][0]['verify'] = [$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$cmd")]"
+  rc_is 1 $? "lint: verify '$cmd' is rejected"; has "$msg"
+done
+top "d['tasks'][0]['verify'] = [\"sh -c 'pnpm test && pnpm lint'\", 'env CI=1 pnpm test', 'git status', 'git diff --exit-code']"
+rc_is 0 $? "lint: sh -c, env, and read-only git commands are accepted (no false positive)"
+
+# --- a bare extensionless path is a directory for overlap ---
+cat > "$TMP/bare.json" <<'JSON'
+{"schema": 1, "feature": "f", "tasks": [
+ {"id": "A", "owner": "backend-engineer", "files": ["src/auth"], "verify": ["true"], "acceptance": ["AC-1"]},
+ {"id": "B", "owner": "backend-engineer", "files": ["src/auth/session.ts"], "verify": ["true"], "acceptance": ["AC-1"]}
+]}
+JSON
+python3 "$P" lint "$TMP/bare.json" >"$O" 2>&1; rc_is 1 $? "lint: 'src/auth' owns src/auth/session.ts"
+has "'src/auth' overlaps 'src/auth/session.ts'"
+sed 's#"src/auth/session.ts"#"src/authz.ts"#' "$TMP/bare.json" > "$TMP/bare2.json"
+python3 "$P" lint "$TMP/bare2.json" >"$O" 2>&1; rc_is 0 $? "lint: 'src/auth' does not own src/authz.ts"
+python3 - "$ROOT" <<'PY' && ok "_globs: concrete paths are matched literally" || bad "_globs: path_matches"
+import sys; sys.path.insert(0, sys.argv[1] + "/scripts")
+from _globs import path_matches as m
+assert m("src/auth/x.ts", "src/auth") and m("Makefile", "Makefile")
+assert not m("src/authx/y.ts", "src/auth") and not m("src/x", "src/x/y.ts")
+assert m("a/b/c.ts", "a/**/*.ts") and not m("a/b/c.tsx", "a/**/*.ts")
+PY
+
+# --- --spec resolves like every record argument ---
+SP="$TMP/sp"; mkdir -p "$SP/docs/engineering/specs/album-tagging"
+cp "$EX/spec.md" "$SP/docs/engineering/specs/album-tagging/spec.md"
+( cd "$SP" && git init -q )
+for arg in docs/engineering/specs/album-tagging/spec.md docs/engineering/specs/album-tagging \
+           specs/album-tagging specs/album-tagging/spec.md album-tagging; do
+  ( cd "$SP" && python3 "$P" lint "$EX/plan.json" --spec "$arg" ) >"$O" 2>&1
+  rc_is 0 $? "lint --spec $arg resolves"
+done
+( cd "$SP" && python3 "$P" lint "$EX/plan.json" --spec nosuch ) >"$O" 2>&1
+rc_is 2 $? "lint --spec: an unresolvable spec is exit 2"; has "no spec.md for 'nosuch'"
 
 # --- --agents-dir extends the roster; without it the same owner is rejected ---
 mkdir -p "$TMP/agents"; echo "# ux" > "$TMP/agents/ux-wizard.md"
@@ -68,7 +128,7 @@ rc_is 0 $? "lint: --agents-dir accepts its *.md names"
 
 # --- no false positives from the overlap approximation ---
 cat > "$TMP/disjoint.json" <<'JSON'
-{"tasks": [
+{"schema": 1, "feature": "f", "tasks": [
  {"id": "A", "owner": "backend-engineer", "files": ["src/a/*.ts"], "verify": ["true"], "acceptance": ["AC-1"]},
  {"id": "B", "owner": "frontend-engineer", "files": ["src/a/*.tsx", "src/b/**"], "verify": ["true"], "acceptance": ["AC-1"]},
  {"id": "C", "owner": "qa-engineer", "depends_on": ["A"], "files": ["src/a/x.ts"], "verify": ["true"], "acceptance": ["AC-1"]}
@@ -77,7 +137,7 @@ JSON
 python3 "$P" lint "$TMP/disjoint.json" >"$O" 2>&1; rc_is 0 $? "lint: *.ts vs *.tsx, and a dependent re-owning a file, are not collisions"
 
 cat > "$TMP/subdir.json" <<'JSON'
-{"tasks": [
+{"schema": 1, "feature": "f", "tasks": [
  {"id": "A", "owner": "backend-engineer", "files": ["src/"], "verify": ["true"], "acceptance": ["AC-1"]},
  {"id": "B", "owner": "backend-engineer", "files": ["./src/deep/x.py"], "verify": ["true"], "acceptance": ["AC-1"]}
 ]}
