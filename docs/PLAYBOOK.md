@@ -17,8 +17,8 @@ why its examples live at `specs/login`, `decisions/` and `ledger/`.
 |---|---|---|---|
 | 0 | [0. Start here: say it in plain English](#0-start-here-say-it-in-plain-english) | the one command a newcomer needs; the router picks everything below | 15 lines |
 | 1 | [1. Turn a vague request into requirements](#1-turn-a-vague-request-into-requirements) | intake: defaults applied silently, at most five questions | 15 lines |
-| 2 | [2. Build a feature](#2-build-a-feature) | the full sequence from PRD to commit, with every gate named | 45 lines |
-| 3 | [3. Split the work across agents](#3-split-the-work-across-agents) | orchestrate: task graph, parallel waves, agent reports, replay | 25 lines |
+| 2 | [2. Build a feature](#2-build-a-feature) | the full sequence from PRD to commit, with every gate named | 60 lines |
+| 3 | [3. Split the work across agents](#3-split-the-work-across-agents) | orchestrate: task graph, parallel waves, agent reports checked against git, replay of declared verify commands | 27 lines |
 | 4 | [4. Feature into a codebase whose PRD, spec and code have diverged](#4-feature-into-a-codebase-whose-prd-spec-and-code-have-diverged) | **the common real case**: establish ground truth first, then record which of the three you treated as authoritative | 28 lines |
 | 5 | [5. Fix a bug](#5-fix-a-bug) | repro-first, and how to prove the test fails without the fix | 28 lines |
 | 6 | [6. Review your own code](#6-review-your-own-code) | mechanical checks, then the 9 questions no tool answers | 12 lines |
@@ -26,7 +26,7 @@ why its examples live at `specs/login`, `decisions/` and `ledger/`.
 | 8 | [8. Understand someone else's logic, or a past feature](#8-understand-someone-elses-logic-or-a-past-feature) | the order of operations, and the stop condition so you don't read everything | 16 lines |
 | 9 | [9. Root cause analysis](#9-root-cause-analysis) | timeline, hypotheses with falsifying evidence, and the regression test that would have caught it | 16 lines |
 | 10 | [10. Write a PRD or architecture proposal](#10-write-a-prd-or-architecture-proposal) | options analysis: fit as a pass/fail filter, then weighted scores, always with a do-nothing option | 18 lines |
-| 11 | [11. QA: test plan and coverage](#11-qa-test-plan-and-coverage) | a plan generated from AC ids, and proof every AC has a test | 15 lines |
+| 11 | [11. QA: test plan and coverage](#11-qa-test-plan-and-coverage) | a plan generated from AC ids, and proof every AC has a `<feature>/AC-<n>`-tagged test | 17 lines |
 | 12 | [12. Audit: is the reasoning recorded?](#12-audit-is-the-reasoning-recorded) | the traceability matrix: which features have which records | 10 lines |
 | 13 | [Diagram detail levels](#diagram-detail-levels) | which of the three levels to use, and their node budgets | 11 lines |
 | 14 | [What still needs a human](#what-still-needs-a-human) | the six defect classes no tool detects anywhere | 7 lines |
@@ -115,6 +115,11 @@ AC-1: A returning user with a correct password gets a 204 and an httpOnly sessio
 | an in-scope row with no AC | scope with nothing that proves it shipped |
 | a missing or unknown `R<k>` when a PRD exists (header `prd` field, or `<root>/prds/<feature>/`) | the requirement has no trace |
 | an AC no verification row `covers` | a criterion nothing checks |
+| a seeded edge-case or decision row deleted | a seeded row is answered (`n/a(<reason>)`, `waived(<reason>)`, an option), never removed |
+
+The audit checks the baseline items that existed at the spec's `| baseline | <n> |` pin and
+only warns about items added since, so a finished spec does not fail when the catalogue
+grows.
 
 `prd align` traces by id (R ↔ AC ↔ S, and each metric to the `V<k>` row that measures it).
 **A declared link proves the trace exists, not that the AC satisfies the requirement**; read
@@ -130,22 +135,25 @@ resolved), one or more ADRs in `<root>/decisions/`, a verification receipt.
 For two or more specialists, or tasks that can run in parallel (`orchestrate`).
 
 ```bash
-100x plan_dag lint plan.json --spec <root>/specs/checkout/spec.md   # GATE
+100x plan_dag lint plan.json --spec checkout                         # GATE
 100x plan_dag waves plan.json          # which tasks run together
 100x plan_dag next plan.json           # what can start now
 # per task: git worktree add ../wt-T1 -b wt/checkout-T1, then dispatch its agent
 100x agent_report extract msg.md -o T1.json
-100x agent_report lint T1.json --graph plan.json                    # GATE
-100x agent_report replay T1.json --cwd ../wt-T1 --yes               # GATE: re-runs evidence
+100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1      # GATE: git's real changes
+100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes   # GATE: declared verify only
 100x agent_report summary *.json       # every open question, one message to the user
 ```
 
 | rule | why |
 |---|---|
 | `--spec` counts only **defined** ACs, and fails a spec with none | a mention like "see AC-3" is not a criterion |
+| `plan.json` carries `"schema": 1` and `feature`; an unknown field fails with a did-you-mean | a misspelt `depend_on` would silently drop an ordering edge |
+| each `verify` command runs without a shell (`sh -c '…'` when it needs one) and never commits, pushes, tags or publishes | replay runs exactly these commands, as argv |
 | tasks with no dependency path own disjoint files | two agents never edit the same file |
 | shared contracts are `contract: true` tasks others `consume` | the API shape is settled before both sides build on it |
-| a report merges only after it lints and replays | "tests pass" is a claim until the main session re-runs it |
+| a report merges only after it lints against git's changed files and its declared verify commands replay | "tests pass" is a claim until the main session re-runs the plan's own commands |
+| `done` needs every declared verify command in the evidence, verbatim, exit 0; other evidence is "not replayed (undeclared)" | a report cannot pick its own proof |
 | a `needs-decision` task pauses only its dependents | independent work keeps moving |
 
 ---
@@ -309,7 +317,11 @@ current state to write down.
 100x test_design_check --base origin/main
 ```
 
-`trace` finds tests tagged with an AC id; an AC with no tagged test is reported uncovered.
+`trace` finds tests tagged `<feature>/AC-<n>` (`test('checkout/AC-1 …')`); `<feature>` is the
+spec's `| feature |` field, else its directory. An AC with no live tagged test is reported
+uncovered. Other features' tags are ignored; a bare `AC-1` is listed as not counted; a tag
+in a skipped test, `describe.skip`/`xdescribe`/`context.skip` block or skipped Python class
+does not count.
 The plan's cases come from the spec's `AC-<n>` lines and its implicit-requirements table.
 
 ---
