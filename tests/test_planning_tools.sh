@@ -61,7 +61,12 @@ CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
 git init -q; git config user.email e@e; git config user.name e
 echo x > f.txt; git add -A; git commit -qm init
 
-python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud >$OUT/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" new notier --kind crud --work api >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: new without --tier is refused"
+has "tier is required: one of"
+[ ! -d "$CONS/specs/notier" ] && ok "plan: nothing written without a tier" || bad "plan: wrote a spec with no tier"
+
+python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud --tier small --work api >$OUT/pt.out 2>&1
 [ -f "$CONS/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
   || bad "plan: spec not created in the consumer repo"
 [ ! -d "$ROOT/specs/thing" ] && ok "plan: did NOT write into the plugin dir" \
@@ -72,8 +77,146 @@ rc_is 1 $? "plan: fresh spec fails audit"
 has "still TODO"
 has "no recommendation"
 
-python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >$OUT/pt.out 2>&1
+has "still contain a template placeholder"
+has "§0b implicit requirement(s) still TODO"
+
+python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind --tier small >$OUT/pt.out 2>&1
 rc_is 2 $? "plan: unknown kind rejected"
+python3 "$ROOT/scripts/plan_feature.py" new badwork --kind crud --tier small --work desktop >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: unknown work type rejected"
+
+# risk floor: auth implies elevated even when --risk none is passed
+python3 "$ROOT/scripts/plan_feature.py" new authy --kind auth --tier small --work api --risk none >$OUT/pt.out 2>&1
+has "risk: elevated (raised from none"
+grep -q "^| risk | elevated |" "$CONS/specs/authy/spec.md" && ok "plan: raised risk written to §0" \
+  || bad "plan: raised risk not written to §0"
+grep -q "^| all.pii-out-of-logs |" "$CONS/specs/authy/spec.md" && ok "plan: elevated risk seeds PII row" \
+  || bad "plan: elevated risk did not seed PII row"
+
+# regulated small app: compliance rows yes, capacity rows no
+python3 "$ROOT/scripts/plan_feature.py" new reg --kind crud --tier small --work api,iac --risk regulated >$OUT/pt.out 2>&1
+grep -q "^| all.audit-trail |" "$CONS/specs/reg/spec.md" && ok "plan: regulated seeds audit trail" \
+  || bad "plan: regulated did not seed audit trail"
+grep -qE "^\| iac\.multi-(region|az) \|" "$CONS/specs/reg/spec.md" \
+  && bad "plan: regulated small app forced into multi-AZ/region" || ok "plan: regulated small app has no multi-AZ/region"
+
+# public-api alias pre-answers the audience question
+python3 "$ROOT/scripts/plan_feature.py" new pub --kind crud --tier prototype --work public-api >$OUT/pt.out 2>&1
+grep -q "^| ask.api-audience | .* | ASK(public" "$CONS/specs/pub/spec.md" && ok "plan: public-api answers ask.api-audience" \
+  || bad "plan: public-api did not answer ask.api-audience"
+
+# ---------- audit rules, one defect at a time from the passing worked spec ----------
+swap() {
+  python3 - "$1" "$2" "$3" <<'PY2'
+import sys, pathlib
+f, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+p = pathlib.Path(f); t = p.read_text()
+if old not in t:
+    print(f"TEST BUG: pattern not found: {old!r}", file=sys.stderr); sys.exit(1)
+p.write_text(t.replace(old, new, 1))
+PY2
+}
+W="$CONS/specs/w"; mkdir -p "$W"
+fresh() { cp "$ROOT/specs/login/spec.md" "$W/spec.md"; }
+audit_w() { python3 "$ROOT/scripts/plan_feature.py" audit "$W" >$OUT/pt.out 2>&1; }
+
+fresh; audit_w; rc_is 0 $? "audit: copy of the worked spec passes"
+
+fresh; swap "$W/spec.md" "| n/a(no new process — the existing service keeps its probes and shutdown hook) |" "| n/a |"
+audit_w; rc_is 1 $? "audit: bare n/a without a reason rejected"
+has "outside the allowlist"
+
+fresh; swap "$W/spec.md" "| n/a(no new process — the existing service keeps its probes and shutdown hook) |" "| done-ish |"
+audit_w; rc_is 1 $? "audit: status outside the allowlist rejected"
+has "api.health-graceful-shutdown"
+
+fresh; swap "$W/spec.md" "A returning user signs in" "<!-- outcome --> A returning user signs in"
+audit_w; rc_is 1 $? "audit: placeholder in prose (not a table) rejected"
+has "template placeholder"
+
+fresh; swap "$W/spec.md" "| scale tier | small |" "| scale tier | |"
+audit_w; rc_is 1 $? "audit: missing tier rejected"
+has "scale tier"
+
+fresh; swap "$W/spec.md" "## 0. Non-functional requirements" "## Zero"
+audit_w; rc_is 1 $? "audit: missing §0 section rejected"
+has "load tier must be"
+
+fresh; swap "$W/spec.md" "| risk | elevated |" "| risk | none |"
+audit_w; rc_is 1 $? "audit: risk below the auth floor rejected"
+has "below the floor"
+
+fresh; swap "$W/spec.md" "| ASK(single region: the existing Postgres and Redis region — PRD §4, source user) |" "| ASK |"
+audit_w; rc_is 1 $? "audit: unanswered residency rejected"
+has "unanswered"
+
+fresh; swap "$W/spec.md" "| ASK(single region: the existing Postgres and Redis region — PRD §4, source user) |" "| ASSUMED(single region) |"
+audit_w; rc_is 1 $? "audit: ASSUMED residency blocks ready"
+has "ask.data-residency"
+
+fresh; swap "$W/spec.md" "| ASK(none — PRD §4, source user) |" "| ASSUMED(none) |"
+audit_w; rc_is 1 $? "audit: ASSUMED compliance regime blocks ready"
+has "ask.compliance-regime"
+
+fresh; grep -q "| ASSUMED(sessions are disposable" "$W/spec.md" && audit_w
+rc_is 0 $? "audit: ASSUMED accepted for a non-blocking C item (rpo-rto)"
+
+fresh; swap "$W/spec.md" "| ASSUMED(sessions are disposable — losing them signs users out; users table follows the existing Postgres backup policy) |" "| accepted |"
+audit_w; rc_is 1 $? "audit: a C item cannot be silently accepted"
+has "is class C"
+
+fresh; swap "$W/spec.md" "| covered | E6 \`session.guard.spec.ts\`" "| waived(no time) | E6 \`session.guard.spec.ts\`"
+audit_w; rc_is 1 $? "audit: waiving a non-waivable item rejected"
+has "non-waivable"
+
+fresh; swap "$W/spec.md" "| covered | E24 \`log-redaction.spec.ts\` |" "| covered | — |"
+audit_w; rc_is 1 $? "audit: covered baseline row with no evidence rejected"
+has "no evidence"
+
+fresh; grep -v "^| api.ssrf-guard |" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; rc_is 1 $? "audit: missing applicable baseline row rejected"
+has "missing from §0b"
+
+fresh; swap "$W/spec.md" "| Q1 | default |" "| Q1 | maybe |"
+audit_w; rc_is 1 $? "audit: untyped question rejected"
+has "not tagged must-ask|default"
+
+fresh; swap "$W/spec.md" "None of these block implementation" \
+"| Q4 | default | a | b | c | no |
+| Q5 | default | a | b | c | no |
+| Q6 | default | a | b | c | no |
+
+None of these block implementation"
+python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=t.replace("| no |\n\n| Q4","| no |\n| Q4")
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: more than five questions rejected"
+has "at most 5"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"(## 14\. Cost\n).*", r"\1\n", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: blank design-doc section rejected"
+has "'## 14. Cost' is blank"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"(## 14\. Cost\n).*", r"\1\nN/A\n", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: bare N/A section rejected"
+has "'## 14. Cost' is blank"
+
+fresh; swap "$W/spec.md" "## 11. Privacy" "## 11. Notes"
+audit_w; rc_is 1 $? "audit: missing design-doc section rejected"
+has "missing section '## 11. Privacy'"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
