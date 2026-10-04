@@ -16,12 +16,9 @@ description: >
 # Distributed correctness
 
 Every rule below exists because a single-machine mental model was applied to code
-that runs across a network. `research/35-findings-security-reliability.md`
-already covers the resilience mechanics in depth (Envoy's retry/circuit-breaking/
-outlier-detection config, the timeout-budget rule, kestra's metrics-cardinality
-rule) — this skill builds on that and does not repeat it; it adds the correctness
-half: what makes a distributed write, delivery, or read actually right, not just
-resilient.
+that runs across a network. Resilience mechanics (retry, circuit breaking, timeout
+budgets) are in `research/35-findings-security-reliability.md` and are not
+repeated; this skill adds the correctness half of a distributed write or read.
 
 ## Trigger
 
@@ -46,15 +43,15 @@ feature-kind edge cases this generates, scaffold with
    *Enforced by:* `grep -rniE "exactly.once" <spec-or-diff>` — a hit that isn't
    immediately followed by naming the dedup mechanism is rejected in review.
 
-2. **Idempotency key covers the request body, not just the route.** Derive the
-   key from a hash of method + route + body (or a client-supplied key stored
-   alongside the result), store it with a TTL past the client's retry window,
-   and on replay return the *original recorded response*, not reprocess. A
-   route-only key collides two different bodies; a too-short TTL lets a slow
-   retry reprocess.
-   *Enforced by:* review — the audit's `payment`/`queue` edge cases in
-   `scripts/data/edge_cases.json` and `edge_cases_infra.json` require a named
-   test for this, which forces the design question.
+2. **The client owns the idempotency key; the server stores key → (request
+   fingerprint, response).** One `Idempotency-Key` per *logical operation*,
+   client-generated (v4 UUID), reused on every retry. Never derive it from
+   method + route + body: two legitimate identical purchases would merge. Replay
+   returns the stored response; same key + different fingerprint → `422`; key
+   still in flight → `409`; a published TTL longer than the client's retry
+   window (Stripe: ≥ 24 h). Matches `api-contract` rule 6.
+   *Enforced by:* review — the `payment`/`queue` edge cases in
+   `scripts/data/edge_cases.json` and `edge_cases_infra.json` demand a named test.
 
 3. **The dual-write problem: a DB write and a publish are not one transaction.**
    `db.save(x); bus.publish(x)` loses the event on a crash between the two
@@ -178,8 +175,8 @@ This skill rejects:
 
 - **A design doc or PR description claiming "exactly-once delivery"** with no
   idempotency key named — the two most common resulting bugs are a duplicate
-  charge/send, or (the less-caught direction) a key built from the route alone
-  silently merging two different request bodies into one result.
+  charge/send, or (the less-caught direction) a key hashed from the body
+  silently merging two legitimate identical purchases into one result.
 - **`db.save(x); bus.publish(x)`** in two separate transactions/connections
   with no outbox table, no CDC, and no reconciliation job — the event is lost
   on any crash between the two lines and nothing ever notices.
@@ -225,6 +222,9 @@ never a two-phase commit across services.
   retryable where gRPC's own example treats only `UNAVAILABLE`, underscoring
   rule 6: the retryable set is a judgement call, not a universal list):
   `aws/aws-sdk-go-v2@main:aws/retry/standard.go`.
+- Client-generated key; saved status+body replayed (even a `500`); parameter mismatch errors;
+  keys prunable after 24 h: `docs.stripe.com/api/idempotent_requests`. `400`/`422`/`409`,
+  fingerprint, published expiry: `datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/`.
 - Idempotency-key-at-scale in production: Temporal's Workflow ID *is* the
   idempotency key; `WorkflowIdReusePolicy` (`ALLOW_DUPLICATE` /
   `ALLOW_DUPLICATE_FAILED_ONLY` / `REJECT_DUPLICATE`) is literally "what a
