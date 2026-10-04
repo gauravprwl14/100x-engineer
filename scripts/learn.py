@@ -37,7 +37,7 @@ than the lesson sitting unread in `lessons/` until someone remembers to grep it.
 
 Python stdlib only.
 """
-import argparse, datetime, json, pathlib, re, subprocess, sys
+import argparse, datetime, json, pathlib, re, subprocess, sys, unicodedata
 import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
@@ -59,6 +59,38 @@ MIN_LESSON_CHARS = 15
 SECTION_BY_KIND = {"gotcha": "## Gotchas", "failure": "## Gotchas",
                    "convention": "## Conventions", "preference": "## Conventions"}
 PATH_SOURCE_RX = re.compile(r"^([\w./-]+\.\w+|[\w.-]+/[\w./-]+)(:\d+(-\d+)?)?$")
+# Control, format (bidi overrides, zero-width) and line/paragraph separators. promote
+# writes these fields into AGENTS.md, which every later agent session reads as
+# instructions: an embedded newline in a "one-line" lesson would start a line of its own.
+UNSAFE_CATEGORIES = ("Cc", "Cf", "Cs", "Zl", "Zp")
+
+
+def unsafe_field(name, value):
+    """An error message if a single-line field is not a plain one-line string."""
+    if not isinstance(value, str):
+        return f"`{name}` must be a string, got {type(value).__name__}"
+    bad = sorted({c for c in value if unicodedata.category(c) in UNSAFE_CATEGORIES})
+    if bad:
+        return (f"`{name}` contains control or line-separator characters "
+                f"({', '.join(repr(c) for c in bad)}) -- a lesson is one line of text")
+    return None
+
+
+def single_line_problems(fields):
+    """Errors for every (name, value) whose value is not one plain line of text."""
+    errs = []
+    for name, value in fields:
+        if isinstance(value, list):
+            errs += [e for v in value if (e := unsafe_field(name, v))]
+        elif value is not None and (e := unsafe_field(name, value)):
+            errs.append(e)
+    return errs
+
+
+def write(path, text, origin):
+    """Every write goes through the containment check: a committed symlink (the
+    records root, lessons/, AGENTS.md) must not carry it outside the repository."""
+    return _paths.safe_write_text(path, text, ROOT, origin)
 
 
 def glob_rx(pattern):
@@ -147,7 +179,13 @@ TEMPLATE = '''# {id}: {title}
 
 
 def cmd_add(a):
-    DIR.mkdir(parents=True, exist_ok=True)
+    errs = single_line_problems([("lesson", a.lesson), ("affects", a.affects or []),
+                                 ("source", a.source), ("by", a.by)])
+    if errs:
+        for e in errs:
+            print(f"learn.py add: {e}", file=sys.stderr)
+        return 2
+    _paths.contained(DIR, ROOT, "learn.py add")
     lid = next_id()
     title = a.lesson.strip()
     if len(title) > 72:
@@ -164,8 +202,8 @@ def cmd_add(a):
     }
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:50] or "lesson"
     path = DIR / f"{lid}-{slug}.md"
-    path.write_text(TEMPLATE.format(id=lid, title=title, lesson=a.lesson.strip(),
-                                    meta=json.dumps(meta, indent=2)))
+    write(path, TEMPLATE.format(id=lid, title=title, lesson=a.lesson.strip(),
+                                meta=json.dumps(meta, indent=2)), "learn.py add")
     print(f"created {rel(path)}")
     if not meta["affects"] and not meta["source"]:
         print("  WARN no --affects and no --source -- this lesson will not surface "
@@ -176,8 +214,8 @@ def cmd_add(a):
 
 
 def cmd_index(a):
+    _paths.contained(DIR, ROOT, "learn.py index")
     recs = load_all()
-    DIR.mkdir(parents=True, exist_ok=True)
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -202,7 +240,7 @@ def cmd_index(a):
             "- `learn.py list --kind gotcha` — browse by kind.",
             "- `learn.py lint` — every lesson is attached (affects or source) and, "
             "if a preference, states an observable trigger.", ""]
-    (DIR / "INDEX.md").write_text("\n".join(out))
+    write(DIR / "INDEX.md", "\n".join(out), "learn.py index")
     print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} lesson(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -332,6 +370,17 @@ def cmd_promote(a):
     if not r:
         print(f"no such lesson: {a.id}")
         return 2
+    unsafe = single_line_problems([("id", r.get("id")), ("lesson", r.get("lesson")),
+                                   ("affects", r.get("affects") or []),
+                                   ("source", r.get("source")), ("section", a.section)])
+    if not isinstance(r.get("affects") or [], list):
+        unsafe.append("`affects` must be a list of globs")
+    if unsafe:
+        print(f"{a.id} cannot be promoted — it would write more than one line into the "
+              f"instructions file:")
+        for m in unsafe:
+            print(f"  - {m}")
+        return 1
     e, _ = record_problems(r, None)
     if e:
         print(f"{a.id} is not stable enough to promote — fix `learn.py lint` first:")
@@ -343,6 +392,10 @@ def cmd_promote(a):
     else:
         target = next((ROOT / n for n in ("AGENTS.md", "CLAUDE.md") if (ROOT / n).exists()),
                       ROOT / "AGENTS.md")
+    # Checked before anything is read or printed, so a symlinked AGENTS.md or a --file
+    # outside the repository is refused even without --yes.
+    _paths.contained(target, ROOT, "learn.py promote")
+    _paths.contained(r["_path"], ROOT, "learn.py promote")
     heading = a.section or SECTION_BY_KIND.get(r.get("kind"), "## Gotchas")
     if not heading.startswith("#"):
         heading = "## " + heading
@@ -368,14 +421,15 @@ def cmd_promote(a):
         print("\nNothing has changed. Re-run with --yes to write the snippet and mark the "
               "lesson as promoted.")
         return 0
-    target.write_text("\n".join(new_lines) + "\n")
+    write(target, "\n".join(new_lines) + "\n", "learn.py promote")
     path = r["_path"]
     body = path.read_text()
     m = META_RX.search(body)
     meta = json.loads(m.group(1))
     meta["promoted_to"] = f"{rel(target)}#{re.sub(r'[^a-z0-9 -]', '', heading.lstrip('#').strip().lower()).replace(' ', '-')}"
     meta["promoted_on"] = datetime.date.today().isoformat()
-    path.write_text(body[:m.start(1)] + json.dumps(meta, indent=2) + body[m.end(1):])
+    write(path, body[:m.start(1)] + json.dumps(meta, indent=2) + body[m.end(1):],
+          "learn.py promote")
     print(f"\nwrote {rel(target)} and marked {a.id} promoted")
     return 0
 

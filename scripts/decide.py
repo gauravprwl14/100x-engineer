@@ -123,7 +123,7 @@ def cmd_new(a):
     if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py new", ROOT):
         return 2
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "decide.py new")
     did = next_id()
     meta = {
         "id": did,
@@ -156,7 +156,7 @@ def cmd_new(a):
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
         print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "decide.py new")
     print(f"created {rel(path)}")
     print("Fill in: assumptions (each needs a real verify command), options with "
           "concrete why_not, and the Gaps accepted table.")
@@ -168,9 +168,9 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py index", ROOT):
         return 2
-    recs = load_all()
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "decide.py index")
+    recs = load_all()
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -205,7 +205,7 @@ def cmd_index(a):
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
-    (DIR / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(DIR / "INDEX.md", new_text, ROOT, "decide.py index")
     print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} decisions"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0

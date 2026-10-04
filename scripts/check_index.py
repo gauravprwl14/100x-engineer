@@ -47,6 +47,7 @@ Exit 1 if a document that needs an index lacks one.
 Python stdlib only.
 """
 import argparse, json, os, pathlib, re, subprocess, sys
+import _paths
 
 MIN_LINES = 150          # below this, a reader just reads it
 MIN_SECTIONS = 4         # fewer sections than this needs no map
@@ -99,6 +100,12 @@ def project_root():
 
 
 ROOT = project_root()
+
+
+def write(path, text, origin):
+    """Every write here goes through the containment check: a committed symlink
+    (skills/, INDEX.md, a --terms-out target) must not carry it outside the repo."""
+    return _paths.safe_write_text(path, text, ROOT, origin)
 
 
 def needs_index(path, text):
@@ -163,7 +170,7 @@ def insert_stub(path):
     # insert after the title and its lead paragraph, before the first H2
     at = next((i for i, l in enumerate(lines) if l.startswith("## ")), len(lines))
     out = lines[:at] + STUB.format(rows=rows).splitlines() + lines[at:]
-    path.write_text("\n".join(out) + "\n")
+    write(path, "\n".join(out) + "\n", "check_index --fix-stubs")
     return True
 
 
@@ -361,7 +368,10 @@ def register(note, index_rel):
     if not p.is_file():
         print(f"check_index --register: no such file: {note}", file=sys.stderr)
         return 2
-    idx = ROOT / index_rel
+    # The note's title and first paragraph are copied into the catalogue, so a note
+    # outside the repository would leak its contents into a committed file.
+    p = _paths.contained(p, ROOT, "check_index --register (note)")
+    idx = _paths.contained(ROOT / index_rel, ROOT, "check_index --register (index)")
     text = p.read_text(errors="replace")
     title = (re.search(r"^#\s+(.+)$", text, re.M) or [None, p.stem])[1].strip()
     href = os.path.relpath(p, idx.parent).replace(os.sep, "/")
@@ -382,8 +392,7 @@ def register(note, index_rel):
             lines += ["", "| note | kind | what it covers |", "|---|---|---|", row]
         else:
             lines.insert(last + 1, row)
-    idx.parent.mkdir(parents=True, exist_ok=True)
-    idx.write_text("\n".join(lines) + "\n")
+    write(idx, "\n".join(lines) + "\n", "check_index --register")
     print(f"{'updated' if hit is not None else 'registered'} {href} in {index_rel}")
     return 0
 
@@ -440,7 +449,7 @@ def gen_collections():
         o += [f"| {ph} | [{n}]({n}/SKILL.md) | {d} | {ln} |" for ph, n, d, ln in rows]
         o += ["", "Phase order is the order work moves through them; see "
               "`docs/PLAYBOOK.md` for the command sequence per task.", ""]
-        (sk / "INDEX.md").write_text("\n".join(o))
+        write(sk / "INDEX.md", "\n".join(o), "check_index --gen-collections")
         written.append("skills/INDEX.md")
 
     # --- reviewers: stack, and when it applies ---
@@ -464,7 +473,7 @@ def gen_collections():
              "| file | covers | applies when | lines |", "|---|---|---|--:|"]
         o += [f"| [{n}]({n}) | {ti} | {wh} | {ln} |" for _, n, ti, wh, ln in rows]
         o += ["", "Read only the one matching the diff — see the `stack-reviewer` skill.", ""]
-        (rv / "INDEX.md").write_text("\n".join(o))
+        write(rv / "INDEX.md", "\n".join(o), "check_index --gen-collections")
         written.append("reviewers/INDEX.md")
 
     # --- research: what each document answers ---
@@ -489,7 +498,7 @@ def gen_collections():
         o += ["", "Numbering: `0x` contracts and corpus, `2x` ecosystem and tooling "
               "surveys, `3x` per-cluster deep reads. Each document carries its own "
               "`## Contents` table.", ""]
-        (rs / "INDEX.md").write_text("\n".join(o))
+        write(rs / "INDEX.md", "\n".join(o), "check_index --gen-collections")
         written.append("research/INDEX.md")
     return written
 
@@ -525,10 +534,9 @@ def main():
     terms_rc = 0
     if a.register:
         if a.index is None:
-            # Imported here, not at the top: only --register writes a record, and the
+            # Resolved here, not at import: only --register writes a record, and the
             # resolver can warn or refuse on a bad .100x.json, which must not break a
             # plain contents check.
-            import _paths
             records, _ = _paths.resolve(ROOT)
             a.index = _paths.show(records / "INDEX.md", ROOT).as_posix()
         terms_rc = register(a.register, a.index)
@@ -538,9 +546,9 @@ def main():
         for w in gen_collections():
             print(f"wrote {w}")
     if a.gen_terms:
+        _paths.contained(ROOT / a.terms_out, ROOT, "check_index --gen-terms")
         txt = gen_terms_text(a.terms_root, a.terms_out)
-        (ROOT / a.terms_out).parent.mkdir(parents=True, exist_ok=True)
-        (ROOT / a.terms_out).write_text(txt)
+        write(ROOT / a.terms_out, txt, "check_index --gen-terms")
         print(f"wrote {a.terms_out} ({txt.count(chr(10) + '- **')} terms)")
     if a.check_terms:
         want = gen_terms_text(a.terms_root, a.terms_out)

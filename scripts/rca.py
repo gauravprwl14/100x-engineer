@@ -289,7 +289,7 @@ def cmd_new(a):
     if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py new", ROOT):
         return 2
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "rca.py new")
     rid = next_id()
     meta = {
         "id": rid,
@@ -354,7 +354,7 @@ def cmd_new(a):
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
         print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "rca.py new")
     print(f"created {rel(path)}")
     if a.severity in LEGACY_SEVERITY:
         print(f"severity {a.severity!r} recorded as {meta['severity']} "
@@ -372,9 +372,9 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py index", ROOT):
         return 2
-    recs = load_all()
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "rca.py index")
+    recs = load_all()
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -418,7 +418,7 @@ def cmd_index(a):
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
-    (DIR / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(DIR / "INDEX.md", new_text, ROOT, "rca.py index")
     print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} record(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -623,7 +623,7 @@ def cmd_link(a):
         return 0
     if mg.require_git_root(IN_GIT_REPO, "rca.py link", ROOT):
         return 2
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "rca.py link")
 
     adr_dir = DIR.parent / "decisions"
     hits = list(adr_dir.rglob(f"{a.decision}*.md")) if adr_dir.exists() else []
