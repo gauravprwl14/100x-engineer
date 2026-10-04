@@ -93,26 +93,79 @@ def write(path, text, origin):
     return _paths.safe_write_text(path, text, ROOT, origin)
 
 
-def glob_rx(pattern):
+_DIR, _ANY, _SEG, _ONE = "**/", "**", "*", "?"  # tokens; a literal is one char
+
+
+def glob_tokens(pattern):
     """Glob where `**` spans directories, `*` stays inside one segment, and a bare
-    directory (`src/auth`, `src/auth/`) means everything under it."""
+    directory (`src/auth`, `src/auth/`) means everything under it. A run of `**/`
+    is one token: each extra one only multiplies the ways to match the same path."""
     p = pattern.strip()
     p = p[2:] if p.startswith("./") else p
     if not any(c in p for c in "*?["):
         p = p.rstrip("/") + "/**" if not re.search(r"\.\w+$", p) else p
-    out, i = "", 0
+    toks, i = [], 0
     while i < len(p):
         if p.startswith("**/", i):
-            out += r"(?:.*/)?"; i += 3
+            if not toks or toks[-1] is not _DIR:
+                toks.append(_DIR)
+            i += 3
         elif p.startswith("**", i):
-            out += r".*"; i += 2
+            toks.append(_ANY); i += 2
         elif p[i] == "*":
-            out += r"[^/]*"; i += 1
+            toks.append(_SEG); i += 1
         elif p[i] == "?":
-            out += r"[^/]"; i += 1
+            toks.append(_ONE); i += 1
         else:
-            out += re.escape(p[i]); i += 1
-    return re.compile(rf"^{out}$")
+            toks.append(p[i]); i += 1
+    return tuple(toks)
+
+
+def glob_match(toks, path):
+    """Whole-path match of glob_tokens() output. A set of positions is advanced one
+    character at a time, so the cost is len(path) * len(toks) and a pattern cannot
+    backtrack: the regex translation went exponential on repeated `**/`.
+    Semantics are the regex's: `**/` is `(?:.*/)?`, `**` is `.*`, `*` is `[^/]*`,
+    `?` is `[^/]`, anything else literal."""
+    n = len(toks)
+
+    def close(states):
+        stack, seen = list(states), set(states)
+        while stack:
+            i, inner = stack.pop()
+            if not inner and i < n and toks[i] in (_DIR, _ANY, _SEG):
+                nxt = (i + 1, False)
+                if nxt not in seen:
+                    seen.add(nxt); stack.append(nxt)
+        return seen
+
+    cur = close({(0, False)})
+    for c in path:
+        nxt = set()
+        for i, inner in cur:
+            if i == n:
+                continue
+            t = toks[i]
+            if inner or t is _DIR:  # inside `.*/`: any char stays, a `/` may also end it
+                if c != "\n":
+                    nxt.add((i, True))
+                if c == "/":
+                    nxt.add((i + 1, False))
+            elif t is _ANY:
+                if c != "\n":
+                    nxt.add((i, False))
+            elif t is _SEG:
+                if c != "/":
+                    nxt.add((i, False))
+            elif t is _ONE:
+                if c != "/":
+                    nxt.add((i + 1, False))
+            elif t == c:
+                nxt.add((i + 1, False))
+        cur = close(nxt)
+        if not cur:
+            return False
+    return (n, False) in cur
 
 
 def norm_path(path):
@@ -128,7 +181,7 @@ def norm_path(path):
 
 def matches(path, patterns):
     path = norm_path(path)
-    return any(glob_rx(pat).match(path) for pat in patterns or [])
+    return any(glob_match(glob_tokens(pat), path) for pat in patterns or [])
 
 
 def load_all():
@@ -310,7 +363,8 @@ def record_problems(r, files):
                     "this reads as an opinion, not a lesson an agent can act on")
     if files is not None:
         for pat in affects:
-            if not any(glob_rx(pat).match(f) for f in files):
+            toks = glob_tokens(pat)
+            if not any(glob_match(toks, f) for f in files):
                 warns.append(f"affects glob {pat!r} matches no tracked file")
     return errs, warns
 
