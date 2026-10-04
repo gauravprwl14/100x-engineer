@@ -14,7 +14,7 @@ Every mutation happens silently, so the only protection is what the code refuses
 | 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands, and what guards it | 30 lines |
 | 3 | [Operations that require --yes](#operations-that-require---yes) | the two that move or rewrite existing files | 20 lines |
 | 4 | [Refusals](#refusals) | path traversal and non-git directories | 20 lines |
-| 5 | [The commit hook](#the-commit-hook) | when it blocks, and how it fails | 20 lines |
+| 5 | [The hooks](#the-hooks) | when each hook blocks, what it trusts, and how it fails | 45 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
 | 7 | [Residual risks](#residual-risks) | what is still on you | 20 lines |
 
@@ -42,7 +42,7 @@ after you installed a plugin, it was not this one — check your other installed
 
 The one apparent exception is a false positive worth knowing about:
 `hooks/require_verification.py` contains the *string* `git push`, because it must
-**match** that command in order to gate it. The auditor distinguishes a regex that
+**recognise** that command in order to gate it. The auditor distinguishes a regex that
 detects a command from a call that runs one.
 
 ## The complete mutation surface
@@ -52,6 +52,7 @@ Every path this plugin writes to. Nothing else is touched.
 | tool | writes | where | guard |
 |---|---|---|---|
 | `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file |
+| `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
 | `plan_feature.py new` | `spec.md`, `INDEX.md` | `specs/<name>/` | `--dry-run`, name validation |
 | `prd.py new` | `prd.md`, `INDEX.md` | `prds/<name>/` | `--dry-run`, name validation |
 | `decide.py new` | `ADR-NNNN-*.md`, `INDEX.md` | `decisions/` | `--dry-run`, name validation |
@@ -103,20 +104,56 @@ only fallback is the current directory, which could be `$HOME` or anywhere the s
 happened to be — too easy to litter by accident, so the tools refuse and say so. Run
 `git init`, or `cd` into your project.
 
-## The commit hook
+## The hooks
 
-`hooks/require_verification.py` is the only component that blocks anything.
+Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
+`${CLAUDE_PLUGIN_ROOT}/hooks/`.
 
-- **Opt-in per project.** With no `.claude/verification-policy.json` it returns `{}` and
-  every command passes through untouched. Installing the plugin does not change the
-  behaviour of any existing repository.
-- **Blocks only completion-shaped commands**: `git commit`, `git push`, `gh pr create`,
-  `git tag`, `npm publish`. Nothing else is inspected.
-- **Fails open.** Any internal error returns an empty decision rather than blocking. A
-  broken gate must not strand you.
-- **Auditable bypass**: `[skip-verify]` in the commit message, or `VERIFY_SKIP=1`. Both
-  appear in the transcript. `--no-verify` is *denied* rather than honoured, because it
-  silently skips git's own hooks.
+| hook | event | what it can do |
+|---|---|---|
+| `require_verification.py` | `PreToolUse` (Bash) | `deny`, `ask`, or nothing; never `allow` |
+| `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
+| `session_start.py` | `SessionStart` | add five lines of context; reads nothing in your repo |
+
+**When the PreToolUse gate acts.** `hooks.json` routes any Bash command mentioning
+`git`, `gh`, or a publisher (`npm`/`pnpm`/`yarn publish`, `twine upload`,
+`uv publish`), because its `if` patterns cannot see past `git -C <path>` or
+`git -c k=v`. The script then parses the command (compound commands, `cd`, `-C`,
+`--git-dir`, `env`/`bash -c` wrappers, git aliases) and acts only on `git commit`,
+`git push` (not `--dry-run`), tag creation, `gh pr create|merge|ready`,
+`gh release create` and the publishers, against the repository each one targets.
+
+| repository state | result |
+|---|---|
+| no `.claude/verification-policy.json` | passes, with a warning that the gate is not configured |
+| policy `{"mode": "off"}` | silent |
+| policy present | denied unless a fresh, **signed** receipt covers every required check with the command the policy binds to it |
+| `[skip-verify]` in the command | `ask`: a human approves or refuses; the agent cannot |
+| `--no-verify`, `commit -n`, `-c core.hooksPath=` | denied (they skip git's own hooks silently) |
+
+**Why it never says `allow`.** An `allow` decision also skips the user's own `ask`
+permission rules for that command. A gate whose job is to refuse has no business
+granting, so a passing gate stays silent and your normal permissions apply.
+
+**What a receipt proves, and against whom.** Entries are HMAC-SHA256 signed with a key
+in `~/.config/100x/`, so a hand-written or edited receipt is rejected. The agent runs as
+you, so an agent that deliberately reads the key can still sign; add a deny rule for
+`~/.config/100x/**` (Read and Bash) or run sandboxed if that matters to you. A key that
+others can read or write is refused outright.
+
+**The committed policy wins.** When the worktree copy of the policy differs from the
+committed one, the committed one is enforced, so the agent cannot switch the gate off
+by editing or deleting the file.
+
+**The Stop hook** blocks only when the repository is in block mode, has uncommitted
+changes, and no signed receipt matches the current content. It respects
+`stop_hook_active`, so it blocks at most once per stop attempt and cannot loop.
+
+**Fails open, needs `python3`.** Any internal error in any hook produces no decision.
+If `python3` is missing, the hook command itself fails, which Claude Code treats as a
+non-blocking error. In both cases the gate goes quiet: it never strands your shell, but
+a quiet gate is also not evidence that anything was verified. `ask` relies on a human
+being there to answer; in a headless run, what an unanswered `ask` does is up to the host.
 
 ## Keeping this true
 
@@ -143,6 +180,9 @@ Honest list of what is still on you:
 - **`--dangerously-skip-permissions` disables every other protection Claude Code has.**
   This plugin's refusals are narrow and specific; they are not a substitute for
   permission prompts.
+- **Commands the parser cannot see are not gated**: `eval "$X"`, a script file that
+  runs `git commit`, or a heredoc piped into a shell. The gate stops the shortcut, not
+  an agent determined to evade it.
 - **Nothing here protects against the model's own edits.** The gates check *evidence*
   before a commit; they do not review the diff. That is what `scoped-review` and the
   stack reviewers are for, and they are advisory.

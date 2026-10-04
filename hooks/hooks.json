@@ -1,34 +1,81 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command",
-            "if": "Bash(git commit*)",
+          {
+            "type": "command",
+            "if": "Bash(*git *)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(git push*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*gh *)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(gh pr*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*npm *publish*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(git tag*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*pnpm *publish*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(npm publish*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*yarn *publish*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." }
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*twine *upload*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*uv *publish*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_gate.py\"",
+            "timeout": 30
+          }
         ]
       }
     ]
