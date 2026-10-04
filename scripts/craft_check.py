@@ -49,6 +49,12 @@ Grounded thresholds (full citations in reviewers/_code-craft.md):
                       config flags a literal boolean at a call site.
   bare except/catch   BLOCKING  -- mechanical, near-zero legitimate use,
                       same bar as bloat_check.py's assertionless-test check.
+                      Waiver: a handler that must swallow on purpose (a hook
+                      that fails open so it never blocks the session) carries
+                      `# fail-open: <reason>` (`// fail-open: <reason>` in JS)
+                      on its except/catch line or the first line of its body.
+                      The reason is required; a bare `# fail-open:` waives
+                      nothing.
 
     craft_check.py                          # all checks vs HEAD
     craft_check.py --base origin/main
@@ -60,7 +66,7 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, ast, os, re, subprocess, sys, pathlib
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 PY_EXT = (".py",)
 JS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
@@ -83,26 +89,16 @@ def sh(args):
 
 
 def changed(base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "craft_check")
 
 
 def touched_lines(path, base):
     """Line numbers (new-file numbering) this diff added. None means 'treat the
     whole file as touched' -- true for a brand-new/untracked file, and the safe
     default if git can't produce a diff at all."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         return None
     lines = set()
@@ -458,11 +454,20 @@ def check_boolean_flag_arg(added, mod, base):
     return out
 
 
+FAIL_OPEN_RX = re.compile(r"(?:#|//)\s*fail-open:\s*\S")
+
+
+def fail_open_waived(lines, ln):
+    """An explicit `fail-open: <reason>` comment on line ln or the line after it."""
+    return any(FAIL_OPEN_RX.search(lines[i]) for i in (ln - 1, ln) if 0 <= i < len(lines))
+
+
 def check_bare_except(added, mod, base):
     out = []
     for p in added + mod:
         touched = touched_lines(p, base)
         if is_py(p):
+            src_lines = (read(p) or "").splitlines()
             tree, _ = parse_py(p)
             if tree is None:
                 continue
@@ -478,7 +483,7 @@ def check_bare_except(added, mod, base):
                 only_pass = len(stmts) == 1 and isinstance(stmts[0], ast.Pass)
                 only_log = len(stmts) == 1 and isinstance(stmts[0], ast.Expr) and isinstance(stmts[0].value, ast.Call) \
                     and LOGGING_NAME_RX.search(ast.dump(stmts[0].value.func))
-                if only_pass or only_log:
+                if (only_pass or only_log) and not fail_open_waived(src_lines, node.lineno):
                     out.append((f"{p}:{node.lineno}", "except block swallows the error (no raise) -- "
                                                        "empty or log-only, same failure mode as bloat_check's assertionless test"))
         elif is_js(p):
@@ -497,7 +502,7 @@ def check_bare_except(added, mod, base):
                 stmts = [s for s in body.split(";") if s.strip()]
                 is_empty = body == ""
                 is_log_only = len(stmts) <= 1 and bool(LOGGING_NAME_RX.search(body)) and body != ""
-                if is_empty or is_log_only:
+                if (is_empty or is_log_only) and not fail_open_waived(text.splitlines(), ln):
                     out.append((f"{p}:{ln}", "catch block swallows the error (no throw) -- "
                                               "empty or log-only, same failure mode as bloat_check's assertionless test"))
     return out
@@ -647,6 +652,8 @@ def main():
     if enter_git_root("craft_check", args.base) is None:
         return 2
     added, mod = changed(args.base)
+    if unreadable(added + mod, "craft_check"):
+        return 2
     if not added and not mod:
         print("craft_check: no changes to inspect")
         return 0
@@ -657,6 +664,7 @@ def main():
             res = checks[n](added, mod, args.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue

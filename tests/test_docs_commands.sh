@@ -40,6 +40,46 @@ for r in $(grep -ohE 'reviewers/[a-z0-9_-]+\.md' skills/stack-reviewer/SKILL.md 
   else FAIL=$((FAIL+1)); printf '  FAIL %-46s referenced but does not exist\n' "$r"; fi
 done
 
+# every concrete `100x plan_feature new ...` / `100x prd new ...` example must run.
+# A missing required flag (--tier) made copied examples exit 2. Each runs with
+# --dry-run in a scratch repository. Examples with <placeholders>, and prose that
+# names the command without a record name, are not runnable and are skipped.
+DOCREPO="$(mktemp -d)"; trap 'rm -rf "$DOCREPO"' EXIT
+git -C "$DOCREPO" init -q
+EXAMPLES="$(mktemp -d)/examples.txt"
+python3 - "$EXAMPLES" docs skills reviewers agents AGENTS.md README.md <<'PY'
+import pathlib, re, sys
+out, seen = [], set()
+rx = re.compile(r"100x (?:plan_feature|prd) new [^-\s`][^`\n]*")
+for arg in sys.argv[2:]:
+    p = pathlib.Path(arg)
+    for f in sorted([p] if p.is_file() else p.rglob("*.md")):
+        for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
+            for m in rx.finditer(line):
+                cmd = re.split(r"\s+#\s", m.group(0))[0].rstrip(" |\\")
+                if "<" in cmd or cmd in seen:
+                    continue
+                seen.add(cmd)
+                out.append(f"{f}:{n}\t{cmd}")
+pathlib.Path(sys.argv[1]).write_text("\n".join(out) + ("\n" if out else ""))
+PY
+NEX=0
+while IFS="$(printf '\t')" read -r where cmd; do
+  [ -z "$cmd" ] && continue
+  NEX=$((NEX+1))
+  # shellcheck disable=SC2086 -- word splitting of the documented command is the point
+  set -- ${cmd#100x }
+  if ( cd "$DOCREPO" && "$ROOT/bin/100x" "$@" --dry-run ) >"$DOCREPO.out" 2>&1; then
+    PASS=$((PASS+1)); printf '  ok   %-46s runs: %s\n' "$where" "$cmd"
+  else
+    FAIL=$((FAIL+1)); printf '  FAIL %-46s exits non-zero: %s\n' "$where" "$cmd"
+    sed 's/^/       /' "$DOCREPO.out" | head -4
+  fi
+done < "$EXAMPLES"
+rm -f "$DOCREPO.out" "$EXAMPLES"; rmdir "$(dirname "$EXAMPLES")"
+if [ "$NEX" -gt 0 ]; then PASS=$((PASS+1)); printf '  ok   %-46s\n' "$NEX documented new-record examples found"
+else FAIL=$((FAIL+1)); printf '  FAIL %-46s\n' "no documented plan_feature/prd new examples found"; fi
+
 echo
 [ -n "$MISSING" ] && echo "missing:$MISSING"
 echo "docs-commands: $PASS passed, $FAIL failed"

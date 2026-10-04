@@ -108,7 +108,7 @@ grep -rliE 'restore' .github/workflows
 # rule 6 and 7: new personal-data columns in this diff, to check against the inventory
 git diff origin/main...HEAD -- '*migrat*' | grep -niE '^\+.*(email|phone|address|birth|name|ip_addr)'
 # rule 7: seed the erasure edge cases (every store a deleted user reached) into the spec
-100x plan_feature new account-deletion --kind pii-compliance
+100x plan_feature new account-deletion --kind pii-compliance --work api --tier small
 ```
 
 The Terraform greps catch protection switched off, not protection never

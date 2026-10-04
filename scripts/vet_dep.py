@@ -357,32 +357,137 @@ def parse_pkg_name(spec):
     return re.match(r"^(@?[^<>=!~\s\[;]+)", spec).group(1) if spec.strip() else ""
 
 
+def _toml_loads(text):
+    """tomllib (3.11+), else tomli, else the minimal reader below. Never None:
+    macOS's system python is 3.9, and silently dropping every pyproject dependency
+    there would report a clean manifest that was never read."""
+    try:
+        import tomllib
+        return tomllib.loads(text)
+    except ImportError:
+        pass
+    try:
+        import tomli
+        return tomli.loads(text)
+    except ImportError:
+        pass
+    return _minimal_pyproject(text)
+
+
+_TOML_STR = r'"(?:[^"\\]|\\.)*"|\'[^\']*\''
+
+
+def _strip_toml_comment(line):
+    out, q = [], None
+    for ch in line:
+        if q:
+            out.append(ch)
+            if ch == q:
+                q = None
+        elif ch in "\"'":
+            q = ch
+            out.append(ch)
+        elif ch == "#":
+            break
+        else:
+            out.append(ch)
+    return "".join(out).strip()
+
+
+def _minimal_pyproject(text):
+    """Read only what --check-manifest needs: [project] dependencies and the keys of
+    [tool.poetry.dependencies] (plus [tool.poetry.dependencies.<name>] tables).
+    Anything in those places it cannot read raises ValueError -- the caller exits 2
+    rather than vet a partial list."""
+    project_deps, poetry = [], {}
+    section, pending = None, None
+    for raw in text.splitlines():
+        line = _strip_toml_comment(raw)
+        if pending is not None:
+            pending += " " + line
+            items, closed = _toml_array(pending)
+            if closed:
+                project_deps += items
+                pending = None
+            continue
+        if not line:
+            continue
+        h = re.match(r"^\[\s*([^\[\]]+?)\s*\]$", line)
+        if h:
+            section = h.group(1).replace(" ", "").replace('"', "")
+            sub = re.match(r"^tool\.poetry\.dependencies\.(.+)$", section)
+            if sub:
+                poetry[sub.group(1)] = {}
+            continue
+        if section == "project":
+            m = re.match(r"^dependencies\s*=\s*(.*)$", line)
+            if m:
+                rhs = m.group(1)
+                if not rhs.startswith("["):
+                    raise ValueError("[project] dependencies is not an array")
+                items, closed = _toml_array(rhs)
+                if closed:
+                    project_deps += items
+                else:
+                    pending = rhs
+        elif section == "tool.poetry.dependencies":
+            m = re.match(r"^(" + _TOML_STR + r"|[A-Za-z0-9_.-]+)\s*=", line)
+            if not m:
+                raise ValueError(f"unreadable line in [tool.poetry.dependencies]: {raw!r}")
+            poetry[m.group(1).strip("\"'")] = True
+    if pending is not None:
+        raise ValueError("unterminated [project] dependencies array")
+    return {"project": {"dependencies": project_deps},
+            "tool": {"poetry": {"dependencies": poetry}}}
+
+
+def _toml_array(s):
+    """(items, closed) for a string array starting at s's first '['. A ']' inside a
+    string (`requests[socks]`) is part of the item, not the end of the array."""
+    i, items, str_rx = s.index("[") + 1, [], re.compile(_TOML_STR)
+    while i < len(s):
+        if s[i] in " \t,":
+            i += 1
+        elif s[i] == "]":
+            if s[i + 1:].strip():
+                raise ValueError(f"text after [project] dependencies array: {s!r}")
+            return items, True
+        else:
+            m = str_rx.match(s, i)
+            if not m:
+                raise ValueError(f"unreadable [project] dependencies array: {s!r}")
+            items.append(m.group(0)[1:-1])
+            i = m.end()
+    return items, False
+
+
 def read_manifest_deps(root: pathlib.Path):
-    """Return {'npm': [names], 'pypi': [names]} from package.json / pyproject.toml
-    found in root. Pure file reads -- no network."""
-    out = {"npm": [], "pypi": []}
+    """({'npm': [names], 'pypi': [names]}, [errors], manifests_found) from
+    package.json / pyproject.toml in root. Pure file reads -- no network."""
+    out, errors, found = {"npm": [], "pypi": []}, [], 0
 
     pj = root / "package.json"
     if pj.exists():
+        found += 1
         try:
             data = json.loads(pj.read_text())
             out["npm"] = sorted((data.get("dependencies") or {}).keys())
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"warning: could not parse {pj}: {e}", file=sys.stderr)
+        except (ValueError, OSError, AttributeError) as e:
+            errors.append(f"could not parse {pj}: {e}")
 
     pp = root / "pyproject.toml"
     if pp.exists():
+        found += 1
         try:
-            import tomllib
-            data = tomllib.loads(pp.read_text())
+            data = _toml_loads(pp.read_text())
             deps = list((data.get("project") or {}).get("dependencies") or [])
             poetry = (((data.get("tool") or {}).get("poetry") or {}).get("dependencies") or {})
             deps += [k for k in poetry.keys() if k.lower() != "python"]
             out["pypi"] = sorted({parse_pkg_name(d) for d in deps if parse_pkg_name(d)})
         except Exception as e:
-            print(f"warning: could not parse {pp}: {e}", file=sys.stderr)
+            errors.append(f"could not parse {pp}: {e}")
 
-    return out
+    return out, errors, found
 
 
 # --------------------------------------------------------------------------- #
@@ -431,7 +536,15 @@ def main():
     now = datetime.datetime.now(datetime.timezone.utc)
 
     if a.check_manifest:
-        found = read_manifest_deps(pathlib.Path.cwd())
+        found, errors, manifests = read_manifest_deps(pathlib.Path.cwd())
+        for e in errors:
+            print(f"vet_dep: {e} -- not vetted.", file=sys.stderr)
+        if not manifests:
+            print("vet_dep: no package.json or pyproject.toml in the current directory "
+                  "-- nothing was vetted.", file=sys.stderr)
+            return 2
+        if errors:
+            return 2
         if a.list_only:
             if a.json:
                 print(json.dumps(found, indent=2))

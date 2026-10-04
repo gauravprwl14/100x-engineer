@@ -49,6 +49,13 @@ git checkout -q -- src/core.py
 printf '# TODO(#412): clean up\n' >> src/core.py
 expect 0 "TODO with issue ref is allowed" --only bare-todo
 git checkout -q -- src/core.py
+printf "STATUSES = ['TODO', \"DONE\"]\nlabel = 'FIXME' if bad else 'ok'\n" >> src/core.py
+printf "export const col = { status: 'TODO' };\nconst t = \`TODO\`;\n" > src/board.ts
+expect 0 "TODO inside a string literal is data, not a note" --only bare-todo
+rm src/board.ts; git checkout -q -- src/core.py
+printf "if s == 'TODO':  # TODO: don't hardcode\n    pass\n" >> src/core.py
+expect 1 "bare TODO comment after a string literal still detected" --only bare-todo
+git checkout -q -- src/core.py
 
 # --- unrequested docs vs allowed locations ---
 printf '# Notes\n' > RANDOM_NOTES.md

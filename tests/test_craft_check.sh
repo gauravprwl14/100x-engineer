@@ -226,6 +226,44 @@ expect 0 "bare-except: log-then-rethrow TS is not flagged" --only bare-except
 nothas "catch block swallows"
 reset_diff
 
+cat > src/hook.py <<'EOF'
+def main():
+    try:
+        run()
+    except Exception:  # fail-open: a hook must never block the session
+        pass
+    try:
+        run()
+    except Exception:
+        pass  # fail-open: telemetry is best effort
+EOF
+cat > src/hook.ts <<'EOF'
+function main(): void {
+  try {
+    run();
+  } catch (e) {} // fail-open: analytics must not break checkout
+}
+EOF
+expect 0 "bare-except: '# fail-open: <reason>' waiver honoured (py + ts)" --only bare-except
+nothas "swallows the error"
+reset_diff
+
+cat > src/hook.py <<'EOF'
+def main():
+    try:
+        run()
+    except Exception:  # fail-open:
+        pass
+    try:
+        run()
+    except Exception:  # fail open, see docstring
+        pass
+EOF
+expect 1 "bare-except: waiver without a reason, or misspelt, still flagged" --only bare-except
+has "src/hook.py:4:"
+has "src/hook.py:8:"
+reset_diff
+
 # =========================================================================
 # vague-names -- python and TS
 # =========================================================================

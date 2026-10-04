@@ -43,6 +43,7 @@ reset_diff
 
 # Server components (Next.js App Router) fetch by design; client components do not.
 mkdir -p app/products app/dashboard src/components
+printf '{"dependencies": {"next": "15.0.0", "react": "19.0.0"}}\n' > package.json
 cat > app/products/page.tsx <<'EOF'
 export default async function Page() {
   const res = await fetch('https://api.example.com/products', { next: { revalidate: 60 } });
@@ -92,6 +93,40 @@ EOF
 expect 1 "presentation-io: 'use client' under app/ (and async client component) still flagged" --only presentation-io --strict
 has "app/dashboard/page.tsx:5: presentation layer performing I/O"
 has "src/components/Live.tsx:3: presentation layer performing I/O"
+reset_diff
+
+# app/ is a server tree only in a Next.js project, and only for a file with no
+# client hook or handler: a Vite/CRA src/app/ folder holds client components.
+mkdir -p src/app/components
+printf '{"dependencies": {"react": "19.0.0"}, "devDependencies": {"vite": "5.0.0"}}\n' > package.json
+cat > src/app/components/UserCard.tsx <<'EOF'
+export function UserCard({ id }) {
+  const [user, setUser] = useState(null);
+  useEffect(() => { fetch(`/api/users/${id}`).then((r) => r.json()).then(setUser); }, [id]);
+  return <p>{user?.name}</p>;
+}
+EOF
+expect 1 "presentation-io: Vite src/app/ client component is not exempt" --only presentation-io --strict
+has "src/app/components/UserCard.tsx:3: presentation layer performing I/O"
+reset_diff
+
+mkdir -p apps/web/app/settings
+printf '{"dependencies": {"next": "15.0.0"}}\n' > apps/web/package.json
+cat > apps/web/app/settings/Toggle.tsx <<'EOF'
+export function Toggle() {
+  const [on, setOn] = useState(false);
+  return <button onClick={() => fetch('/api/toggle').then(() => setOn(!on))}>{String(on)}</button>;
+}
+EOF
+cat > apps/web/app/settings/page.tsx <<'EOF'
+export default function Page() {
+  const data = use(fetch('/api/settings').then((r) => r.json()));
+  return <p>{data.name}</p>;
+}
+EOF
+expect 1 "presentation-io: Next app/ file using hooks without 'use client' still flagged" --only presentation-io --strict
+has "apps/web/app/settings/Toggle.tsx:3: presentation layer performing I/O"
+nothas "apps/web/app/settings/page.tsx"
 reset_diff
 
 cat > src/UserBadge.tsx <<'EOF'

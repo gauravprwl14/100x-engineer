@@ -14,7 +14,7 @@ Exit 1 if any enabled check finds a violation.
 """
 import argparse, ast, io, os, re, subprocess, sys, pathlib, collections, tokenize
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
@@ -33,25 +33,13 @@ def sh(args):
 
 
 def changed(base):
-    """(added, modified) paths in the diff."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    # include untracked files as "added" -- an agent's stray files are usually untracked
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "bloat_check")
 
 
 def added_lines(path, base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         try:
             return pathlib.Path(path).read_text(errors="replace").splitlines()
@@ -181,6 +169,37 @@ def check_commented_code(added, mod, base):
     return out
 
 
+def blank_strings(line):
+    """The line with string-literal contents blanked, up to its first comment.
+
+    `status = 'TODO'` is data, not a note to anybody; a comment is kept verbatim
+    because an apostrophe in prose ("don't") is not a string delimiter there.
+    """
+    out, quote, i, n = [], None, 0, len(line)
+    while i < n:
+        c = line[i]
+        if quote:
+            if c == "\\":
+                out.append("  ")
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+                out.append(c)
+            else:
+                out.append(" ")
+        elif c in "'\"`":
+            quote = c
+            out.append(c)
+        elif c == "#" or line.startswith("//", i) or line.startswith("/*", i):
+            out.append(line[i:])
+            break
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def check_bare_todo(added, mod, base):
     """A TODO with no issue reference is a note to nobody."""
     out = []
@@ -189,7 +208,7 @@ def check_bare_todo(added, mod, base):
         if not p.endswith(tuple(CODE_EXT)):
             continue
         for line in added_lines(p, base):
-            if RX.search(line):
+            if RX.search(blank_strings(line)):
                 out.append((p, f"TODO/FIXME with no issue reference: {line.strip()[:60]}"))
                 break
     return out
@@ -296,6 +315,8 @@ def main():
     if enter_git_root("bloat_check", a.base) is None:
         return 2
     added, mod = changed(a.base)
+    if unreadable(added + mod, "bloat_check"):
+        return 2
     if not added and not mod:
         print("bloat_check: no changes to inspect")
         return 0
@@ -306,6 +327,7 @@ def main():
             res = CHECKS[n](added, mod, a.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue

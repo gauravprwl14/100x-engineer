@@ -595,6 +595,31 @@ has "DROP COLUMN legacy on orders"
 nothas "replacement"
 reset_repo
 
+cat > migrations/1700000000002-ShortName.ts <<'EOF'
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class ShortName1700000000002 implements MigrationInterface {
+  async up(q: QueryRunner) { await q.query('ALTER TABLE users DROP COLUMN x') }
+  async down(q: QueryRunner) { await q.query('ALTER TABLE users ADD COLUMN x TEXT') }
+}
+EOF
+cat > migrations/1700000000003-Manager.ts <<'EOF'
+export class Manager1700000000003 {
+  async up(runner) {
+    await runner.manager.query("ALTER TABLE accounts ADD COLUMN plan TEXT NOT NULL");
+  }
+  async down(runner) {
+    await runner.manager.query("ALTER TABLE accounts DROP COLUMN plan");
+  }
+}
+EOF
+git add -A
+expect 1 "ts migration: any QueryRunner parameter name is parsed" --only expand-contract,not-null-no-default
+has "ShortName.ts:4: destructive change (DROP COLUMN x on users"
+has "Manager.ts:3: accounts.plan added NOT NULL"
+nothas "DROP COLUMN plan"
+reset_repo
+
 mkdir -p src
 cat > src/report.service.ts <<'EOF'
 export async function purge(queryRunner: any) {
@@ -682,6 +707,37 @@ EOF
 git add -A
 expect 1 "strict mode: advisory (missing created_at) fails under --strict" --only new-table-created-at --strict
 reset_repo
+
+# ============================================================ git root, subfolder, crash counter
+mkdir -p apps/api/migrations
+printf -- '-- api migrations\n' > apps/api/migrations/001.sql
+git add -A; git commit -qm api >/dev/null
+printf -- '-- api migrations\nALTER TABLE users DROP COLUMN legacy;\nALTER TABLE users ADD COLUMN plan TEXT NOT NULL;\n' > apps/api/migrations/001.sql
+( cd apps/api && python3 "$SC" ) >"$OUT" 2>&1; got=$?
+if [ "$got" -eq 1 ]; then PASS=$((PASS+1)); printf '  ok   %-55s\n' "run from apps/api: blocking findings, exit 1"
+else FAIL=$((FAIL+1)); printf '  FAIL %-55s got=%s\n' "run from apps/api: blocking findings, exit 1" "$got"; sed 's/^/       /' "$OUT"; fi
+has "apps/api/migrations/001.sql:2: destructive change (DROP COLUMN legacy"
+has "apps/api/migrations/001.sql:3: users.plan added NOT NULL"
+NOREPO="$WORK/norepo"; mkdir -p "$NOREPO"
+( cd "$NOREPO" && python3 "$SC" ) >"$OUT" 2>&1; got=$?
+if [ "$got" -eq 2 ]; then PASS=$((PASS+1)); printf '  ok   %-55s\n' "outside a git repo: exit 2, never a pass"
+else FAIL=$((FAIL+1)); printf '  FAIL %-55s got=%s\n' "outside a git repo: exit 2, never a pass" "$got"; sed 's/^/       /' "$OUT"; fi
+has "not inside a git repository"
+# A check that raises has not passed: the crash counts as a blocking failure.
+( cd "$REPO" && python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+sys.argv = ["schema_check.py", "--only", "select-star"]
+import schema_check
+def boom(facts, **_):
+    raise RuntimeError("synthetic crash")
+schema_check.CHECKS["select-star"] = boom
+sys.exit(schema_check.main())
+' "$ROOT/scripts" ) >"$OUT" 2>&1; got=$?
+if [ "$got" -eq 1 ]; then PASS=$((PASS+1)); printf '  ok   %-55s\n' "a check that raises exits 1"
+else FAIL=$((FAIL+1)); printf '  FAIL %-55s got=%s\n' "a check that raises exits 1" "$got"; sed 's/^/       /' "$OUT"; fi
+has "select-star errored: RuntimeError: synthetic crash"
+reset_repo; rm -rf apps
 
 echo
 echo "schema_check: $PASS passed, $FAIL failed"

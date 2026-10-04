@@ -23,7 +23,7 @@ repository or with a --base that does not resolve.
 """
 import argparse, re, subprocess, sys, pathlib
 
-from _mutation_guard import enter_git_root
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 JSX_EXT = (".tsx", ".jsx")
 HTML_EXT = (".html", ".htm")
@@ -48,23 +48,14 @@ def sh(args):
 
 
 def changed(base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    files = []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 2:
-            files.append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in files:
-            files.append(p)
-    return files
+    added, mod = changed_files(base, "ui_baseline_check")
+    return added + mod
 
 
 def touched_lines(path, base):
     """New-file line numbers this diff added; None means the whole file."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         return None
     lines = set()
@@ -392,6 +383,8 @@ def main():
     if enter_git_root("ui_baseline_check", args.base) is None:
         return 2
     files = changed(args.base)
+    if unreadable(files, "ui_baseline_check"):
+        return 2
     if not files:
         print("ui_baseline_check: no changes to inspect")
         return 0

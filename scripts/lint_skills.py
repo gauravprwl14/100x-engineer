@@ -3,7 +3,8 @@
 
 The plugin claims that advice without a runnable check is decoration. That claim
 has to bind this plugin's own skills first, so this is the gate on our output.
-Exit 1 on any ERROR. Run: python3 scripts/lint_skills.py [--root DIR]
+Exit 1 on any ERROR, 2 when there is no SKILL.md to lint.
+Run: python3 scripts/lint_skills.py [--root DIR]  (default root: this plugin)
 
 Description rules are tuned for a crowded listing, not for this plugin alone. Installed
 beside ~400 other skills, the harness showed many of ours NAME-ONLY: descriptions were
@@ -16,6 +17,8 @@ it catches a description that opens with throat-clearing ("Use when writing or r
 any...") and cannot judge whether the noun it finds is the right one.
 """
 import argparse, re, sys, pathlib
+
+PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 ALLOWED_FM = {"name", "description", "license", "allowed-tools", "metadata", "compatibility",
               "when_to_use", "argument-hint", "disable-model-invocation", "user-invocable",
@@ -168,13 +171,19 @@ def lint(path: pathlib.Path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--root", default=".", help="plugin root holding skills/ (default: cwd)")
+    ap.add_argument("--root", default=str(PLUGIN_ROOT),
+                    help="plugin root holding skills/ (default: this plugin, wherever it "
+                         "is run from)")
     root = pathlib.Path(ap.parse_args().root) / "skills"
-    if not root.exists():
-        print("no skills/ directory"); return 0
+    # Nothing to lint is a failure, not a pass: run from the wrong directory, the
+    # old cwd default reported success on zero skills.
+    if not root.is_dir():
+        print(f"lint_skills: no skills/ directory under {root.parent} -- nothing was "
+              f"linted", file=sys.stderr); return 2
     files = sorted(root.glob("*/SKILL.md"))
     if not files:
-        print("no SKILL.md files found"); return 0
+        print(f"lint_skills: no */SKILL.md under {root} -- nothing was linted",
+              file=sys.stderr); return 2
     for f in files:
         lint(f)
     for w in warns:

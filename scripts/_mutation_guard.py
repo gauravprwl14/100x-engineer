@@ -1,8 +1,8 @@
 """Shared helpers for the record-writing tools' safety surface.
 
 Not a standalone tool -- imported by plan_feature.py, prd.py, decide.py, rca.py,
-ledger.py and check_index.py, and (for `enter_git_root` only) by the diff
-checkers, all of which live in this same directory, so a plain
+ledger.py and check_index.py, and (for `enter_git_root` and `changed_files`) by
+the diff checkers, all of which live in this same directory, so a plain
 `import _mutation_guard` resolves without any sys.path surgery (Python puts the
 running script's own directory on sys.path[0]).
 
@@ -22,6 +22,11 @@ copies is how a safety guarantee quietly stops being true:
      prints repo-root-relative paths while file reads and `git diff -- <path>`
      resolve against cwd, so run from a monorepo subfolder every changed file was
      silently unreadable and the checker passed a diff it never saw.
+  5. `changed_files` / `diff_rev` / `path_args`: the one definition of "which files
+     did this diff touch". Each checker used to carry its own copy, and every copy
+     dropped renamed files (`--diff-filter=AM`), mangled non-ASCII paths (no `-z`,
+     so git C-quoted them) and failed on an unborn HEAD -- all three reported "no
+     changes" and passed.
 """
 import difflib
 import os
@@ -109,3 +114,99 @@ def enter_git_root(tool, base=None):
                   f"was checked.", file=sys.stderr)
             return None
     return root
+
+
+# git's well-known empty tree. Diffing against it is how a repository with no commit
+# yet (unborn HEAD) still shows its staged files as added.
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+# destination -> source for renames seen by the last changed_files() call
+_RENAMED = {}
+
+
+_HEAD_REV = []
+
+
+def diff_rev(base):
+    """The revision a checker diffs against: --base, else HEAD, else the empty tree."""
+    if base:
+        return base
+    if not _HEAD_REV:
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+                           capture_output=True, text=True)
+        _HEAD_REV.append("HEAD" if r.returncode == 0 else EMPTY_TREE)
+    return _HEAD_REV[0]
+
+
+def _git_z(args, tool):
+    r = subprocess.run(["git"] + args, capture_output=True)
+    if r.returncode != 0:
+        print(f"{tool}: `git {' '.join(args)}` failed -- nothing was checked.\n"
+              f"  {r.stderr.decode('utf-8', 'replace').strip()}", file=sys.stderr)
+        sys.exit(2)
+    return [t for t in r.stdout.decode("utf-8", "surrogateescape").split("\0")]
+
+
+def changed_files(base, tool):
+    """(added, modified) repo-relative paths in the diff, untracked files counted as added.
+
+    A rename (with or without edits) is reported under its destination path in
+    `modified`; `path_args` then diffs it against its source so only the lines the
+    rename changed count as added. A git failure exits 2: a checker that could not
+    list its input must not report a clean pass.
+    """
+    _RENAMED.clear()
+    toks = _git_z(["diff", "-z", "--name-status", "-M", "--diff-filter=AMR",
+                   diff_rev(base)], tool)
+    added, mod = [], []
+    i = 0
+    while i < len(toks):
+        status = toks[i]
+        if not status:
+            i += 1
+            continue
+        if status[0] == "R":
+            if i + 2 >= len(toks):
+                break
+            src, dst = toks[i + 1], toks[i + 2]
+            _RENAMED[dst] = src
+            mod.append(dst)
+            i += 3
+            continue
+        if i + 1 >= len(toks):
+            break
+        (added if status[0] == "A" else mod).append(toks[i + 1])
+        i += 2
+    seen = set(added) | set(mod)
+    for p in _git_z(["ls-files", "-z", "--others", "--exclude-standard"], tool):
+        if p and p not in seen:
+            added.append(p)
+            seen.add(p)
+    return added, mod
+
+
+def path_args(path):
+    """Trailing `git diff` arguments selecting `path`, paired with its rename source."""
+    src = _RENAMED.get(path)
+    return ["-M", "--", src, path] if src else ["--", path]
+
+
+def unreadable(paths, tool):
+    """Print and return the changed paths whose content cannot be read.
+
+    A checker that skipped them would pass a diff it never saw, so callers exit 2
+    on a non-empty result. A directory (a submodule's gitlink) and a dangling
+    symlink carry no content to inspect and are not counted.
+    """
+    bad = []
+    for p in paths:
+        if os.path.isdir(p) or (os.path.islink(p) and not os.path.exists(p)):
+            continue
+        try:
+            with open(p, "rb") as fh:
+                fh.read(1)
+        except OSError as e:
+            bad.append(p)
+            print(f"{tool}: cannot read changed file {p}: {e.strerror or e} -- it was "
+                  f"not checked.", file=sys.stderr)
+    return bad
