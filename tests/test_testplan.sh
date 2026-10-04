@@ -105,15 +105,28 @@ assert [x['links'] for x in c] == [['R2', 'S1'], ['R3']], c
 " && { PASS=$((PASS+1)); echo "  ok   parse_criteria returns the R/S links"; } \
   || { FAIL=$((FAIL+1)); echo "  FAIL parse_criteria links"; }
 
-# a bare --out files the plan under the records root, named for the feature
+# a bare --out files the plan beside the spec: <root>/specs/<feature>/testplan.md
 mkdir -p feat/work/billing && cp canon.md feat/work/billing/spec.md
 (cd feat && git init -q && "$TX" testplan new work/billing/spec.md --out >$OUT/tp.out 2>&1)
-[ -f feat/docs/engineering/testplans/billing.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out writes docs/engineering/testplans/billing.md"; } \
-  || { FAIL=$((FAIL+1)); echo "  FAIL bare --out did not write under the records root"; cat $OUT/tp.out; }
-printf '{"root": "eng"}\n' > feat/.100x.json
+[ -f feat/docs/engineering/specs/billing/testplan.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out writes docs/engineering/specs/billing/testplan.md"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL bare --out did not write beside the spec"; cat $OUT/tp.out; }
+[ ! -e feat/docs/engineering/testplans ] && { PASS=$((PASS+1)); echo "  ok   bare --out no longer creates testplans/"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL bare --out still wrote testplans/"; }
+printf '{"schema": 1, "root": "eng"}\n' > feat/.100x.json
 (cd feat && "$TX" testplan new work/billing/spec.md --out >$OUT/tp.out 2>&1)
-[ -f feat/eng/testplans/billing.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out follows .100x.json"; } \
+[ -f feat/eng/specs/billing/testplan.md ] && { PASS=$((PASS+1)); echo "  ok   bare --out follows .100x.json"; } \
   || { FAIL=$((FAIL+1)); echo "  FAIL bare --out ignored .100x.json"; cat $OUT/tp.out; }
+# a plan at the legacy <root>/testplans/<feature>.md is found, not silently duplicated
+mkdir -p feat/eng/testplans && echo "# old plan" > feat/eng/testplans/legacy.md
+cp canon.md feat/work/legacy.md
+(cd feat && "$TX" testplan new work/legacy.md --out >$OUT/tp.out 2>&1); rc=$?
+[ "$rc" -eq 2 ] && [ ! -e feat/eng/specs/legacy/testplan.md ] && { PASS=$((PASS+1)); echo "  ok   legacy testplans/<feature>.md: bare --out refuses to duplicate it"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL legacy plan duplicated (exit $rc)"; cat $OUT/tp.out; }
+has "note: a test plan for legacy exists at the legacy location eng/testplans/legacy.md"
+has "git mv eng/testplans/legacy.md eng/specs/legacy/testplan.md"
+(cd feat && "$TX" testplan new work/legacy.md --out --force >$OUT/tp.out 2>&1)
+[ -f feat/eng/specs/legacy/testplan.md ] && grep -q "old plan" feat/eng/testplans/legacy.md && { PASS=$((PASS+1)); echo "  ok   legacy: --force writes the new location, leaves the old file"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL legacy --force"; cat $OUT/tp.out; }
 
 # ===================================================================== trace
 mkdir -p t/e2e t/api src t/.maestro t/node_modules/pkg
@@ -315,6 +328,56 @@ import sys
 head, _, body = open(sys.argv[1]).read().partition("\n---\n")
 assert "appId:" in head and body.lstrip().startswith("- ")
 EOF
+
+# ============================================================ implicit levels
+# Real baseline ids, as plan_feature writes them: the `web-ui.` prefix survives, and the
+# level comes from the requirement, never from the evidence column (which names axe,
+# k6, web-vitals and screenshots on purpose in the fixture).
+QA="$ROOT/examples/qa/spec.md"
+expect 0 "new: real baseline ids generate cases" new "$QA"
+has "\| TC-web-ui.reflow-320-1 \| web-ui.reflow-320 \| e2e \| non-functional \| responsive"
+has "\| web-ui.contrast-and-targets \| a11y \| non-functional \| axe scan"
+has "\| web-ui.analytics-consent \| e2e \|"
+has "\| api.health-graceful-shutdown \| integration \|"
+has "\| api.boundary-validation \| integration \|"
+has "\| all.tests-in-same-change \| review \| .* \| no \| qa-engineer \|"
+has "\| api.authz-every-endpoint \| integration \| non-functional \| negative authz"
+has "\| api.p95-budget \| load \|"
+nothas "\| ui\.reflow-320 \|"                                         # prefix not truncated
+nothas "\| (web-ui.analytics-consent|api.health-graceful-shutdown|api.boundary-validation|all.tests-in-same-change) \| (load|a11y|visual) \|"
+nothas "\| e2e \| non-functional \| field/lab web-vitals budget check \(see the web-vitals skill\) \| every input"
+nothas "TC-api.rate-limit-1"                                         # n/a(...)
+nothas "TC-web-ui.seo-meta-1"                                        # waived(...)
+nothas "TC-ask\."                                                     # questions, not behaviour
+has "No case for 3 implicit-requirement row\(s\) with nothing to test: api.rate-limit \(n/a\), web-ui.seo-meta \(waived\), ask.data-residency \(a question\)"
+has "8 implicit requirements"
+nothas "k6 run shows|axe scan of the status page|visual snapshots updated"   # evidence is not the expected outcome
+python3 - "$ROOT" >$OUT/tp.out 2>&1 <<'EOF'
+import json, sys
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import testplan as tp
+items = json.load(open(sys.argv[1] + "/scripts/data/baseline.json"))["items"]
+missing = [i["id"] for i in items if i["id"] not in tp.LEVEL_BY_ID and not i.get("level")
+           and not i["id"].startswith("ask.")]
+assert not missing, f"baseline ids with no test level: {missing}"
+assert set(tp.LEVEL_BY_ID.values()) <= set(tp.NFR_HOW), set(tp.LEVEL_BY_ID.values()) - set(tp.NFR_HOW)
+assert tp.NFR_ID.search("| `web-ui.reflow-320` |").group(1) == "web-ui.reflow-320"
+assert tp.NFR_ID.search("data-pipeline.pii-lineage").group(1) == "data-pipeline.pii-lineage"
+assert tp.NFR_ID.search("v1.2") is None or tp.NFR_ID.search("v1.2").group(1) != "1.2"
+# a `level` hint on a baseline item wins over the built-in table
+tp.BASELINE_BY_ID["web-ui.seo-meta"] = {"level": "static"}
+assert tp.nfr_level("web-ui.seo-meta", "") == "static"
+# keyword fallback for a team's own ids: whole words, id before text
+assert tp.nfr_level("team.consent-banner", "trackers load only after consent") is None
+assert tp.nfr_level("team.p95-checkout", "") == "load"
+assert tp.nfr_level("team.reflow-check", "") == "responsive"
+assert tp.skip_reason("ask.slo-numbers", "ASSUMED(99.9%)") == "a question"
+assert tp.skip_reason("api.x", "N/A(internal)") == "n/a"
+assert tp.skip_reason("api.x", "covered") is None
+assert tp.TIERS == json.load(open(sys.argv[1] + "/scripts/data/scale_tiers.json"))["_order"]
+EOF
+[ $? -eq 0 ] && { PASS=$((PASS+1)); echo "  ok   every baseline id has a level; id regex keeps hyphenated prefixes; tiers from scale_tiers.json"; } \
+  || { FAIL=$((FAIL+1)); echo "  FAIL level table / id regex"; sed 's/^/       /' $OUT/tp.out; }
 
 # ================================================================== fixture
 expect 1 "examples/qa fixture: partial coverage detected" trace "$ROOT/examples/qa/spec.md" --tests "$ROOT/examples/qa/tests"
