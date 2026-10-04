@@ -21,41 +21,20 @@ Python stdlib only.
 """
 import argparse, datetime, fnmatch, json, pathlib, re, subprocess, sys
 import _mutation_guard as mg
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
-def project_root():
-    """Where the USER's decisions/specs live: the git root of the current directory,
-    not the plugin's own directory.
-
-    Resolving these against the plugin root meant a consumer project's records were
-    written into the installed plugin — invisible to their repo and lost on upgrade.
-
-    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT, IN_GIT_REPO = project_root()
-DIR = ROOT / "decisions"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); decisions live under
+# the records root (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, IN_GIT_REPO = _paths.git_root()
+DIR = _paths.resolve(ROOT)[0] / "decisions"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("proposed", "accepted", "superseded", "rejected", "revisit")
 
@@ -166,7 +145,7 @@ def cmd_new(a):
     if dry:
         old_text = path.read_text() if path.exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
-        print(f"[dry-run] would also regenerate decisions/INDEX.md; nothing written")
+        print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
     path.write_text(new_text)
     print(f"created {rel(path)}")
@@ -215,10 +194,10 @@ def cmd_index(a):
     new_text = "\n".join(out)
     if dry:
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "decisions/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
     (DIR / "INDEX.md").write_text(new_text)
-    print(f"wrote decisions/INDEX.md ({len(rows)} decisions"
+    print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} decisions"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
 

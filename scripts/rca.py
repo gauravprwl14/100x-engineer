@@ -45,41 +45,21 @@ Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, subprocess, sys
 import _mutation_guard as mg
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
 
-def project_root():
-    """Where the USER's rca/ records live: the git root of the current directory,
-    not the plugin's own directory.
-
-    Resolving these against the plugin root meant a consumer project's records were
-    written into the installed plugin — invisible to their repo and lost on upgrade.
-
-    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT, IN_GIT_REPO = project_root()
-DIR = ROOT / "rca"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); RCA records live under
+# the records root (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, IN_GIT_REPO = _paths.git_root()
+DIR = _paths.resolve(ROOT)[0] / "rca"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 STATUSES = ("open", "root-caused", "fixed", "closed", "wontfix")
 SEVERITIES = {
@@ -370,7 +350,7 @@ def cmd_new(a):
     if dry:
         old_text = path.read_text() if path.exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
-        print(f"[dry-run] would also regenerate rca/INDEX.md; nothing written")
+        print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
     path.write_text(new_text)
     print(f"created {rel(path)}")
@@ -433,10 +413,10 @@ def cmd_index(a):
     new_text = "\n".join(out)
     if dry:
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "rca/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
     (DIR / "INDEX.md").write_text(new_text)
-    print(f"wrote rca/INDEX.md ({len(rows)} record(s)"
+    print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} record(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
 
@@ -642,10 +622,10 @@ def cmd_link(a):
         return 2
     path.write_text(new_text)
 
-    adr_dir = ROOT / "decisions"
+    adr_dir = DIR.parent / "decisions"
     hits = list(adr_dir.glob(f"{a.decision}*.md")) if adr_dir.exists() else []
     if not hits:
-        print(f"warning: no decision record found for {a.decision} under decisions/ — "
+        print(f"warning: no decision record found for {a.decision} under {rel(adr_dir)}/ — "
               f"link recorded anyway")
     print(f"linked {a.id} -> {a.decision}"
           + (f" ({a.assumption})" if a.assumption else "")

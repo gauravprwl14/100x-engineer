@@ -13,8 +13,8 @@ stops paying. Three mechanisms keep it traversable:
   3. A TRACEABILITY MAP answering the question that actually gets asked -- "is there a
      decision behind this spec?" -- rather than only "what records exist".
 
-    ledger.py index          # regenerate ledger/INDEX.md
-    ledger.py map            # regenerate ledger/MAP.md (the traceability matrix)
+    ledger.py index          # regenerate <root>/ledger/INDEX.md
+    ledger.py map            # regenerate <root>/ledger/MAP.md (the traceability matrix)
     ledger.py gaps           # audit linkage; exit 1 on problems
     ledger.py find <term>    # search titles, ids and bodies across every type
     ledger.py shard          # move oversized directories into YYYY/QN/
@@ -23,32 +23,31 @@ stops paying. Three mechanisms keep it traversable:
 
 Python stdlib only.
 """
-import argparse, collections, datetime, json, pathlib, re, subprocess, sys
+import argparse, collections, datetime, json, os, pathlib, re, subprocess, sys
 import _mutation_guard as mg
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 SHARD_THRESHOLD = 40          # records per directory before sharding kicks in
 
 
-def project_root():
-    """Returns (root, in_git_repo); see plan_feature.py's project_root for why."""
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
-ROOT, IN_GIT_REPO = project_root()
-LEDGER = ROOT / "ledger"
+# ROOT is the user's git root; every record type lives under RECORDS (_paths.py), so a
+# project that keeps them in docs/engineering/ gets its ledger there too.
+ROOT, IN_GIT_REPO = _paths.git_root()
+RECORDS, _ = _paths.resolve(ROOT)
+LEDGER = RECORDS / "ledger"
 
 
 def rel(p):
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    return _paths.show(p, ROOT)
+
+
+def link(target, page):
+    """Markdown href from the generated page to a record. Relative to the PAGE, not the
+    repo root: ledger/INDEX.md linking `specs/x/spec.md` resolves to
+    ledger/specs/x/spec.md, a dead link."""
+    return os.path.relpath(target, pathlib.Path(page).parent).replace(os.sep, "/")
 
 
 # type -> (directory, filename glob, id prefix, what it records)
@@ -66,7 +65,7 @@ def discover():
     """Find every record of every type, including inside date shards."""
     out = []
     for kind, (d, glob, prefix, _) in TYPES.items():
-        base = ROOT / d
+        base = RECORDS / d
         if not base.exists():
             continue
         seen = set()
@@ -117,7 +116,7 @@ def feature_of(rec):
         if links.get(key):
             return str(links[key]).strip("/").split("/")[-1].replace(".md", "")
     for t in rec.get("tags") or []:
-        if (ROOT / "specs" / t).exists():
+        if (RECORDS / "specs" / t).exists():
             return t
     for g in rec.get("affects") or []:
         seg = [s for s in g.split("/") if s and "*" not in s]
@@ -141,7 +140,7 @@ def cmd_index(a):
          f"`python3 scripts/ledger.py index` — do not edit by hand.", "",
          "| type | records | what it answers | where |", "|---|--:|---|---|"]
     for kind, (d, _, _, answers) in TYPES.items():
-        o.append(f"| {kind} | {len(by[kind])} | {answers} | `{d}/` |")
+        o.append(f"| {kind} | {len(by[kind])} | {answers} | `{rel(RECORDS / d)}/` |")
     o += [f"| **total** | **{len(recs)}** | | |", ""]
 
     for kind, (d, _, _, _) in TYPES.items():
@@ -152,26 +151,26 @@ def cmd_index(a):
         if len(rows) > SHARD_THRESHOLD:
             o += [f"Over {SHARD_THRESHOLD} records — run `ledger.py shard` to split by "
                   f"quarter. Showing the 25 most recent; the rest are in the per-shard "
-                  f"indexes under `{d}/`.", ""]
+                  f"indexes under `{rel(RECORDS / d)}/`.", ""]
             rows = rows[:25]
         o += ["| id | title | status | date | feature |", "|---|---|---|---|---|"]
         for r in rows:
-            o.append(f"| [{r['id']}]({rel(r['path'])}) | {r['title'][:60]} | "
+            o.append(f"| [{r['id']}]({link(r['path'], LEDGER / 'INDEX.md')}) | {r['title'][:60]} | "
                      f"{r.get('status','') or '—'} | {r.get('date','') or '—'} | "
                      f"{feature_of(r) or '—'} |")
         o.append("")
     o += ["## Traversal", "",
           "- `ledger.py find <term>` — search every record",
-          "- `ledger.py map` — which features have which records (`ledger/MAP.md`)",
+          f"- `ledger.py map` — which features have which records (`{rel(LEDGER / 'MAP.md')}`)",
           "- `ledger.py gaps` — records that should exist and do not",
           "- `decide.py trace <path>` — which decision governs a file", ""]
     new_text = "\n".join(o)
     if dry:
         old_text = (LEDGER / "INDEX.md").read_text() if (LEDGER / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "ledger/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(LEDGER / "INDEX.md")))
         return 0
     (LEDGER / "INDEX.md").write_text(new_text)
-    print(f"wrote ledger/INDEX.md ({len(recs)} records across {len(by)} type(s))")
+    print(f"wrote {rel(LEDGER / 'INDEX.md')} ({len(recs)} records across {len(by)} type(s))")
     return 0
 
 
@@ -202,7 +201,7 @@ def cmd_map(a):
             rs = c.get(kind) or []
             if not rs:
                 return "—"
-            return ", ".join(f"[{x['id']}]({rel(x['path'])})" for x in rs[:4]) + \
+            return ", ".join(f"[{x['id']}]({link(x['path'], LEDGER / 'MAP.md')})" for x in rs[:4]) + \
                    (f" +{len(rs)-4}" if len(rs) > 4 else "")
         o.append(f"| **{f}** | {cell('prd')} | {cell('spec')} | {cell('decision')} | "
                  f"{cell('rca')} | {cell('review')} |")
@@ -213,15 +212,15 @@ def cmd_map(a):
               "glob that resolves to one. They are findable by id but not by feature.", "",
               "| id | kind | title |", "|---|---|---|"]
         for r in sorted(orphans, key=lambda x: x["id"]):
-            o.append(f"| [{r['id']}]({rel(r['path'])}) | {r['kind']} | {r['title'][:60]} |")
+            o.append(f"| [{r['id']}]({link(r['path'], LEDGER / 'MAP.md')}) | {r['kind']} | {r['title'][:60]} |")
         o.append("")
     new_text = "\n".join(o)
     if dry:
         old_text = (LEDGER / "MAP.md").read_text() if (LEDGER / "MAP.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "ledger/MAP.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(LEDGER / "MAP.md")))
         return 0
     (LEDGER / "MAP.md").write_text(new_text)
-    print(f"wrote ledger/MAP.md ({len(feats)} feature(s), {len(orphans)} unattached)")
+    print(f"wrote {rel(LEDGER / 'MAP.md')} ({len(feats)} feature(s), {len(orphans)} unattached)")
     return 0
 
 
@@ -253,7 +252,7 @@ def cmd_gaps(a):
             problems.append(("WARN", r["id"], "decision with no `affects` glob and no "
                                               "linked feature — unreachable from the code"))
     for kind, (d, _, _, _) in TYPES.items():
-        base = ROOT / d
+        base = RECORDS / d
         if base.exists():
             flat = [p for p in base.glob(TYPES[kind][1]) if p.is_file()]
             if len(flat) > SHARD_THRESHOLD:
@@ -309,7 +308,7 @@ def cmd_shard(a):
     for kind, (d, glob, _, _) in TYPES.items():
         if kind in ("prd", "spec"):
             continue
-        base = ROOT / d
+        base = RECORDS / d
         if not base.exists():
             continue
         flat = sorted(p_ for p_ in base.glob(glob) if p_.is_file())
@@ -347,14 +346,14 @@ def cmd_shard(a):
     for kind, (d, glob, _, _) in TYPES.items():
         if kind in ("prd", "spec"):
             continue
-        base = ROOT / d
+        base = RECORDS / d
         if not base.exists():
             continue
         for shard in sorted(base.glob("*/Q*")):
             rows = sorted(x for x in shard.glob("*.md") if x.name != "INDEX.md")
             (shard / "INDEX.md").write_text(
                 f"# {d} — {shard.parent.name} {shard.name}\n\n"
-                f"{len(rows)} record(s). The master index at `ledger/INDEX.md` links "
+                f"{len(rows)} record(s). The master index at `{rel(LEDGER / 'INDEX.md')}` links "
                 f"here rather than listing every record.\n\n"
                 + "\n".join(f"- [{x.stem}]({x.name})" for x in rows) + "\n")
     print(f"ledger shard: moved {moved} record(s) into YYYY/QN shards"
