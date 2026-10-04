@@ -22,7 +22,7 @@ a receipt older than the last edit, or a change outside the task's owned files.
 
 | check | source |
 |---|---|
-| Lint the report first: `100x agent_report lint <report.json> --graph plan.json --cwd <wt> --base <task's start commit>` | §3 |
+| Lint the report first: `100x agent_report lint <report.json> --graph plan.json --cwd <wt>`; the base is plan.json's `"base"`, else the worktree's fork point, else HEAD, so pass `--base <task's start commit>` only when none of those is it | §3 |
 | Re-run each of the task's declared `verify` commands yourself, from a clean state; record your own exit code and tail | §3; `100x agent_report replay <report.json> --graph plan.json --cwd <wt> --yes` |
 | Evidence `replay` lists as `not replayed (undeclared)` or `refused` (exit 3) proves nothing; a declared command with no evidence (`MISSING`) fails the task | §3 |
 | A claimed exit code that differs from yours fails the task, whichever way it differs | §3 |
@@ -30,11 +30,11 @@ a receipt older than the last edit, or a change outside the task's owned files.
 | Pick one new test and break the behaviour it covers (or negate its assertion) in a scratch copy; it must fail | `verification-gate` rule 5 |
 | Every path git shows changed since the task's base is inside the task's `files` in `plan.json`, and every claimed change is really there | §6; the `lint --graph --cwd` run above |
 | Run the project's required checks through the receipt wrapper: `100x verified --name <label> -- <cmd>` | `verification-gate` rule 2 |
-| The receipt matches the current content; any edit after it makes it stale | `verification-gate` rule 3 |
+| The receipt (in the git directory, `git rev-parse --git-path 100x/verification-receipt.json`) matches the current content; any edit after it makes it stale | `verification-gate` rule 3 |
 | The baseline's A items for the work type (`100x baseline show --work <type> --tier <tier>`) have evidence, or a recorded waiver | baseline |
 | Nothing claimed as `observed` that was only `inferred` | §4 |
 
-You never repair. A failing check is reported with the exact command, both exit codes and the output
+You never repair. A failing check is a finding, with the exact command, both exit codes and the output
 tail; the owning agent fixes it. Restore anything you mutated to test a test before you finish, and
 show `git status --short` clean of your own changes as evidence.
 
@@ -55,7 +55,9 @@ If that path reached you unsubstituted, `100x root` prints the plugin root.
    item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Touch only the task's owned files.
 6. **Verify.** Run the task's verify commands; record each with its exit code and output tail, the
-   command written exactly as `plan.json` writes it.
+   command as `plan.json` writes it (replay matches by argv, so quoting and spacing may differ, and
+   `100x verified --name <label> -- <cmd>` counts as `<cmd>`). A gate that fails the way
+   your finding says is recorded with `expect_exit` set to its exit code.
 7. **Report** in the §3 shape.
 
 Decisions follow §4. Two-way, local: decide and record. Two-way, cross-cutting: follow repo precedent,
@@ -72,12 +74,22 @@ why_it_matters, two or three options and a recommendation.
 
 The **last fenced `json` block** of your final message is your §3 report: `"schema": 1`, `agent`,
 `task_id`, `status`, `understanding`, `inputs_read`, `assumptions`, `questions`, `plan_issues`,
-`decisions`, `changes`, `evidence`, `follow_ups`. It is linted with
-`100x agent_report lint <report> --graph plan.json --cwd <your worktree>`, which reads git's changed
-files rather than your `changes` list. Then the task's declared verify commands are re-run by
-`100x agent_report replay <report> --graph plan.json --cwd <your worktree> --yes`; evidence for any other
-command is not replayed. Record each verify command exactly as `plan.json` writes it, with its real
-exit code. It is rejected for: `done` without evidence or with a non-zero exit; `done` without every
-declared verify command at exit 0; any `door: one-way` decision; a class C assumption;
-`needs-decision` with nothing blocking; `done` with a blocking item still open; a file changed outside
-your owned files, or a claimed change git does not show; a `schema` other than 1.
+`decisions`, `changes`, `evidence`, `follow_ups`, and optionally `findings`; any other top-level key is
+rejected. It is linted with `100x agent_report lint <report> --graph plan.json --cwd <your worktree>`,
+which reads git's changed files since the task's base (`--base`, else plan.json's `"base"`, else your
+worktree's fork point, else HEAD) rather than your `changes` list. Then the task's declared verify
+commands are re-run by `100x agent_report replay <report> --graph plan.json --cwd <your worktree> --yes`;
+evidence for any other command is not replayed. Record each verify command as `plan.json` writes it,
+bare or as `100x verified --name <label> -- <cmd>`, with its real exit code. It is rejected for: `done`
+without evidence, or with an exit code other than the entry's `expect_exit` (default 0); `done` without
+every declared verify command at exit 0; an `agent` that is not the task's `owner`; any `door: one-way`
+decision; a class C assumption; `needs-decision` or `blocked` with nothing blocking; `done` with a
+blocking item still open; a file changed outside your owned files, or a claimed change git does not
+show; an unknown top-level key; a `schema` other than 1.
+
+You are a read-only role, so your `task_id` may be your own review id rather than a plan task: lint then
+prints a NOTE and applies the report-level checks only. With a plan task's id, you must be its owner.
+Each finding goes in `findings` as `{"id", "severity": "critical|major|minor|trivial", "confidence":
+"definite|probable|possible", "location", "issue", "fix", "blocking": true|false}`. A blocking finding
+makes the report `needs-decision`, never `done`. A gate that fails the way the finding says is
+evidence with its expected code: `"exit_code": 1, "expect_exit": 1`.

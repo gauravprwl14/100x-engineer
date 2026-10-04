@@ -8,14 +8,14 @@ agent definition and this file disagree, this file wins.
 
 | § | section | answers | size |
 |---|---|---|---|
-| 1 | [Roles](#1-roles) | who does what, and why orchestration stays in the main session | ~25 lines |
+| 1 | [Roles](#1-roles) | who does what, and why orchestration stays in the main session | ~35 lines |
 | 2 | [Agent protocol](#2-agent-protocol) | the seven steps every specialist follows, and when it must stop | ~25 lines |
-| 3 | [Report contract](#3-report-contract) | the exact shape of an agent's result, how lint checks git and replay runs only declared commands, and what makes it valid | ~65 lines |
+| 3 | [Report contract](#3-report-contract) | the exact shape of an agent's result (findings, expected exits), which base lint diffs against, how reviewers report without a task, how replay runs only declared commands, and what makes a report valid | ~95 lines |
 | 4 | [Decision policy](#4-decision-policy) | which decisions an agent may take alone, and the tie-break order | ~35 lines |
-| 5 | [Question policy](#5-question-policy) | when to ask the user, how many questions, and in what form | ~20 lines |
-| 6 | [Orchestration](#6-orchestration) | the AC-<n> format and the `<feature>/AC-<n>` test tag, and how a plan becomes parallel tasks without two agents colliding | ~65 lines |
-| 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~20 lines |
-| 8 | [Indexing](#8-indexing) | where records live (the records root), how record arguments resolve, and how every written artifact stays findable | ~35 lines |
+| 5 | [Question policy](#5-question-policy) | when to ask the user, how many questions, in what form, and which wait for the next batch | ~20 lines |
+| 6 | [Orchestration](#6-orchestration) | the AC-<n> format and the `<feature>/AC-<n>` test tag, how a plan is stamped against an approved spec, where a feature's files live, and how a plan becomes parallel tasks without two agents colliding | ~90 lines |
+| 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~10 lines |
+| 8 | [Indexing](#8-indexing) | where records live (the records root and `.100x.json`'s keys), how record arguments resolve, and how every written artifact stays findable | ~40 lines |
 
 ## 1. Roles
 
@@ -70,7 +70,10 @@ Every specialist runs these steps in order and may not skip one.
    item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Stay inside the task's owned files.
 6. **Verify.** Run the task's verify commands and record each with its exit code, the
-   command written exactly as `plan.json` writes it (replay matches the text verbatim).
+   command as `plan.json` writes it. Evidence matches a declared command when their argvs are
+   equal (`shlex.split`), so quoting and spacing may differ, and `100x verified [--name X] --
+   <cmd>` counts as `<cmd>`. A reviewer records a gate that fails as its finding says with
+   `expect_exit` set to that exit code.
 7. **Report** in the §3 shape. Prose outside the report is optional; the report is not.
 
 ## 3. Report contract
@@ -80,22 +83,40 @@ saves it and runs two checks against the task's worktree:
 
 ```bash
 100x agent_report lint   T1.json --graph plan.json --cwd ../wt-T1 [--base <task's start commit>]
+100x agent_report lint   R-T1.json                 # a reviewer's report: report-level checks only
 100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes
 ```
 
 | check | what it trusts | what it does |
 |---|---|---|
-| `lint --graph --cwd` | git, not the report | lists the files git says changed since `--base` (default `HEAD`: uncommitted work only; committed, staged, unstaged and untracked all count, a rename counts as both paths) and compares them with the task's `files` and the report's `changes` |
+| `lint --graph --cwd` | git, not the report | lists the files git says changed since the task's base (committed, staged, unstaged and untracked all count, a rename counts as both paths) and compares them with the task's `files` and the report's `changes`; the report's `agent` must be the task's `owner` |
+| `lint` without `--graph` | the report | the report-level checks only: shape, findings, the rejection table rows that need no plan |
 | `replay --graph` | the plan, not the report | re-runs **only** the task's declared `verify` commands that the report has evidence for, and fails on any exit code that differs from the one claimed |
+
+The base, first match wins (each lint run prints `NOTE base <rev> — from <source>`):
+
+| order | base | note |
+|---|---|---|
+| 1 | `--base <rev>` | |
+| 2 | plan.json's top-level `"base"` | `plan_dag stamp` records HEAD there |
+| 3 | the worktree's fork point: the merge-base of its HEAD with the main checkout's HEAD | linked worktrees only |
+| 4 | `HEAD` | uncommitted work only; when the base equals HEAD, a "claimed change is not there" error adds the hint `did the agent commit? pass --base <fork point>, or set "base" in plan.json` |
+
+A read-only role (requirements-analyst, solution-architect, code-reviewer, security-reviewer,
+independent-verifier: §1's "writes code? no" rows) reviews a task rather than owns one. Its
+report may use its own `task_id` (`R-T3`): linted without `--graph`, or with `--graph` and a
+`task_id` not in the plan, it gets a `NOTE` and the report-level checks only. Any other agent
+whose `task_id` is not a plan task is an error.
 
 How `replay` runs a command:
 
 | rule | why |
 |---|---|
 | argv via `shlex.split`, never a shell; a plan that needs shell syntax writes `sh -c '…'`, and the script is printed before it runs | evidence text another agent wrote is never executed |
+| evidence matches a declared command by argv equality; `100x verified [--name X] -- <cmd>` evidence matches `<cmd>`, and replay runs the plan's plain form, never the wrapper | the plan, not the report, decides what runs |
 | evidence for a command the plan does not declare is listed `not replayed (undeclared)`; exit 3 | a report cannot widen what gets run |
 | a declared command with no evidence entry is `MISSING`; exit 1 | done owes every declared check |
-| anything the verification hook classes as a commit, push, tag or publish is refused | a replay proves work, never ships it |
+| anything the verification hook classes as a commit, push, tag or publish is refused; the screen reads the exact argv replay executes, and an `sh -c` script with `#` as a literal character | a replay proves work, never ships it; `env A=1#x git tag v9` must not hide the tag behind a comment |
 | a timeout (`--timeout`, default 600s) kills the command's whole process group | a test runner's workers must not outlive the replay |
 | without `--yes` it only prints what it would run, and exits 3 | nothing runs by accident |
 
@@ -103,7 +124,7 @@ How `replay` runs a command:
 |---|---|---|
 | 0 | clean | every declared command reproduced |
 | 1 | findings | a mismatch, or a declared command with no evidence |
-| 2 | unreadable input, `--cwd` outside git, a bad `--base`, `--graph` without `--cwd` | unreadable input, no `--graph`, a task not in the plan |
+| 2 | unreadable input, `--cwd` outside git, a base that does not resolve (from any source), `--graph` without `--cwd` | unreadable input, no `--graph`, a task not in the plan |
 | 3 | — | nothing ran (no `--yes`), or some evidence was undeclared or refused |
 
 ```json
@@ -125,20 +146,31 @@ How `replay` runs a command:
 }
 ```
 
+Two optional fields. Any other top-level key is an error with a did-you-mean
+(`"evidance"` → `"evidence"`).
+
+| field | shape | rule |
+|---|---|---|
+| `findings` | `[{"id", "severity": "critical\|major\|minor\|trivial", "confidence": "definite\|probable\|possible", "location", "issue", "fix", "blocking": true\|false}]` | how reviewers report; `id`, `location`, `issue`, `fix` non-empty; a blocking finding unblocks `needs-decision` and `blocked` like a blocking question; `agent_report summary` merges findings across reports, blocking first, then by severity |
+| `expect_exit` on an evidence entry | integer, default 0 | `done` needs `exit_code == expect_exit`; a reviewer records a failing gate as `"exit_code": 1, "expect_exit": 1`. A declared `verify` command still needs exit 0 |
+
 Lint rejects a report when any of these hold:
 
 | condition | why |
 |---|---|
-| `status: done` with no evidence, or any evidence exit code ≠ 0 | done without proof is a claim |
+| `status: done` with no evidence, or any evidence whose exit code ≠ its `expect_exit` (default 0) | done without proof is a claim |
 | a `decision` with `door: one-way` | one-way doors are questions (§4), never decisions |
-| `status: needs-decision` with no blocking question or plan issue | a stop must say what unblocks it |
-| `status: done` with a blocking question or plan issue still listed | contradictory |
+| `status: needs-decision` with no blocking question, plan issue or finding | a stop must say what unblocks it |
+| `status: done` with a blocking question, plan issue or finding still listed | contradictory |
 | an assumption with class C | C items are asked, never assumed; an unanswered C item proceeding on its recommendation stays a non-blocking question marked `ASSUMED` |
 | a change outside the task's owned files: claimed in `changes`, or (with `--graph --cwd`) present in git's changed files whatever the report says | collisions break parallel work |
 | a claimed change git does not show since `--base` (with `--graph --cwd`) | the report describes work that is not there |
-| `status: done` without every declared `verify` command in the evidence, verbatim, with exit 0 (with `--graph`) | done owes the checks the plan asked for, not ones the agent picked |
+| `status: done` without every declared `verify` command in the evidence (argv-equal, bare or via `100x verified`) with exit 0 (with `--graph`) | done owes the checks the plan asked for, not ones the agent picked |
+| `agent` is not the task's `owner` (with `--graph`, `task_id` a plan task) | a task's report comes from the agent the plan assigned |
+| `task_id` not in the plan, from a role that writes files (with `--graph`) | a writer needs a task that owns its files |
+| an unknown top-level key, or a malformed `findings` entry or `expect_exit` | a misspelt key would otherwise be ignored |
 | `"schema"` present and not `1` | a reader of schema 1 cannot judge a different shape; a missing `schema` is read as 1, with a warning |
-| `status: blocked` with no blocking question or plan issue | a block must say what unblocks it |
+| `status: blocked` with no blocking question, plan issue or finding | a block must say what unblocks it |
 | `status: failed` with no evidence | a failure must show what failed |
 
 ## 4. Decision policy
@@ -175,15 +207,41 @@ A fact the agent could not verify is labelled `inferred`, never stated as observ
 | B, tier-dependent | on only at the declared tier (load tests, multi-region) | apply per tier; list as an assumption |
 | C, must ask | genuinely the user's call (data residency, retention, compliance regime, SLO numbers, money, unusual device targets) | ask; never default |
 
-Questions are asked in one batch of at most five, ordered by impact; any beyond five wait for the next batch, blocking ones first. Each carries why it
-matters, two or three options, and a recommendation. An unanswered C question may proceed
+Questions are asked in one batch of at most five, ordered by impact; any beyond five wait for
+the next batch, blocking ones first. Each carries why it matters, two or three options, and a
+recommendation. `plan_feature new` seeds a spec's §6 the same way: at most five of the
+baseline's class C asks, blocking first, then one-way doors (`"door"` in
+`scripts/data/baseline.json`), then catalogue order; the rest are listed under "Deferred to
+next batch" and stay `ASK` rows in §0b. A C item with `"when_any"` is asked only for the
+kinds, work types, tier or risk it names, so an irrelevant ask does not take a slot. An unanswered C question may proceed
 on the recommendation marked `ASSUMED`, except residency, compliance, retention and money,
 which block the `ready` audit until answered.
 
 ## 6. Orchestration
 
-The orchestrate skill turns an approved spec into a task graph, `plan.json`, and
+The orchestrate skill turns an approved spec into a task graph, `plan.json`, stamps it, and
 `100x plan_dag lint` must pass before any task starts.
+
+```bash
+100x plan_feature audit tagging           # passes, then set | status | ready |
+100x plan_dag stamp <root>/specs/tagging/plan.json
+100x plan_dag lint  <root>/specs/tagging/plan.json   # --spec defaults to the plan's "spec"
+```
+
+| step | does | refuses |
+|---|---|---|
+| `plan_dag stamp` | writes `"spec"` (its path from the repository root), `"spec_sha256"` and `"base"` (HEAD) into plan.json; the spec is `--spec`, else the plan's `"spec"`, else its `"feature"` resolved like a record name | a spec that fails `plan_feature audit` or is not `ready` (exit 1); a plan outside a git repository, or a repository with no commit (exit 2) |
+| `plan_dag lint` | checks the plan against the stamped spec, or `--spec` | a spec that fails the audit or is not `ready`; an unstamped plan; a spec whose sha256 changed since stamping ("re-plan or re-approve", then stamp again); a `--spec` other than the stamped one |
+
+A plan with no `"spec"` and no `--spec` lints with a warning that coverage and approval were
+not checked. A feature's files live together in its directory:
+
+| file | written by |
+|---|---|
+| `<root>/specs/<feature>/spec.md` | `plan_feature new` |
+| `<root>/specs/<feature>/plan.json` | the orchestrate skill, then `plan_dag stamp` |
+| `<root>/specs/<feature>/testplan.md` | `testplan new <spec> --out` (bare `--out`) |
+| `<root>/specs/<feature>/reports/<task>.json` | the main session, one saved report per task |
 
 Acceptance ids are the join key from PRD to test. A spec defines them in its `## 2b.
 Acceptance criteria` section, one line each, and nowhere else: a line elsewhere that
@@ -218,6 +276,9 @@ requirement.
   "schema": 1,
   "feature": "tagging",
   "tier": "small",
+  "spec": "docs/engineering/specs/tagging/spec.md",
+  "spec_sha256": "<written by plan_dag stamp>",
+  "base": "<HEAD when stamped>",
   "tasks": [
     {"id": "T0", "title": "API + DB contract", "owner": "backend-engineer",
      "depends_on": [], "files": ["backend/src/tagging/dto/**", "docs/engineering/specs/tagging/contract.md"],
@@ -239,7 +300,9 @@ requirement.
 | each `verify` command replays without a shell (shell syntax is written `sh -c '…'`) and is never a commit, push, tag or publish | `plan_dag lint` |
 | two tasks with no dependency path between them own disjoint files | `plan_dag lint` |
 | shared contracts (types, API schema, DB schema) are `contract: true` tasks; a task names the contracts it builds on in `consumes`, must depend on them, and must not own their files | `plan_dag lint` |
-| every acceptance id the spec **defines** is covered by some task; a spec that defines none fails | `plan_dag lint --spec` |
+| every acceptance id the spec **defines** is covered by some task; a spec that defines none fails | `plan_dag lint` with a stamped spec or `--spec` |
+| a task claims only acceptance ids the spec defines; an undefined one (`AC-12` for `AC-2`) is an error | `plan_dag lint` with a stamped spec or `--spec` |
+| the spec passes `plan_feature audit`, is `ready`, and hashes to `spec_sha256`; `spec`, `spec_sha256` and `base`, when present, are a repo-relative path with no `..`, a sha256 hex digest and a commit id | `plan_dag lint` |
 | each running task gets its own git worktree; the main session merges and re-verifies | review |
 
 `100x plan_dag waves` prints the tasks that can run together. A task that returns
@@ -251,10 +314,10 @@ session batches all open questions into one message to the user.
 | phase | gate | mechanism |
 |---|---|---|
 | intake | requirements have a source and C items are answered or `ASSUMED` | `100x prd audit` / `100x plan_feature audit` |
-| plan | task graph valid | `100x plan_dag lint --spec` |
+| plan | the spec is audited and `ready`, the plan is stamped against its exact bytes, and the task graph is valid | `100x plan_dag stamp` then `100x plan_dag lint` |
 | per task | the report is valid, git's changed files stay inside the task's `files`, and the task's declared verify commands replay with the claimed exit codes | `100x agent_report lint --graph plan.json --cwd <wt>` + `100x agent_report replay --graph plan.json --cwd <wt> --yes` |
 | integration | full suite on the merged result | the project's verify commands, via `100x verified` |
-| review | solution-architect, code-reviewer and security-reviewer reports have no blocking items | `100x agent_report lint` |
+| review | solution-architect, code-reviewer and security-reviewer reports carry their findings in `findings` and have no blocking finding, question or plan issue | `100x agent_report lint` (no `--graph` needed for a reviewer's own `task_id`), `100x agent_report summary` |
 | commit / push / PR / publish | a fresh, signed receipt | `PreToolUse` hook |
 | done | no stop while the receipt is stale | `Stop` hook |
 
@@ -274,9 +337,13 @@ resolved by `scripts/_paths.py`, first match wins:
 
 | order | source | example |
 |---|---|---|
-| 1 | `.100x.json` at the git root, committed | `{"root": "docs/engineering"}` |
+| 1 | `.100x.json` at the git root, committed | `{"schema": 1, "root": "docs/engineering"}` |
 | 2 | env `HUNDREDX_ROOT_DIR` | a one-off run or CI |
 | 3 | default | `docs/engineering` |
+
+Both `.100x.json` keys are optional: without `"root"` the default applies, and `"schema"`,
+when given, must be 1. Any other key is refused (exit 2) with a did-you-mean, because a
+misspelt `"rot"` would otherwise fall back to the default silently.
 
 A record argument to `plan_feature audit`, `prd align`, `testplan` and `plan_dag --spec`
 resolves the same way, first match wins: the path as given, then from the git root, then
@@ -286,8 +353,11 @@ under the records root (`specs/login`), then as a bare feature name (`login` →
 Every record write is contained: the target's symlinks are resolved, and a write that
 would land outside the repository is refused.
 
-Layout: `<root>/{prds,specs,decisions,rca,lessons,reviews,ledger,testplans}/` plus
-`<root>/INDEX.md` (`100x check_index --register`). A root that is absolute or uses `..` is
+Layout: `<root>/{prds,specs,decisions,rca,lessons,reviews,ledger}/` plus `<root>/INDEX.md`
+(`100x check_index --register`). A feature's spec, `plan.json`, `testplan.md` and
+`reports/` sit together in `<root>/specs/<feature>/` (§6). When a test plan exists at the
+old `<root>/testplans/<feature>.md`, `testplan new --out` stops (exit 2) and says to `git mv`
+it beside the spec, or to pass `--force` to write a fresh one. A root that is absolute or uses `..` is
 refused. A repo with legacy top-level record directories and no config keeps using them,
 with a warning. This plugin's own repo commits `{"root": "."}`, so its examples sit at
 `specs/`, `decisions/` and `ledger/`.
