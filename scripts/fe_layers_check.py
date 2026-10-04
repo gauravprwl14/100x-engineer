@@ -28,7 +28,7 @@ Dependency direction: presentation -> logic -> business, never backwards.
 
 Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
-import argparse, os, re, subprocess, sys, pathlib
+import argparse, json, os, re, subprocess, sys, pathlib
 
 from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
@@ -153,14 +153,51 @@ def has_use_client(text):
     return False
 
 
+CLIENT_ONLY_RX = re.compile(r"\buse(?:State|Effect|Reducer|Ref|LayoutEffect)\s*\(|\bon[A-Z]\w*\s*=")
+NEXT_CONFIG_NAMES = ("next.config.js", "next.config.mjs", "next.config.cjs", "next.config.ts")
+_NEXT_DIR = {}
+
+
+def _dir_is_next(d):
+    """A next.config.* or a `next` dependency in this directory's package.json."""
+    if d not in _NEXT_DIR:
+        found = any((d / n).is_file() for n in NEXT_CONFIG_NAMES)
+        if not found and (d / "package.json").is_file():
+            try:
+                pkg = json.loads((d / "package.json").read_text())
+                found = any("next" in (pkg.get(k) or {})
+                            for k in ("dependencies", "devDependencies", "peerDependencies"))
+            except (ValueError, OSError, AttributeError):
+                found = False
+        _NEXT_DIR[d] = found
+    return _NEXT_DIR[d]
+
+
+def in_next_project(path):
+    """Whether a Next.js project owns path: its own directory or any ancestor up to
+    the repo root (cwd, see enter_git_root) -- so a monorepo's apps/web counts."""
+    d = pathlib.Path(path).parent
+    while True:
+        if _dir_is_next(d):
+            return True
+        if d == d.parent:
+            return False
+        d = d.parent
+
+
 def is_server_component(path, text):
-    """React Server Component by Next.js App Router rules: no 'use client'
-    directive, and either under an app/ route tree (server by default) or an
-    async function component (a client component cannot be async). Fetching
-    there is the documented data-loading pattern, not a layering leak."""
+    """React Server Component: no 'use client' directive, and either an async
+    function component (a client component cannot be async) or a file under a
+    Next.js App Router app/ tree that uses no client-only hook or handler.
+    `app/` alone is not enough: Vite and CRA projects have src/app/ folders of
+    ordinary client components, and exempting those hid their fetches. Fetching
+    in a real server component is the documented data-loading pattern."""
     if has_use_client(text):
         return False
-    return bool(APP_ROUTER_RX.search(path) or ASYNC_COMPONENT_RX.search(text))
+    if ASYNC_COMPONENT_RX.search(text):
+        return True
+    return bool(APP_ROUTER_RX.search(path) and not CLIENT_ONLY_RX.search(text)
+                and in_next_project(path))
 
 
 def is_comment_line(line):
