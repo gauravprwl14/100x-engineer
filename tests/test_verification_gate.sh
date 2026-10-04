@@ -16,8 +16,8 @@ echo 'print("ok")' > pass_test.py
 echo 'import sys; sys.exit(1)' > fail_test.py
 echo 'x = 1' > app.py
 printf '{"required_checks": {"test": "python3 pass_test.py"}}\n' > .claude/verification-policy.json
-printf '.claude/verification-receipt.json\n' > .gitignore
 git add -A; git commit -qm init
+RCPT="$R/.git/100x/verification-receipt.json"    # `git rev-parse --git-path` in a plain repo
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
@@ -72,14 +72,14 @@ out="$(run "$R" "$C")"; printf '%s' "$out" | grep -q '"allow"' \
   && ok "signing key created with mode 0600" || bad "signing key created with mode 0600"
 
 FP="$(cd "$R" && python3 "$ROOT/scripts/verify_fingerprint.py")"
-python3 - "$FP" > .claude/verification-receipt.json <<'PY'
+python3 - "$FP" > "$RCPT" <<'PY'
 import json,sys
 print(json.dumps({"version": 2, "checks": {"test": {"argv": ["python3", "pass_test.py"],
   "command": "python3 pass_test.py", "exit_code": 0, "fingerprint": sys.argv[1],
   "at": "2099-01-01T00:00:00+00:00", "duration_s": 0.1, "sig": "00" * 32}}}))
 PY
 expect deny   "forged receipt (hand-written, bad signature) denied" "$C" "$R" "signature"
-python3 - "$FP" > .claude/verification-receipt.json <<'PY'
+python3 - "$FP" > "$RCPT" <<'PY'
 import json,sys
 print(json.dumps({"version": 1, "checks": {"test": {"command": "python3 pass_test.py",
   "exit_code": 0, "fingerprint": sys.argv[1], "at": "2099-01-01T00:00:00+00:00"}}}))
@@ -89,9 +89,9 @@ fresh
 echo '# post-verification edit' >> app.py
 expect deny   "code edited after verification"      "$C" "$R" "changed after verification"
 NEWFP="$(cd "$R" && python3 "$ROOT/scripts/verify_fingerprint.py")"
-python3 - "$NEWFP" <<'PY'
+python3 - "$NEWFP" "$RCPT" <<'PY'
 import json,sys
-p=".claude/verification-receipt.json"; d=json.load(open(p))
+p=sys.argv[2]; d=json.load(open(p))
 d["checks"]["test"]["fingerprint"]=sys.argv[1]; json.dump(d,open(p,"w"))
 PY
 expect deny   "tampered receipt (fingerprint rewritten) denied" "$C" "$R" "signature"
@@ -127,7 +127,7 @@ verify extra python3 fail_test.py
 expect deny   "a failing fresh check blocks"        "$C" "$R" "FAILED"
 printf '{"required_checks": {"test": "python3 pass_test.py"}}\n' > .claude/verification-policy.json
 git commit -qam "policy: one check"
-rm .claude/verification-receipt.json; fresh
+rm "$RCPT"; fresh
 
 echo "--- worktree edits cannot weaken the committed policy"
 printf '{"mode": "off"}\n' > .claude/verification-policy.json
@@ -160,7 +160,7 @@ expect message "cd <repo> && git commit"            "cd $R && git commit -m x" "
 expect message "--git-dir/--work-tree recognised"   "git --git-dir=$R/.git --work-tree=$R commit -m x" "$OTHER"
 expect message "bash -c 'git commit' recognised"    "bash -c 'git commit -m x'"
 expect message "foreign payload cwd resolved (hook runs elsewhere)" "$C" "$R"
-mv .claude/verification-receipt.json "$TMP/receipt.bak"
+mv "$RCPT" "$TMP/receipt.bak"
 expect deny   "git -C <repo> gated without receipt" "git -C $R commit -m x" "$OTHER"
 expect deny   "git -c k=v commit gated"             'git -c user.name=y commit -m x'
 expect deny   "cd <repo> && git commit gated"       "cd $R && git commit -m x" "$OTHER"
@@ -204,7 +204,7 @@ QUIET=('echo git commit' 'printf "%s\n" "git push origin main"' 'grep -rn "git p
   'for f in commit push; do echo $f; done' 'git config alias.ci' 'brew install git gh'
   "$(printf 'cat > n.md <<EOF\n$ git push origin main\nEOF')")
 for c in "${QUIET[@]}"; do expect silent "not gated: ${c//$'\n'/ | }" "$c"; done
-mv "$TMP/receipt.bak" .claude/verification-receipt.json
+mv "$TMP/receipt.bak" "$RCPT"
 
 echo "--- parsed as the real command, not just matched (fresh receipt: passes)"
 git add -A; git commit -qm "pre-regression state" >/dev/null 2>&1; fresh
@@ -250,9 +250,9 @@ PY
 done
 fresh
 for c in "${PUBLISH[@]}"; do expect message "allowed when verified: $c" "$c"; done
-mv .claude/verification-receipt.json "$TMP/receipt.bak"
+mv "$RCPT" "$TMP/receipt.bak"
 for c in "${PUBLISH[@]}"; do expect deny "denied without receipt: $c" "$c"; done
-mv "$TMP/receipt.bak" .claude/verification-receipt.json
+mv "$TMP/receipt.bak" "$RCPT"
 expect silent "git push --dry-run is not gated"     'git push --dry-run'
 
 echo "--- content fingerprint"
@@ -311,27 +311,66 @@ echo "--- B2: the receipt write cannot be redirected by a symlink"
 mkdir -p "$TMP/outside"; echo precious > "$TMP/victim.txt"
 B="$TMP/b2"; mkdir -p "$B"; (cd "$B" && git init -q && git config user.email t@t && git config user.name t \
   && echo a > a && git add a && git commit -qm i)
-mkdir -p "$B/.claude"; ln -s "$TMP/victim.txt" "$B/.claude/verification-receipt.json.tmp"
-(cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>&1); rc=$?
-[ "$rc" -eq 0 ] && [ "$(cat "$TMP/victim.txt")" = precious ] \
-  && ok "planted .tmp symlink is not written through" \
-  || bad "planted .tmp symlink is not written through (rc=$rc, victim=$(cat "$TMP/victim.txt"))"
-rm -rf "$B/.claude"; mkdir "$B/.claude"; ln -s "$TMP/victim.txt" "$B/.claude/verification-receipt.json"
+mkdir -p "$B/.git/100x"; ln -s "$TMP/victim.txt" "$B/.git/100x/verification-receipt.json"
 (cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>"$TMP/err"); rc=$?
 [ "$rc" -eq 2 ] && grep -q symlink "$TMP/err" && [ "$(cat "$TMP/victim.txt")" = precious ] \
   && ok "receipt symlink refused (exit 2)" || bad "receipt symlink refused (rc=$rc)"
-rm -rf "$B/.claude"; ln -s "$TMP/outside" "$B/.claude"
+rm -rf "$B/.git/100x"; ln -s "$TMP/outside" "$B/.git/100x"
 (cd "$B" && python3 "$VERIFIED" --name t -- true >/dev/null 2>"$TMP/err"); rc=$?
 [ "$rc" -eq 2 ] && grep -q symlink "$TMP/err" && [ -z "$(ls -A "$TMP/outside")" ] \
-  && ok ".claude symlinked outside the repo refused (exit 2)" || bad ".claude symlink refused (rc=$rc)"
+  && ok "git-dir 100x/ symlinked outside refused (exit 2)" || bad "100x/ symlink refused (rc=$rc)"
+mkdir -p "$B/.claude"; printf '{"required_checks": {"t": "true"}}\n' > "$B/.claude/verification-policy.json"
+(cd "$B" && git add -A && git commit -qm pol)
+expect deny   "hook refuses a symlinked 100x/ dir"  "$C" "$B" "symlink"
+rm "$B/.git/100x"
+(cd "$B" && python3 "$VERIFIED" --name t >/dev/null 2>&1) && [ -f "$B/.git/100x/verification-receipt.json" ] \
+  && ok "a real 100x/ dir is created on the next run" || bad "a real 100x/ dir is created on the next run"
+
+echo "--- R1: the receipt lives in the git directory, never in the worktree"
+[ -z "$(cd "$B" && git status --porcelain --untracked-files=all)" ] \
+  && ok "plain repo: git status is empty after verified" || bad "plain repo: git status shows $(cd "$B" && git status --porcelain)"
+[ ! -e "$B/.claude/verification-receipt.json" ] && ok "no receipt written under .claude/" \
+  || bad "no receipt written under .claude/"
+[ "$(cd "$B" && git rev-parse --git-path 100x/verification-receipt.json)" = .git/100x/verification-receipt.json ] \
+  && ok "plain repo: receipt is at git rev-parse --git-path" || bad "plain repo: git-path location"
+expect message "plain repo: gate allows after verify" "$C" "$B" "PASSED"
+echo b > "$B/a"
+expect deny   "plain repo: gate denies after an edit" "$C" "$B" "changed after verification"
+(cd "$B" && git checkout -q -- a)
+W="$TMP/b2-linked"; (cd "$B" && git worktree add -q -b linked "$W" >/dev/null 2>&1)
+WGP="$(cd "$W" && git rev-parse --git-path 100x/verification-receipt.json)"
+case "$WGP" in /*) ;; *) WGP="$W/$WGP" ;; esac
+expect deny   "linked worktree: no receipt of its own is denied" "$C" "$W" "no verification receipt"
+(cd "$W" && python3 "$VERIFIED" --name t >/dev/null 2>&1)
+[ -f "$WGP" ] && [ "$(cd "$W" && git rev-parse --absolute-git-dir)/100x/verification-receipt.json" = "$WGP" ] \
+  && ok "linked worktree: receipt lands in its own .git/worktrees/<name>/" || bad "linked worktree: receipt at $WGP"
+[ -z "$(cd "$W" && git status --porcelain --untracked-files=all)" ] \
+  && ok "linked worktree: git status is empty after verified" || bad "linked worktree: git status not empty"
+expect message "linked worktree: gate allows after verify" "$C" "$W" "PASSED"
+echo c > "$W/a"
+expect deny   "linked worktree: gate denies after an edit" "$C" "$W" "changed after verification"
+expect message "main worktree keeps its own receipt"   "$C" "$B" "PASSED"
+(cd "$W" && python3 "$VERIFIED" --name t >/dev/null 2>&1)
+expect message "linked worktree: re-verified after the edit" "$C" "$W" "PASSED"
+mkdir -p "$B/.claude"; echo '{"version": 2, "checks": {}}' > "$B/.claude/verification-receipt.json"
+(cd "$B" && python3 "$VERIFIED" --name t 2>"$TMP/err" >/dev/null)
+grep -q "verification-receipt.json is from an older version and is ignored" "$TMP/err" \
+  && ok "legacy .claude receipt: verified prints a note" || bad "legacy .claude receipt: verified prints a note"
+[ "$(grep -c "older version" "$TMP/err")" = 1 ] && [ -f "$B/.claude/verification-receipt.json" ] \
+  && ok "legacy receipt: one line, and it is not deleted" || bad "legacy receipt: one line, and it is not deleted"
+expect message "legacy receipt: gate reads the git-dir receipt, with a note" "$C" "$B" "older version"
+cp "$WGP" "$TMP/linked.keep"; mv "$WGP" "$TMP/linked.bak"
+mkdir -p "$W/.claude"; cp "$TMP/linked.keep" "$W/.claude/verification-receipt.json"
+expect deny   "a valid receipt at the legacy path is not honoured" "$C" "$W" "no verification receipt"
+mv "$TMP/linked.bak" "$WGP"
 
 echo "--- S3: runner-altering environment and PATH shadowing are refused"
-cp .claude/verification-receipt.json "$TMP/receipt.keep"
+cp "$RCPT" "$TMP/receipt.keep"
 for v in PYTEST_ADDOPTS NODE_OPTIONS GOFLAGS; do
   (cd "$R" && env "$v=--x" python3 "$VERIFIED" --name test >/dev/null 2>"$TMP/err"); rc=$?
   [ "$rc" -eq 2 ] && grep -q "$v" "$TMP/err" && ok "$v set: refused (exit 2)" || bad "$v set: refused (rc=$rc)"
 done
-cmp -s .claude/verification-receipt.json "$TMP/receipt.keep" && ok "refusals leave the receipt untouched" \
+cmp -s "$RCPT" "$TMP/receipt.keep" && ok "refusals leave the receipt untouched" \
   || bad "refusals leave the receipt untouched"
 PYBIN="$(command -v python3)"   # the gate's own interpreter, not the planted one
 mkdir -p "$TMP/evil"; printf '#!/bin/sh\nexit 0\n' > "$TMP/evil/python3"; chmod +x "$TMP/evil/python3"
@@ -347,9 +386,9 @@ REALPY="$(python3 -c 'import os,shutil; print(os.path.realpath(shutil.which("pyt
 mkdir -p "$TMP/link"; ln -s "$REALPY" "$TMP/link/python3"
 (cd "$R" && PATH="$TMP/link:$PATH" python3 "$VERIFIED" --name test >/dev/null 2>&1) \
   && ok "a temp-dir symlink to the real python3 is accepted" || bad "a temp-dir symlink to the real python3 is accepted"
-python3 - "$REALPY" <<'PY' && ok "receipt records the executable's real path" || bad "receipt records the executable's real path"
+python3 - "$REALPY" "$RCPT" <<'PY' && ok "receipt records the executable's real path" || bad "receipt records the executable's real path"
 import json, sys
-e = json.load(open(".claude/verification-receipt.json"))["checks"]["test"]
+e = json.load(open(sys.argv[2]))["checks"]["test"]
 import os
 home = os.path.realpath(os.path.expanduser("~"))
 want = "~" + sys.argv[1][len(home):] if sys.argv[1].startswith(home + os.sep) else sys.argv[1]

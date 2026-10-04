@@ -63,7 +63,7 @@ them, with a warning that says how to settle it.
 
 | tool | writes | where | guard |
 |---|---|---|---|
-| `verified.py` | `verification-receipt.json` | `.claude/` in the git root | scope: one known file; written via `safe_write_text`, refused when `.claude/` or the receipt is a symlink |
+| `verified.py` | `verification-receipt.json` | `100x/` in the per-worktree git directory (`git rev-parse --git-path 100x/verification-receipt.json`), never the worktree | scope: one known file; written via `safe_write_text` contained in the resolved git directory, refused when `100x/` or the receipt is a symlink; a leftover `.claude/verification-receipt.json` is ignored with a note, never deleted |
 | `verified.py` (first run only) | `receipt.key`, a random HMAC key | `~/.config/100x/` (or `$HUNDREDX_KEY_FILE`) | created `0600` with `O_EXCL`, never overwritten |
 | `plan_feature.py new` | `spec.md`, `INDEX.md` | `<root>/specs/<name>/` | `--dry-run`, name validation |
 | `prd.py new` | `prd.md`, `INDEX.md` | `<root>/prds/<name>/` | `--dry-run`, name validation |
@@ -206,8 +206,10 @@ others can read or write is refused outright.
 `DYLD_INSERT_LIBRARIES` set, since each can turn a suite into a passing no-op without
 changing the command the receipt records; a program found first in a PATH entry inside
 the repository or a temp directory (a virtualenv or `node_modules/.bin` is exempt, and a
-symlink there to a system binary is fine); and a symlinked `.claude/` or receipt. The
-receipt records the real path of the executable that ran.
+symlink there to a system binary is fine); and a symlinked `100x/` directory or receipt
+in the git directory. The receipt records the real path of the executable that ran. It
+lives in the per-worktree git directory, so it is never a change in the worktree and
+`git add -A` cannot commit it; each linked worktree has its own.
 
 **The committed policy wins.** When the worktree copy of the policy differs from the
 committed one, the committed one is enforced, so the agent cannot switch the gate off

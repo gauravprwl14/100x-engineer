@@ -12,11 +12,11 @@ blob ids computed the way `git add` would compute them. HEAD is deliberately abs
 """
 import hashlib, os, stat, subprocess, sys
 
-# Derived state that must NOT be part of the content it attests to. Without this
-# exclusion the receipt is self-referential: writing it changes the fingerprint it
-# just recorded, so every receipt is instantly stale.
+# Worktree paths that must NOT be part of the content they govern. The receipt is not
+# listed: it lives in the git directory, outside the worktree. A leftover
+# .claude/verification-receipt.json from an older version is ordinary content, so it
+# cannot become an unverified path that ships.
 EXCLUDE = (
-    ".claude/verification-receipt.json",   # derived: the attestation itself
     ".claude/verification-policy.json",    # config: re-read and enforced on every
                                            # check, so editing it must not invalidate
                                            # the checks it demands

@@ -3,7 +3,8 @@
 
     100x verify_fingerprint
 
-Compare it with the `fingerprint` field of .claude/verification-receipt.json: equal
+Compare it with the `fingerprint` field of the receipt, at
+`git rev-parse --git-path 100x/verification-receipt.json`: equal
 means the receipt describes the current content. Exits 1 outside a git repository.
 """
 import pathlib, sys

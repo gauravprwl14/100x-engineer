@@ -14,7 +14,12 @@ import datetime, hashlib, hmac, json, os, pathlib, secrets, shlex, stat
 
 from verify_fingerprint import _git
 
-RECEIPT = ".claude/verification-receipt.json"
+# The receipt lives in the per-worktree git directory, never in the worktree: there it
+# would show up as an untracked change (failing `agent_report lint`) and `git add -A`
+# could commit it. `git rev-parse --git-path` keeps linked worktrees apart.
+RECEIPT_GIT_PATH = "100x/verification-receipt.json"
+RECEIPT = "$(git rev-parse --git-path " + RECEIPT_GIT_PATH + ")"
+LEGACY_RECEIPT = ".claude/verification-receipt.json"
 POLICY = ".claude/verification-policy.json"
 RECEIPT_VERSION = 2
 MODES = ("block", "off")
@@ -156,22 +161,59 @@ def load_policy(root, git_args=()):
 
 # ---------------------------------------------------------------- receipts
 
-def read_receipt(root):
-    path = pathlib.Path(root) / RECEIPT
-    if not path.exists():
-        return None
+def receipt_path(root, git_args=()):
+    """The receipt's absolute path in the per-worktree git directory.
+
+    Raises GateError when git cannot name it, or when the `100x/` directory or the
+    receipt is a symlink, or `100x/` does not sit directly in the resolved git
+    directory: any of those could redirect a write or substitute a receipt.
+    """
+    out = _git(["rev-parse", "--absolute-git-dir", "--git-path", RECEIPT_GIT_PATH],
+               root, git_args)
+    lines = (out or "").splitlines()
+    if len(lines) != 2:
+        raise GateError(f"cannot locate the git directory of {root} for the receipt")
+    gitdir, path = pathlib.Path(lines[0]), pathlib.Path(lines[1])
+    if not path.is_absolute():          # --git-path answers relative to the cwd
+        path = pathlib.Path(root) / path
+    for p in (path.parent, path):
+        if os.path.islink(p):
+            raise GateError(f"{p} is a symlink; refusing to use it for the receipt. "
+                            f"Replace it with a real directory or file")
+    if os.path.realpath(path.parent.parent) != os.path.realpath(gitdir):
+        raise GateError(f"{path} is not inside the git directory {gitdir}")
+    return path
+
+
+def legacy_note(root):
+    """One line when a receipt from before the move is still in the worktree."""
+    if os.path.lexists(pathlib.Path(root) / LEGACY_RECEIPT):
+        return (f"{LEGACY_RECEIPT} is from an older version and is ignored (receipts "
+                f"now live in the git directory); delete it")
+    return None
+
+
+def read_receipt(root, git_args=()):
+    path = receipt_path(root, git_args)
     try:
-        data = json.loads(path.read_text())
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise GateError(f"{path} is unreadable ({e}); re-run `100x verified`")
+    try:
+        with os.fdopen(fd, "rb") as f:
+            data = json.loads(f.read().decode("utf-8"))
         checks = data.get("checks")
         if not isinstance(checks, dict):
             raise ValueError("no checks object")
         return data
     except (ValueError, OSError, AttributeError) as e:
-        raise GateError(f"{RECEIPT} is unreadable ({e}); delete it and re-run "
-                        f"`100x verified`")
+        raise GateError(f"{path} is unreadable ({e}); re-run `100x verified`, which "
+                        f"replaces it")
 
 
-def evaluate(root, policy, current_fp, key):
+def evaluate(root, policy, current_fp, key, git_args=()):
     """Judge the receipt against the current content and the policy.
 
     Returns {"problems": [str], "notes": [str], "fresh": {label: entry},
@@ -180,7 +222,10 @@ def evaluate(root, policy, current_fp, key):
     receipt containing a forgery is not evidence of anything.
     """
     problems, notes = [], []
-    data = read_receipt(root)
+    legacy = legacy_note(root)
+    if legacy:
+        notes.append(legacy)
+    data = read_receipt(root, git_args)
     if data is None:
         return {"problems": [f"no verification receipt at {RECEIPT}"], "notes": notes,
                 "fresh": {}, "missing": sorted(policy["required"])}

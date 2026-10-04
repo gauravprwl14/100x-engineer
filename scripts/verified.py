@@ -4,9 +4,9 @@ import datetime, hashlib, json, os, pathlib, shlex, subprocess, sys, tempfile, t
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "hooks"))
 from verify_fingerprint import fingerprint, repo_root
-from receipts import (POLICY, RECEIPT, RECEIPT_VERSION, GateError, load_key,
-                      load_policy, sign, signature_ok)
-from _paths import safe_write_text
+from receipts import (POLICY, RECEIPT_VERSION, GateError, legacy_note, load_key,
+                      load_policy, read_receipt, receipt_path, sign, signature_ok)
+from _paths import safe_write_text, show
 
 # Variables that change what a check runs without changing its command line, each able
 # to turn a real suite into a passing no-op: PYTEST_ADDOPTS (`--collect-only`,
@@ -25,7 +25,9 @@ USAGE = """100x verified -- run a check and write a signed, content-bound receip
     --name LABEL   label for this check (default: "verify"); the receipt records one
                    entry per label, so `test`, `typecheck` and `lint` coexist
 
-Writes .claude/verification-receipt.json binding the command, its exit code and a
+Writes the receipt to the per-worktree git directory, at
+`git rev-parse --git-path 100x/verification-receipt.json` (never inside the worktree,
+so it is not a change and cannot be committed), binding the command, its exit code and a
 fingerprint of the exact file content that was verified, signed with HMAC-SHA256.
 The key is ~/.config/100x/receipt.key (created 0600 on first use; HUNDREDX_KEY_FILE
 overrides it). Any content change -- tracked, staged or a new untracked file --
@@ -43,7 +45,8 @@ Examples:
 Refuses (exit 2) when a variable that can turn a check into a no-op is set
 (PYTEST_ADDOPTS, PYTEST_PLUGINS, NODE_OPTIONS, GOFLAGS, LD_PRELOAD,
 DYLD_INSERT_LIBRARIES), when the command's program would come from a PATH entry inside
-the repository or a temp directory, or when .claude/ or the receipt is a symlink.
+the repository or a temp directory, or when the git directory's 100x/ or the receipt is
+a symlink. A .claude/verification-receipt.json left by an older version is ignored.
 
 Exits with the wrapped command's exit code (2 on a usage or policy refusal)."""
 
@@ -106,16 +109,27 @@ def resolve_executable(name, root):
 
 
 def _check_receipt_path(root):
-    """The receipt goes under .claude/ at the git root. A committed symlink there
-    (`.claude -> ~/somewhere`, or the receipt itself pointing at a file) would redirect
-    the write, so both are refused before anything is written."""
-    claude = pathlib.Path(root) / ".claude"
-    for p in (claude, pathlib.Path(root) / RECEIPT):
-        if os.path.islink(p):
-            raise Refusal(f"{p} is a symlink; refusing to write the receipt through "
-                          f"it. Replace it with a real directory or file")
-    if claude.exists() and not _inside(claude, root):
-        raise Refusal(f"{claude} resolves outside the repository")
+    """The receipt's path, or raise Refusal when a symlink could redirect the write
+    (receipts.receipt_path refuses one at `100x/` or at the receipt itself)."""
+    try:
+        return receipt_path(root)
+    except GateError as e:
+        raise Refusal(str(e))
+
+
+def _write_receipt(root, text):
+    """Write through _paths.safe_write_text, contained in the resolved git directory
+    rather than the worktree: a linked worktree's git directory is
+    <main>/.git/worktrees/<name>/, outside the worktree it belongs to."""
+    path = _check_receipt_path(root)
+    gitdir = path.parent.parent
+    try:
+        if not path.parent.is_dir():
+            os.mkdir(path.parent, 0o700)
+    except OSError as e:
+        raise Refusal(f"cannot create {path.parent} ({e})")
+    path = _check_receipt_path(root)    # again: nothing may have swapped in a link
+    return safe_write_text(path, text, gitdir, origin="verified")
 
 
 def _display_path(path):
@@ -182,6 +196,9 @@ def main(argv):
         return 2
     for note in (policy or {}).get("notes", []):
         print(f"verified: warning: {note}", file=sys.stderr)
+    legacy = legacy_note(root)
+    if legacy:
+        print(f"verified: note: {legacy}", file=sys.stderr)
 
     bound = (policy or {}).get("required", {}).get(name)
     if not cmd:
@@ -224,13 +241,11 @@ def main(argv):
         print(f"verified: tree changed during '{name}' -- receipt bound to post-run state",
               file=sys.stderr)
 
-    path = pathlib.Path(root) / RECEIPT
-    existing = {}
     try:
-        existing = json.loads(path.read_text()) if path.exists() else {}
-    except (ValueError, OSError):
-        existing = {}
-    old = existing.get("checks") if isinstance(existing, dict) else None
+        existing = read_receipt(root) or {}
+    except GateError:
+        existing = {}                   # replaced below; nothing in it is carried
+    old = existing.get("checks")
     # Carry forward only entries this key signed for this exact content; a stale or
     # foreign entry would otherwise ride along under a fresh signature's file.
     checks = {k: v for k, v in (old or {}).items()
@@ -244,15 +259,14 @@ def main(argv):
     }
     entry["sig"] = sign(key, name, entry)
     checks[name] = entry
-    try:
-        _check_receipt_path(root)       # again: the check itself may have planted one
+    try:                                # re-checked: the check itself may have planted a link
+        path = _write_receipt(root, json.dumps({"version": RECEIPT_VERSION,
+                                                "checks": checks}, indent=2) + "\n")
     except Refusal as e:
         print(f"verified: refusing to record `{name}`: {e}", file=sys.stderr)
         return 2
-    safe_write_text(path, json.dumps({"version": RECEIPT_VERSION, "checks": checks},
-                                     indent=2) + "\n", root, origin="verified")
     status = "PASS" if rc == 0 else f"FAIL(rc={rc})"
-    print(f"verified: {name} {status} in {dur}s -> {RECEIPT}", file=sys.stderr)
+    print(f"verified: {name} {status} in {dur}s -> {show(path, root)}", file=sys.stderr)
     return rc
 
 

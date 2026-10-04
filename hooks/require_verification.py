@@ -29,8 +29,8 @@ import hashlib, json, os, pathlib, re, shlex, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 try:
     from verify_fingerprint import EXCLUDE, _git, repo_root, snapshot, tree_fingerprint
-    from receipts import (POLICY, RECEIPT, GateError, evaluate, load_key, load_policy,
-                          rerun_hint)
+    from receipts import (POLICY, RECEIPT, GateError, evaluate, legacy_note, load_key,
+                          load_policy, receipt_path, rerun_hint)
 except Exception:  # fail-open: a gate that cannot import its helpers must not brick the shell
     print(json.dumps({}))
     sys.exit(0)
@@ -1028,9 +1028,15 @@ def judge(action, cmd):
             f"so the receipt would not describe what ships. Run edits and verification "
             f"first, then commit in a separate command.")
 
-    if not (pathlib.Path(root) / RECEIPT).exists():
+    try:
+        have_receipt = os.path.lexists(receipt_path(root, git_args))
+    except GateError as e:
+        return 3, deny(f"`{action.label}` blocked: {e}")
+    if not have_receipt:
+        legacy = legacy_note(root)
         return 3, deny(f"`{action.label}` blocked: no verification receipt at {RECEIPT}."
-                       f"\n\nRun the checks first:\n{rerun_hint(policy)}")
+                       f"\n\nRun the checks first:\n{rerun_hint(policy)}"
+                       + (f"\n\nNote: {legacy}." if legacy else ""))
     try:
         key = load_key()
     except GateError as e:
@@ -1040,7 +1046,7 @@ def judge(action, cmd):
     if not snap:
         return 0, {}
     try:
-        result = evaluate(root, policy, snap["fingerprint"], key)
+        result = evaluate(root, policy, snap["fingerprint"], key, git_args)
     except GateError as e:
         return 3, deny(f"`{action.label}` blocked: {e}")
     notes += result["notes"]

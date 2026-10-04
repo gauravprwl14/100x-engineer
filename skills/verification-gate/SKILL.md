@@ -49,7 +49,8 @@ listed under Failure modes.
    invalidate it, because they move no content, so commit-then-push needs no rerun.
    *Enforced by:* `100x verified --name <label> -- <command>`
 
-3. Never write or edit `.claude/verification-receipt.json` by hand. Entries are
+3. Never write or edit the receipt by hand (it lives in the git directory, at
+   `git rev-parse --git-path 100x/verification-receipt.json`). Entries are
    HMAC-SHA256 signed with `~/.config/100x/receipt.key`; a hand-written, edited or
    foreign-key entry is denied as forged.
    *Enforced by:* signature check in the `PreToolUse` hook
@@ -110,7 +111,6 @@ mkdir -p .claude && cat > .claude/verification-policy.json <<'JSON'
 { "required_checks": { "test": "npm test", "typecheck": "npx tsc --noEmit" },
   "max_age_minutes": 120 }
 JSON
-echo ".claude/verification-receipt.json" >> .gitignore
 
 # 2. every change: run the bound commands through the wrapper (exits non-zero on failure)
 100x verified --name typecheck
@@ -118,7 +118,7 @@ echo ".claude/verification-receipt.json" >> .gitignore
 
 # 3. confirm what was proven matches the current content
 100x verify_fingerprint                                 # current content hash
-cat .claude/verification-receipt.json                   # fingerprint, command, exit code
+cat "$(git rev-parse --git-path 100x/verification-receipt.json)"   # fingerprint, command, exit code
 
 # 4. prove the gate itself still works (~10s)
 bash tests/test_verification_gate.sh && bash tests/test_hooks_stop_session.sh
