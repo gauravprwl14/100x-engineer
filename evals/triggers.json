@@ -1,12 +1,12 @@
 {
-  "_doc": "Trigger-accuracy fixtures. Each prompt is phrased as a user would actually type it. `expect` is the skill that should load; `reject` names neighbours that must NOT outrank it. Lexical overlap is an approximation of the model's choice, not a simulation of it -- but two descriptions that are lexically indistinguishable for a prompt are descriptions the model will also struggle to separate.",
+  "_doc": "Trigger-accuracy fixtures. Each prompt is phrased as a user would actually type it. `expect` is the skill that should load; `reject` names neighbours that must NOT outrank it. Lexical overlap is an approximation of the model's choice, not a simulation of it -- but two descriptions that are lexically indistinguishable for a prompt are descriptions the model will also struggle to separate. `expect` may be a list when more than one skill is a correct answer (any of them in the top 3 is a hit); see evals/GRADER-CHANGELOG.md entry 10.",
   "cases": [
     {
       "prompt": "build a login feature with email and password",
       "expect": "feature-planning",
       "reject": [
         "solution-architecture",
-        "typescript-verification"
+        "language-verification"
       ]
     },
     {
@@ -20,53 +20,43 @@
       "prompt": "I need to decide between Prisma and TypeORM",
       "expect": "approach-selection",
       "reject": [
-        "typescript-verification",
+        "language-verification",
         "feature-planning"
       ]
     },
     {
       "prompt": "why did we choose redis for sessions six months ago",
-      "expect": "decision-log",
+      "expect": "decision-records",
       "reject": [
-        "engineering-ledger",
         "codebase-comprehension"
       ]
     },
     {
       "prompt": "record that we assumed sessions fit in one redis instance",
-      "expect": "decision-log",
-      "reject": [
-        "engineering-ledger"
-      ]
+      "expect": "decision-records"
     },
     {
       "prompt": "our decisions folder has 300 files and nobody can find anything",
-      "expect": "engineering-ledger",
-      "reject": [
-        "decision-log"
-      ]
+      "expect": "decision-records"
     },
     {
       "prompt": "is there a decision record behind this spec",
-      "expect": "engineering-ledger",
+      "expect": "decision-records",
       "reject": [
-        "decision-log",
         "feature-planning"
       ]
     },
     {
       "prompt": "review my diff before I open a pull request",
-      "expect": "scoped-review",
+      "expect": "diff-review",
       "reject": [
-        "reviewing-others-code",
         "review-gates"
       ]
     },
     {
       "prompt": "review this pull request a contractor sent us",
-      "expect": "reviewing-others-code",
+      "expect": "diff-review",
       "reject": [
-        "scoped-review",
         "review-gates"
       ]
     },
@@ -74,8 +64,8 @@
       "prompt": "explain how the payment retry logic works in this repo",
       "expect": "codebase-comprehension",
       "reject": [
-        "reviewing-others-code",
-        "decision-log"
+        "diff-review",
+        "decision-records"
       ]
     },
     {
@@ -107,19 +97,19 @@
       "expect": "verification-gate",
       "reject": [
         "review-gates",
-        "scoped-review"
+        "diff-review"
       ]
     },
     {
       "prompt": "this agent created eight files when one would do",
       "expect": "minimal-diff",
       "reject": [
-        "scoped-review"
+        "diff-review"
       ]
     },
     {
       "prompt": "set up strict tsconfig and a coverage gate for our Next app",
-      "expect": "typescript-verification",
+      "expect": "language-verification",
       "reject": [
         "stack-reviewer",
         "feature-planning"
@@ -127,17 +117,15 @@
     },
     {
       "prompt": "configure ruff and mypy for this django project",
-      "expect": "python-verification",
+      "expect": "language-verification",
       "reject": [
-        "typescript-verification",
         "stack-reviewer"
       ]
     },
     {
       "prompt": "add golangci-lint and a codegen drift check",
-      "expect": "go-verification",
+      "expect": "language-verification",
       "reject": [
-        "python-verification",
         "stack-reviewer"
       ]
     },
@@ -162,7 +150,7 @@
       "expect": "review-gates",
       "reject": [
         "agent-instructions",
-        "scoped-review"
+        "diff-review"
       ]
     },
     {
@@ -185,15 +173,15 @@
       "prompt": "what are the NestJS specific mistakes to watch for here",
       "expect": "stack-reviewer",
       "reject": [
-        "typescript-verification",
-        "scoped-review"
+        "language-verification",
+        "diff-review"
       ]
     },
     {
       "prompt": "check the module boundaries in our nest services",
       "expect": "stack-reviewer",
       "reject": [
-        "typescript-verification"
+        "language-verification"
       ]
     },
     {
@@ -225,6 +213,172 @@
         "approach-selection",
         "feature-planning"
       ]
+    },
+    {
+      "prompt": "where do I even start? we need SSO, a fix for the flaky login test, and a release next week",
+      "expect": "100x"
+    },
+    {
+      "prompt": "I have a big engineering task and don't know which workflow to follow",
+      "expect": "100x"
+    },
+    {
+      "prompt": "the PM sent a one-line ticket: users should be able to export reports. turn it into requirements",
+      "expect": "requirements-intake",
+      "reject": [
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "what questions should I ask before building this vague request",
+      "expect": "requirements-intake"
+    },
+    {
+      "prompt": "plan this feature and split work across engineers",
+      "expect": "orchestrate"
+    },
+    {
+      "prompt": "run the backend and frontend tasks in parallel with separate agents",
+      "expect": "orchestrate"
+    },
+    {
+      "prompt": "build me a settings page",
+      "expect": [
+        "ui-baseline",
+        "accessibility"
+      ]
+    },
+    {
+      "prompt": "make this page responsive",
+      "expect": "ui-baseline"
+    },
+    {
+      "prompt": "make the dashboard look good on mobile",
+      "expect": "ui-baseline"
+    },
+    {
+      "prompt": "add loading, empty and error states to the orders table",
+      "expect": "ui-baseline"
+    },
+    {
+      "prompt": "is this endpoint secure",
+      "expect": "app-security",
+      "reject": [
+        "security-baseline"
+      ]
+    },
+    {
+      "prompt": "can a user read another tenant's invoices through this API",
+      "expect": "app-security"
+    },
+    {
+      "prompt": "how do we roll this out safely behind a feature flag with a rollback plan",
+      "expect": "release-rollout",
+      "reject": [
+        "mobile-release-safety"
+      ]
+    },
+    {
+      "prompt": "deploy the new pricing change to production gradually",
+      "expect": "release-rollout"
+    },
+    {
+      "prompt": "a user asked us to delete their account and all their personal data",
+      "expect": "data-lifecycle"
+    },
+    {
+      "prompt": "do we actually test restoring our database backups",
+      "expect": "data-lifecycle"
+    },
+    {
+      "prompt": "write a test plan from this PRD",
+      "expect": "qa-strategy",
+      "reject": [
+        "solution-architecture"
+      ]
+    },
+    {
+      "prompt": "is this feature tested enough before release",
+      "expect": "qa-strategy"
+    },
+    {
+      "prompt": "our eslint passes but CI never fails on type errors",
+      "expect": "language-verification"
+    },
+    {
+      "prompt": "pytest runs in CI but mypy never blocks the build",
+      "expect": "language-verification"
+    },
+    {
+      "prompt": "which ADR governs the auth module before I change it",
+      "expect": "decision-records"
+    },
+    {
+      "prompt": "look over my changes before I push",
+      "expect": "diff-review"
+    },
+    {
+      "prompt": "an agent wrote this PR, review it before I approve",
+      "expect": "diff-review",
+      "reject": [
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "the modal can't be closed with the keyboard and screen readers skip the icon buttons",
+      "expect": "accessibility"
+    },
+    {
+      "prompt": "we need to rename a field in our public REST API without breaking clients",
+      "expect": "api-contract"
+    },
+    {
+      "prompt": "this function takes nine parameters and is 300 lines long, clean it up",
+      "expect": "code-craft"
+    },
+    {
+      "prompt": "design the database tables for subscriptions and invoices",
+      "expect": "data-modeling"
+    },
+    {
+      "prompt": "is it safe to npm install this package I found",
+      "expect": "dependency-vetting"
+    },
+    {
+      "prompt": "the webhook sometimes fires twice and we charge the customer twice",
+      "expect": "distributed-correctness"
+    },
+    {
+      "prompt": "our React component does the fetch, the tax math and the rendering all in one file",
+      "expect": "frontend-architecture"
+    },
+    {
+      "prompt": "I need to change this old module that has no tests at all",
+      "expect": "legacy-change"
+    },
+    {
+      "prompt": "what metrics and alerts should this new service emit",
+      "expect": "observability-design"
+    },
+    {
+      "prompt": "this endpoint takes 2 seconds, will it handle 10x traffic",
+      "expect": "performance-budgets"
+    },
+    {
+      "prompt": "remember this gotcha so the team doesn't hit it again",
+      "expect": "project-learning"
+    },
+    {
+      "prompt": "are we over-engineering this for 50 users",
+      "expect": "scale-appropriateness"
+    },
+    {
+      "prompt": "which test cases should I write for this date parsing function",
+      "expect": "test-design"
+    },
+    {
+      "prompt": "our LCP is bad because of the hero image and web fonts",
+      "expect": "web-vitals"
     }
   ]
 }

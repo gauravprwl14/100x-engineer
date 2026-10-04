@@ -1,14 +1,9 @@
 ---
 name: diagramming
 description: >
-  Use BEFORE drawing any architecture picture, and BEFORE trusting one already in a
-  spec, PR, or design doc: which diagram type (sequence, flowchart, state, ER/class,
-  C4 context/container, deployment) at which of three detail levels (L1 orientation,
-  L2 implementer, L3 debugging/spec), for a request/response flow, branching logic,
-  an entity's lifecycle, data shape, a system boundary, or infrastructure topology.
-  Also fire WHEN reviewing a design doc, spec, or PR that includes a diagram, a
-  screenshot of one, or claims a flow works with no diagram at all. Validated by
-  `scripts/check_diagrams.py`.
+  Diagram, architecture picture, sequence diagram, flowchart, mermaid, C4: draw the right type
+  at the right detail level, from high level to debugging, and check a spec's or PR's diagram
+  before trusting it.
 ---
 
 # Diagramming

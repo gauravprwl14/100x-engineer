@@ -1,14 +1,9 @@
 ---
 name: security-baseline
 description: >
-  Use when setting up or reviewing a project's own security posture — SECURITY.md
-  and disclosure policy, CodeQL or Semgrep CI scanning, dependency-update cooldowns,
-  GitHub Actions SHA-pinning, authorization tests across personas, or converting a
-  bug or crash into a permanent regression test. Not for auditing a third-party
-  repo's agent instruction files or hooks before running an agent in it (see
-  untrusted-agent-config) — that is a different threat model, their config attacking
-  you rather than your code's own exposure. Use PROACTIVELY before publishing a
-  repository, adding a dependency, or handling a vulnerability report.
+  Repo security posture: SECURITY.md, dependabot or Renovate, CodeQL/Semgrep scanning, GitHub
+  Actions pinning, vulnerability reports, persona authz tests. Not for endpoint code (→
+  app-security).
 ---
 
 # Security baseline

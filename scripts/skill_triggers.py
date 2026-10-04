@@ -14,15 +14,37 @@ does.
     skill_triggers.py                    # score skills/ against evals/triggers.json
     skill_triggers.py --from-git HEAD    # score the committed version (for before/after)
     skill_triggers.py --show-overlap     # which description pairs are least separable
+    skill_triggers.py --truncate 100     # only the first 100 chars of each description
+    skill_triggers.py --name-only        # skill names alone, every description dropped
+    skill_triggers.py --distractors evals/ecc_distractors.json   # compete with other plugins
+    skill_triggers.py --all-modes        # every mode above, one table, both gates
     skill_triggers.py --json
 
-Exit 1 if top-1 accuracy is below the floor or any skill never wins a prompt.
+Why the realism modes exist: installed beside a ~250-skill plugin, the harness listed many of
+this plugin's skills NAME-ONLY -- descriptions dropped once the listing budget ran out -- and
+truncates any one description at 1,536 chars. A description that only discriminates in its
+second sentence, or only against this plugin's own skills, does not route in that session.
+
+Exit 1 if top-3 recall is below the floor or any skill never makes a shortlist; with
+--all-modes, unless full mode AND truncate-100-with-distractors both clear the floor.
 Python stdlib only.
 """
 import argparse, json, math, pathlib, re, subprocess, sys, collections
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 FIXTURE = PLUGIN / "evals" / "triggers.json"
+DISTRACTORS = PLUGIN / "evals" / "ecc_distractors.json"
+# Skills merged in the v0.2 consolidation. Applied only to --from-git, so a pre-merge
+# catalogue is scored against today's fixture: any of the old skills reaching the shortlist
+# counts for the skill it became, which is the fairest before/after available.
+ALIASES = {
+    "typescript-verification": "language-verification",
+    "python-verification": "language-verification",
+    "go-verification": "language-verification",
+    "decision-log": "decision-records", "engineering-ledger": "decision-records",
+    "scoped-review": "diff-review", "reviewing-others-code": "diff-review",
+}
+GATE_TRUNCATE = 100
 # What this proxy can and cannot assert.
 #
 # Lexical overlap is a bag-of-words stand-in for a semantic decision. Across four
@@ -61,18 +83,18 @@ def toks(text):
     return [t for t in TOKEN.findall(text.lower()) if t not in STOP and len(t) > 2]
 
 
-def load_skills(from_git=None):
+def load_skills(from_git=None, root=PLUGIN):
     out = {}
     if from_git:
         names = subprocess.run(["git", "ls-tree", "-r", "--name-only", from_git],
-                               cwd=PLUGIN, capture_output=True, text=True).stdout.split()
+                               cwd=root, capture_output=True, text=True).stdout.split()
         paths = [n for n in names if re.match(r"skills/[^/]+/SKILL\.md$", n)]
         for p in paths:
-            body = subprocess.run(["git", "show", f"{from_git}:{p}"], cwd=PLUGIN,
+            body = subprocess.run(["git", "show", f"{from_git}:{p}"], cwd=root,
                                   capture_output=True, text=True).stdout
             out[p.split("/")[1]] = body
     else:
-        for p in sorted((PLUGIN / "skills").glob("*/SKILL.md")):
+        for p in sorted((root / "skills").glob("*/SKILL.md")):
             out[p.parent.name] = p.read_text(errors="replace")
     descs = {}
     for name, body in out.items():
@@ -111,8 +133,8 @@ NEG_CLAUSE = re.compile(
 def split_polarity(desc):
     """Separate a description into what it claims and what it disclaims.
 
-    Descriptions now carry negative signals like "Not for Python or Go toolchains (see
-    python-verification)". Those help a model that understands negation and actively
+    Descriptions now carry negative signals like "Not for framework code (→
+    stack-reviewer)". Those help a model that understands negation and actively
     mislead a bag-of-words scorer, which counts the disclaimed language as a match. A
     term inside a negative clause must subtract, not add -- that is the whole point of
     writing it.
@@ -131,67 +153,70 @@ def score(prompt_toks, pos_toks, neg_toks, idf):
     return gain - loss
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--from-git", default=None)
-    ap.add_argument("--show-overlap", action="store_true")
-    ap.add_argument("--json", action="store_true")
-    a = ap.parse_args()
+def load_distractors(path):
+    """Competitor skills from another plugin: {name: description}. Synthetic by design."""
+    data = json.loads(pathlib.Path(path).read_text())
+    return {s["name"]: s["description"] for s in data["skills"]}
 
-    descs = load_skills(a.from_git)
-    if not descs:
-        print("no skills found", file=sys.stderr); return 2
-    pol = {n: split_polarity(d) for n, d in descs.items()}
-    # The skill NAME is part of what the harness shows the model, alongside the
-    # description. Scoring the description alone discarded a real signal: a skill
-    # called `scoped-review` carries "review" whether or not its prose repeats it.
-    dtoks = {n: toks(n.replace("-", " ")) + toks(pol[n][0]) for n in descs}
-    ntoks = {n: toks(pol[n][1]) for n in descs}          # disclaimed span
 
-    # idf over descriptions: rare terms carry the discrimination
+def evaluate(descs, cases, plugin, truncate=None, name_only=False, aliases=None):
+    """Rank every candidate for every case.
+
+    `descs` may include distractors; `plugin` is this plugin's skill names, the only ones
+    that can be reported as never shortlisted. Truncation applies to every candidate,
+    because a listing budget cuts other plugins' descriptions as well as ours.
+    """
+    aliases = aliases or {}
+    cand = {}
+    for n, d in descs.items():
+        d = "" if name_only else (d[:truncate] if truncate else d)
+        pos, neg = split_polarity(d)
+        # The skill NAME is part of what the harness shows the model, alongside the
+        # description; a skill called `diff-review` carries "review" either way.
+        cand[n] = (toks(n.replace("-", " ").replace(":", " ")) + toks(pos), toks(neg))
     df = collections.Counter()
-    for tl in dtoks.values():
+    for tl, _ in cand.values():
         for t in set(tl):
             df[t] += 1
-    N = len(dtoks)
-    idf = {t: math.log(1 + N / c) for t, c in df.items()}
-
-    cases = json.loads(FIXTURE.read_text())["cases"]
-    rows, wins = [], collections.Counter()
-    shortlisted = collections.Counter()
+    N = len(cand)
+    idf = {t: math.log(1 + N / c) for t, c in df.items()}   # rare terms discriminate
+    show = lambda n: aliases.get(n, n)
+    rows, wins, shortlisted = [], collections.Counter(), collections.Counter()
     top1 = top3 = rejviol = 0
     for c in cases:
         pt = toks(c["prompt"])
-        ranked = sorted(((score(pt, dtoks[n], ntoks[n], idf), n) for n in dtoks),
+        ranked = sorted(((score(pt, cand[n][0], cand[n][1], idf), n) for n in cand),
                         reverse=True)
-        names = [n for _, n in ranked]
-        exp = c["expect"]
-        r1 = names[0] == exp
-        r3 = exp in names[:3]
+        names, seen = [], set()
+        for _, n in ranked:          # an alias collapses several old skills into one
+            if show(n) not in seen:
+                seen.add(show(n)); names.append(show(n))
+        exp = c["expect"] if isinstance(c["expect"], list) else [c["expect"]]
+        ranks = [names.index(e) + 1 for e in exp if e in names]
+        r1, r3 = names[0] in exp, bool(ranks) and min(ranks) <= 3
         top1 += r1; top3 += r3
         wins[names[0]] += 1
         for n in names[:3]:
             shortlisted[n] += 1
-        viol = [r for r in c.get("reject", []) if r in names[:1] and r != exp]
+        viol = [r for r in c.get("reject", []) if show(r) == names[0] and show(r) not in exp]
         rejviol += bool(viol)
-        rows.append({"prompt": c["prompt"], "expect": exp, "top3": names[:3],
-                     "rank": (names.index(exp) + 1) if exp in names else None,
+        rows.append({"prompt": c["prompt"], "expect": "/".join(exp), "top3": names[:3],
+                     "rank": min(ranks) if ranks else None,
                      "top1": r1, "top3_hit": r3, "reject_violation": viol,
-                     "scores": {n: round(s, 2) for s, n in ranked[:3]}})
-
+                     "scores": {show(n): round(s, 2) for s, n in ranked[:3]}})
+    plugin_shown = {show(n) for n in plugin}
     # A skill absent from every shortlist is dead weight: it can never be chosen.
-    # Never winning top-1 is a much weaker signal, given what this proxy can resolve.
-    never = sorted(set(dtoks) - set(shortlisted))
-    never_top1 = sorted(set(dtoks) - set(wins))
-    acc1, acc3 = top1 / len(cases), top3 / len(cases)
+    never = sorted(plugin_shown - set(shortlisted))
+    return {"top1": top1 / len(cases), "top3": top3 / len(cases), "n": len(cases),
+            "top1_n": top1, "top3_n": top3, "reject_violations": rejviol,
+            "never_wins": never,
+            "distractor_top1": sum(v for k, v in wins.items() if k not in plugin_shown),
+            "cases": rows, "idf": idf, "cand": cand}
 
-    if a.json:
-        print(json.dumps({"top1": acc1, "top3": acc3, "reject_violations": rejviol,
-                          "never_wins": never, "cases": rows}, indent=2))
-        return 0 if (acc3 >= TOP3_FLOOR and not never) else 1
 
-    label = f" ({a.from_git})" if a.from_git else ""
-    print(f"skill_triggers{label}: {len(descs)} skills, {len(cases)} prompts\n")
+def report(res, pool, label, show_overlap):
+    rows = res["cases"]
+    print(f"skill_triggers{label}: {len(pool)} candidates, {res['n']} prompts\n")
     print(f"{'prompt':52s} {'expected':24s} rank  top-1")
     print("-" * 94)
     for r in rows:
@@ -199,35 +224,125 @@ def main():
         print(f"{r['prompt'][:52]:52s} {r['expect'][:24]:24s} "
               f"{str(r['rank'] or '-'):>4s}  {mark}")
     print("-" * 94)
-    print(f"top-3 recall   : {top3}/{len(cases)}  ({100*acc3:.0f}%)   GATE, floor "
-          f"{100*TOP3_FLOOR:.0f}%")
-    print(f"top-1 accuracy : {top1}/{len(cases)}  ({100*acc1:.0f}%)   diagnostic only "
-          f"(see the note in this file on why top-1 is not gated)")
-    print(f"reject in top-1: {rejviol}  (a neighbour outranking the right skill)")
-    if never:
-        print(f"\nnever wins a prompt ({len(never)}) — either the fixture lacks a case for "
-              f"it, or its description does not discriminate:")
-        for n in never:
+    print(f"top-3 recall   : {res['top3_n']}/{res['n']}  ({100*res['top3']:.0f}%)   GATE, "
+          f"floor {100*TOP3_FLOOR:.0f}%")
+    print(f"top-1 accuracy : {res['top1_n']}/{res['n']}  ({100*res['top1']:.0f}%)   "
+          f"diagnostic only (see the note in this file on why top-1 is not gated)")
+    print(f"reject in top-1: {res['reject_violations']}  (a neighbour outranking the right skill)")
+    print(f"distractor won : {res['distractor_top1']}  (another plugin's skill ranked first)")
+    if res["never_wins"]:
+        print(f"\nnever shortlisted ({len(res['never_wins'])}) — either the fixture lacks a "
+              f"case for it, or its description does not discriminate:")
+        for n in res["never_wins"]:
             print(f"  {n}")
-    misses = [r for r in rows if not r["top1"]]
+    misses = [r for r in rows if not r["top3_hit"]]
     if misses:
-        print(f"\nmisrouted ({len(misses)}):")
+        print(f"\noutside the top 3 ({len(misses)}):")
         for r in misses:
             print(f"  {r['prompt'][:60]}")
-            print(f"     wanted {r['expect']} (rank {r['rank']}), got {r['top3'][0]}")
+            print(f"     wanted {r['expect']} (rank {r['rank']}), got {r['top3']}")
             print(f"     scores {r['scores']}")
-    if a.show_overlap:
+    if show_overlap:
+        idf, cand = res["idf"], res["cand"]
         print("\nleast separable description pairs (shared weighted terms):")
         pairs = []
-        for i, x in enumerate(sorted(dtoks)):
-            for y in sorted(dtoks)[i+1:]:
-                sh = set(dtoks[x]) & set(dtoks[y])
+        for i, x in enumerate(sorted(cand)):
+            for y in sorted(cand)[i+1:]:
+                sh = set(cand[x][0]) & set(cand[y][0])
                 pairs.append((sum(idf.get(t, 1) for t in sh), x, y, len(sh)))
         for s, x, y, n in sorted(pairs, reverse=True)[:8]:
             print(f"  {s:6.1f}  {x} <-> {y}  ({n} shared terms)")
     print("\nLexical overlap only. It cannot tell you the model will choose correctly; "
           "it can tell you two descriptions are indistinguishable on words alone.")
-    return 0 if (acc3 >= TOP3_FLOOR and not never) else 1
+
+
+def all_modes(descs, cases, plugin, aliases, dpath, n, as_json, label):
+    distract = load_distractors(dpath)
+    modes = [("full", None, False, False), ("full+distractors", None, False, True),
+             (f"truncate{n}", n, False, False), (f"truncate{n}+distractors", n, False, True),
+             ("name-only", None, True, False), ("name-only+distractors", None, True, True)]
+    gated = {"full", f"truncate{n}+distractors"}
+    out, ok = {}, True
+    for name, tr, no, dis in modes:
+        r = evaluate({**descs, **distract} if dis else descs, cases, plugin, tr, no, aliases)
+        passed = r["top3"] >= TOP3_FLOOR and (name != "full" or not r["never_wins"])
+        if name in gated:
+            ok = ok and passed
+        out[name] = {k: r[k] for k in ("top1", "top3", "reject_violations", "never_wins",
+                                      "distractor_top1")}
+        out[name].update(gated=name in gated, passed=passed,
+                         misses=[f"{c['prompt']} -> {c['top3']}" for c in r["cases"]
+                                 if not c["top3_hit"]])
+    if as_json:
+        print(json.dumps({"modes": out, "pass": ok}, indent=2))
+        return 0 if ok else 1
+    print(f"skill_triggers{label}: {len(descs)} skills, {len(distract)} distractors "
+          f"({pathlib.Path(dpath).name}), {len(cases)} prompts\n")
+    print(f"{'mode':26s} {'top-3':>6s} {'top-1':>6s} {'reject':>6s} {'distr':>6s} "
+          f"{'never':>6s}  gate")
+    print("-" * 72)
+    for name, r in out.items():
+        g = ("PASS" if r["passed"] else "FAIL") if r["gated"] else "-"
+        print(f"{name:26s} {100*r['top3']:5.0f}% {100*r['top1']:5.0f}% "
+              f"{r['reject_violations']:6d} {r['distractor_top1']:6d} "
+              f"{len(r['never_wins']):6d}  {g}")
+    print("-" * 72)
+    print(f"gate: top-3 >= {100*TOP3_FLOOR:.0f}% in full mode (every skill shortlisted) AND "
+          f"in truncate{n}+distractors -> {'PASS' if ok else 'FAIL'}")
+    print("distr = prompts where another plugin's skill ranked first")
+    for name, r in out.items():
+        if r["gated"] and r["misses"]:
+            print(f"\n{name} misses:")
+            for m in r["misses"]:
+                print(f"  {m}")
+    return 0 if ok else 1
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--from-git", default=None)
+    ap.add_argument("--root", default=str(PLUGIN), help="plugin root holding skills/")
+    ap.add_argument("--fixture", default=None, help="default: <root>/evals/triggers.json")
+    ap.add_argument("--truncate", type=int, default=None, metavar="N",
+                    help="score only the first N chars of every description")
+    ap.add_argument("--name-only", action="store_true",
+                    help="score skill names alone, as a listing that dropped descriptions")
+    ap.add_argument("--distractors", default=None, metavar="FILE",
+                    help="add another plugin's skills as competitors")
+    ap.add_argument("--all-modes", action="store_true",
+                    help="full, truncated and name-only, each with and without distractors; "
+                         "gates full and truncate-with-distractors")
+    ap.add_argument("--show-overlap", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+
+    root = pathlib.Path(a.root).resolve()
+    descs = load_skills(a.from_git, root)
+    if not descs:
+        print("no skills found", file=sys.stderr); return 2
+    cases = json.loads(pathlib.Path(a.fixture or root / "evals" / "triggers.json")
+                       .read_text())["cases"]
+    aliases = ALIASES if a.from_git else {}
+    plugin = set(descs)
+    label = f" ({a.from_git})" if a.from_git else ""
+
+    if a.all_modes:
+        return all_modes(descs, cases, plugin, aliases, a.distractors or DISTRACTORS,
+                         a.truncate or GATE_TRUNCATE, a.json, label)
+
+    pool = {**descs, **load_distractors(a.distractors)} if a.distractors else descs
+    res = evaluate(pool, cases, plugin, a.truncate, a.name_only, aliases)
+    ok = res["top3"] >= TOP3_FLOOR and not res["never_wins"]
+    if a.json:
+        print(json.dumps({k: res[k] for k in ("top1", "top3", "reject_violations",
+                                              "never_wins", "distractor_top1", "cases")},
+                         indent=2))
+        return 0 if ok else 1
+    mode = "".join([f" truncate={a.truncate}" if a.truncate else "",
+                    " name-only" if a.name_only else "",
+                    " +distractors" if a.distractors else ""])
+    report(res, pool, label + mode, a.show_overlap)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

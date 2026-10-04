@@ -1,18 +1,9 @@
 ---
 name: accessibility
 description: >
-  Use when building or reviewing any interactive UI component — a button, a form
-  field, a modal, a card with a click handler, a custom dropdown, an icon-only
-  control, an image, a toast/async update — not as an end-of-project audit but
-  as a check that runs on every component-touching diff. Covers semantic HTML
-  vs div-soup, keyboard operability and focus indicators, accessible names,
-  label/error association, alt text, WCAG 2.2 AA contrast and target-size
-  numbers, focus management in modals and on route change, live regions, and
-  prefers-reduced-motion. Extends the a11y failure modes already listed in
-  reviewers/nextjs-react.md (row 16) with the per-component rules and a
-  runnable checker; does not repeat that file's Next.js-specific rows. Use
-  PROACTIVELY whenever a `.tsx`/`.jsx`/`.html` file adds or changes a clickable
-  element, a form field, an image, or an animation.
+  Accessibility (a11y) for buttons, modals, forms, icon buttons, images: keyboard and focus,
+  screen reader names, labels, alt text, WCAG 2.2 AA contrast, reduced motion. Not for page
+  layout (→ ui-baseline).
 ---
 
 # Accessibility

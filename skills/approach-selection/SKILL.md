@@ -1,15 +1,9 @@
 ---
 name: approach-selection
 description: >
-  Use when a problem has several defensible solutions and one must be chosen — which
-  database, session strategy, state manager, queue, deployment model, sync vs async,
-  library vs hand-rolled, monolith vs service. Gives a weighted scoring method (not
-  a record format), a default bias toward reversible choices, and a rule for the
-  rare case worth escalating to a human. Use PROACTIVELY whenever you notice you
-  are picking between options rather than implementing a known one. Not for writing
-  up a choice already made (that's decision-log, which this skill hands off to) and
-  not for a feature-kind decision already pre-answered in
-  `scripts/data/decisions_required.json` — check there first.
+  Decide between options — which database, ORM (Prisma vs TypeORM), queue, state manager,
+  monolith vs service, library vs hand-rolled: weighted scoring that favours reversible choices.
+  Not for the record (→ decision-records).
 ---
 
 # Approach selection
@@ -150,9 +144,9 @@ a non-obvious flow worth drawing, that happens downstream in `feature-planning`
 
 ## Next
 
-Record the winner with `decision-log` (`decide.py new` already opened the record —
+Record the winner with `decision-records` (`decide.py new` already opened the record —
 fill it in). If the choice was made mid-feature-plan, return to `feature-planning`'s
-edge-case table. Implementation then follows the normal path to `scoped-review` and
+edge-case table. Implementation then follows the normal path to `diff-review` and
 `verification-gate`.
 
 ## Scale

@@ -1,15 +1,9 @@
 ---
 name: mobile-release-safety
 description: >
-  Use when shipping a mobile release — native Android/iOS, React Native, Expo, or
-  Flutter. Covers staged rollout percentages and kill switches, local database
-  migration testing per schema version, OTA/CodePush/EAS update safety across the
-  JS-native boundary, and binary size budgets — the release-pipeline failure modes
-  that only exist because mobile cannot be hotfixed. Not for React Native/Flutter
-  code-shape bugs during development, like a `BuildContext` used after an async gap
-  (see stack-reviewer's flutter or react-native-expo reviewer). Use PROACTIVELY
-  before any mobile release, when changing a local DB schema, when adding an
-  OTA/CodePush/EAS update, or when a change touches the JS-to-native boundary.
+  Mobile app release — iOS, Android, React Native, Expo, Flutter, app store: staged rollout,
+  kill switch, local DB migrations, OTA/EAS update safety, binary size. Not for web deploys (→
+  release-rollout).
 ---
 
 # Mobile release safety

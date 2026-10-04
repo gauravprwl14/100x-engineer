@@ -60,7 +60,7 @@ question, not a decision.
 ## Verify
 
 The task's `verify` commands plus `100x a11y_check --base <ref>`, `100x fe_layers_check --base <ref>`, the stack's
-type check and tests (`typescript-verification`), each through `100x verified --name <label> --
+type check and tests (`language-verification`), each through `100x verified --name <label> --
 <cmd>`. Then `100x bloat_check --base <ref>`.
 
 ## Protocol

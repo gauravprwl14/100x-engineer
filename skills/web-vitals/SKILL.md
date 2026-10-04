@@ -1,21 +1,13 @@
 ---
 name: web-vitals
 description: >
-  Use when building or reviewing any component that renders above the fold, adds
-  a web font, ships client JS, adds an image, or wires up a new route — to keep
-  Core Web Vitals a per-component decision instead of a Lighthouse run at the
-  end of a quarter. Covers LCP/INP/CLS thresholds and what causes each at the
-  component level, image and font loading rules, JS/hydration cost and
-  `'use client'` boundaries, and lab-vs-field measurement. Owns BROWSER-side
-  rendering metrics; does not own back-end latency budgets (see
-  performance-budgets) or bundle-byte budgets (see typescript-verification rule
-  6) — cross-references both rather than repeating them. Use PROACTIVELY before
-  adding a hero image, a web font, or client-side data fetching above the fold.
+  Core Web Vitals — LCP, INP, CLS: hero images, web fonts, client JS and hydration, use client
+  boundaries, lab vs field data. Not for backend latency (→ performance-budgets).
 ---
 
 # Web Vitals (Core Web Vitals)
 
-Bundle-byte budgets are owned by `typescript-verification` (rule 6) and
+Bundle-byte budgets are owned by `language-verification` (rule 6) and
 back-end latency budgets by `performance-budgets` — this skill does not repeat
 either. What's missing for a frontend-heavy stack is the browser-rendering
 half: **LCP, INP, and CLS are decided component by component**, at the moment
@@ -106,7 +98,7 @@ the 76th-99th percentile on a slow phone and a congested network.
 
 9. Budget and measure client JS per route, not just per bundle — the bytes
    that ship gate hydration time, which gates INP on first interaction.
-   *Enforced by:* `npx size-limit` (owned by `typescript-verification` rule 6;
+   *Enforced by:* `npx size-limit` (owned by `language-verification` rule 6;
    cross-referenced, not duplicated here) or `npx next build` route-size table
 
 10. Never trust a single Lighthouse run as ground truth. Measure field data
@@ -127,7 +119,7 @@ script can fully replace.
 # client-JS-per-route -- the number that shows a 'use client' boundary crept up
 npx next build 2>&1 | grep -A 20 "Route (app)"
 
-# bundle budget, if configured (typescript-verification owns this)
+# bundle budget, if configured (language-verification owns this)
 npx size-limit
 
 # lab proxy -- run against a PRODUCTION build, never `next dev`
@@ -207,7 +199,7 @@ of users is invisible without it.
 - `'use client'` boundary and client-fetch failure modes: `reviewers/nextjs-
   react.md` failure modes #1 and #2 (cited, not repeated) — including the
   `vercel/commerce` leaf-only `'use client'` measurement (15/65 files).
-- Bundle-byte budgets, owned elsewhere: `skills/typescript-verification/SKILL.md`
+- Bundle-byte budgets, owned elsewhere: `skills/language-verification/SKILL.md`
   rule 6 (`TanStack/table` 30KB `size-limit` — 2 of 72 JS repos have any bundle
   budget at all).
 - Back-end latency budgets, owned elsewhere: `skills/performance-budgets/SKILL.md`

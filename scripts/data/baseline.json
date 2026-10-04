@@ -344,7 +344,7 @@
      "default": "the README states how to run and test; architecturally significant choices are recorded as ADRs",
      "assumption_text": "a newcomer can run the tests from the README alone",
      "source": "Michael Nygard, 'Documenting Architecture Decisions' (2011); research/21-findings-agent-instruction-corpus.md (one named prove-it command)",
-     "enforced_by": "100x decide lint", "owner_skill": "decision-log", "waivable": true},
+     "enforced_by": "100x decide lint", "owner_skill": "decision-records", "waivable": true},
     {"id": "all.time-unicode", "work": ["*"], "class": "A", "from_tier": "prototype",
      "default": "timestamps stored in UTC (RFC 3339 on the wire), zones from the IANA tz database, DST transitions tested, text handled as Unicode with normalisation where compared",
      "assumption_text": "no local-time storage; no byte-length assumptions on text",

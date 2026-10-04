@@ -1,17 +1,9 @@
 ---
 name: app-security
 description: >
-  Use when writing or reviewing an endpoint, controller, resolver, webhook,
-  form handler, or any code that reads request input, queries a database, fetches
-  a URL, renders HTML, or handles a secret. Application-level secure coding:
-  a STRIDE-lite threat model per feature, OWASP API Security Top 10 2023 (BOLA
-  tenant/owner checks in the query, broken auth, mass assignment via DTO
-  allowlists, resource limits, function-level authz, sensitive business flows,
-  SSRF, misconfiguration, inventory, unsafe third-party APIs), XSS output encoding
-  (dangerouslySetInnerHTML, v-html, innerHTML), CSRF for cookie auth, SQL
-  injection, and secrets kept out of code, bundles and logs. Not repo posture
-  (SECURITY.md, CodeQL, action pinning): that is security-baseline. Use
-  PROACTIVELY before merging any diff that adds a route or touches user input.
+  Endpoint, API route, webhook or form handler security: is it secure — authz and BOLA, tenant
+  isolation, injection, XSS, CSRF, SSRF, mass assignment, secrets, OWASP API Top 10. Not for
+  repo posture (→ security-baseline).
 ---
 
 # App security

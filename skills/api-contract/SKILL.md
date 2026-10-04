@@ -1,13 +1,9 @@
 ---
 name: api-contract
 description: >
-  Use when designing or reviewing a public or internal API — REST, GraphQL, or
-  gRPC — its versioning scheme, error responses, idempotency, pagination, PATCH
-  semantics, or deprecation of a field or endpoint. Use PROACTIVELY before
-  shipping a new endpoint, changing a response shape, or removing/renaming a
-  field. Not for the database schema underneath it — that is data-modeling,
-  though a schema decision (an exposed internal id, a nullable-as-state field)
-  routinely becomes an API contract problem.
+  REST, GraphQL or gRPC API contract: versioning, error shape, pagination, idempotency, PATCH,
+  renaming or removing a field without breaking clients, deprecation. Not for the DB schema (→
+  data-modeling).
 ---
 
 # API contract design

@@ -1,29 +1,8 @@
----
-name: typescript-verification
-description: >
-  Use when writing, reviewing, or setting up verification for JavaScript or
-  TypeScript code specifically — tsconfig strictness, ESLint/Biome rule curation,
-  vitest/jest, pnpm/Turborepo/Nx monorepo task graphs, knip dead-code detection,
-  size-limit bundle budgets, or patch-scoped coverage gates. Covers the measured
-  practice of 72 production JS/TS repositories. Not for Python or Go toolchains
-  (see python-verification, go-verification), and not for framework-specific code
-  idioms like a NestJS pipe or a React list key (see stack-reviewer). Use
-  PROACTIVELY when adding package.json scripts, tsconfig.json, or a JS/TS CI
-  workflow.
----
+# TypeScript / JavaScript verification — detail
 
-# TypeScript verification
+Reference for `language-verification` (loaded on demand). The numbered rules live in `../SKILL.md`; rule numbers below refer to that file.
 
 What 72 production JS/TS repos actually run, counted rather than recommended.
-
-## Trigger
-
-**Fire when:** writing or changing JS/TS; setting up or auditing a JS/TS project's
-checks; configuring tsconfig, eslint/biome, vitest/jest, turbo/nx; deciding merge
-gates.
-
-**Do not fire when:** editing a JSON/YAML config with no code impact, or working in
-a non-JS part of a polyglot repo.
 
 ## The measured baseline
 
@@ -54,52 +33,6 @@ pnpm lint && pnpm typecheck && pnpm test
 
 So if you add patch-scoped coverage or property tests, you are ahead of nearly the
 entire 20k-star JS ecosystem — not catching up to it.
-
-## Rules
-
-1. Set `"strict": true` in tsconfig. It is the highest-value single flag and the
-   corpus baseline.
-   *Enforced by:* `npx tsc --noEmit`
-
-2. Run typecheck as its own fast gate, separate from build. A ~10s type-error check
-   catches most breakage long before a full build would.
-   *Enforced by:* `npx tsc --noEmit` as a distinct CI job and package script
-
-3. Gate coverage on the **patch**, not the repo. A whole-repo threshold is
-   unmeetable on an existing codebase and gets disabled; patch coverage asks only
-   that new code be tested.
-   *Enforced by:* codecov `patch:` status with `informational: false`, or
-   `diff-cover` against the merge base
-
-4. Add `knip` to find unused files, exports and dependencies. It is the strongest
-   single anti-bloat tool for this ecosystem.
-   *Enforced by:* `npx knip`
-
-5. Enforce architectural boundaries mechanically if you have more than one package.
-   Prose about layering does not survive contact with an agent.
-   *Enforced by:* `turbo boundaries`, `dependency-cruiser --output-type err`, or
-   `eslint-plugin-boundaries`
-
-6. Budget bundle size for anything you ship to a browser, and pick the number
-   yourself — 97% of the corpus has no budget, so there is no default to inherit.
-   *Enforced by:* `npx size-limit`
-
-7. In a monorepo, run only affected work. Full-graph CI on every PR trains people to
-   ignore CI.
-   *Enforced by:* `turbo run test --filter=...[origin/main]`
-
-8. Never suppress the type-checker to make CI pass. `@ts-ignore` and `any` hide the
-   bug the checker just found.
-   *Enforced by:* `@typescript-eslint/no-explicit-any` and
-   `@typescript-eslint/ban-ts-comment` enabled in eslint
-
-9. Verify your gates actually gate before trusting green CI.
-   *Enforced by:* `100x audit_ci_gates`
-
-10. Consider `noUncheckedIndexedAccess`. Array and record access returning
-    `T | undefined` is correct, and catches a real bug class — adopted by very few
-    corpus repos, so expect friction on an existing codebase.
-    *Enforced by:* the flag in tsconfig plus `npx tsc --noEmit`
 
 ## Verify
 

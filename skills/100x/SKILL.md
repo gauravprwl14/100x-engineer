@@ -1,12 +1,9 @@
 ---
 name: 100x
 description: >
-  START HERE for any engineering task — build, fix, debug, incident, review, understand/onboard,
-  plan, PRD/spec, QA, ship. Use when a request arrives in plain English and the right workflow is not
-  yet chosen: classifies the intent, asks only plan-changing questions (at most five, each with a
-  recommendation), applies industry-default requirements without asking, then routes to the right
-  skills in order, the right specialist agents and the gates that prove each phase. Use PROACTIVELY
-  at the start of every task, before any other skill of this plugin.
+  START HERE for any engineering task — build, fix, debug, incident, review, onboard, plan, PRD,
+  test plan, release: classifies intent, asks at most five questions, applies defaults, picks
+  the workflow, skills, agents and gates.
 ---
 
 # 100x — the front door
@@ -72,14 +69,14 @@ Skills run in the order listed. Agents are this plugin's subagents (`100x-engine
 
 | intent | skills, in order | agents | gates |
 |---|---|---|---|
-| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-log for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → scoped-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag lint --spec`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x review_scope`, `100x verified` |
-| fix | bug-fix → test-design (regression test first) → minimal-diff → scoped-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier | failing test before the fix, `100x bloat_check`, `100x verified` |
+| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag lint --spec`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x review_scope`, `100x verified` |
+| fix | bug-fix → test-design (regression test first) → minimal-diff → diff-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier | failing test before the fix, `100x bloat_check`, `100x verified` |
 | incident | root-cause-analysis → bug-fix → release-rollout (rollback or flag-off first if users are hurting) → project-learning | rca-investigator, then the engineer for the area, independent-verifier | `100x rca lint`, `100x rca link`, `100x decide drift` |
 | understand | codebase-comprehension → diagramming → project-learning | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index` |
-| review-own | scoped-review → minimal-diff → code-craft → verification-gate | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
-| review-other | reviewing-others-code → stack-reviewer → app-security → untrusted-agent-config before running their code | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check` |
-| plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-log → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag lint --spec` |
-| change-untested | requirements-intake → codebase-comprehension → legacy-change (characterisation tests first) → test-design → minimal-diff → scoped-review | comprehension-mapper, qa-engineer, the engineer for the area, code-reviewer | characterisation tests pass before the change, `100x bloat_check`, `100x verified` |
+| review-own | diff-review → minimal-diff → code-craft → verification-gate | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
+| review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check` |
+| plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag lint --spec` |
+| change-untested | requirements-intake → codebase-comprehension → legacy-change (characterisation tests first) → test-design → minimal-diff → diff-review | comprehension-mapper, qa-engineer, the engineer for the area, code-reviewer | characterisation tests pass before the change, `100x bloat_check`, `100x verified` |
 | QA | requirements-intake → qa-strategy → test-design → accessibility → performance-budgets at growth+ | qa-engineer, independent-verifier | `100x testplan new` + `trace`, `100x test_design_check`, `100x verified` |
 | ship | release-rollout → data-lifecycle for migrations or deletions → mobile-release-safety for mobile → observability-design → verification-gate | solution-architect (rollout/rollback), independent-verifier | `100x verified`, the `PreToolUse` receipt gate, the `Stop` hook |
 
