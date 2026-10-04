@@ -5,8 +5,8 @@ React + TypeScript code (skills/frontend-architecture/SKILL.md).
 TypeScript/TSX has no `ast` module available here, so every check is regex +
 a hand-rolled brace scanner -- heuristic, no real parser, same caveat as
 craft_check.py's JS/TS engine (which this file's brace scanner is copied
-from, kept self-contained rather than imported so this script has no
-in-repo dependency). A missed violation is cheap; a false positive is what
+from, kept self-contained rather than imported so the two checkers can
+evolve independently). A missed violation is cheap; a false positive is what
 gets a layering gate turned off, so every check below is biased to require
 tight, low-noise textual context before firing -- see each function's
 docstring for the specific false-positive it was built to avoid.
@@ -146,6 +146,33 @@ def scan_matching_brace(text, open_idx):
     return n - 1
 
 
+USE_CLIENT_RX = re.compile(r"""^\s*(['"])use client\1\s*;?\s*$""")
+ASYNC_COMPONENT_RX = re.compile(
+    r"^\s*export\s+(?:default\s+)?async\s+function\s+[A-Z]"
+    r"|^\s*(?:export\s+)?const\s+[A-Z]\w*\s*(?::[^=]+)?=\s*async\b", re.M)
+APP_ROUTER_RX = re.compile(r"(?:^|/)app/")
+
+
+def has_use_client(text):
+    """'use client' as a directive: before any statement, after blanks/comments."""
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or is_comment_line(line):
+            continue
+        return bool(USE_CLIENT_RX.match(line))
+    return False
+
+
+def is_server_component(path, text):
+    """React Server Component by Next.js App Router rules: no 'use client'
+    directive, and either under an app/ route tree (server by default) or an
+    async function component (a client component cannot be async). Fetching
+    there is the documented data-loading pattern, not a layering leak."""
+    if has_use_client(text):
+        return False
+    return bool(APP_ROUTER_RX.search(path) or ASYNC_COMPONENT_RX.search(text))
+
+
 def is_comment_line(line):
     s = line.strip()
     return s.startswith("//") or s.startswith("*") or s.startswith("/*") or s.startswith("{/*")
@@ -200,7 +227,7 @@ def check_presentation_io(added, mod, base):
         if not is_tsx(p) or TEST_RX.search(p):
             continue
         text = read(p)
-        if text is None:
+        if text is None or is_server_component(p, text):
             continue
         touched = touched_lines(p, base)
         for ln, line in enumerate(text.splitlines(), 1):
