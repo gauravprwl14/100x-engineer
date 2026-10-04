@@ -23,7 +23,7 @@ timestamps from different machines.
 **Do not fire when:** the change is entirely in-process with one durable store
 and no network hop — there is no distribution to be incorrect about. For the
 feature-kind edge cases this generates, scaffold with
-`100x plan_feature new <name> --kind <kinds>` — kinds `queue`,
+`100x plan_feature new <name> --kind <kinds> --tier <tier>` — kinds `queue`,
 `cache`, `webhook`, `third-party-api`, `cron`, `batch-job` in
 `scripts/data/edge_cases_infra.json` seed the scenarios below automatically.
 
@@ -159,7 +159,7 @@ grep -rnE "(Date\.now\(\)|time\.time\(\)|System\.currentTimeMillis)" src/ | grep
 
 # 5. scaffold the spec for this domain -- seeds queue/cache/webhook/third-party
 #    edge cases (idempotency, ordering, backpressure, outbox) before code exists
-100x plan_feature new order-events --kind queue,integration
+100x plan_feature new order-events --kind queue,integration --work worker --tier small
 100x plan_feature audit <root>/specs/order-events   # exits 1 until every case resolves
 ```
 Point greps at `git diff --name-only` output rather than the whole tree; each
