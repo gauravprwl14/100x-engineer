@@ -3,23 +3,38 @@
 
 A subagent's "done, tests pass" is a claim made by the party being evaluated. This turns
 the report contract in docs/OPERATING-MODEL.md §3 into something the main session can
-check without trusting it: `lint` rejects reports that contradict themselves or the
-decision policy, and `replay` re-runs every evidence command and compares exit codes, so
-a done task is one whose proof still reproduces.
+check without trusting it:
+
+  - `lint` rejects reports that contradict themselves or the decision policy. With
+    `--graph plan.json --cwd <worktree>` it stops trusting the report's own `changes`:
+    it asks git which files actually changed in the worktree since the task's base
+    (`--base`, default HEAD; committed, staged, unstaged and untracked), and rejects
+    any outside the task's owned files, and any claimed change that is not there. A
+    done report must also carry every one of the task's declared `verify` commands,
+    verbatim, with exit 0.
+  - `replay` re-runs evidence, but only the commands the PLAN declared for the task:
+    an evidence command is text another agent wrote, so it is never executed because
+    the report contains it. Each declared command runs as an argv (shlex.split, no
+    shell); a plan that needs shell syntax writes `sh -c '...'`, which is shown before
+    it runs. Anything the verification hook classifies as a commit, push, tag or
+    publish is refused. A timeout kills the command's whole process group.
 
     agent_report.py extract message.md [-o report.json]   # LAST ```json block
-    agent_report.py lint report.json|message.md [--graph plan.json]
-    agent_report.py replay report.json [--cwd DIR] [--timeout 600] --yes
+    agent_report.py lint report.json|message.md [--graph plan.json --cwd WT [--base REV]]
+    agent_report.py replay report.json --graph plan.json [--cwd WT] [--timeout 600] --yes
     agent_report.py summary report1.json report2.json ... [--json]
 
-Exit codes: 0 clean, 1 findings or replay mismatch, 2 unreadable input,
-3 replay refused without --yes (nothing was run).
+Exit codes: 0 clean, 1 findings or replay mismatch, 2 unreadable input or a missing
+--graph/--cwd, 3 replay ran nothing (no --yes) or left something unreplayed
+(undeclared or refused commands).
 Python stdlib only.
 """
-import argparse, json, pathlib, re, subprocess, sys
+import argparse, json, os, pathlib, re, shlex, signal, subprocess, sys
 
+import _paths
 import plan_dag
 
+SCHEMA = 1
 STATUSES = ("done", "needs-decision", "blocked", "failed")
 DOORS = ("two-way", "one-way")
 LIST_KEYS = ("inputs_read", "assumptions", "questions", "plan_issues", "decisions",
@@ -27,12 +42,29 @@ LIST_KEYS = ("inputs_read", "assumptions", "questions", "plan_issues", "decision
 REQUIRED = ("agent", "task_id", "status", "understanding") + LIST_KEYS
 MAX_QUESTIONS = 5  # §5: one batch of at most five
 TAIL_LINES = 15
-FENCE_RX = re.compile(r"^```json[^\n]*\n(.*?)^```\s*$", re.S | re.M)
+CLOSE_FENCE = re.compile(r"^```\s*$")
+
+
+def json_blocks(text):
+    """Every fenced ```json block, in one linear pass over the lines. A regex with a
+    lazy body backtracks from every later opener when a fence is never closed, which
+    made 80KB of unclosed fences take seconds."""
+    blocks, cur = [], None
+    for line in text.split("\n"):
+        if cur is None:
+            if line.startswith("```json"):
+                cur = []
+        elif CLOSE_FENCE.match(line):
+            blocks.append("\n".join(cur))
+            cur = None
+        else:
+            cur.append(line)
+    return blocks
 
 
 def extract_json(text):
     """The LAST fenced json block, per §3. Earlier blocks are examples or drafts."""
-    blocks = FENCE_RX.findall(text)
+    blocks = json_blocks(text)
     if not blocks:
         return None, "no fenced ```json block found"
     try:
@@ -72,9 +104,46 @@ def _items(r, k):
     return [x for x in _list(r, k) if isinstance(x, dict)]
 
 
-def lint(r, plan=None):
-    """Every row of the §3 rejection table, plus shape checks. Returns (errors, warns)."""
+def _git(top, *args):
+    return subprocess.run(["git", "-C", str(top), *args], capture_output=True, text=True)
+
+
+def actual_changes(cwd, base, exclude=()):
+    """(paths changed in the worktree since `base`, None) or (None, why not).
+
+    Committed after base, staged, unstaged and untracked-but-not-ignored, repo-relative.
+    Renames count as both paths, so moving a file out of an owned directory is seen."""
+    r = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None, f"--cwd {cwd} is not inside a git work tree"
+    top = pathlib.Path(r.stdout.strip())
+    if _git(top, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        return None, f"--base {base!r} does not name a commit in {top}"
+    diff = _git(top, "diff", "--name-only", "--no-renames", "-z", base)
+    if diff.returncode != 0:
+        return None, f"git diff against {base} failed: {diff.stderr.strip()}"
+    untracked = _git(top, "ls-files", "--others", "--exclude-standard", "-z")
+    paths = {x for x in (diff.stdout + untracked.stdout).split("\0") if x}
+    for ex in exclude:
+        try:
+            paths.discard(str(pathlib.Path(ex).resolve().relative_to(top.resolve())))
+        except ValueError:
+            pass
+    return sorted(paths), None
+
+
+def lint(r, plan=None, actual=None):
+    """Every row of the §3 rejection table, plus shape checks. Returns (errors, warns).
+
+    `actual` is the worktree's real changed-file list (actual_changes); with a plan it
+    replaces trust in the report's own `changes`."""
     errors, warns = [], []
+    if "schema" not in r:
+        warns.append(f"no \"schema\" field — read as schema {SCHEMA}; add \"schema\": {SCHEMA}")
+    elif r["schema"] != SCHEMA:
+        errors.append(f"\"schema\": {r['schema']!r} is not supported — this agent_report "
+                      f"reads schema {SCHEMA}")
 
     for k in REQUIRED:
         if k not in r:
@@ -158,19 +227,47 @@ def lint(r, plan=None):
         if task is None:
             errors.append(f"task_id {r.get('task_id')!r} is not a task in the supplied plan")
         else:
-            owned = plan_dag._ids(task.get("files"))
-            for c in _items(r, "changes"):
-                p = c.get("path")
-                if isinstance(p, str) and not plan_dag.path_owned(p, owned):
-                    errors.append(f"change {p!r} is outside {r['task_id']}'s owned files "
-                                  f"({', '.join(owned) or 'none'}) — collisions break "
-                                  f"parallel work; revert it or raise a plan issue")
+            errors += _plan_checks(r, task, status, evidence, actual, warns)
     if status == "blocked" and not blocking:
         errors.append("status blocked with no blocking question or plan issue — a block "
                       "must say what unblocks it (§3)")
     if status == "failed" and not evidence:
         errors.append("status failed with no evidence — a failure must show what failed (§3)")
     return errors, warns
+
+
+def _plan_checks(r, task, status, evidence, actual, warns):
+    errors, tid = [], r["task_id"]
+    owned = plan_dag._ids(task.get("files"))
+    owned_s = ", ".join(owned) or "none"
+    claimed = [c["path"] for c in _items(r, "changes") if isinstance(c.get("path"), str)]
+    for p in claimed:
+        if not plan_dag.path_owned(p, owned):
+            errors.append(f"change {p!r} is outside {tid}'s owned files ({owned_s}) — "
+                          f"collisions break parallel work; revert it or raise a plan issue")
+    if actual is not None:
+        for p in actual:
+            if not plan_dag.path_owned(p, owned):
+                errors.append(f"the worktree changed {p!r}, outside {tid}'s owned files "
+                              f"({owned_s}) — whatever the report says, this file differs "
+                              f"from the task's base; revert it or raise a plan issue")
+        missing = [p for p in claimed if p not in actual]
+        for p in missing:
+            errors.append(f"change {p!r} is claimed but the worktree has no change to it "
+                          f"since the task's base — the report describes work that is "
+                          f"not there")
+        if status == "done" and not actual:
+            warns.append(f"status done but no file changed since the task's base — "
+                         f"right only for a verification-only task")
+    if status == "done":
+        ran = {e["cmd"].strip() for e in evidence
+               if isinstance(e.get("cmd"), str) and e.get("exit_code") == 0}
+        for v in plan_dag._ids(task.get("verify")):
+            if v.strip() not in ran:
+                errors.append(f"status done but {tid}'s declared verify command {v!r} is "
+                              f"not in the evidence with exit 0 — run it exactly as the "
+                              f"plan writes it and record the result")
+    return errors
 
 
 def cmd_extract(a):
@@ -185,7 +282,15 @@ def cmd_extract(a):
         return 2
     out = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     if a.output:
-        pathlib.Path(a.output).write_text(out)
+        # -o is an explicit destination and may sit outside the repository (the
+        # main session saves reports next to its worktrees); what must not happen
+        # is a planted symlink at that path redirecting the write.
+        dest = pathlib.Path(a.output).absolute()
+        repo, in_git = _paths.git_root()
+        inside = in_git and pathlib.Path(repo).resolve() in dest.parent.resolve().parents \
+            or dest.parent.resolve() == pathlib.Path(repo).resolve()
+        _paths.safe_write_text(dest, out, repo if inside else dest.parent,
+                               "agent_report extract -o")
         print(f"wrote {a.output}")
     else:
         sys.stdout.write(out)
@@ -197,12 +302,22 @@ def cmd_lint(a):
     if err:
         print(f"agent_report lint: {err}", file=sys.stderr)
         return 2
-    plan = None
+    plan = actual = None
     if a.graph:
+        if not a.cwd:
+            print("agent_report lint: --graph needs --cwd <the task's worktree>: owned "
+                  "files are checked against what git says changed there, not against "
+                  "the report's own list", file=sys.stderr)
+            return 2
         plan = plan_dag.load_plan(a.graph)
         if plan is None:
             return 2
-    errors, warns = lint(r, plan)
+        exclude = [a.report] if a.report != "-" else []
+        actual, why = actual_changes(pathlib.Path(a.cwd), a.base, exclude)
+        if why:
+            print(f"agent_report lint: {why}", file=sys.stderr)
+            return 2
+    errors, warns = lint(r, plan, actual)
     for w in warns:
         print(f"  WARN  {w}")
     for n, e in enumerate(errors, 1):
@@ -216,46 +331,104 @@ def _tail(s, n=TAIL_LINES):
     return "\n".join(s.rstrip().splitlines()[-n:])
 
 
+def run_argv(argv, cwd, timeout):
+    """(exit code | "timeout", combined output). No shell. The command gets its own
+    session so a timeout can kill everything it started, not just the direct child
+    (a test runner's workers would otherwise outlive the replay)."""
+    try:
+        p = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    except OSError as e:
+        return 127, f"{argv[0]}: {e.strerror or e}"
+    try:
+        out, _ = p.communicate(timeout=timeout)
+        return p.returncode, out or ""
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            p.kill()
+        out, _ = p.communicate()
+        return "timeout", out or ""
+
+
+def plan_replay(r, task, cwd):
+    """Sort every evidence entry into run / undeclared / refused, and list declared
+    verify commands the report has no evidence for."""
+    declared = [v.strip() for v in plan_dag._ids(task.get("verify"))]
+    run, undeclared, refused = [], [], []
+    for e in _items(r, "evidence"):
+        cmd = e["cmd"].strip()
+        if cmd not in declared:
+            undeclared.append(e)
+            continue
+        problems = plan_dag.command_problems(cmd, cwd)
+        if problems:
+            refused.append((e, problems[0]))
+            continue
+        run.append((e, shlex.split(cmd)))
+    have = {e["cmd"].strip() for e in _items(r, "evidence")}
+    missing = [v for v in declared if v not in have]
+    return run, undeclared, refused, missing
+
+
 def cmd_replay(a):
     r, err = load_report(a.report)
     if err:
         print(f"agent_report replay: {err}", file=sys.stderr)
         return 2
+    if not a.graph:
+        print("agent_report replay: --graph plan.json is required — only the commands the "
+              "plan declares as the task's `verify` are ever run; evidence text alone is "
+              "never executed", file=sys.stderr)
+        return 2
+    plan = plan_dag.load_plan(a.graph)
+    if plan is None:
+        return 2
+    by_id, _ = plan_dag.graph(plan.get("tasks", []))
+    task = by_id.get(r.get("task_id"))
+    if task is None:
+        print(f"agent_report replay: task_id {r.get('task_id')!r} is not a task in "
+              f"{a.graph}", file=sys.stderr)
+        return 2
     cwd = pathlib.Path(a.cwd or ".").resolve()
     if not cwd.is_dir():
         print(f"agent_report replay: --cwd {cwd} is not a directory", file=sys.stderr)
         return 2
-    ev = [e for e in _items(r, "evidence")
-          if isinstance(e.get("cmd"), str) and type(e.get("exit_code")) is int]
-    if len(ev) != len(_list(r, "evidence")):
+    if len(_items(r, "evidence")) != len(_list(r, "evidence")) or any(
+            not isinstance(e.get("cmd"), str) or type(e.get("exit_code")) is not int
+            for e in _items(r, "evidence")):
         print("agent_report replay: some evidence entries lack a cmd string or an integer "
               "exit_code; run `agent_report lint` first", file=sys.stderr)
         return 1
-    if not ev:
+    run, undeclared, refused, missing = plan_replay(r, task, cwd)
+    tid = r.get("task_id", "?")
+    print(f"agent_report replay: {tid} in {cwd}")
+    for e, argv in run:
+        script = plan_dag.shell_wrapped(argv)
+        print(f"  declared  $ {e['cmd']}    (claimed exit {e['exit_code']})")
+        if script is not None:
+            print(f"            runs a shell script: {script}")
+    for e in undeclared:
+        print(f"  not replayed (undeclared)  $ {e['cmd']}  — not one of {tid}'s verify "
+              f"commands in {a.graph}")
+    for e, why in refused:
+        print(f"  refused   $ {e['cmd']}  — {why}")
+    for v in missing:
+        print(f"  MISSING   $ {v}  — declared verify command with no evidence entry")
+    if not run and not undeclared and not refused and not missing:
         if r.get("status") == "done":
             print("agent_report replay: status done but there is no evidence to replay")
             return 1
         print("agent_report replay: no evidence to replay")
         return 0
-    # Evidence commands are arbitrary shell written by another agent; nothing runs until
-    # the caller has seen them, the same consent rule as ledger shard's --yes.
     if not a.yes:
-        print(f"agent_report replay: would run {len(ev)} command(s) in {cwd}. "
-              f"Nothing has been run.\n")
-        for e in ev:
-            print(f"  $ {e['cmd']}    (claimed exit {e['exit_code']})")
-        print("\nRe-run with --yes to execute them.")
+        print(f"\nNothing has been run. Re-run with --yes to execute the {len(run)} "
+              f"declared command(s) above.")
         return 3
     mismatches = 0
-    for e in ev:
-        try:
-            p = subprocess.run(e["cmd"], shell=True, cwd=cwd, capture_output=True,
-                               text=True, timeout=a.timeout)
-            actual, out = p.returncode, (p.stdout or "") + (p.stderr or "")
-        except subprocess.TimeoutExpired as t:
-            actual = "timeout"
-            out = (t.stdout or b"").decode(errors="replace") if isinstance(t.stdout, bytes) \
-                else (t.stdout or "")
+    for e, argv in run:
+        actual, out = run_argv(argv, cwd, a.timeout)
         if actual == e["exit_code"]:
             print(f"  ok        $ {e['cmd']}  (exit {actual})")
             continue
@@ -268,9 +441,13 @@ def cmd_replay(a):
             print("\n".join("              " + l for l in str(e["output_tail"]).splitlines()))
         print("            actual output tail:")
         print("\n".join("              " + l for l in (_tail(out) or "(no output)").splitlines()))
-    print(f"\nagent_report replay: {r.get('task_id', '?')}: {len(ev) - mismatches}/{len(ev)} "
-          f"reproduced, {mismatches} mismatch(es)")
-    return 1 if mismatches else 0
+    skipped = len(undeclared) + len(refused)
+    print(f"\nagent_report replay: {tid}: {len(run) - mismatches}/{len(run)} "
+          f"reproduced, {mismatches} mismatch(es), {len(missing)} missing, "
+          f"{skipped} not replayed")
+    if mismatches or missing:
+        return 1
+    return 3 if skipped else 0
 
 
 def cmd_summary(a):
@@ -344,14 +521,22 @@ def main():
     p.set_defaults(fn=cmd_extract)
     p = sub.add_parser("lint", help="check a report against the §3 contract")
     p.add_argument("report", help="report JSON or a whole agent message, or -")
-    p.add_argument("--graph", help="plan.json, to check changes stay in owned files")
+    p.add_argument("--graph", help="plan.json: check the worktree's real changes stay in "
+                                   "the task's owned files and every verify command ran")
+    p.add_argument("--cwd", help="the task's worktree (required with --graph)")
+    p.add_argument("--base", default="HEAD",
+                   help="the commit the task started from (default HEAD: uncommitted "
+                        "work only)")
     p.set_defaults(fn=cmd_lint)
-    p = sub.add_parser("replay", help="re-run every evidence command and compare exit codes")
+    p = sub.add_parser("replay", help="re-run the task's declared verify commands and "
+                                      "compare exit codes with the evidence")
     p.add_argument("report")
+    p.add_argument("--graph", help="plan.json (required): only its verify commands run")
     p.add_argument("--cwd", help="directory to run the commands in (default: current)")
     p.add_argument("--timeout", type=int, default=600, help="seconds per command")
     p.add_argument("--yes", action="store_true",
-                   help="actually run the commands; without it they are only printed")
+                   help="actually run the declared commands; without it they are only "
+                        "printed")
     p.set_defaults(fn=cmd_replay)
     p = sub.add_parser("summary", help="merge questions and plan issues across reports")
     p.add_argument("reports", nargs="+")

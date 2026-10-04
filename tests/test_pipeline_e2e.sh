@@ -220,7 +220,7 @@ run testplan new "$S"
 rc_is 0 $? "testplan new: exits 0"
 has "3 acceptance criteria"
 for ac in AC-1 AC-2 AC-3; do
-  grep -qE "^\| TC-[0-9]+-1 \| $ac \|" $OUT/e.out && ok "testplan new: cases for $ac" || bad "testplan new: no case for $ac"
+  grep -qE "^\| TC-[0-9]+-1 \| login/$ac \|" $OUT/e.out && ok "testplan new: cases for login/$ac" || bad "testplan new: no case for login/$ac"
 done
 run testplan new "$S" --out
 rc_is 0 $? "testplan new --out: exits 0"
@@ -230,14 +230,14 @@ rc_is 0 $? "testplan new --out: exits 0"
 # ---------------------------------------------------------------- 4. task graph
 PLAN="$E/specs/login/plan.json"
 cat > "$PLAN" <<'JSON'
-{"feature": "login", "tier": "small", "tasks": [
+{"schema": 1, "feature": "login", "tier": "small", "tasks": [
   {"id": "T0", "title": "auth DTO contract", "owner": "backend-engineer", "depends_on": [],
-   "files": ["src/auth/dto/**"], "acceptance": ["AC-1"], "verify": ["npx tsc --noEmit"], "contract": true},
+   "files": ["src/auth/dto/**"], "acceptance": ["AC-1"], "verify": ["test -d src/auth/dto"], "contract": true},
   {"id": "T1", "title": "session service", "owner": "backend-engineer", "depends_on": ["T0"],
    "consumes": ["T0"], "files": ["src/auth/service/**"], "acceptance": ["AC-1", "AC-2"],
-   "verify": ["npx jest unit"]},
+   "verify": ["test -f src/auth/service/session.service.ts"]},
   {"id": "T2", "title": "logout + e2e", "owner": "qa-engineer", "depends_on": ["T1"],
-   "files": ["tests/**"], "acceptance": ["AC-3"], "verify": ["npx jest e2e"]}
+   "files": ["tests/**"], "acceptance": ["AC-3"], "verify": ["test -f tests/login.test.ts"]}
 ]}
 JSON
 run plan_dag lint "$PLAN" --spec "$S"
@@ -254,18 +254,83 @@ has "AC-3 in $S is covered by no task"
 # ---------------------------------------------------------------- 5. trace
 mkdir -p tests
 cat > tests/login.test.ts <<'TS'
-test('AC-1 signs in with a valid password', async () => { expect(await login()).toBe(204); });
+test('login/AC-1 signs in with a valid password', async () => { expect(await login()).toBe(204); });
+test('billing/AC-2 a different feature numbered the same', () => { expect(1).toBe(1); });
+test('AC-3 a bare id names no feature', () => { expect(1).toBe(1); });
 TS
 run testplan trace "$S" --tests tests
-rc_is 1 $? "testplan trace: only AC-1 tagged fails"
+rc_is 1 $? "testplan trace: only login/AC-1 tagged fails"
 has "uncovered: AC-2, AC-3"
+has "1 tag(s) for other features ignored"
+has "HINT 1 bare AC-<n> tag(s) not counted"
 cat >> tests/login.test.ts <<'TS'
-test('AC-2 wrong password is a generic 401', async () => { expect(await bad()).toBe(401); });
-test('AC-3 ended session is refused', async () => { expect(await after()).toBe(401); });
+test('login/AC-2 wrong password is a generic 401', async () => { expect(await bad()).toBe(401); });
+test('login/AC-3 ended session is refused', async () => { expect(await after()).toBe(401); });
 TS
 run testplan trace "$S" --tests tests
 rc_is 0 $? "testplan trace: all three tagged passes"
 has "3/3 ACs covered"
+
+
+# ---------------------------------------------------------------- 5b. every gate command as written
+# The router (skills/100x), the agents and docs/OPERATING-MODEL.md write record
+# arguments in several shapes; in a project with no .100x.json every one must reach
+# the record under docs/engineering/, never exit 2 for resolving against the repo top.
+[ ! -e .100x.json ] && ok "gates: this repo has no .100x.json" || bad "gates: unexpected .100x.json"
+for args in "prd audit $E/prds/login" "prd audit prds/login" "prd audit login"; do
+  run $args; rc_is 0 $? "gate: 100x $args"
+done
+for args in "prd align $E/prds/login $E/specs/login" "prd align prds/login specs/login" "prd align login login"; do
+  run $args; rc_is 0 $? "gate: 100x $args"
+done
+for args in "plan_feature audit $E/specs/login" "plan_feature audit specs/login" "plan_feature audit login" \
+            "plan_feature audit $S"; do
+  run $args; rc=$?
+  [ "$rc" -eq 1 ] && grep -q "acceptance : 3 criteria" $OUT/e.out && ok "gate: 100x $args audits the spec (exit 1: unfilled)" \
+    || bad "gate: 100x $args (exit $rc)"
+done
+(cd tests && "$X" plan_feature audit specs/login >$OUT/e.out 2>&1); rc=$?
+[ "$rc" -eq 1 ] && ok "gate: plan_feature audit specs/login from a subdirectory" || bad "gate: from a subdirectory (exit $rc)"
+for args in "testplan new $S" "testplan new specs/login/spec.md" "testplan new login" \
+            "testplan trace $S --tests tests" "testplan trace specs/login/spec.md --tests tests" \
+            "testplan trace login --tests tests" \
+            "plan_dag lint $PLAN --spec $S" "plan_dag lint $PLAN --spec specs/login/spec.md" \
+            "plan_dag lint $PLAN --spec login" "plan_dag waves $PLAN" "plan_dag next $PLAN"; do
+  run $args; rc_is 0 $? "gate: 100x $args"
+done
+
+# per task: the agent works in its own worktree; lint and replay check it there
+git worktree add -q "$TMP/wt-T1" 2>/dev/null
+mkdir -p "$TMP/wt-T1/src/auth/service"
+echo 'export class SessionService {}' > "$TMP/wt-T1/src/auth/service/session.service.ts"
+cat > "$OUT/T1.md" <<'MD'
+Done.
+
+```json
+{"schema": 1, "agent": "backend-engineer", "task_id": "T1", "status": "done",
+ "understanding": "Session service for sign-in.", "inputs_read": ["docs/engineering/specs/login/spec.md"],
+ "assumptions": [], "questions": [], "plan_issues": [], "decisions": [],
+ "changes": [{"path": "src/auth/service/session.service.ts", "summary": "service"}],
+ "evidence": [{"cmd": "test -f src/auth/service/session.service.ts", "exit_code": 0, "output_tail": ""}],
+ "follow_ups": []}
+```
+MD
+run agent_report extract "$OUT/T1.md" -o "$OUT/T1.json"; rc_is 0 $? "gate: 100x agent_report extract msg.md -o T1.json"
+run agent_report lint "$OUT/T1.json" --graph "$PLAN" --cwd "$TMP/wt-T1"
+rc_is 0 $? "gate: 100x agent_report lint T1.json --graph plan.json --cwd ../wt-T1"
+run agent_report replay "$OUT/T1.json" --graph "$PLAN" --cwd "$TMP/wt-T1" --yes
+rc_is 0 $? "gate: 100x agent_report replay T1.json --graph plan.json --cwd ../wt-T1 --yes"
+has "1/1 reproduced"
+# the old form, with no plan, is refused rather than running report text
+run agent_report replay "$OUT/T1.json" --cwd "$TMP/wt-T1" --yes
+rc_is 2 $? "gate: replay without --graph is refused (exit 2)"
+# a hollow report: the same claims against a worktree where nothing changed
+git worktree add -q "$TMP/wt-hollow" 2>/dev/null
+run agent_report lint "$OUT/T1.json" --graph "$PLAN" --cwd "$TMP/wt-hollow"
+rc_is 1 $? "gate: a hollow report (claimed change absent) is rejected"
+has "is claimed but the worktree has no change"
+git worktree remove --force "$TMP/wt-hollow" 2>/dev/null
+git worktree remove --force "$TMP/wt-T1" 2>/dev/null
 
 # ---------------------------------------------------------------- 6. decision
 run decide new "Session store for login" --affects "src/auth/**" --tag login

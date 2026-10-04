@@ -2,6 +2,7 @@ Done; I also tweaked the DTO.
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "done",

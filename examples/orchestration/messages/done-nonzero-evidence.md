@@ -2,6 +2,7 @@ Done, one check is red but unrelated.
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "done",

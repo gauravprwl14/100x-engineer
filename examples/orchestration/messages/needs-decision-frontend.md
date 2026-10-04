@@ -2,6 +2,7 @@ Stopped on the contract.
 
 ```json
 {
+  "schema": 1,
   "agent": "frontend-engineer",
   "task_id": "T2",
   "status": "needs-decision",
