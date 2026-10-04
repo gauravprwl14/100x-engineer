@@ -9,7 +9,7 @@
 // same container CI uses, or every run will differ.
 import { test, expect } from '@playwright/test';
 
-test('AC-1 <screen> matches the approved design', { tag: '@visual' }, async ({ page }) => {
+test('<feature>/AC-1 <screen> matches the approved design', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/<route>');
   await expect(page).toHaveScreenshot('<screen>.png', {
     fullPage: true,

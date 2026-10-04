@@ -1,10 +1,10 @@
 # Maestro critical-journey flow. Run: maestro test maestro-flow.yaml
-# Put flows under .maestro/ so `100x testplan trace` counts the AC ids below.
+# Put flows under .maestro/ so `100x testplan trace` counts the <feature>/AC-<n> tags below.
 # Commands: https://docs.maestro.dev/
 appId: com.example.app
 tags:
   - critical
-  - AC-1
+  - <feature>/AC-1
 ---
 - launchApp:
     clearState: true
