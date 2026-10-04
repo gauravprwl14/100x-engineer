@@ -23,6 +23,11 @@ nothas() { grep -qE -- "$1" $OUT/tp.out && { FAIL=$((FAIL+1)); printf '  FAIL %-
 
 cat > spec.md <<'EOF'
 # Spec
+
+| field | value |
+|---|---|
+| feature | tagging |
+
 ## Acceptance criteria
 - **AC-1** A member can tag up to 10 people on a photo from the photo page.
 | AC-2 | Only the album owner can delete a tag. |
@@ -39,21 +44,22 @@ EOF
 
 # ======================================================================= new
 expect 0 "new: spec with ACs generates a plan" new spec.md
-has "^\| TC-1-1 \| AC-1 \| e2e \| equivalence partition \(valid\)"
-has "\| TC-1-[0-9]+ \| AC-1 \| unit \| boundary value \| value = 11 \| rejected.*max\+1"
-has "\| AC-1 \| unit \| boundary value \| value = 10 \| accepted \(max\)"
-has "\| AC-4 \| unit \| boundary value \| value = 0 \| rejected"
-has "\| AC-4 \| unit \| boundary value \| value = 281 \| rejected"
-has "\| AC-2 \| integration \| negative / authz \|"
-has "\| AC-3 \| integration \| state transition \(illegal\) \|"
-has "\| AC-1 \| [a-z]+ \| equivalence partition \(invalid\) \|"
+has "^\| TC-1-1 \| tagging/AC-1 \| e2e \| equivalence partition \(valid\)"
+has "\| TC-1-[0-9]+ \| tagging/AC-1 \| unit \| boundary value \| value = 11 \| rejected.*max\+1"
+has "\| tagging/AC-1 \| unit \| boundary value \| value = 10 \| accepted \(max\)"
+has "\| tagging/AC-4 \| unit \| boundary value \| value = 0 \| rejected"
+has "\| tagging/AC-4 \| unit \| boundary value \| value = 281 \| rejected"
+has "\| tagging/AC-2 \| integration \| negative / authz \|"
+has "\| tagging/AC-3 \| integration \| state transition \(illegal\) \|"
+has "\| tagging/AC-1 \| [a-z]+ \| equivalence partition \(invalid\) \|"
 has "\| TC-web.reflow-320-1 \| web.reflow-320 \| e2e \|"
 has "\| TC-api.p95-budget-1 \| api.p95-budget \| load \|"
 has "\| TC-a11y.wcag22-aa-1 \| a11y.wcag22-aa \| a11y \|"
 has "^\| case id \| AC id \| level \| technique \| input / precondition \| expected \| automated\? \| owner \|"
 has "4 acceptance criteria, 3 implicit requirements"
-nothas "\| AC-2 \| unit \| boundary value \| value ="     # no numbers in AC-2: no boundary rows
-nothas "\| AC-4 \| integration \| state transition"       # no state words in AC-4
+has "Tag every test with its namespaced id \\(\`tagging/AC-1\`\\)"
+nothas "\| tagging/AC-2 \| unit \| boundary value \| value ="     # no numbers in AC-2: no boundary rows
+nothas "\| tagging/AC-4 \| integration \| state transition"       # no state words in AC-4
 nothas "AC-5"                                             # the 'See AC-2' line defined nothing new
 
 expect 2 "new --out refuses to write outside a git repo" new spec.md --out plans/p.md
@@ -88,12 +94,12 @@ AC-2: A comment holds at most 280 characters. (R3)
 EOF
 expect 0 "new: canonical AC lines with (R, S) links parse" new canon.md
 has "2 acceptance criteria"
-has "\| AC-2 \| unit \| boundary value \| value = 281 \|"
+has "\| canon/AC-2 \| unit \| boundary value \| value = 281 \|"
 nothas "\(R2, S1\)"                                        # links stripped from case text
 nothas "value = 2 \|"                                       # 'R2' is not a boundary number
 python3 -c "
 import sys; sys.path.insert(0, '$ROOT/scripts')
-from testplan import parse_criteria
+from _md import parse_criteria
 c = parse_criteria(open('canon.md').read())
 assert [x['links'] for x in c] == [['R2', 'S1'], ['R3']], c
 " && { PASS=$((PASS+1)); echo "  ok   parse_criteria returns the R/S links"; } \
@@ -113,28 +119,28 @@ printf '{"root": "eng"}\n' > feat/.100x.json
 mkdir -p t/e2e t/api src t/.maestro t/node_modules/pkg
 cat > t/e2e/tag.spec.ts <<'EOF'
 import { test, expect } from '@playwright/test';
-test('AC-1 tags ten people', { tag: '@critical' }, async ({ page }) => {
+test('tagging/AC-1 tags ten people', { tag: '@critical' }, async ({ page }) => {
   await expect(page.getByRole('list')).toBeVisible();
 });
-// test('AC-3 publishing a draft', async ({ page }) => {
+// test('tagging/AC-3 publishing a draft', async ({ page }) => {
 //   await expect(page.getByText('Published')).toBeVisible();
 // });
 /*
-test('AC-3 block-commented test', async () => {
+test('tagging/AC-3 block-commented test', async () => {
   expect(1).toBe(1);
 });
 */
-test.skip('AC-4 comment length', async () => { expect(1).toBe(1); });
+test.skip('tagging/AC-4 comment length', async () => { expect(1).toBe(1); });
 EOF
 cat > t/api/test_delete.py <<'EOF'
-# Covers AC-2 (owner-only delete)
+# Covers tagging/AC-2 (owner-only delete)
 def test_non_owner_cannot_delete(client):
     assert client.delete("/tags/1").status_code == 403
 EOF
-printf '// AC-3 AC-4 mentioned in a helper, not a test\nexport const X = 1;\n' > t/e2e/helpers.ts
-printf '# AC-3\nCOMMENT_MAX = 280  # AC-4\n' > t/api/fixtures.py
-printf 'AC-3 described in a README\n' > t/README.md
-printf '// AC-3 in vendored code\ntest("AC-3", () => {});\n' > t/node_modules/pkg/x.test.js
+printf '// tagging/AC-3 tagging/AC-4 mentioned in a helper, not a test\nexport const X = 1;\n' > t/e2e/helpers.ts
+printf '# tagging/AC-3\nCOMMENT_MAX = 280  # tagging/AC-4\n' > t/api/fixtures.py
+printf 'tagging/AC-3 described in a README\n' > t/README.md
+printf '// tagging/AC-3 in vendored code\ntest("tagging/AC-3", () => {});\n' > t/node_modules/pkg/x.test.js
 
 expect 1 "trace: partial coverage exits 1" trace spec.md --tests t
 has "covered   AC-1"
@@ -164,33 +170,100 @@ EOF
 
 cat > t/e2e/publish.test.tsx <<'EOF'
 import { it, expect } from 'vitest';
-it('publishes a draft once confirmed @AC-3', () => { expect(true).toBe(true); });
+it('publishes a draft once confirmed @tagging/AC-3', () => { expect(true).toBe(true); });
 EOF
 cat > t/.maestro/comment.yaml <<'EOF'
 appId: com.example.app
 tags:
-  - AC-4
+  - tagging/AC-4
 ---
 - launchApp
 EOF
 cat > t/api/limits_test.go <<'EOF'
 package api
-// AC-99 references an id the spec never defined
+// tagging/AC-99 references an id the spec never defined
 func TestCommentLimit(t *testing.T) {}
 EOF
 expect 0 "trace: all ACs covered exits 0 (vitest @tag + maestro tags)" trace spec.md --tests t
 has "4/4 ACs covered"
 has "publish.test.tsx:2"
 has "comment.yaml:3"
-has "WARN tag for an AC the spec does not define: .*AC-99"
+has "WARN tag for an AC the spec does not define: .*tagging/AC-99"
 
 mkdir -p t2
-printf "test('AC-1 x', () => { expect(1).toBe(1) })\n" > t2/a.test.js
-printf "test('AC-2 x', () => { expect(1).toBe(1) })\n" > t2/b.test.js
+printf "test('tagging/AC-1 x', () => { expect(1).toBe(1) })\n" > t2/a.test.js
+printf "test('tagging/AC-2 x', () => { expect(1).toBe(1) })\n" > t2/b.test.js
 expect 1 "trace: comma-separated dirs combine (AC-3, AC-4 still missing)" trace spec.md --tests t2,t/api
 has "covered   AC-1"
 has "covered   AC-2"
 expect 2 "trace: nonexistent --tests dir exits 2, never a silent pass" trace spec.md --tests does-not-exist
+
+# decision (a): only <feature>/AC-<n> tags for THIS spec's feature count
+mkdir -p t3
+cat > t3/ns.test.ts <<'EOF'
+test('AC-1 bare tag', () => { expect(1).toBe(1); });
+test('billing/AC-2 another feature', () => { expect(1).toBe(1); });
+test('tagging/AC-3 this feature', () => { expect(1).toBe(1); });
+EOF
+expect 1 "trace: bare and other-feature tags do not count" trace spec.md --tests t3
+has "UNCOVERED AC-1"
+has "UNCOVERED AC-2"
+has "covered   AC-3"
+has "HINT 1 bare AC-<n> tag\(s\) not counted \(first: t3/ns.test.ts:1 AC-1\)"
+has "tag tests .tagging/AC-<n>."
+has "1 tag\(s\) for other features ignored"
+expect 1 "trace --feature billing: only billing's AC-2 counts" trace spec.md --tests t3 --feature billing
+has "covered   AC-2"
+has "UNCOVERED AC-3"
+
+# a skipped group marks every test inside it, however deep (Code P7)
+mkdir -p t4
+cat > t4/group.spec.ts <<'EOF'
+describe.skip('tagging', () => {
+  beforeEach(() => { setup({ a: 1 }); });
+  describe('nested', () => {
+    it('tagging/AC-1 deep inside a skipped group', () => {
+      expect(1).toBe(1);
+    });
+  });
+});
+xdescribe('old', () => {
+  it('tagging/AC-2 inside xdescribe', () => {});
+});
+context.skip('ctx', () => {
+  it('tagging/AC-3 inside context.skip', () => {});
+});
+describe('live group', () => {
+  it('tagging/AC-4 runs', () => { expect('}').toBe('}'); });
+});
+EOF
+cat > t4/test_group.py <<'EOF'
+import pytest
+
+
+@pytest.mark.skip(reason="flaky")
+class TestTagging:
+    def test_one(self):
+        assert True  # tagging/AC-1
+
+    def test_two(self):
+        assert True  # tagging/AC-2
+
+
+def test_live():
+    assert True  # tagging/AC-3
+EOF
+expect 1 "trace: tags inside skipped groups do not count" trace spec.md --tests t4
+has "UNCOVERED AC-1"
+has "UNCOVERED AC-2"
+has "group.spec.ts:4 \(skipped test"
+has "group.spec.ts:10 \(skipped test"
+has "group.spec.ts:13 \(skipped test"
+has "test_group.py:10 \(skipped test"
+has "covered   AC-3"
+has "test_group.py:14"
+has "covered   AC-4"
+has "group.spec.ts:16"
 
 # ==================================================================== matrix
 expect 0 "matrix mobile prints ASK for min OS" matrix --work mobile --tier small
@@ -222,13 +295,13 @@ tpl() { # tpl <file> <required substring>...
   done
   printf '  ok   %-66s\n' "template checked: ${f##*/}"
 }
-tpl e2e-critical-journey.spec.ts "from '@playwright/test'" "test(" "AC-1" "@critical" "expect("
+tpl e2e-critical-journey.spec.ts "from '@playwright/test'" "test(" "<feature>/AC-1" "@critical" "expect("
 tpl visual.spec.ts "toHaveScreenshot(" "maxDiffPixelRatio" "threshold" "mask:" "animations: 'disabled'" "--update-snapshots"
 tpl a11y.spec.ts "import AxeBuilder from '@axe-core/playwright'" ".withTags(" "wcag2a" "wcag2aa" "wcag21aa" "wcag22aa" "violations).toEqual([])"
 tpl responsive.spec.ts "320" "768" "1280" "scrollWidth" "clientWidth" "setViewportSize"
 tpl playwright.config.ts "defineConfig" "devices['Desktop Safari']" "channel: 'msedge'" "retries"
 tpl load.k6.js "from 'k6/http'" "thresholds" "http_req_duration" "p(95)<" "http_req_failed" "rate<" "smoke" "load" "stress" "soak" "__ENV.SCENARIO"
-tpl maestro-flow.yaml "appId:" "---" "launchApp" "tapOn" "assertVisible" "AC-1"
+tpl maestro-flow.yaml "appId:" "---" "launchApp" "tapOn" "assertVisible" "<feature>/AC-1"
 tpl smoke.sh "curl" "HEALTH_PATH" "SMOKE_PATH" "set -euo pipefail"
 tpl exploratory-charter.md "charter" "areas" "risks" "timebox" "Notes" "Explore It!" "Bach"
 tpl flaky-test-policy.md "quarantine" "owner" "expir" "rerun"
@@ -248,6 +321,7 @@ expect 1 "examples/qa fixture: partial coverage detected" trace "$ROOT/examples/
 has "uncovered: AC-3, AC-4, AC-5"
 nothas "fixtures.py"
 has "covered   AC-2"
+has "HINT 1 bare AC-<n> tag.*publish.spec.ts:4 AC-3"
 
 echo
 echo "testplan: $PASS passed, $FAIL failed"

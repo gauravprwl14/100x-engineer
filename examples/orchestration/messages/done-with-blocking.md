@@ -2,6 +2,7 @@ Done, with one open issue.
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "done",

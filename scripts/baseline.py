@@ -9,11 +9,20 @@ asks only what is genuinely the user's call (class C).
 
     baseline.py show --work web-ui,api --tier small --risk elevated
     baseline.py show --work api --tier growth --json
-    baseline.py lint [--file other.json]
+    baseline.py lint [--file other.json] [--against REV]
+
+The catalogue is versioned. `"version"` is an integer that goes up whenever items are
+added; an item's optional `"since"` names the version that added it (absent = 1). A
+spec pins the version it was written against (`| baseline | <n> |`, written by
+`plan_feature new`), so its audit requires only the items that existed then and WARNS
+about newer ones instead of failing a finished spec overnight. For the same reason an
+id is never renamed or deleted: a retired item stays, marked `"deprecated": true`, so
+pinned specs that list it still resolve. `lint` compares against the committed copy
+(`--against`, default HEAD) and fails when an id disappears.
 
 Python stdlib only.
 """
-import argparse, json, pathlib, re, shlex, sys
+import argparse, json, pathlib, re, shlex, subprocess, sys
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 DATA = PLUGIN / "scripts" / "data"
@@ -27,6 +36,7 @@ RISK_BY_KIND = _tiers["_risk"]["implied_by_kind"]
 # Skills being written in parallel; an owner_skill naming one of these is not an
 # error yet. Once the skill directory exists, lint asks for it to leave this list.
 PENDING_SKILLS: set = set()
+SCHEMA = 1
 
 # enforced_by may name an external tool; it must be one a reader can install, not prose.
 EXTERNAL_TOOLS = {"npx", "gitleaks", "semgrep", "checkov", "trivy", "syft", "buf",
@@ -37,12 +47,21 @@ WORK_ALIASES = {"public-api": "api"}
 CLASSES = ("A", "B", "C")
 REQUIRED_KEYS = ("id", "work", "class", "from_tier", "default", "assumption_text",
                  "source", "enforced_by", "owner_skill", "waivable")
-OPTIONAL_KEYS = ("risk", "ask", "blocks_ready")
+OPTIONAL_KEYS = ("risk", "ask", "blocks_ready", "since", "deprecated")
+TOP_KEYS = ("_doc", "_work_types", "schema", "version", "items")
 ID_RX = re.compile(r"^[a-z][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$")
 
 
 def load(path=BASELINE_PATH):
     return json.loads(pathlib.Path(path).read_text())
+
+
+def version(data):
+    return data.get("version", 1)
+
+
+def since(item):
+    return item.get("since", 1)
 
 
 def work_types(data):
@@ -79,9 +98,14 @@ def applies(item, work, tier, risk):
     return RISK_ORDER.index(risk) >= RISK_ORDER.index(item.get("risk", "none"))
 
 
-def applicable(work, tier, risk, data=None):
+def applicable(work, tier, risk, data=None, upto=None, deprecated=False):
+    """Items that apply to work x tier x risk. `upto` keeps only items that existed
+    in that catalogue version (a spec's pin); deprecated items are dropped unless
+    asked for."""
     data = data or load()
-    return [i for i in data["items"] if applies(i, work, tier, risk)]
+    return [i for i in data["items"] if applies(i, work, tier, risk)
+            and (deprecated or not i.get("deprecated"))
+            and (upto is None or since(i) <= upto)]
 
 
 def blocking_ids(data=None):
@@ -104,10 +128,11 @@ def cmd_show(a):
         return 2
     items = applicable(work, a.tier, a.risk, data)
     if a.json:
-        print(json.dumps({"work": work, "tier": a.tier, "risk": a.risk, "items": items},
+        print(json.dumps({"version": version(data), "work": work, "tier": a.tier,
+                          "risk": a.risk, "items": items},
                          indent=2, ensure_ascii=False))
         return 0
-    print(f"baseline for work={','.join(work) or '(cross-cutting only)'} "
+    print(f"baseline v{version(data)} for work={','.join(work) or '(cross-cutting only)'} "
           f"tier={a.tier} risk={a.risk}: {len(items)} item(s)")
     titles = {"A": "A  always-on: apply silently, list as an assumption",
               "B": "B  tier-dependent: on at this tier, list as an assumption",
@@ -126,6 +151,15 @@ def cmd_show(a):
 
 
 def enforced_ok(cmd):
+    """Each ` + `-separated part must be runnable or `review`/`convention`, so one item
+    can name a mechanical check and the review that covers what it cannot see."""
+    parts = [x.strip() for x in cmd.split(" + ")]
+    if len(parts) > 1:
+        for part in parts:
+            ok, why = enforced_ok(part)
+            if not ok:
+                return ok, why
+        return True, ""
     if cmd in ("review", "convention"):
         return True, ""
     try:
@@ -144,11 +178,43 @@ def enforced_ok(cmd):
                    f"{sorted(EXTERNAL_TOOLS)}, nor review/convention")
 
 
-def lint(data):
+def committed_ids(path, rev):
+    """Item ids in the copy of `path` committed at `rev`, or None when there is none
+    (outside a git work tree, an untracked file, an unknown rev)."""
+    path = pathlib.Path(path).resolve()
+    top = subprocess.run(["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True)
+    if top.returncode != 0:
+        return None
+    try:
+        rel = path.relative_to(pathlib.Path(top.stdout.strip()).resolve())
+    except ValueError:
+        return None
+    r = subprocess.run(["git", "-C", top.stdout.strip(), "show", f"{rev}:{rel.as_posix()}"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    try:
+        return {i.get("id") for i in json.loads(r.stdout).get("items", [])}
+    except (ValueError, AttributeError):
+        return None
+
+
+def lint(data, previous_ids=None):
     errs, warns = [], []
     items = data.get("items")
     if not isinstance(items, list) or not items:
         return ["no `items` list"], warns
+    for k in data:
+        if k not in TOP_KEYS:
+            errs.append(f"unknown top-level key '{k}' (known: {', '.join(TOP_KEYS)})")
+    if data.get("schema") != SCHEMA:
+        errs.append(f"\"schema\" must be {SCHEMA}, got {data.get('schema')!r}")
+    ver = data.get("version")
+    if type(ver) is not int or ver < 1:
+        errs.append(f"\"version\" must be a positive integer, got {ver!r} — specs pin it "
+                    f"(| baseline | <n> |)")
+        ver = None
     valid_work = set(work_types(data)) | {"*"}
     seen = set()
     for n, i in enumerate(items):
@@ -192,6 +258,14 @@ def lint(data):
                 e("blocks_ready applies only to class C")
         if cls == "B" and i.get("from_tier") == "prototype":
             e("class B is tier-dependent; from_tier 'prototype' makes it always-on (use A)")
+        if cls == "A" and i.get("from_tier") not in (None, "prototype"):
+            e(f"class A is always-on, so from_tier must be 'prototype'; an item that turns "
+              f"on at '{i.get('from_tier')}' is tier-dependent (use B)")
+        if "since" in i and (type(i["since"]) is not int or i["since"] < 1
+                             or (ver is not None and i["since"] > ver)):
+            e(f"since must be an integer from 1 to the catalogue version ({ver})")
+        if "deprecated" in i and not isinstance(i["deprecated"], bool):
+            e("deprecated must be true or false")
         ok, why = enforced_ok(str(i.get("enforced_by", "")))
         if not ok:
             e(f"enforced_by: {why}")
@@ -201,6 +275,12 @@ def lint(data):
                 e(f"owner_skill '{skill}' does not exist and is not a known pending skill")
         if not isinstance(i.get("waivable"), bool):
             e("waivable must be true or false")
+    if previous_ids:
+        gone = sorted(x for x in previous_ids - seen if x)
+        if gone:
+            errs.append(f"id(s) removed since the committed catalogue: {', '.join(gone)} — "
+                        f"ids are never renamed or deleted (pinned specs list them); keep "
+                        f"the item and mark it \"deprecated\": true")
     for s in sorted(PENDING_SKILLS):
         if (PLUGIN / "skills" / s / "SKILL.md").is_file():
             warns.append(f"pending skill '{s}' now exists; drop it from PENDING_SKILLS")
@@ -214,10 +294,12 @@ def cmd_lint(a):
     except (OSError, json.JSONDecodeError) as ex:
         print(f"cannot read {path}: {ex}", file=sys.stderr)
         return 2
-    errs, warns = lint(data)
+    against = a.against or (None if a.file else "HEAD")
+    errs, warns = lint(data, committed_ids(BASELINE_PATH, against) if against else None)
     n = len(data.get("items", []) or [])
     by = {c: sum(1 for i in data.get("items", []) if i.get("class") == c) for c in CLASSES}
-    print(f"lint {path.name}: {n} items (A {by['A']}, B {by['B']}, C {by['C']})")
+    print(f"lint {path.name}: version {data.get('version')}, {n} items "
+          f"(A {by['A']}, B {by['B']}, C {by['C']})")
     for w in warns:
         print(f"  WARN  {w}")
     for x in errs:
@@ -241,6 +323,9 @@ def main():
     s.set_defaults(fn=cmd_show)
     li = sub.add_parser("lint")
     li.add_argument("--file", default=None, help="lint another baseline file")
+    li.add_argument("--against", default=None,
+                    help="committed revision of scripts/data/baseline.json whose ids must "
+                         "all still exist (default HEAD when linting the shipped file)")
     li.set_defaults(fn=cmd_lint)
     a = ap.parse_args()
     return a.fn(a)

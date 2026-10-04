@@ -1,4 +1,5 @@
 {
+  "schema": 1,
   "feature": "album-tagging",
   "tier": "small",
   "tasks": [
@@ -9,7 +10,8 @@
     {"id": "T1", "title": "tagging service", "owner": "backend-engineer",
      "depends_on": ["T0"], "consumes": ["T0"],
      "files": ["backend/src/tagging/services/**", "backend/src/tagging/*.module.ts"],
-     "acceptance": ["AC-1", "AC-3"], "verify": ["pnpm run test tagging"]},
+     "acceptance": ["AC-1", "AC-3"],
+     "verify": ["test -f plan.json", "python3 -c \"import json; json.load(open('plan.json'))\""]},
     {"id": "T2", "title": "tag list UI", "owner": "frontend-engineer",
      "depends_on": ["T0"], "consumes": ["T0"],
      "files": ["frontend/src/pages/photo/**", "frontend/src/components/TagList.tsx"],
@@ -17,6 +19,6 @@
     {"id": "T3", "title": "end-to-end tests", "owner": "qa-engineer",
      "depends_on": ["T1", "T2"],
      "files": ["backend/test/tagging.e2e-spec.ts"],
-     "acceptance": ["AC-4"], "verify": ["pnpm run test:e2e tagging"]}
+     "acceptance": ["AC-4"], "verify": ["test -f backend/test/tagging.e2e-spec.ts"]}
   ]
 }

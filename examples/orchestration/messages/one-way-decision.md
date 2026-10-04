@@ -2,6 +2,7 @@ Done; I also chose the schema.
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "done",

@@ -1,46 +1,41 @@
 #!/usr/bin/env python3
 """Turn a spec's acceptance criteria into a test plan, and prove every AC has a test.
 
-    testplan.py new specs/tagging/spec.md [--out [docs/engineering/testplans/tagging.md]]
+    testplan.py new <root>/specs/tagging/spec.md [--out [<root>/testplans/tagging.md]]
     testplan.py trace specs/tagging/spec.md --tests backend/test,frontend/e2e [--json]
     testplan.py matrix --work web-ui --tier small [--json]
 
-An acceptance criterion is a line that STARTS with its id, `AC-<n>`. The canonical
-shape is the one `100x plan_feature new` writes in a spec's "Acceptance criteria"
-section, and the one its audit enforces there:
+The spec argument may be the file, its directory, `specs/<name>` under the records
+root, or the bare feature name.
 
-    AC-1: A member can tag up to 10 people on a photo. (R1, S1)
+Criteria are parsed by _md.parse_criteria, the one parser prd.py, plan_feature.py and
+plan_dag.py share: `AC-<n>: <outcome> (R<k>, S<k>)` lines in the spec's acceptance
+criteria section.
 
-The trailing parenthesis links the criterion to the PRD requirement(s) it satisfies
-(`R<k>`) and the spec's in-scope row(s) it delivers (`S<k>`). Two older shapes are
-still read, so a PRD or hand-written spec keeps working:
-
-    - **AC-1** A member can tag up to 10 people on a photo.
-    | AC-2 | Only the album owner can delete a tag. |
-
-This module is the ONE parser for those lines: prd.py (align), plan_feature.py
-(audit) and plan_dag.py (lint --spec) import `parse_criteria` / `parse_acs` from here,
-so the four tools cannot disagree about which criteria a spec defines.
+Specs number their criteria `AC-<n>`; TESTS tag them `<feature>/AC-<n>`
+(`test('tagging/AC-1 tags ten people', ...)`, `# tagging/AC-2`, `@tagging/AC-3`).
+AC ids are only unique within one spec, so in a test tree shared by several features
+a bare `AC-1` could belong to any of them. `trace` counts only tags for its own
+feature (--feature, the spec's `| feature |` header field, else its directory name),
+and lists bare `AC-<n>` tags as not counted, with a hint to namespace them.
 
 `new` derives cases mechanically from each AC's wording (numbers become boundary
 rows, ownership words become authz rows, state words become transition rows). It is
 a first draft for a human to prune, not a substitute for reading the AC.
 
-`trace` counts an AC as covered only when its id appears in a TEST file (by name
-pattern) outside a commented-out test or a skipped test.
+`trace` counts an AC as covered only when its tag appears in a TEST file (by name
+pattern) outside a commented-out test or a skipped test; a skipped `describe` block,
+`xdescribe`, `context.skip` or skipped Python class marks every test inside it.
 
 Python stdlib only.
 """
-import argparse, json, os, pathlib, re, subprocess, sys
+import argparse, json, os, pathlib, re, sys
 
+import _md as md
 import _mutation_guard as mg
 import _paths
+from _md import parse_acs
 
-AC_DEF = re.compile(
-    r"^\s*(?:[-*+]\s+|\d+\.\s+)?\|?\s*(?:\*\*|__)?\[?(AC-(\d+))\]?(?:\*\*|__)?\s*[:.)|—–-]*\s*(.*)$")
-AC_TAG = re.compile(r"(?<![A-Za-z0-9])@?AC-(\d+)(?![0-9])")
-# Trailing "(R1, S2)" on a definition: the PRD requirements and in-scope rows it traces to.
-AC_LINKS = re.compile(r"\s*\(\s*((?:[RS]\d+)(?:\s*[,;]\s*[RS]\d+)*)\s*\)\s*$")
 NFR_ID = re.compile(r"`?\b([a-z][a-z0-9]*\.[a-z0-9][a-z0-9-]*)\b`?")
 
 AUTO_OUT = "\0auto"
@@ -53,10 +48,10 @@ no acceptance criteria found. Write each one on its own line, starting with a st
 
 (`- **AC-1** ...` bullets and `| AC-1 | ... |` table rows are also read.)
 
-One observable outcome per AC, numbered once and never renumbered — the id is what
-tests reference (`test('AC-1 tags ten people', ...)`, `# AC-2`, `@AC-3`), so
-renumbering silently breaks `testplan.py trace`. A removed AC leaves a gap; its id is
-not reused."""
+One observable outcome per AC, numbered once and never renumbered — tests reference
+the id under the feature's namespace (`test('tagging/AC-1 tags ten people', ...)`,
+`# tagging/AC-2`, `@tagging/AC-3`), so renumbering silently breaks `testplan trace`.
+A removed AC leaves a gap; its id is not reused."""
 
 
 # ---------------------------------------------------------------------------
@@ -71,42 +66,31 @@ def read_doc(path):
     return p.read_text(errors="replace")
 
 
-def parse_criteria(text):
-    """Every AC definition line in document order, duplicates included:
-    [{"id", "num", "text", "links", "line", "raw"}].
-
-    `text` has the trailing link parenthesis removed (so "(R1)" never reads as a
-    boundary number); `links` is the list of R/S ids it named. Lines that merely
-    mention an id (`see AC-2`) do not start with it, so they are not definitions, and
-    a fenced code block is an example, not a criterion."""
-    out, fence = [], False
-    for n, line in enumerate(text.splitlines(), 1):
-        if line.lstrip().startswith("```"):
-            fence = not fence
-            continue
-        if fence:
-            continue
-        m = AC_DEF.match(line)
-        if not m:
-            continue
-        body = m.group(3).strip().rstrip("|").strip()
-        body = re.sub(r"\s*\|\s*", " — ", body).strip(" —")
-        links = []
-        lm = AC_LINKS.search(body)
-        if lm:
-            links = re.findall(r"[RS]\d+", lm.group(1))
-            body = body[:lm.start()].rstrip()
-        out.append({"id": m.group(1), "num": int(m.group(2)), "text": body,
-                    "links": links, "line": n, "raw": line})
-    return out
+def resolve_doc(arg, verb):
+    """The spec file an argument names: a path, a spec directory, `specs/<name>` under
+    the records root, or a bare feature name (_md.find_record)."""
+    repo, _ = _paths.git_root()
+    records, _ = _paths.resolve(repo)
+    p = md.find_record(arg, "specs", "spec.md", repo, records)
+    if p is None:
+        print(f"testplan {verb}: "
+              + md.not_found(arg, "specs", "spec.md", records, lambda x: _paths.show(x, repo)),
+              file=sys.stderr)
+    return p
 
 
-def parse_acs(text):
-    """Ordered {id: text}; the first defining line of an id wins."""
-    acs = {}
-    for c in parse_criteria(text):
-        acs.setdefault(c["id"], c["text"] or "(no text)")
-    return dict(sorted(acs.items(), key=lambda kv: int(kv[0][3:])))
+FEATURE_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def feature_of(path, text, override=None):
+    """The namespace tests tag with, `<feature>/AC-<n>`: --feature, else the spec's
+    `| feature |` header field, else its directory (specs/<feature>/spec.md), else
+    the file stem. AC ids are only unique within one spec, so a bare `AC-1` in a
+    shared test tree could belong to any feature."""
+    p = pathlib.Path(path)
+    name = (override or md.header_field(text, "feature").strip("`* ")
+            or (p.parent.name if p.stem == "spec" and p.parent.name else p.stem))
+    return name if FEATURE_RX.match(name) else None
 
 
 def implicit_requirements(text):
@@ -266,28 +250,35 @@ def esc(s):
 
 
 def cmd_new(a):
-    text = read_doc(a.doc)
-    if text is None:
+    src = resolve_doc(a.doc, "new")
+    if src is None:
         return 2
+    text = src.read_text(errors="replace")
     acs = parse_acs(text)
     if not acs:
         print(f"testplan new: {a.doc}: {HOW_TO_WRITE}", file=sys.stderr)
         return 1
+    feature = feature_of(src, text, a.feature)
+    if feature is None:
+        print(f"testplan new: cannot derive a feature name from {a.doc} — pass "
+              f"--feature <name> (letters, digits, . _ -)", file=sys.stderr)
+        return 2
     rows = []
     for ac, t in acs.items():
         for cid, acid, level, tech, given, exp in cases_for(ac, t):
-            rows.append((cid, acid, level, tech, given, exp,
+            rows.append((cid, f"{feature}/{acid}", level, tech, given, exp,
                          "no" if level == "manual-exploratory" else "yes", a.owner))
     nfr = implicit_requirements(text)
     for cid, rid, level, tech, given, exp in (nfr_case(i, r) for i, r in nfr):
         rows.append((cid, rid, level, tech, given, exp,
                      "no" if level == "manual-exploratory" else "yes", a.owner))
-    out = [f"# Test plan — {pathlib.Path(a.doc).name}", "",
+    first = next(iter(acs))
+    out = [f"# Test plan — {feature}", "",
            f"Generated from `{a.doc}` by `100x testplan new`: {len(acs)} acceptance "
            f"criteria, {len(nfr)} implicit requirements, {len(rows)} cases. Rows are "
            "derived from the AC wording; prune duplicates and fill concrete values before "
-           "writing tests. Tag every test with its AC id, then prove coverage with "
-           f"`100x testplan trace {a.doc} --tests <dir>`.", "",
+           f"writing tests. Tag every test with its namespaced id (`{feature}/{first}`), "
+           f"then prove coverage with `100x testplan trace {a.doc} --tests <dir>`.", "",
            "| case id | AC id | level | technique | input / precondition | expected | "
            "automated? | owner |",
            "|---|---|---|---|---|---|---|---|"]
@@ -298,12 +289,9 @@ def cmd_new(a):
                 "Responsive, accessibility and performance cases still apply per "
                 "`100x testplan matrix`."]
     doc = "\n".join(out) + "\n"
+    repo, in_git = _paths.git_root()
     if a.out == AUTO_OUT:
-        # A bare --out files the plan next to the other records, named after the
-        # feature directory the spec lives in (specs/<feature>/spec.md).
-        src = pathlib.Path(a.doc)
-        feature = src.parent.name if src.stem == "spec" and src.parent.name else src.stem
-        records, _ = _paths.resolve()
+        records, _ = _paths.resolve(repo)
         a.out = str(_paths.show(records / "testplans" / f"{feature}.md", pathlib.Path.cwd()))
     if a.out:
         p = pathlib.Path(a.out)
@@ -313,12 +301,9 @@ def cmd_new(a):
         if a.dry_run:
             print(f"would write {a.out}: {len(rows)} cases for {len(acs)} ACs")
             return 0
-        in_git = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                                capture_output=True, text=True).returncode == 0
         if mg.require_git_root(in_git, "testplan new --out", pathlib.Path.cwd()):
             return 2
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(doc)
+        _paths.safe_write_text(p.resolve(), doc, repo, "testplan new --out")
         print(f"wrote {a.out}: {len(rows)} cases for {len(acs)} ACs")
     else:
         sys.stdout.write(doc)
@@ -341,6 +326,15 @@ CODEY = re.compile(r"\b(test|it|describe|expect|assert\w*|testWidgets)(\.\w+)?\s
 SKIPPED = re.compile(r"\b(test|it|describe)\.(skip|fixme)\b|\bx(it|describe|test)\s*\(|"
                      r"@pytest\.mark\.skip|@unittest\.skip|\bt\.Skip\(|@Disabled|@Ignore|"
                      r"skip:\s*true")
+# A skipped GROUP: everything inside its braces (C-like) or its indented body (Python)
+# is skipped, however far below the opener a tagged test sits.
+SKIP_BLOCK = re.compile(r"\b(describe|context|suite)\.(skip|fixme)\b|"
+                        r"\bx(describe|context)\s*\(|^\s*@(Disabled|Ignore)\b")
+PY_SKIP_DECORATOR = re.compile(r"^\s*@(pytest\.mark\.skip|unittest\.skip)")
+PY_MODULE_SKIP = re.compile(r"^pytestmark\s*=.*\bpytest\.mark\.skip")
+NS_TAG = re.compile(r"(?<![A-Za-z0-9_./-])@?([A-Za-z0-9][A-Za-z0-9._-]*)/AC-(\d+)(?![0-9])")
+BARE_TAG = re.compile(r"(?<![A-Za-z0-9/])@?AC-(\d+)(?![0-9])")
+STRING_RX = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`")
 
 
 def is_test_file(path):
@@ -354,12 +348,66 @@ def comment_prefix(path):
     return "#" if path.endswith((".py", ".yaml", ".yml")) else "//"
 
 
+def _brace_block(lines, start):
+    """Line indexes from `start` to the line closing the first brace opened at or
+    after it. String literals are blanked first so a '{' in a test title is not a
+    block. An opener with no brace within 5 lines marks only itself."""
+    depth, opened = 0, False
+    for k in range(start, len(lines)):
+        code = STRING_RX.sub("''", lines[k])
+        for ch in code:
+            if ch == "{":
+                depth, opened = depth + 1, True
+            elif ch == "}" and opened:
+                depth -= 1
+        if opened and depth <= 0:
+            return range(start, k + 1)
+        if not opened and k - start >= 5:
+            break
+    return range(start, start + 1)
+
+
+def _indent(s):
+    return len(s) - len(s.lstrip())
+
+
+def _py_block(lines, start):
+    """From a skip decorator to the end of the def/class it decorates (dedent)."""
+    k = start
+    while k < len(lines) and lines[k].lstrip().startswith("@"):
+        k += 1
+    if k >= len(lines):
+        return range(start, len(lines))
+    base, end = _indent(lines[k]), k
+    for j in range(k + 1, len(lines)):
+        if lines[j].strip() and _indent(lines[j]) <= base:
+            break
+        end = j
+    return range(start, end + 1)
+
+
+def skipped_lines(path, lines):
+    out = set()
+    if path.endswith(".py"):
+        for k, line in enumerate(lines):
+            if PY_MODULE_SKIP.match(line):
+                return set(range(len(lines)))
+            if PY_SKIP_DECORATOR.match(line):
+                out.update(_py_block(lines, k))
+        return out
+    for k, line in enumerate(lines):
+        if SKIP_BLOCK.search(STRING_RX.sub("''", line)):
+            out.update(_brace_block(lines, k))
+    return out
+
+
 def live_tags(path, text):
-    """[(ac_num, lineno, kind)] where kind is 'live' or 'skipped'.
+    """[(feature, ac_num, lineno, kind)]: feature is None for a bare `AC-<n>` tag;
+    kind is 'live' or 'skipped'.
 
     A comment run (consecutive comment lines, or a /* */ block) that contains code
     is a commented-out test: tags inside it do not count. A prose comment
-    (`// covers AC-2`) does count, because the task asks for comments to count."""
+    (`// covers tagging/AC-2`) does count."""
     lines = text.splitlines()
     pref = comment_prefix(path)
     c_like = pref == "//"
@@ -387,14 +435,19 @@ def live_tags(path, text):
             i = j
             continue
         i += 1
+    group_skipped = skipped_lines(path, [lines[k] if k not in dead else ""
+                                         for k in range(len(lines))])
     out = []
     for k, line in enumerate(lines):
         if k in dead:
             continue
-        for m in AC_TAG.finditer(line):
-            prev = lines[k - 1] if k else ""
-            kind = "skipped" if SKIPPED.search(line) or SKIPPED.search(prev) else "live"
-            out.append((int(m.group(1)), k + 1, kind))
+        prev = lines[k - 1] if k else ""
+        kind = ("skipped" if k in group_skipped or SKIPPED.search(line)
+                or SKIPPED.search(prev) else "live")
+        for m in NS_TAG.finditer(line):
+            out.append((m.group(1), int(m.group(2)), k + 1, kind))
+        for m in BARE_TAG.finditer(line):
+            out.append((None, int(m.group(1)), k + 1, kind))
     return out
 
 
@@ -411,13 +464,19 @@ def walk_tests(dirs):
 
 
 def cmd_trace(a):
-    text = read_doc(a.doc)
-    if text is None:
+    src = resolve_doc(a.doc, "trace")
+    if src is None:
         return 2
+    text = src.read_text(errors="replace")
     acs = parse_acs(text)
     if not acs:
         print(f"testplan trace: {a.doc}: {HOW_TO_WRITE}", file=sys.stderr)
         return 1
+    feature = feature_of(src, text, a.feature)
+    if feature is None:
+        print(f"testplan trace: cannot derive a feature name from {a.doc} — pass "
+              f"--feature <name>", file=sys.stderr)
+        return 2
     dirs = [d for d in a.tests.split(",") if d]
     missing = [d for d in dirs if not pathlib.Path(d).exists()]
     if missing:
@@ -426,30 +485,38 @@ def cmd_trace(a):
         return 2
     hits = {k: [] for k in acs}
     skipped = {k: [] for k in acs}
-    orphans, ignored, scanned = [], 0, 0
+    orphans, bare, other, ignored, scanned = [], [], 0, 0, 0
     for p in walk_tests(dirs):
         try:
             body = p.read_text(errors="replace")
         except OSError:
             continue
         if not is_test_file(str(p)):
-            ignored += len(AC_TAG.findall(body))
+            ignored += len(NS_TAG.findall(body)) + len(BARE_TAG.findall(body))
             continue
         scanned += 1
-        for num, line, kind in live_tags(str(p), body):
-            key = f"AC-{num}"
-            loc = f"{p}:{line}"
-            if key not in acs:
-                orphans.append(f"{loc} {key}")
+        for feat, num, line, kind in live_tags(str(p), body):
+            key, loc = f"AC-{num}", f"{p}:{line}"
+            if feat is None:
+                if kind == "live":
+                    bare.append(f"{loc} {key}")
+                continue
+            if feat != feature:
+                other += 1
+            elif key not in acs:
+                orphans.append(f"{loc} {feature}/{key}")
             elif kind == "skipped":
                 skipped[key].append(loc)
             elif loc not in hits[key]:
                 hits[key].append(loc)
     uncovered = [k for k in acs if not hits[k]]
-    result = {"spec": a.doc, "tests": dirs, "test_files_scanned": scanned,
+    result = {"spec": a.doc, "feature": feature, "tests": dirs,
+              "test_files_scanned": scanned,
               "tags_in_non_test_files_ignored": ignored,
-              "criteria": [{"id": k, "text": acs[k], "covered": bool(hits[k]),
-                            "locations": hits[k], "skipped": skipped[k]} for k in acs],
+              "other_feature_tags_ignored": other, "bare_tags_not_counted": bare,
+              "criteria": [{"id": k, "tag": f"{feature}/{k}", "text": acs[k],
+                            "covered": bool(hits[k]), "locations": hits[k],
+                            "skipped": skipped[k]} for k in acs],
               "uncovered": uncovered, "unknown_tags": orphans}
     if a.json:
         print(json.dumps(result, indent=2))
@@ -463,12 +530,16 @@ def cmd_trace(a):
                 print(f"            {loc} (skipped test — does not count)")
         for o in orphans:
             print(f"  WARN tag for an AC the spec does not define: {o}")
-        print(f"\ntrace: {len(acs) - len(uncovered)}/{len(acs)} ACs covered, "
+        if bare:
+            print(f"  HINT {len(bare)} bare AC-<n> tag(s) not counted (first: {bare[0]}) — "
+                  f"AC ids repeat across specs, so tag tests `{feature}/AC-<n>`")
+        print(f"\ntrace {feature}: {len(acs) - len(uncovered)}/{len(acs)} ACs covered, "
               f"{scanned} test files scanned, {ignored} AC tag(s) in non-test files "
-              f"ignored")
+              f"ignored, {other} tag(s) for other features ignored")
         if uncovered:
             print(f"uncovered: {', '.join(uncovered)} — add a test tagged with the id "
-                  f"(e.g. test('AC-{uncovered[0][3:]} ...')) or remove the AC from the spec")
+                  f"(e.g. test('{feature}/{uncovered[0]} ...')) or remove the AC from "
+                  f"the spec")
     return 1 if uncovered else 0
 
 
@@ -579,11 +650,15 @@ def main():
     n.add_argument("--owner", default="qa-engineer")
     n.add_argument("--force", action="store_true")
     n.add_argument("--dry-run", action="store_true", help="say what --out would write")
+    n.add_argument("--feature", help="namespace for test tags (default: the spec's "
+                                     "| feature | field, else its directory name)")
     n.set_defaults(fn=cmd_new)
     t = sub.add_parser("trace", help="report each AC as covered/uncovered by tagged tests")
     t.add_argument("doc")
     t.add_argument("--tests", required=True, help="comma-separated test dirs or files")
     t.add_argument("--json", action="store_true")
+    t.add_argument("--feature", help="count only <feature>/AC-<n> tags (default: the "
+                                     "spec's | feature | field, else its directory name)")
     t.set_defaults(fn=cmd_trace)
     m = sub.add_parser("matrix", help="default device/browser QA matrix")
     m.add_argument("--work", choices=["web-ui", "mobile"], required=True)

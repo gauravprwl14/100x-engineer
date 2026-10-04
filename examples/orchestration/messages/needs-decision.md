@@ -2,6 +2,7 @@ Stopped: a C-class question blocks the service.
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "needs-decision",

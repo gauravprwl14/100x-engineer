@@ -2,9 +2,11 @@
 
 | field | value |
 |---|---|
+| feature | login |
 | kinds | auth, crud |
 | stack | nestjs |
 | prd | examples/login |
+| baseline | 1 |
 | created | 2026-09-29 |
 | status | **ready** |
 

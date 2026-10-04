@@ -4,6 +4,7 @@ An earlier draft, kept for context:
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "needs-decision"
@@ -14,6 +15,7 @@ Final report:
 
 ```json
 {
+  "schema": 1,
   "agent": "backend-engineer",
   "task_id": "T1",
   "status": "done",

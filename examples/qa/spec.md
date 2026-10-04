@@ -1,8 +1,13 @@
 # Photo tagging — spec
 
+| field | value |
+|---|---|
+| feature | photo-tagging |
+
 Fixture for `100x testplan`: five acceptance criteria, an implicit-requirements
-table, and a `tests/` tree that covers only AC-1 and AC-2 on purpose. AC-4 is named
-only in a fixtures file, which `trace` must not count.
+table, and a `tests/` tree that covers only AC-1 and AC-2 on purpose. Tests tag
+`photo-tagging/AC-<n>`. AC-4 is named only in a fixtures file, which `trace` must not
+count, and AC-3 only by a bare `AC-3` tag, which it reports as not counted.
 
 ## Acceptance criteria
 

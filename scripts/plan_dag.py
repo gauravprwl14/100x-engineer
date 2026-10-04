@@ -11,13 +11,27 @@ docs/OPERATING-MODEL.md §6 makes `plan_dag lint` the gate in front of every tas
     plan_dag.py waves plan.json [--json]
     plan_dag.py next plan.json --done T0,T1 [--blocked T2] [--json]
 
+A plan carries "schema": 1, a required "feature" (the spec directory name), an optional
+"tier" from scripts/data/scale_tiers.json, and "tasks". A field outside that set, or
+outside a task's known fields, is an error with a did-you-mean: a misspelt
+`depend_on` would otherwise drop an ordering edge silently. Ownership globs follow
+scripts/_globs.py (no `{a,b}` braces; a bare extensionless path is a directory).
+Each `verify` command must be replayable without a shell (`agent_report replay` runs
+argv, never `sh`), so shell syntax is written `sh -c '...'`, and none may be a
+commit, push, tag or publish.
+
 Exit codes: 0 clean (warnings allowed), 1 findings, 2 unreadable input.
 Python stdlib only.
 """
-import argparse, fnmatch, json, pathlib, re, sys
-from functools import lru_cache
+import argparse, difflib, importlib.util, json, os, pathlib, re, shlex, sys
 
-from testplan import parse_acs
+import _md as md
+import _paths
+from _globs import globs_overlap, has_brace, path_owned  # path_owned: used by agent_report
+
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent
+SCHEMA = 1
+TIERS = json.loads((PLUGIN / "scripts" / "data" / "scale_tiers.json").read_text())["_order"]
 
 # Must track the roster table in docs/OPERATING-MODEL.md §1; tests/test_plan_dag.sh
 # fails if a name here is missing from that table.
@@ -27,90 +41,94 @@ ROSTER = (
     "security-reviewer", "independent-verifier", "comprehension-mapper",
     "rca-investigator",
 )
-PLAN_FIELDS = {"feature", "tier", "tasks"}
+PLAN_FIELDS = {"schema", "feature", "tier", "tasks"}
 TASK_FIELDS = {"id", "title", "owner", "depends_on", "files", "acceptance", "verify",
                "contract", "consumes"}
-WILD = set("*?[")
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+OPERATOR_CHARS = set("();<>|&")
+ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+GATED_FALLBACK = re.compile(r"\bgit\b.*\b(commit|push|tag)\b|\bgh\s+(pr|release)\b|"
+                            r"\bpublish\b|\btwine\b", re.S)
 
 
-# ---------------------------------------------------------------- glob overlap
+# ---------------------------------------------------------------- verify commands
 #
-# Whether two globs can match a common path is undecidable in general for fnmatch
-# syntax, so this is a deliberately one-sided approximation: it may report an overlap
-# that cannot happen, and must never miss one that can. A false collision costs a
-# reworded plan; a missed one costs two agents overwriting each other.
-#
-#   - Paths are split on "/"; "**" matches zero or more whole segments, a trailing
-#     "/" means "everything under", and "./" prefixes are ignored.
-#   - literal segment vs literal: equal strings.
-#   - literal vs glob segment: fnmatch.
-#   - glob vs glob segment: overlapping unless their literal prefixes (before the
-#     first wildcard) or literal suffixes (after the last) are incompatible, so
-#     `*.ts` vs `*.tsx` is disjoint but `*foo*` vs `*bar*` is reported as overlapping.
-#   - Brace sets `{a,b}` are not fnmatch syntax and are compared literally.
+# A task's `verify` commands are what `agent_report replay` re-runs, without a shell:
+# argv from shlex.split. So a command that needs shell syntax (&&, |, >, $VAR, a
+# leading VAR=x) must say so by being written `sh -c '...'`, which replay shows to the
+# user before running, and nothing may be a completion-shaped action the verification
+# hook gates (commit, push, tag, publish): a replay must never ship anything.
 
-def _segs(p):
-    p = p.strip()
-    while p.startswith("./"):
-        p = p[2:]
-    if p.endswith("/"):
-        p += "**"
-    return tuple(s for s in p.strip("/").split("/") if s not in ("", "."))
+_hook_mod = None
 
 
-def _is_glob(s):
-    return any(c in WILD for c in s)
+def _hook():
+    """hooks/require_verification.py, imported read-only for its command parser. It
+    exits at import when its own dependencies fail; that is caught and the regex
+    fallback below is used instead, which gates more, never less."""
+    global _hook_mod
+    if _hook_mod is None:
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_100x_require_verification", PLUGIN / "hooks" / "require_verification.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _hook_mod = mod if hasattr(mod, "parse_command") else False
+        except (Exception, SystemExit):
+            _hook_mod = False
+    return _hook_mod or None
 
 
-def _lit_prefix(s):
-    i = min((s.index(c) for c in WILD if c in s), default=len(s))
-    return s[:i]
+def gated_actions(cmd, cwd="."):
+    """Labels of the gated actions (git commit, npm publish, ...) a command performs."""
+    hook = _hook()
+    cwd = os.path.abspath(cwd)
+    if hook is not None:
+        try:
+            return [x.label for x in hook.parse_command(cmd, cwd)]
+        except ValueError:
+            return [x.label for x in hook._fallback_actions(cmd, cwd)]
+        except Exception:
+            pass
+    return ["completion-shaped command"] if GATED_FALLBACK.search(cmd) else []
 
 
-def _lit_suffix(s):
-    i = max((s.rindex(c) for c in "*?]" if c in s), default=-1)
-    return s[i + 1:]
+def shell_wrapped(argv):
+    """The script when argv is `sh -c '<script>' ...`, else None."""
+    if argv and os.path.basename(argv[0]) in SHELLS:
+        for j, x in enumerate(argv[1:], 1):
+            if x.startswith("-") and not x.startswith("--") and "c" in x[1:]:
+                return argv[j + 1] if j + 1 < len(argv) else ""
+    return None
 
 
-def _seg_compat(x, y):
-    gx, gy = _is_glob(x), _is_glob(y)
-    if not gx and not gy:
-        return x == y
-    if not gx:
-        return fnmatch.fnmatchcase(x, y)
-    if not gy:
-        return fnmatch.fnmatchcase(y, x)
-    px, py = _lit_prefix(x), _lit_prefix(y)
-    sx, sy = _lit_suffix(x), _lit_suffix(y)
-    return ((px.startswith(py) or py.startswith(px))
-            and (sx.endswith(sy) or sy.endswith(sx)))
-
-
-def globs_overlap(a, b):
-    A, B = _segs(a), _segs(b)
-
-    @lru_cache(maxsize=None)
-    def ov(i, j):
-        if i == len(A) and j == len(B):
-            return True
-        if i < len(A) and A[i] == "**":
-            if ov(i + 1, j) or (j < len(B) and ov(i, j + 1)):
-                return True
-        if j < len(B) and B[j] == "**":
-            if ov(i, j + 1) or (i < len(A) and ov(i + 1, j)):
-                return True
-        if i == len(A) or j == len(B):
-            return False
-        if A[i] == "**" or B[j] == "**":
-            return False
-        return _seg_compat(A[i], B[j]) and ov(i + 1, j + 1)
-
-    return ov(0, 0)
-
-
-def path_owned(path, patterns):
-    """True when a concrete changed path falls under any owned glob."""
-    return any(globs_overlap(path, p) for p in patterns)
+def command_problems(cmd, cwd="."):
+    """Why a verify command cannot be replayed as written; [] when it can."""
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as e:
+        return [f"not parseable as an argv ({e})"]
+    if not argv:
+        return ["empty command"]
+    out = []
+    gated = gated_actions(cmd, cwd)
+    if gated:
+        out.append(f"performs a gated action ({', '.join(dict.fromkeys(gated))}) — a "
+                   f"verify command proves the work, it never ships it")
+    if shell_wrapped(argv) is not None:
+        return out
+    if ENV_ASSIGN.match(argv[0]):
+        out.append(f"starts with an assignment {argv[0]!r}, which needs a shell — write "
+                   f"`env {argv[0]} ...` or `sh -c '...'`")
+    lx = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lx.whitespace_split = True
+    ops = [tok for tok in lx if tok and set(tok) <= OPERATOR_CHARS]
+    if ops:
+        out.append(f"uses shell syntax {ops[0]!r}; replay runs commands without a shell, "
+                   f"so write it as `sh -c '...'`")
+    elif any("$" in x or "`" in x for x in argv):
+        out.append("uses $ or ` expansion, which needs a shell — write it as `sh -c '...'`")
+    return out
 
 
 # ---------------------------------------------------------------- loading
@@ -197,16 +215,38 @@ def levels(by_id):
 
 # ---------------------------------------------------------------- lint
 
-def lint(plan, spec=None, agents_dir=None):
+def _unknown(k, known):
+    near = difflib.get_close_matches(k, sorted(known), n=1, cutoff=0.6)
+    return (f"did you mean '{near[0]}'?" if near
+            else f"known: {', '.join(sorted(known))}")
+
+
+def lint(plan, spec=None, agents_dir=None, spec_label=None):
     errors, warns = [], []
     tasks = plan["tasks"]
+    spec_label = spec_label or spec
 
     known = set(ROSTER)
     if agents_dir and pathlib.Path(agents_dir).is_dir():
         known |= {p.stem for p in pathlib.Path(agents_dir).glob("*.md")}
 
+    # An unknown field is an error, not a warning: `depend_on` or `verfiy` silently
+    # drops an ordering edge or the proof a task owes, and the plan still "passes".
     for k in sorted(set(plan) - PLAN_FIELDS):
-        warns.append(f"unknown top-level field '{k}' — known: {', '.join(sorted(PLAN_FIELDS))}")
+        errors.append(f"unknown top-level field '{k}' — {_unknown(k, PLAN_FIELDS)}")
+    if "schema" not in plan:
+        warns.append(f"no \"schema\" field — read as schema {SCHEMA}; add "
+                     f"\"schema\": {SCHEMA}")
+    elif plan["schema"] != SCHEMA:
+        errors.append(f"\"schema\": {plan['schema']!r} is not supported — this "
+                      f"plan_dag reads schema {SCHEMA}")
+    if not isinstance(plan.get("feature"), str) or not plan["feature"].strip():
+        errors.append("missing top-level \"feature\" — the spec directory name "
+                      "(<root>/specs/<feature>/), the namespace tests tag "
+                      "`<feature>/AC-<n>` with")
+    if "tier" in plan and plan["tier"] not in TIERS:
+        errors.append(f"\"tier\": {plan['tier']!r} is not one of {', '.join(TIERS)} "
+                      f"(scripts/data/scale_tiers.json)")
 
     seen = set()
     for n, t in enumerate(tasks):
@@ -218,7 +258,7 @@ def lint(plan, spec=None, agents_dir=None):
             errors.append(f"{tid}: duplicate task id — give each task a unique id")
         seen.add(tid)
         for k in sorted(set(t) - TASK_FIELDS):
-            warns.append(f"{tid}: unknown field '{k}' — known: {', '.join(sorted(TASK_FIELDS))}")
+            errors.append(f"{tid}: unknown field '{k}' — {_unknown(k, TASK_FIELDS)}")
         owner = t.get("owner")
         if owner not in known:
             hint = (f"add {agents_dir}/{owner}.md" if agents_dir
@@ -238,6 +278,13 @@ def lint(plan, spec=None, agents_dir=None):
                 errors.append(f"{tid}: \"{field}\" must be a list of task ids")
         if "contract" in t and not isinstance(t["contract"], bool):
             errors.append(f"{tid}: \"contract\" must be true or false")
+        for f in _ids(t.get("files")):
+            if has_brace(f):
+                errors.append(f"{tid}: file glob {f!r} uses {{a,b}} braces, which are not "
+                              f"glob syntax here and would own nothing — list each path")
+        for c in _ids(t.get("verify")):
+            for why in command_problems(c):
+                errors.append(f"{tid}: verify command {c!r} {why}")
 
     by_id, anc = graph(tasks)
     for tid, t in by_id.items():
@@ -294,35 +341,46 @@ def lint(plan, spec=None, agents_dir=None):
         try:
             text = pathlib.Path(spec).read_text()
         except OSError as e:
-            errors.append(f"--spec {spec}: cannot read ({e})")
+            errors.append(f"--spec {spec_label}: cannot read ({e})")
             text = ""
-        # Only DEFINED criteria count (testplan.parse_acs, the parser every AC tool
+        # Only DEFINED criteria count (_md.parse_acs, the parser every AC tool
         # shares): a verification row or a prose line that merely mentions `AC-3`
         # must not make AC-3 look like a criterion the plan has to deliver.
-        spec_ids = set(parse_acs(text))
+        spec_ids = set(md.parse_acs(text))
         if text and not spec_ids:
-            errors.append(f"--spec {spec} defines no acceptance criteria — write each "
+            errors.append(f"--spec {spec_label} defines no acceptance criteria — write each "
                           f"as a line `AC-<n>: <observable outcome> (R<k>)`; with none, "
                           f"coverage cannot be checked")
         covered = {a for t in by_id.values() for a in _ids(t.get("acceptance"))}
-        for ac in sorted(spec_ids - covered, key=_ac_key):
-            errors.append(f"{ac} in {spec} is covered by no task — add it to the "
+        for ac in sorted(spec_ids - covered, key=md.ac_key):
+            errors.append(f"{ac} in {spec_label} is covered by no task — add it to the "
                           f"\"acceptance\" of the task that delivers it")
-        for ac in sorted(covered - spec_ids, key=_ac_key):
-            warns.append(f"{ac} is claimed by a task but is not defined in {spec}")
+        for ac in sorted(covered - spec_ids, key=md.ac_key):
+            warns.append(f"{ac} is claimed by a task but is not defined in {spec_label}")
     return errors, warns
 
 
-def _ac_key(s):
-    m = re.search(r"(\d+)$", s)
-    return (int(m.group(1)) if m else 0, s)
+def resolve_spec(arg):
+    repo, _ = _paths.git_root()
+    records, _ = _paths.resolve(repo)
+    p = md.find_record(arg, "specs", "spec.md", repo, records)
+    if p is None:
+        print("plan_dag: --spec: "
+              + md.not_found(arg, "specs", "spec.md", records, lambda x: _paths.show(x, repo)),
+              file=sys.stderr)
+    return p
 
 
 def cmd_lint(a):
     plan = load_plan(a.plan)
     if plan is None:
         return 2
-    errors, warns = lint(plan, a.spec, a.agents_dir)
+    spec = None
+    if a.spec:
+        spec = resolve_spec(a.spec)
+        if spec is None:
+            return 2
+    errors, warns = lint(plan, spec, a.agents_dir, a.spec)
     for w in warns:
         print(f"  WARN  {w}")
     for n, e in enumerate(errors, 1):
@@ -404,7 +462,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("lint", help="validate a plan.json")
     p.add_argument("plan")
-    p.add_argument("--spec", help="spec whose AC-<n> ids must all be covered")
+    p.add_argument("--spec", help="spec whose AC-<n> ids must all be covered: the file, its "
+                   "directory, specs/<name> under the records root, or the bare name")
     p.add_argument("--agents-dir", help="directory of <agent>.md files accepted as owners")
     p.set_defaults(fn=cmd_lint)
     p = sub.add_parser("waves", help="tasks that can run in parallel, level by level")
