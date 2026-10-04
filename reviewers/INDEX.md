@@ -7,7 +7,7 @@
 | [cloud-iac.md](cloud-iac.md) | Cloud / IaC reviewer (AWS + GCP + Terraform) | Any `*.tf`/`*.tf.json` file exists in the repo. | 108 |
 | [flutter.md](flutter.md) | Flutter reviewer | `pubspec.yaml` declares a `flutter:` SDK dependency; the diff touches `.dart` files under `lib/`. | 90 |
 | [kubernetes.md](kubernetes.md) | Kubernetes reviewer | Any file matches `apiVersion:` + `kind: (Deployment|StatefulSet|DaemonSet|Pod|Job|CronJob|Service|Ingress|Hori | 166 |
-| [native-mobile.md](native-mobile.md) | Native Android + iOS reviewer | Android: `build.gradle`/`build.gradle.kts` present with an `com.android.application`/`library` | 145 |
+| [native-mobile.md](native-mobile.md) | Native Android + iOS reviewer | Android: `build.gradle`/`build.gradle.kts` present with an `com.android.application`/`library` | 169 |
 | [nestjs.md](nestjs.md) | NestJS reviewer | `package.json` has `@nestjs/core` as a direct dependency. | 207 |
 | [nextjs-react.md](nextjs-react.md) | Next.js + React reviewer | `next` in `package.json` `dependencies`, or `next.config.{js,mjs,ts}` present. | 149 |
 | [react-native-expo.md](react-native-expo.md) | React Native + Expo reviewer | `package.json` depends on `react-native` or `expo`; an `app.json`/`app.config.js` with an | 95 |
