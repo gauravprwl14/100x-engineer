@@ -578,7 +578,16 @@ def recorded_spec(plan, repo):
     s = plan.get("spec")
     if not isinstance(s, str) or not s.strip() or stamp_field_errors({"spec": s}):
         return None, None
-    p = pathlib.Path(repo) / pathlib.PurePosixPath(s.replace("\\", "/"))
+    rel = pathlib.PurePosixPath(s.replace("\\", "/"))
+    p = pathlib.Path(repo) / rel
+    if not p.is_file() and not _paths.git_root(pathlib.Path(repo))[1]:
+        # Outside git there is no repository root to anchor the stamped path (a copy of
+        # the plugin unpacked from an archive, for one): the plan's own directory stands
+        # in, so look upward for the ancestor the recorded path is relative to.
+        for anc in list(pathlib.Path(repo).absolute().parents)[:12]:
+            if (anc / rel).is_file():
+                p = anc / rel
+                break
     if not p.is_file():
         return None, (f"plan records \"spec\": {s!r}, but there is no such file under "
                       f"{repo} — restore it, or re-stamp with `plan_dag stamp --spec <spec>`")
