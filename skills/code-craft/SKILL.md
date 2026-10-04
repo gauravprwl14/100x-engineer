@@ -70,7 +70,9 @@ hand-written logic — there is no shape to review.
 
 8. Errors are a typed taxonomy, translated at the edge, never swallowed. An
    `except`/`catch` with an empty or log-only body and no re-raise is a bug,
-   not a style choice.
+   not a style choice. A deliberate fail-open (a hook that must never brick the
+   shell) says so on the `except` line or the next: `# fail-open: <reason>`
+   (`// fail-open: <reason>` in JS); a bare `# fail-open:` waives nothing.
    *Enforced by:* `100x craft_check --only bare-except`
    (**blocking**).
 

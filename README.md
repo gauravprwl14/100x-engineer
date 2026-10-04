@@ -29,7 +29,7 @@ flowchart LR
     R --> I["Intake<br/>defaults applied, ≤5 questions"]
     I --> P["Plan / spec<br/>AC-1, AC-2 … traced to the PRD"]
     P --> O["Orchestrate<br/>specialist agents in parallel"]
-    O --> RP["Reports<br/>evidence re-run, not trusted"]
+    O --> RP["Reports<br/>the plan's verify commands re-run,<br/>git's changes checked"]
     RP --> RV["Reviewers<br/>code, security, design"]
     RV --> G["Gates<br/>signed receipt before commit"]
     G --> D[Done]
@@ -41,7 +41,7 @@ Small tasks skip the agents: the router decides when one person in one session i
 
 | step | do | note |
 |---|---|---|
-| 1. install | `claude plugin marketplace add ./100x-engineer` then `claude plugin install 100x-engineer@100x-local` | needs `python3` on the PATH; no other dependency |
+| 1. install | `claude plugin marketplace add ./100x-engineer` then `claude plugin install 100x-engineer@100x-local` | needs `python3` 3.9 or newer on the PATH; no other dependency |
 | 1b. update | `claude plugin update 100x-engineer@100x-local` | `.claude-plugin/plugin.json`'s `version` pins installs, so an update only arrives after that version is bumped |
 | 2. ask | `/100x-engineer:100x <what you want>` | e.g. `/100x-engineer:100x Add tagging to albums` |
 | 3. answer | at most five questions, each with a recommendation | or reply "go with your recommendations" |
@@ -64,7 +64,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | qa-engineer | test plan, acceptance-criteria traceability, automated tests | tests only |
 | code-reviewer | independent review of someone else's diff | no |
 | security-reviewer | application security review of a diff or design | no |
-| independent-verifier | re-runs every evidence command itself; trusts no report | no |
+| independent-verifier | re-runs each task's declared verify commands itself; trusts no report | no |
 | comprehension-mapper | maps an unfamiliar codebase into a durable architecture note | docs only |
 | rca-investigator | incident timeline, hypotheses, root cause, action items | docs only |
 
@@ -93,9 +93,9 @@ React Native + Expo, Flutter, native Android/iOS, Kubernetes, cloud IaC.
 | intake | every requirement has a source; must-ask items are answered or marked `ASSUMED` | `100x prd audit`, `100x plan_feature audit` |
 | plan | every `AC-<n>` is canonical, maps to scope and the PRD, and is covered by a verification row | `100x plan_feature audit` |
 | choices | every option declares fit pass/fail; the chosen one passes and tops the scores or says why | `100x decide lint` |
-| task graph | acyclic, known owners, disjoint files in parallel, every defined AC owned by a task | `100x plan_dag lint --spec` |
-| per agent | the report is valid and its evidence replays with the same exit codes | `100x agent_report lint` + `replay --yes` |
-| QA | every AC has a tagged test | `100x testplan trace` |
+| task graph | acyclic, known owners, no unknown fields, `feature` set, disjoint files in parallel, every defined AC owned by a task, every verify command replayable without a shell and never a commit, push, tag or publish | `100x plan_dag lint --spec` |
+| per agent | the report is valid (`"schema": 1`); git's changed files stay inside the task's files and match its claimed changes; `done` carries every declared verify command at exit 0; those commands, and only those, replay with the same exit codes | `100x agent_report lint <report> --graph plan.json --cwd <wt>` + `100x agent_report replay <report> --graph plan.json --cwd <wt> --yes` |
+| QA | every AC has a live test tagged `<feature>/AC-<n>` (`test('tagging/AC-1 …')`); bare `AC-1` tags and skipped tests do not count | `100x testplan trace` |
 | review | no blocking item from architect, code or security review; diff not bloated | `100x agent_report lint`, `100x bloat_check`, `100x review_scope` |
 | commit / push / PR / publish | a fresh, signed receipt covers every required check | `PreToolUse` hook |
 | end of turn | no stop with changes and no matching receipt (block mode only) | `Stop` hook |
@@ -224,18 +224,41 @@ and git only.
 bash tests/run_all.sh    # 39 test suites, the seeded-defect evals and the lints
 ```
 
+How the diff checkers behave, whichever one runs:
+
+| situation | behaviour |
+|---|---|
+| run from a subfolder | the git root is resolved; paths are repo-relative |
+| cannot inspect the input (outside a repo, an unreadable changed file, a bad `--base`) | exit 2, never a silent pass |
+| renamed or non-ASCII file names | scanned |
+| a repo with no commits yet | diffed against the empty tree |
+| a11y_check on a file over 2MB | skipped with an advisory |
+| fe_layers_check's server-component exemption | only in a Next.js project, for an `app/` file with no client-only hook (or an `async` component) |
+| craft_check's bare-except rule | waived by `# fail-open: <reason>` on the `except` line or the next |
+| vet_dep on Python 3.9 | works, or exits 2; never drops dependencies silently |
+
 ## Honest limitations
 
-- **Trigger routing is a lexical proxy.** 100% / 97% on the main fixture, about 60% on the
-  holdout. Misses are word-form gaps (golang/go, crashes/crash) a bag-of-words scorer cannot
-  close.
-- **The signing key is readable by the agent**, which runs as you. See
-  [The commit gate](#the-commit-gate) for the mitigation.
+- **Trigger routing is a lexical proxy.** Top-3 on the main fixture (66 prompts, visible
+  while descriptions were written): 100% full, 97% truncated with competitors. On the
+  holdout (20 prompts): 60% full, 45% truncated with competitors. Misses are word-form
+  gaps (golang/go, crashes/crash) a bag-of-words scorer cannot close.
+- **The commit gate is an integrity aid, not a security boundary.** It catches every
+  natural phrasing of a commit, push, PR or publish, denies an edit chained into the same
+  command line before a commit, binds a push to HEAD's verified tree, needs a fresh
+  receipt after a policy change, and refuses runner-altering variables
+  (`PYTEST_ADDOPTS`, `NODE_OPTIONS`, …). It does not close: deliberate forgery with the
+  signing key (readable by the agent, which runs as you; see
+  [The commit gate](#the-commit-gate)); code run from a script file, `npm run`,
+  `python -c` or `eval` of a variable set elsewhere; and anything its parser does not model
+  (rc-file aliases and functions, a fake `HOME`). Full list: `docs/SAFETY.md`.
 - **Checkers are heuristic diff scanners, not CodeQL.** Python checks parse the syntax
   tree; TS/JS checks are regex and brace counting. They catch the shapes in the evals, not
   everything.
-- **Hooks fail open.** An internal error or a missing `python3` means no decision, not a
-  block. A quiet gate is not evidence.
+- **Hooks fail open on internal errors.** An internal error or a missing `python3` means no
+  decision, not a block. A quiet gate is not evidence: check the receipt.
+- **`agent_report replay` checks exit codes, not meaning.** A plan that declares `true` as
+  a verify command replays fine; the plan's `verify` list is what needs review.
 - **The receipt proves a command exited zero against specific content**, not that the
   command was worth running. Mutation testing would; it was absent in 0/72 JS and 0/50
   Python corpus repos.

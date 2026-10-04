@@ -45,11 +45,11 @@ it is the repo top level. In a user's project it defaults to `docs/engineering`.
 |---|---|---|
 | intake | `baseline show --work <types> --tier <t>` | C items asked, never defaulted |
 | plan | `plan_feature new <name> --kind <kinds> --tier <t> --work <types>` | `--tier` is required |
-| audit the plan | `plan_feature audit <root>/specs/<name>` | blocks implementation, including any `AC-<n>` rule |
+| audit the plan | `plan_feature audit <name>` (the path, from the git root, under `<root>`, or the bare name) | blocks implementation, including any `AC-<n>` rule and a deleted seeded edge-case or decision row; warns on baseline items newer than the spec's `\| baseline \| <n> \|` pin |
 | record choices | `decide new` then `decide lint` | blocks one option, an option with no `fit`, a chosen option that fails fit |
-| orchestrate | `plan_dag lint plan.json --spec <spec>`, then `agent_report lint` + `replay --yes` per task | blocks an uncovered AC, overlapping files, an unreplayable report |
+| orchestrate | `plan_dag lint plan.json --spec <spec>`, then per task `agent_report lint <report> --graph plan.json --cwd <wt>` + `agent_report replay <report> --graph plan.json --cwd <wt> --yes` | blocks an uncovered AC, overlapping files, an unknown plan field, a verify command that needs a shell or ships something; a file git shows changed outside the task's `files`; `done` without every declared verify command at exit 0; a declared command whose exit code does not replay |
 | implement | — | — |
-| test plan | `testplan new <spec> --out`, `testplan trace <spec> --tests <dirs>` | every AC has a tagged test |
+| test plan | `testplan new <spec> --out`, `testplan trace <spec> --tests <dirs>` | every AC has a live test tagged `<feature>/AC-<n>`; bare `AC-<n>` and skipped tests do not count |
 | bloat check | `bloat_check.py --base origin/main` | blocks |
 | design drift | `design_drift.py <root>/specs/<n>/spec.md <dir>` | blocks |
 | assumptions | `decide.py verify && decide.py drift` | blocks |

@@ -77,7 +77,8 @@ If that path reached you unsubstituted, `100x root` prints the plugin root.
    recommendation as a non-blocking question marked `ASSUMED`. Assuming past a blocking
    item is the failure this protocol exists to prevent.
 5. **Execute the thinnest slice first**, then widen. Touch only the task's owned files.
-6. **Verify.** Run the task's verify commands; record each with its exit code and output tail.
+6. **Verify.** Run the task's verify commands; record each with its exit code and output tail, the
+   command written exactly as `plan.json` writes it.
 7. **Report** in the §3 shape.
 
 Decisions follow §4. Two-way, local: decide and record. Two-way, cross-cutting: follow repo precedent,
@@ -92,10 +93,14 @@ why_it_matters, two or three options and a recommendation.
 
 ## Output
 
-The **last fenced `json` block** of your final message is your §3 report: `agent`, `task_id`,
-`status`, `understanding`, `inputs_read`, `assumptions`, `questions`, `plan_issues`, `decisions`,
-`changes`, `evidence`, `follow_ups`. It is linted with `100x agent_report lint` and every evidence
-command is re-run by `100x agent_report replay --yes`, so record the exact command and its real exit code.
-It is rejected for: `done` without evidence or with a non-zero exit; any `door: one-way` decision; a
-class C assumption; `needs-decision` with nothing blocking; `done` with a blocking item still open; a
-change outside your owned files.
+The **last fenced `json` block** of your final message is your §3 report: `"schema": 1`, `agent`,
+`task_id`, `status`, `understanding`, `inputs_read`, `assumptions`, `questions`, `plan_issues`,
+`decisions`, `changes`, `evidence`, `follow_ups`. It is linted with
+`100x agent_report lint <report> --graph plan.json --cwd <your worktree>`, which reads git's changed
+files rather than your `changes` list. Then the task's declared verify commands are re-run by
+`100x agent_report replay <report> --graph plan.json --cwd <your worktree> --yes`; evidence for any other
+command is not replayed. Record each verify command exactly as `plan.json` writes it, with its real
+exit code. It is rejected for: `done` without evidence or with a non-zero exit; `done` without every
+declared verify command at exit 0; any `door: one-way` decision; a class C assumption;
+`needs-decision` with nothing blocking; `done` with a blocking item still open; a file changed outside
+your owned files, or a claimed change git does not show; a `schema` other than 1.

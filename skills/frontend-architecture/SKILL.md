@@ -45,9 +45,11 @@ then correctly layered, so the difference is visible, not described.
    embeds a raw backend URL. If a component needs data, it calls a hook that
    returns it. Exception: a React Server Component, where fetching in the
    component is the documented data-loading pattern. The checker treats a file
-   as one when it has no `'use client'` directive and either sits under an
-   `app/` route tree or declares an `async` component (a client component
-   cannot be async), and skips `presentation-io` for it. Add `'use client'` and
+   as one when it has no `'use client'` directive and either declares an
+   `async` component (a client component cannot be async) or sits under the
+   `app/` tree of a Next.js project (a `next.config.*` or a `next` dependency)
+   and uses no client-only hook or handler, and skips `presentation-io` for it.
+   A Vite or CRA `src/app/` folder is not exempt. Add `'use client'` and
    the rule applies again.
    *Enforced by:* `100x fe_layers_check --only presentation-io`
    (**blocking**)

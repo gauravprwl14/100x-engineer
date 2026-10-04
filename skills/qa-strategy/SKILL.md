@@ -52,10 +52,14 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
 
 ## Rules
 
-1. **Every acceptance criterion has at least one test tagged with its id.** Put
-   `AC-<n>` in the test name, a comment, or an annotation (`{ tag: '@AC-3' }`,
-   Maestro `tags:`). A tag in a helper, fixture, commented-out test or skipped test
-   does not count. An AC no test names is the gap this skill exists to close.
+1. **Every acceptance criterion has at least one test tagged with its namespaced id.**
+   Put `<feature>/AC-<n>` in the test name, a comment, or an annotation
+   (`test('tagging/AC-1 …')`, `# tagging/AC-2`, `{ tag: '@tagging/AC-3' }`, Maestro
+   `tags:`); `<feature>` is the spec's `| feature |` field, else its directory. AC ids
+   repeat across specs, so `trace` ignores other features' tags and lists a bare
+   `AC-<n>` as not counted. A tag in a helper, fixture, commented-out test, skipped
+   test, or skipped `describe`/`xdescribe`/`context` block or Python class does not
+   count. An AC no test names is the gap this skill exists to close.
    *Enforced by:* `100x testplan trace <spec> --tests <dir>[,dir2]` (exit 1 on any
    uncovered AC)
 
@@ -154,12 +158,15 @@ bash tests/test_testplan.sh
 
 This skill rejects:
 
-- **An AC with no test.** `AC-4: comment is 1-280 characters` and the only `AC-4`
-  in the repo is `COMMENT_MAX = 280  # AC-4` in a fixtures file — `trace` reports it
+- **An AC with no test.** `AC-4: comment is 1-280 characters` and the only tag
+  in the repo is `COMMENT_MAX = 280  # comments/AC-4` in a fixtures file — `trace` reports it
   UNCOVERED, because a constant is not a test.
-- **A test that cannot fail counted as coverage**: `// test('AC-3 publishes', ...)`
-  commented out, or `test.skip('AC-5 ...')`. Both are ignored by `trace`; the skipped
-  one is listed as "skipped — does not count".
+- **A test that cannot fail counted as coverage**: `// test('comments/AC-3 publishes', ...)`
+  commented out, `test.skip('comments/AC-5 ...')`, or a test inside `describe.skip(...)`.
+  All are ignored by `trace`; the skipped ones are listed as "skipped test — does not
+  count".
+- **A bare tag in a shared test tree**: `test('AC-1 …')` could be any feature's AC-1;
+  `trace` lists it as not counted and asks for `<feature>/AC-1`.
 - **E2E for everything**: forty Playwright tests, one per AC, taking twenty minutes
   and failing on timing — the inverted pyramid. Move the boundary rows down to unit.
 - **Screenshot baselines updated blindly**: a PR that adds `--update-snapshots`

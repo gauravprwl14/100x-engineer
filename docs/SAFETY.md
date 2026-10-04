@@ -11,8 +11,8 @@ Every mutation happens silently, so the only protection is what the code refuses
 | # | section | what it answers | size |
 |---|---------|-----------------|------|
 | 1 | [What this plugin never does](#what-this-plugin-never-does) | the destructive operations it contains zero instances of | 20 lines |
-| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root), and what guards it | 40 lines |
-| 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run recorded commands | 25 lines |
+| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root), what guards it, and how writes stay inside the repo | 47 lines |
+| 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run a plan's declared commands | 32 lines |
 | 4 | [Refusals](#refusals) | path traversal, a records root outside the repo, and non-git directories | 25 lines |
 | 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop and SessionStart, fail-open | 95 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
@@ -78,10 +78,17 @@ them, with a warning that says how to settle it.
 | `check_index.py --gen-collections` | `INDEX.md` | `research/`, `reviewers/`, `skills/` | generated files only |
 | `check_index.py --gen-terms` | `TERMS.md` | the git root (or `--terms-out`) | generated file only |
 | `check_index.py --fix-stubs` | **rewrites existing docs in place** | matched markdown | **requires `--yes`** |
-| `agent_report.py extract -o` | one report JSON | the path given | scope: one named file |
+| `agent_report.py extract -o` | one report JSON | the path given (may sit outside the repo, next to a worktree) | scope: one named file; a symlink planted at the path cannot redirect the write |
 | `diagram_from_code.py` | a `.mmd` file | `tempfile.mkdtemp()` | temp dir, removed |
 | `run_evals.py` | scratch repos | `tempfile.TemporaryDirectory()` | temp dir, removed |
 | everything else | nothing | — | read-only |
+
+**Every record write is contained.** Writers go through `_paths.safe_write_text`: the
+target's symlinks are resolved first, a write that would land outside the repository is
+refused with exit 2, and the bytes go to a no-follow temp file renamed over the target, so
+a link planted at the destination is replaced, never written through. `learn promote`
+also refuses a lesson containing control or line-separator characters, which would
+otherwise start a line of its own in `AGENTS.md`.
 
 All record paths resolve from the **git root**, not from the plugin directory, so
 records land in your project and travel with it.
@@ -101,9 +108,16 @@ a plan and does nothing without explicit consent:
 100x learn promote LESSON-0001         # shows the lines it would append
 100x learn promote LESSON-0001 --yes   # appends them to AGENTS.md
 
-100x agent_report replay report.json        # prints the evidence commands
-100x agent_report replay --yes report.json  # runs them and compares exit codes
+100x agent_report replay report.json --graph plan.json        # prints what it would run
+100x agent_report replay report.json --graph plan.json --yes  # runs them, compares exit codes
 ```
+
+`replay` never executes a report's evidence text. It runs only the commands `plan.json`
+declares as that task's `verify` list (required: no `--graph`, exit 2), as argv without a
+shell; a `sh -c '…'` script is printed before it runs. Evidence for any other command is
+listed `not replayed (undeclared)` and the run exits 3. A declared command the
+verification hook classes as a commit, push, tag or publish is refused, and a timeout
+kills the command's whole process group.
 
 `shard` moves records into date directories once a folder exceeds 40 entries. Ids live
 in the filenames and do not change, so links keep working — but it is still a file

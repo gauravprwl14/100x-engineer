@@ -31,7 +31,7 @@ try:
     from verify_fingerprint import EXCLUDE, _git, repo_root, snapshot, tree_fingerprint
     from receipts import (POLICY, RECEIPT, GateError, evaluate, load_key, load_policy,
                           rerun_hint)
-except Exception:                                   # fail open, see module docstring
+except Exception:  # fail-open: a gate that cannot import its helpers must not brick the shell
     print(json.dumps({}))
     sys.exit(0)
 
@@ -464,7 +464,7 @@ def _config_overlay(env, cfgs):
         for item in shlex.split(params):
             k, _, v = item.partition("=")
             overlay[k.lower()] = v
-    except ValueError:
+    except ValueError:  # fail-open: unbalanced quotes make git itself reject GIT_CONFIG_PARAMETERS
         pass
     try:
         count = int(env.get("GIT_CONFIG_COUNT", "0"))
@@ -1112,6 +1112,6 @@ def main():
 if __name__ == "__main__":
     try:
         print(json.dumps(main()))
-    except Exception as e:
+    except Exception as e:  # fail-open: an internal error must not brick the shell; it is reported
         print(json.dumps({"systemMessage": f"verification hook error (failing open): {e}"}))
     sys.exit(0)
