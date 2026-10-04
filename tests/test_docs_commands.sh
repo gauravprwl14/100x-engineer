@@ -10,8 +10,8 @@ MISSING=""
 
 # collect every referenced script from docs, skills, reviewers and AGENTS.md — both the
 # in-repo form `scripts/x.py` and the installed form `100x x`, which bin/100x maps to it
-REFS=$( { grep -rhoE 'scripts/[a-z0-9_]+\.py' docs/ skills/ reviewers/ AGENTS.md README.md 2>/dev/null
-          grep -rhoE '(^|[^a-z0-9_/-])100x [a-z][a-z0-9_]+' docs/ skills/ reviewers/ AGENTS.md README.md 2>/dev/null \
+REFS=$( { grep -rhoE 'scripts/[a-z0-9_]+\.py' docs/ skills/ reviewers/ agents/ AGENTS.md README.md 2>/dev/null
+          grep -rhoE '(^|[^a-z0-9_/-])100x [a-z][a-z0-9_]+' docs/ skills/ reviewers/ agents/ AGENTS.md README.md 2>/dev/null \
             | sed -E 's/.*100x ([a-z0-9_]+)/scripts\/\1.py/' | grep -vE '^scripts/(engineer|list|root)\.py$'; } \
        | sort -u)
 

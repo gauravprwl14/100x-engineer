@@ -34,18 +34,19 @@ flowchart LR
 The main session owns the user conversation, the task graph and every merge. Agents own one
 task each and return a report (§3); they never talk to the user directly, and their
 questions travel back through the main session. Orchestration lives in the main session
-because a subagent's ability to start further subagents is not documented, and a design
-that depends on it would fail silently where it is unavailable. `SOURCE: original`
+even though subagents can start subagents: the spawn depth is configurable and may be one
+(https://code.claude.com/docs/en/sub-agents), and only the main session holds the user
+conversation that questions must reach. `SOURCE: original`
 
 | agent | job | writes code? | preloaded skills |
 |---|---|---|---|
 | requirements-analyst | plain English → requirements, assumptions, ≤5 questions | no | requirements-intake, scale-appropriateness |
 | solution-architect | reviews specs and plans before build, and every diff for design fit | no | solution-architecture, approach-selection, api-contract, data-modeling, distributed-correctness |
-| backend-engineer | implements server-side tasks | yes | baseline-aware build skills for APIs, data, jobs |
+| backend-engineer | implements server-side tasks | yes | api-contract, data-modeling, distributed-correctness, observability-design, data-lifecycle |
 | frontend-engineer | implements web UI tasks | yes | ui-baseline, accessibility, web-vitals, frontend-architecture |
 | mobile-engineer | implements mobile tasks | yes | ui-baseline, accessibility, mobile-release-safety |
 | qa-engineer | test plan, acceptance-criteria traceability, automated tests | tests only | qa-strategy, test-design |
-| code-reviewer | independent review of someone else's diff | no | diff-review, code-craft, minimal-diff |
+| code-reviewer | independent review of someone else's diff | no | reviewing-others-code, scoped-review, code-craft, minimal-diff |
 | security-reviewer | application security review of a diff or design | no | app-security, security-baseline |
 | independent-verifier | re-runs every evidence command itself; trusts no report | no | verification-gate |
 | comprehension-mapper | maps an unfamiliar codebase into a durable architecture note | docs only | codebase-comprehension, diagramming |
@@ -72,8 +73,9 @@ Every specialist runs these steps in order and may not skip one.
 ## 3. Report contract
 
 The last fenced `json` block of an agent's final message is its report. The main session
-saves it and runs `100x agent_report lint` on it, then `100x agent_report replay`, which
-re-runs every evidence command and fails if any exit code differs from the one claimed.
+saves it and runs `100x agent_report lint` on it, then `100x agent_report replay --yes`, which
+re-runs every evidence command and fails if any exit code differs from the one claimed
+(without `--yes` it only prints what it would run).
 
 ```json
 {
@@ -101,7 +103,7 @@ Lint rejects a report when any of these hold:
 | a `decision` with `door: one-way` | one-way doors are questions (§4), never decisions |
 | `status: needs-decision` with no blocking question or plan issue | a stop must say what unblocks it |
 | `status: done` with a blocking question or plan issue still listed | contradictory |
-| an assumption with class C | C items are asked, never assumed |
+| an assumption with class C | C items are asked, never assumed; an unanswered C item proceeding on its recommendation stays a non-blocking question marked `ASSUMED` |
 | a change outside the task's owned files (when the task graph is supplied) | collisions break parallel work |
 | `status: blocked` with no blocking question or plan issue | a block must say what unblocks it |
 | `status: failed` with no evidence | a failure must show what failed |
@@ -184,7 +186,7 @@ session batches all open questions into one message to the user.
 |---|---|---|
 | intake | requirements have a source and C items are answered or `ASSUMED` | `100x prd audit` / `100x plan_feature audit` |
 | plan | task graph valid | `100x plan_dag lint --spec` |
-| per task | agent report valid and its evidence replays | `100x agent_report lint` + `replay` |
+| per task | agent report valid and its evidence replays | `100x agent_report lint` + `replay --yes` |
 | integration | full suite on the merged result | the project's verify commands, via `100x verified` |
 | review | solution-architect, code-reviewer and security-reviewer reports have no blocking items | `100x agent_report lint` |
 | commit / push / PR / publish | a fresh, signed receipt | `PreToolUse` hook |
