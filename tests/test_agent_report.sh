@@ -135,6 +135,10 @@ cp "$TMP/r.json" "$WT/T1.json"
 python3 "$A" lint "$WT/T1.json" --graph "$EX/plan.json" --cwd "$WT" --base "$BASE" >"$O" 2>&1
 rc_is 0 $? "lint --graph: a report saved inside the worktree is not counted as a change"
 rm "$WT/T1.json"
+cp "$EX/plan.json" "$WT/plan-copy.json"
+python3 "$A" lint "$M/done-valid.md" --graph "$WT/plan-copy.json" --cwd "$WT" --base "$BASE" >"$O" 2>&1
+rc_is 0 $? "lint --graph: the plan file itself, inside the worktree, is not counted as a change"
+rm "$WT/plan-copy.json"
 
 # --- replay: only the plan's declared verify commands ever run ---
 python3 "$A" replay "$M/done-valid.md" --cwd "$WT" --yes >"$O" 2>&1; rc_is 2 $? "replay: --graph is required"

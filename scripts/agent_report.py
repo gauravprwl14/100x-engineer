@@ -312,7 +312,7 @@ def cmd_lint(a):
         plan = plan_dag.load_plan(a.graph)
         if plan is None:
             return 2
-        exclude = [a.report] if a.report != "-" else []
+        exclude = [a.graph] + ([a.report] if a.report != "-" else [])
         actual, why = actual_changes(pathlib.Path(a.cwd), a.base, exclude)
         if why:
             print(f"agent_report lint: {why}", file=sys.stderr)
