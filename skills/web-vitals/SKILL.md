@@ -58,9 +58,10 @@ the 76th-99th percentile on a slow phone and a congested network.
 
 ## Rules
 
-1. Set a budget per route before building it — target LCP/INP/CLS numbers,
-   written down, same discipline as `performance-budgets` rule 1 for latency.
-   A route with no stated budget silently inherits whatever the build produces.
+1. Set a budget per route before building it, same discipline as
+   `performance-budgets` rule 1. Default, unless the spec overrides it: the Core
+   Web Vitals "good" thresholds at p75 of real users — LCP ≤ 2.5s, INP ≤ 200ms,
+   CLS ≤ 0.1 (`web.dev/articles/vitals`). Silence means the default, never "none".
    *Enforced by:* review
 
 2. Every image ships `width`/`height`, `fill` (with a sized container), or
@@ -68,11 +69,11 @@ the 76th-99th percentile on a slow phone and a congested network.
    or CLS is guaranteed once it loads.
    *Enforced by:* `python3 scripts/a11y_check.py --only img-no-dimensions`
 
-3. Use `priority`/eager loading (Next.js: `priority`, or `fetchPriority="high"`
-   as of Next.js 16 — see Sources) on the one element that is actually the
-   LCP candidate, and lazy-load everything else. Marking every image
-   `priority` defeats the point: it competes with the real LCP element for
-   bandwidth.
+3. Load eagerly only the one element that is actually the LCP candidate, and
+   lazy-load everything else. Next.js 16 deprecated `priority` in favour of
+   `preload`, and its docs say "in most cases" use `loading="eager"` or
+   `fetchPriority="high"` instead of `preload` (see Sources). Marking every
+   image eager defeats the point: it competes with the real LCP element.
    *Enforced by:* review
 
 4. Serve modern image formats (AVIF/WebP) where the pipeline supports it —
@@ -147,7 +148,7 @@ This skill rejects:
 
 - **A hero `<img>`/`Image` with no `width`/`height`/`fill`/`aspect-ratio`** —
   the layout jumps once it loads; guaranteed CLS.
-- **Every image on a page marked `priority`** — defeats the purpose; the real
+- **Every image on a page marked eager/`priority`/`preload`** — the real
   LCP element now competes for the same bandwidth budget.
 - **A client-side `useEffect` fetch for data needed on first paint** — LCP pays
   for the JS parse + hydrate + fetch waterfall that a server fetch skips.
@@ -174,7 +175,7 @@ text alone.
 
 ## Scale
 
-`solo`: rule 2 (mechanical, free) and rule 3 (name the one `priority` image) —
+`solo`: rule 2 (mechanical, free) and rule 3 (name the one eager image) —
 minutes to adopt, catches the most common AI-generated defect (every image
 marked eager/priority, or none dimensioned).
 `small-team (2-10)`: add 5, 6, 7, 8 — font and `'use client'` discipline start
@@ -197,9 +198,10 @@ of users is invisible without it.
   a Core Web Vital metric."); the library-level change is
   `GoogleChrome/web-vitals@main:CHANGELOG.md` v4.0.0 (2024-05-13), "Deprecate
   `onFID()`".
-- `next/image` `priority`/loading defaults and the Next.js 16 `priority` →
-  `preload` rename: `vercel/next.js@canary:docs/01-app/03-api-reference/02-
-  components/image.mdx`.
+- `next/image` loading defaults; `priority` deprecated for `preload` in v16.0.0;
+  "In most cases, you should use `loading="eager"` or `fetchPriority="high"`
+  instead of `preload`": `vercel/next.js@canary:docs/01-app/03-api-reference/02-
+  components/image.mdx` (rendered at `nextjs.org/docs/app/api-reference/components/image`).
 - `next/font` defaults (`display: 'swap'`, `preload: true`, `subsets`):
   `vercel/next.js@canary:docs/01-app/03-api-reference/02-components/font.mdx`.
 - `'use client'` boundary and client-fetch failure modes: `reviewers/nextjs-
