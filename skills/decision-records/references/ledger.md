@@ -2,32 +2,38 @@
 
 Reference for `decision-records` (loaded on demand). The numbered rules and the Verify block live in `../SKILL.md`; rule numbers below refer to that file.
 
-A flat `decisions/` directory is fine at 10 records and unusable at 300. Nobody
+A flat `<root>/decisions/` directory is fine at 10 records and unusable at 300. Nobody
 browses it, so nobody reads it, so writing to it stops paying — and the whole
 discipline quietly dies. Three mechanisms prevent that.
 
 ## The scheme
 
+Every path is under the records root `<root>`: `docs/engineering/` by default, or
+`.100x.json` `{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR`
+(`docs/OPERATING-MODEL.md` §8). This plugin's own repo pins `{"root": "."}`.
+
 ```
-prds/<feature>/prd.md          why we are building it
-specs/<feature>/spec.md        what we are building
-decisions/ADR-NNNN-slug.md     why it is built this way
-rca/RCA-NNNN-slug.md           why it broke
-reviews/REV-NNNN-slug.md       what a review concluded
-ledger/INDEX.md                generated: every record, by type
-ledger/MAP.md                  generated: the traceability matrix
+<root>/prds/<feature>/prd.md          why we are building it
+<root>/specs/<feature>/spec.md        what we are building
+<root>/decisions/ADR-NNNN-slug.md     why it is built this way
+<root>/rca/RCA-NNNN-slug.md           why it broke
+<root>/reviews/REV-NNNN-slug.md       what a review concluded
+<root>/testplans/<feature>.md         the test plan (`testplan new --out`)
+<root>/ledger/INDEX.md                generated: every record, by type
+<root>/ledger/MAP.md                  generated: the traceability matrix
+<root>/INDEX.md                       catalogue (`check_index --register`)
 ```
 
 **1. Typed, prefixed, monotonic ids.** `ADR-0007`, `RCA-0002`. The id is in the
 filename, so it is greppable, and a link to it survives the file moving.
 
 **2. Date sharding at a threshold.** Past 40 records in one directory, `ledger.py
-shard` moves them to `decisions/YYYY/QN/` and writes a per-shard index. The master
+shard` moves them to `<root>/decisions/YYYY/QN/` and writes a per-shard index. The master
 index links to shards instead of listing 300 rows. **Ids do not change**, so nothing
 that referenced a record breaks.
 
 **3. A traceability matrix**, because the question people actually ask is not "what
-records exist" but "is there a decision behind this spec?" `ledger/MAP.md` is a
+records exist" but "is there a decision behind this spec?" `<root>/ledger/MAP.md` is a
 feature × record-type grid, and `ledger.py gaps` reports the missing cells that
 matter.
 

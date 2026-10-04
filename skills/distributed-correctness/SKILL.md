@@ -27,6 +27,9 @@ feature-kind edge cases this generates, scaffold with
 `cache`, `webhook`, `third-party-api`, `cron`, `batch-job` in
 `scripts/data/edge_cases_infra.json` seed the scenarios below automatically.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. **"Exactly-once" is marketing.** No transport guarantees a message is
@@ -142,7 +145,7 @@ feature-kind edge cases this generates, scaffold with
 
 ```bash
 # 1. does the design claim "exactly-once" without naming a dedup mechanism?
-grep -rniE "exactly.once" specs/<name>/spec.md 2>/dev/null
+grep -rniE "exactly.once" docs/engineering/specs/<name>/spec.md 2>/dev/null   # default <root>
 
 # 2. every outbound client call sets an explicit timeout
 grep -rnE "(axios|fetch\(|http\.request|requests\.(get|post|put)|httpx\.)\(" src/ \
@@ -157,7 +160,7 @@ grep -rnE "(Date\.now\(\)|time\.time\(\)|System\.currentTimeMillis)" src/ | grep
 # 5. scaffold the spec for this domain -- seeds queue/cache/webhook/third-party
 #    edge cases (idempotency, ordering, backpressure, outbox) before code exists
 100x plan_feature new order-events --kind queue,integration
-100x plan_feature audit specs/order-events   # exits 1 until every case resolves
+100x plan_feature audit <root>/specs/order-events   # exits 1 until every case resolves
 ```
 Point greps at `git diff --name-only` output rather than the whole tree; each
 runs in under a second. Step 5 is the one that actually gates.

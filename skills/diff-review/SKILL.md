@@ -45,6 +45,9 @@ pending (`codebase-comprehension`).
 | R8 | Does every new file earn its existence? | a judgement about alternatives not in the diff |
 | R9 | Are the spec's `accepted`/`deferred` edge cases still the right call? | compares intent to what implementation revealed |
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 ### Both modes (own diff: all of 1–8)
@@ -65,7 +68,7 @@ pending (`codebase-comprehension`).
    your head; skip it for a single-function diff.
    *Enforced by:* `100x diagram_from_code <dir> --kind sequence --level 3`
 8. Re-check the spec's edge-case table after implementing; implementation reveals missed cases.
-   *Enforced by:* `100x plan_feature audit specs/<name>`
+   *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
 ### Someone else's diff
 
@@ -81,7 +84,7 @@ pending (`codebase-comprehension`).
 12. Label every finding **blocking**, **should-fix**, **optional** or **question**.
     *Enforced by:* `grep -c '\*\*blocking\*\*\|\*\*should-fix\*\*\|\*\*optional\*\*\|\*\*question\*\*' <notes>` equals the finding count
 13. Before marking anything blocking, cite where the target repo establishes the convention.
-    *Enforced by:* `100x repo_map <root> --symbol <PatternName>`
+    *Enforced by:* `100x repo_map <repo> --symbol <PatternName>`
 14. Assume a constraint you cannot see before assuming incompetence; ask rather than assert.
     *Enforced by:* review
 15. Check what no static tool catches: caller authorization, check-then-act races, missing error
@@ -110,8 +113,8 @@ pending (`codebase-comprehension`).
 sed -n '/## Common AI failure modes/,/## Edge cases/p' reviewers/<stack>.md
 
 # 4. own diff, after implementing: re-audit the spec
-100x plan_feature audit specs/<feature>
-100x design_drift specs/<feature>/spec.md <code-dir>
+100x plan_feature audit <root>/specs/<feature>
+100x design_drift <root>/specs/<feature>/spec.md <code-dir>
 
 # 5. someone else's diff: precedent and recorded decisions before asserting a convention
 100x repo_map . --symbol <PatternOrClassName>

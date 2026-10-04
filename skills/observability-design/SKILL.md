@@ -132,7 +132,8 @@ grep -rnE "console\.log\(|print\(" src/ 2>/dev/null
 grep -rniE "(email|phone|ssn|password|token)\s*[:=]" src/ 2>/dev/null
 
 # 4. an SLI defined as an average instead of a percentile
-grep -rniE "\bavg\(|average" src/ docs/ specs/ 2>/dev/null | grep -i "sli\|latency\|slo"
+#    (docs/ holds the default records root, docs/engineering/)
+grep -rniE "\bavg\(|average" src/ docs/ 2>/dev/null | grep -i "sli\|latency\|slo"
 
 # 5. record the sampling/retention decision once it's made
 100x decide new "Sampling/retention policy" --affects "src/telemetry/**" --tag observability

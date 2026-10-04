@@ -23,9 +23,12 @@ accessibility, load or smoke tests; a reviewer asks "is this tested enough"; a
 release is being prepared and nobody can list which ACs are covered.
 
 **Do not fire when:** the question is which boundary values one function needs
-(`test-design`), which runner/lint commands a language uses (`*-verification`), or
+(`test-design`), which runner/lint commands a language uses (`language-verification`), or
 how a deploy is staged (`release-rollout`). A one-line bug fix needs a regression
 test (`bug-fix`), not a test plan.
+
+`<root>` is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
 
 ## Portfolio by work type and tier
 
@@ -60,9 +63,12 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
    partition, an invalid partition, boundary rows for every number in its wording,
    authz rows when it names an owner or role, legal and illegal transitions when it
    names states, plus one row per implicit requirement (§0b ids such as
-   `web.reflow-320`). A spec with no AC ids cannot be planned.
-   *Enforced by:* `100x testplan new <spec> --out <path>` (exit 1 when the doc has
-   no `AC-<n>` lines, with the format to use)
+   `web.reflow-320`). A spec with no AC ids cannot be planned. Only defining lines
+   count — `AC-<n>: <observable outcome> (R<k>, S<k>)` in spec §2b — so a mention
+   such as "see AC-3" is never a criterion.
+   *Enforced by:* `100x testplan new <spec> --out [path]` (exit 1 when the doc has
+   no `AC-<n>` lines, with the format to use; bare `--out` writes
+   `<root>/testplans/<feature>.md`)
 
 3. **Shape the portfolio by risk, not by default ratios, and never invert it.** E2E
    covers only the critical journeys (sign-in, the primary/money path, the one
@@ -131,10 +137,11 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
 
 ```bash
 # AC -> test traceability (~0.2s); exit 1 lists every uncovered AC with the fix
-100x testplan trace specs/<feature>/spec.md --tests e2e,backend/test
-100x testplan trace specs/<feature>/spec.md --tests e2e --json
-# first-draft plan from the ACs (exit 1 if the spec has none)
-100x testplan new specs/<feature>/spec.md --out docs/engineering/testplans/<feature>.md
+100x testplan trace <root>/specs/<feature>/spec.md --tests e2e,backend/test
+100x testplan trace <root>/specs/<feature>/spec.md --tests e2e --json
+# first-draft plan from the ACs (exit 1 if the spec has none); bare --out files it
+# at <root>/testplans/<feature>.md
+100x testplan new <root>/specs/<feature>/spec.md --out
 100x testplan matrix --work web-ui --tier small
 # the project's own suites, from templates/qa/ (minutes; needs Playwright, k6)
 npx playwright test --grep "@critical|@a11y|@responsive|@visual"

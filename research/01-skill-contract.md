@@ -76,3 +76,12 @@ Before shipping any skill, answer: *what bad output does this reject that would
 otherwise ship?* If there is no answer, delete the skill. Volume is not value —
 30 sharp skills beat 100 vague ones, and a vague skill actively costs context
 budget that a sharp one could have used.
+
+## Revisions
+
+The sections above are kept as first written; each entry below supersedes the part it
+names.
+
+| date | supersedes | change | why |
+|---|---|---|---|
+| 2026-10-04 | §1 Frontmatter, "Starts with 'Use when ...'" | A `description` is at most **250 characters**, puts the **trigger nouns first**, and does **not** open with "Use when". `lint_skills.py` errors above 300 characters (hard cap) and warns when the first 100 characters share no noun with the skill's `Fire when` paragraph. | With ~400 installed skills the skill listing runs out of budget and truncates descriptions, so only the front of each one reliably reaches the model. "Use when" spends those characters on no signal. Measured in `evals/GRADER-CHANGELOG.md` (`skill_triggers.py --all-modes`). |

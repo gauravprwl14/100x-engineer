@@ -181,7 +181,7 @@ labelled as such in the output rather than presented as npm's real count.
 process cost.
 `small-team (2-10)`: add rule 8 as a required CI check on manifest changes, and rule
 4's lockfile discipline.
-`org (10+)`: `--check-manifest` output feeds an intake record (`decisions/`) rather
+`org (10+)`: `--check-manifest` output feeds an intake record (`<root>/decisions/`, under the records root — `docs/engineering/` by default) rather
 than living only in a terminal; add an SBOM cross-reference.
 `high-blast-radius`: vendor small, security-sensitive utilities rather than
 depending on them at all (rule 6), and consider a private registry mirror with its

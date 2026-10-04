@@ -38,7 +38,7 @@ flowchart LR
   C --> N[7 architecture note<br/>lint, register, index]
 ```
 
-1. **Packages.** `100x repo_map <root>` lists files with `git ls-files`, so gitignored
+1. **Packages.** `100x repo_map <repo>` lists files with `git ls-files`, so gitignored
    build output never enters the map, and detects pnpm/npm/yarn, turbo, nx, lerna,
    go.work, Cargo and Gradle workspaces. In a monorepo, pick the package that owns the
    area and re-run `repo_map <package-dir>` scoped to it.
@@ -48,7 +48,7 @@ flowchart LR
    Open the top entry for the area, not the file that sounds central. Generated and
    vendored files are marked and ranked last.
 3. **Data flow.** From that entry, follow one request through calls and assignments,
-   not files in alphabetical order. `100x repo_map <root> --symbol <Name>` jumps from
+   not files in alphabetical order. `100x repo_map <repo> --symbol <Name>` jumps from
    an identifier to its definition and every referencing file.
 4. **Boundaries.** Name every boundary the flow crosses (network, DB, queue, auth,
    external service, filesystem, clock) before reading implementation inside one.
@@ -62,7 +62,7 @@ flowchart LR
 
 ## The durable artifact
 
-Copy `references/architecture-template.md` to `docs/engineering/architecture/<area>.md`
+Copy `references/architecture-template.md` to `<root>/architecture/<area>.md`
 and fill it: L1 context diagram (mermaid), entry points with `file:line`, data flow,
 boundaries, the hot file, the predict-then-confirm table, glossary terms, open
 questions. End every claim with `verified` (you opened the file, ran it, or traced it)
@@ -70,11 +70,13 @@ or `inferred` (deduced, not checked).
 
 Then:
 
-- `100x repo_map --lint-note docs/engineering/architecture/<area>.md` must pass.
-- `100x check_index --register docs/engineering/architecture/<area>.md` adds its row to
-  `docs/engineering/INDEX.md`.
-- `100x check_index --gen-terms --terms-root docs/engineering --terms-out
-  docs/engineering/TERMS.md` puts its glossary and section terms in the term index.
+- `100x repo_map --lint-note <root>/architecture/<area>.md` must pass.
+- `100x check_index --register <root>/architecture/<area>.md` adds its row to
+  `<root>/INDEX.md`, the default catalogue (`--index` names another). `<root>` is the
+  records root: `docs/engineering/` by default, or `.100x.json` `{"root": "..."}` at the
+  git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+- `100x check_index --gen-terms --terms-root <root> --terms-out
+  <root>/TERMS.md` puts its glossary and section terms in the term index.
 - **Commit only when the user asks.** Whether a note joins the repo is the owner's
   decision. Otherwise leave it untracked, and say so with its path.
 
@@ -106,7 +108,7 @@ attempts, stop and list them under Open questions rather than reading wider.
 
 2. Run `repo_map` before opening files by hand. It is deterministic and respects
    `.gitignore`, so two people orienting on the same repo start from the same map.
-   *Enforced by:* `100x repo_map <root>`
+   *Enforced by:* `100x repo_map <repo>`
 
 3. Tag every claim in the note `verified` or `inferred`, and give every entry point a
    `file:line`. An inferred claim presented as fact is the failure this skill prevents.
@@ -116,9 +118,9 @@ attempts, stop and list them under Open questions rather than reading wider.
    ones that did not hold.
    *Enforced by:* `100x repo_map --lint-note <note>` (rejects fewer than 3 tagged rows)
 
-5. Write the note to `docs/engineering/architecture/<area>.md` from the template,
+5. Write the note to `<root>/architecture/<area>.md` from the template,
    register it, and regenerate the term index.
-   *Enforced by:* `100x check_index --check-terms --terms-root docs/engineering --terms-out docs/engineering/TERMS.md`
+   *Enforced by:* `100x check_index --check-terms --terms-root <root> --terms-out <root>/TERMS.md`
 
 6. Leave the note untracked unless the user asks for a commit, and say where it is.
    *Enforced by:* convention
@@ -134,11 +136,11 @@ attempts, stop and list them under Open questions rather than reading wider.
 
 ```bash
 # 1. orientation: packages, routes, ranked entry points, hot files (~1s; large repo ~5s)
-100x repo_map <root>
+100x repo_map <repo>
 100x repo_map <package-dir> --json        # scoped to one monorepo package
 
 # 2. trace a symbol: definition + every referencing file (~1s)
-100x repo_map <root> --symbol <Name>
+100x repo_map <repo> --symbol <Name>
 
 # 3. why it is shaped this way (needs git history; say so if it is shallow)
 git log -S<symbol> --oneline -- <path>
@@ -146,10 +148,10 @@ git log -S<symbol> --oneline -- <path>
 100x learn relevant <path>
 
 # 4. the artifact: structure and tags, catalogue row, term index (~0.5s)
-100x repo_map --lint-note docs/engineering/architecture/<area>.md
-100x check_index --register docs/engineering/architecture/<area>.md
-100x check_index --gen-terms --terms-root docs/engineering --terms-out docs/engineering/TERMS.md
-100x check_index --check-terms --terms-root docs/engineering --terms-out docs/engineering/TERMS.md
+100x repo_map --lint-note <root>/architecture/<area>.md
+100x check_index --register <root>/architecture/<area>.md
+100x check_index --gen-terms --terms-root <root> --terms-out <root>/TERMS.md
+100x check_index --check-terms --terms-root <root> --terms-out <root>/TERMS.md
 ```
 
 ## Failure modes
@@ -200,7 +202,7 @@ growing with repo size, and the term index is how a newcomer finds the word they
 - The L1 context-diagram level: `reviewers/_diagram-levels.md`.
 - Verified/inferred labelling of claims: `reviewers/_evidence-labels.md` and
   `docs/OPERATING-MODEL.md` §4 ("A fact the agent could not verify is labelled `inferred`").
-- `docs/engineering/` as the single root for written artifacts, with one `INDEX.md` and
+- One records root (`docs/engineering/` by default) for written artifacts, with one `INDEX.md` and
   one `TERMS.md`: `docs/OPERATING-MODEL.md` §8.
 - The gitignored-build-output and missing-routes failure: a prior audit of this tool on
   a large Rails repo, reproduced in `tests/test_repo_map.sh`.
