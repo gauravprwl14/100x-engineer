@@ -150,8 +150,8 @@ This skill rejects:
 
 - **`"severity": "high"`**: undefined across teams; one team's high is another's SEV3.
 - **`"at": "2026-09-28 14:02"`**: no timezone, so TTD and TTM are unmeasurable.
-- **`{"what": "improve monitoring"}`** with no owner, date or type: the workbook's
-  example of an action item that never ships.
+- **`{"what": "improve monitoring"}`** with no owner, date or type: the vague,
+  unowned item the workbook warns against.
 - **No impact block**: "some users were affected" cannot be prioritised against
   anything.
 - **A root cause identical to the symptom**, or a stop at the trigger.
