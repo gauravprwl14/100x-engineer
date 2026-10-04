@@ -162,7 +162,7 @@ def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("RCA-*.md")):
+    for p in sorted(DIR.rglob("RCA-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -180,7 +180,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("RCA-*.md")
+    # rglob, not glob: `ledger.py shard` moves records into YYYY/QN/, and a top-level
+    # scan would hand out an id that already exists in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("RCA-*.md")
            if (m := re.match(r"RCA-(\d+)", p.name))]
     return f"RCA-{max(ids, default=0) + 1:04d}"
 
@@ -287,7 +289,7 @@ def cmd_new(a):
     if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py new", ROOT):
         return 2
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "rca.py new")
     rid = next_id()
     meta = {
         "id": rid,
@@ -352,7 +354,7 @@ def cmd_new(a):
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
         print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "rca.py new")
     print(f"created {rel(path)}")
     if a.severity in LEGACY_SEVERITY:
         print(f"severity {a.severity!r} recorded as {meta['severity']} "
@@ -370,9 +372,9 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "rca.py index", ROOT):
         return 2
-    recs = load_all()
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "rca.py index")
+    recs = load_all()
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -386,7 +388,8 @@ def cmd_index(a):
                      fmt(d["time_to_mitigate"]), fmt(d["time_to_resolve"]),
                      len(r.get("action_items") or []), has_test,
                      len(r.get("decision_links") or []),
-                     ", ".join(r.get("affects") or []) or "—", r["_path"].name))
+                     ", ".join(r.get("affects") or []) or "—",
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# RCA index", "",
            f"{len(rows)} record(s). Regenerate with `100x rca index`.", "",
@@ -398,7 +401,7 @@ def cmd_index(a):
                    f"{ht} | {nl} | `{af}` |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `rca.py lint` is the completeness gate: free-text severity, missing impact, "
             "a timestamp without a timezone, an action item with no owner/due/type, no "
@@ -415,7 +418,7 @@ def cmd_index(a):
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
-    (DIR / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(DIR / "INDEX.md", new_text, ROOT, "rca.py index")
     print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} record(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -620,10 +623,10 @@ def cmd_link(a):
         return 0
     if mg.require_git_root(IN_GIT_REPO, "rca.py link", ROOT):
         return 2
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "rca.py link")
 
     adr_dir = DIR.parent / "decisions"
-    hits = list(adr_dir.glob(f"{a.decision}*.md")) if adr_dir.exists() else []
+    hits = list(adr_dir.rglob(f"{a.decision}*.md")) if adr_dir.exists() else []
     if not hits:
         print(f"warning: no decision record found for {a.decision} under {rel(adr_dir)}/ — "
               f"link recorded anyway")

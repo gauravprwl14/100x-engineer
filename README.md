@@ -221,7 +221,7 @@ and git only.
 | this repo's own discipline | `lint_skills`, `skill_triggers`, `check_claims`, `check_agents_md`, `audit_agent_config`, `safety_audit` |
 
 ```bash
-bash tests/run_all.sh    # 37 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 38 test suites, the seeded-defect evals and the lints
 ```
 
 ## Honest limitations

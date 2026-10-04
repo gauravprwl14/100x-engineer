@@ -48,7 +48,7 @@ def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("ADR-*.md")):
+    for p in sorted(DIR.rglob("ADR-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -66,7 +66,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("ADR-*.md")
+    # rglob, not glob: `ledger.py shard` moves records into YYYY/QN/, and a top-level
+    # scan would hand out ADR-0001 again once the originals are in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("ADR-*.md")
            if (m := re.match(r"ADR-(\d+)", p.name))]
     return f"ADR-{max(ids, default=0) + 1:04d}"
 
@@ -121,7 +123,7 @@ def cmd_new(a):
     if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py new", ROOT):
         return 2
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "decide.py new")
     did = next_id()
     meta = {
         "id": did,
@@ -154,7 +156,7 @@ def cmd_new(a):
         mg.print_diff_or_noop(old_text, new_text, str(rel(path)))
         print(f"[dry-run] would also regenerate {rel(DIR / 'INDEX.md')}; nothing written")
         return 0
-    path.write_text(new_text)
+    _paths.safe_write_text(path, new_text, ROOT, "decide.py new")
     print(f"created {rel(path)}")
     print("Fill in: assumptions (each needs a real verify command), options with "
           "concrete why_not, and the Gaps accepted table.")
@@ -166,21 +168,21 @@ def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "decide.py index", ROOT):
         return 2
-    recs = load_all()
     if not dry:
-        DIR.mkdir(parents=True, exist_ok=True)
+        _paths.contained(DIR, ROOT, "decide.py index")
+    recs = load_all()
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
             bad.append(r)
             continue
-        chosen = next((o.get("name") for o in r.get("options", []) if o.get("chosen")), "—")
+        chosen = next((o.get("name") for o in option_list(r) if o.get("chosen")), "—")
         nass = len(r.get("assumptions") or [])
         rows.append((r.get("id", "?"), r.get("title", "?"), r.get("status", "?"),
                      r.get("date", "?"), chosen, nass,
                      ", ".join(r.get("tags") or []) or "—",
                      ", ".join(r.get("affects") or []) or "—",
-                     r["_path"].name))
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# Decision index", "",
            f"{len(rows)} decision(s). Regenerate with `python3 scripts/decide.py index`.",
@@ -190,7 +192,7 @@ def cmd_index(a):
         out.append(f"| [{i}]({fn}) | {t} | {s} | {d} | {c} | {n} | {tg} | `{af}` |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `decide.py verify` runs every assumption's verification command.",
             "- `decide.py drift` lists decisions whose `affects` paths changed since "
@@ -203,7 +205,7 @@ def cmd_index(a):
         old_text = (DIR / "INDEX.md").read_text() if (DIR / "INDEX.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(DIR / "INDEX.md")))
         return 1 if bad else 0
-    (DIR / "INDEX.md").write_text(new_text)
+    _paths.safe_write_text(DIR / "INDEX.md", new_text, ROOT, "decide.py index")
     print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} decisions"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
@@ -301,28 +303,47 @@ WEIGHTS = [("reversibility", 3), ("blast radius", 3), ("moving parts", 2),
            ("already-in-use", 2), ("exit cost", 1)]
 
 
+def option_list(r):
+    """The record's options that are objects; anything else is reported by lint_fit."""
+    opts = r.get("options") or []
+    return [o for o in opts if isinstance(o, dict)] if isinstance(opts, list) else []
+
+
 def lint_fit(name, opts, override):
     """Apply fit as a pass/fail filter before any weighted comparison. Returns the
-    number of errors printed."""
+    number of errors printed.
+
+    Options are keyed by position: two options may share a name, and keying by name let
+    the second silently replace the first in the comparison."""
     errs = 0
+    if not isinstance(opts, list):
+        print(f"  ERROR {name}: options must be a list of objects, got "
+              f"{type(opts).__name__}")
+        return 1
     fits = {}
-    for o in opts:
+    for i, o in enumerate(opts):
+        if not isinstance(o, dict):
+            print(f"  ERROR {name}: option #{i + 1} is {type(o).__name__} {o!r}, not an "
+                  f"object with name/fit/chosen")
+            errs += 1
+            continue
         f = str(o.get("fit", "")).strip().lower()
         if f not in ("pass", "fail"):
             print(f"  ERROR {name}: option {o.get('name')!r} has fit {o.get('fit')!r} — "
                   f"set \"fit\": \"pass\" or \"fail\" (does it solve the problem at all?)")
             errs += 1
-        fits[id(o)] = f
-    if opts and fits and not any(f == "pass" for f in fits.values()):
+        fits[i] = f
+    if fits and not any(f == "pass" for f in fits.values()):
         print(f"  ERROR {name}: no option passes the fit filter — none solves the problem")
         errs += 1
-    for o in opts:
-        if o.get("chosen") and fits.get(id(o)) == "fail":
-            print(f"  ERROR {name}: chosen option {o.get('name')!r} fails the fit filter — "
-                  f"it does not solve the problem, whatever it scores")
+    for i in fits:
+        if opts[i].get("chosen") and fits[i] == "fail":
+            print(f"  ERROR {name}: chosen option {opts[i].get('name')!r} fails the fit "
+                  f"filter — it does not solve the problem, whatever it scores")
             errs += 1
-    scored = {}
-    for o in opts:
+    scored, bad_scores = {}, set()
+    for i in fits:
+        o = opts[i]
         sc = o.get("scores")
         if sc is None:
             continue
@@ -332,21 +353,31 @@ def lint_fit(name, opts, override):
             print(f"  ERROR {name}: option {o.get('name')!r} scores must give an integer "
                   f"1-5 for each of {', '.join(k for k, _ in WEIGHTS)}")
             errs += 1
+            bad_scores.add(i)
             continue
         total = sum(v * w for v, (_, w) in zip(vals, WEIGHTS))
         if "score" in o and o["score"] != total:
             print(f"  ERROR {name}: option {o.get('name')!r} score {o['score']!r} does not "
                   f"match the recomputed {total}")
             errs += 1
-        if fits.get(id(o)) == "pass":
-            scored[o.get("name")] = (total, bool(o.get("chosen")))
+        if fits[i] == "pass":
+            scored[i] = (total, bool(o.get("chosen")))
     if len(scored) >= 2:
+        # A chosen option left unscored would skip the comparison entirely while the
+        # alternatives it beat are scored -- the weighted check would never run.
+        for i in fits:
+            if opts[i].get("chosen") and fits[i] == "pass" and i not in scored \
+                    and i not in bad_scores:
+                print(f"  ERROR {name}: chosen option {opts[i].get('name')!r} has no "
+                      f"scores while {len(scored)} fit-passing options are scored — "
+                      f"score it too, or the comparison is not a comparison")
+                errs += 1
         top = max(v[0] for v in scored.values())
-        chosen = [(n, v[0]) for n, v in scored.items() if v[1]]
+        chosen = [(opts[i].get("name"), v[0]) for i, v in scored.items() if v[1]]
         has_override = isinstance(override, str) and override.strip() \
             and not override.startswith("<")
         if chosen and chosen[0][1] < top and not has_override:
-            best = max(scored, key=lambda n: scored[n][0])
+            best = opts[max(scored, key=lambda i: scored[i][0])].get("name")
             print(f"  ERROR {name}: chosen option {chosen[0][0]!r} ({chosen[0][1]}) is not "
                   f"the top fit-passing score ({best!r}, {top}) and no override_reason is "
                   f"recorded")
@@ -371,7 +402,8 @@ def cmd_lint(a):
             print(f"  ERROR {name}: {r['_error']}"); errs += 1; continue
         if r.get("status") not in STATUSES:
             print(f"  ERROR {name}: status {r.get('status')!r} not in {STATUSES}"); errs += 1
-        opts = r.get("options") or []
+        raw_opts = r.get("options") or []
+        opts = option_list(r)
         chosen = [o for o in opts if o.get("chosen")]
         if len(opts) < 2:
             print(f"  ERROR {name}: {len(opts)} option(s) recorded — a decision with one "
@@ -379,7 +411,7 @@ def cmd_lint(a):
         if len(chosen) != 1:
             print(f"  ERROR {name}: {len(chosen)} options marked chosen, expected exactly 1")
             errs += 1
-        errs += lint_fit(name, opts, r.get("override_reason"))
+        errs += lint_fit(name, raw_opts, r.get("override_reason"))
         for o in opts:
             if o.get("chosen"):
                 if not (o.get("why") or "").strip() or (o.get("why") or "").startswith("<"):
