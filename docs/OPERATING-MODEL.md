@@ -103,6 +103,8 @@ Lint rejects a report when any of these hold:
 | `status: done` with a blocking question or plan issue still listed | contradictory |
 | an assumption with class C | C items are asked, never assumed |
 | a change outside the task's owned files (when the task graph is supplied) | collisions break parallel work |
+| `status: blocked` with no blocking question or plan issue | a block must say what unblocks it |
+| `status: failed` with no evidence | a failure must show what failed |
 
 ## 4. Decision policy
 
@@ -138,7 +140,7 @@ A fact the agent could not verify is labelled `inferred`, never stated as observ
 | B, tier-dependent | on only at the declared tier (load tests, multi-region) | apply per tier; list as an assumption |
 | C, must ask | genuinely the user's call (data residency, retention, compliance regime, SLO numbers, money, unusual device targets) | ask; never default |
 
-Questions are asked in one batch of at most five, ordered by impact. Each carries why it
+Questions are asked in one batch of at most five, ordered by impact; any beyond five wait for the next batch, blocking ones first. Each carries why it
 matters, two or three options, and a recommendation. An unanswered C question may proceed
 on the recommendation marked `ASSUMED`, except residency, compliance, retention and money,
 which block the `ready` audit until answered.
@@ -153,11 +155,11 @@ The orchestrate skill turns an approved spec into a task graph, `plan.json`, and
   "feature": "album-tagging",
   "tier": "small",
   "tasks": [
-    {"id": "T0", "title": "API + DB contract", "owner": "solution-architect",
+    {"id": "T0", "title": "API + DB contract", "owner": "backend-engineer",
      "depends_on": [], "files": ["backend/src/tagging/dto/**", "docs/engineering/specs/tagging/contract.md"],
      "acceptance": ["AC-1", "AC-2"], "verify": ["pnpm run lint"], "contract": true},
     {"id": "T1", "title": "tagging service", "owner": "backend-engineer",
-     "depends_on": ["T0"], "files": ["backend/src/tagging/services/**"],
+     "depends_on": ["T0"], "consumes": ["T0"], "files": ["backend/src/tagging/services/**"],
      "acceptance": ["AC-1"], "verify": ["pnpm run test tagging"]}
   ]
 }
@@ -168,7 +170,7 @@ The orchestrate skill turns an approved spec into a task graph, `plan.json`, and
 | the graph is acyclic and every owner is a known agent | `plan_dag lint` |
 | every task has `files`, `verify` and at least one acceptance id | `plan_dag lint` |
 | two tasks with no dependency path between them own disjoint files | `plan_dag lint` |
-| shared contracts (types, API schema, DB schema) are `contract: true` tasks that every consumer depends on | `plan_dag lint` |
+| shared contracts (types, API schema, DB schema) are `contract: true` tasks; a task names the contracts it builds on in `consumes`, must depend on them, and must not own their files | `plan_dag lint` |
 | every acceptance id in the spec is covered by some task | `plan_dag lint --spec` |
 | each running task gets its own git worktree; the main session merges and re-verifies | review |
 
