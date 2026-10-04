@@ -8,16 +8,23 @@ check without trusting it:
   - `lint` rejects reports that contradict themselves or the decision policy. With
     `--graph plan.json --cwd <worktree>` it stops trusting the report's own `changes`:
     it asks git which files actually changed in the worktree since the task's base
-    (`--base`, default HEAD; committed, staged, unstaged and untracked), and rejects
-    any outside the task's owned files, and any claimed change that is not there. A
-    done report must also carry every one of the task's declared `verify` commands,
-    verbatim, with exit 0.
+    (committed, staged, unstaged and untracked), and rejects any outside the task's
+    owned files, and any claimed change that is not there. The base is `--base`, else
+    plan.json's top-level "base", else the worktree's fork point from the main
+    checkout, else HEAD. A done report must also carry every one of the task's
+    declared `verify` commands with exit 0, and come from the task's owner. A
+    read-only role (a reviewer) whose task_id is not a plan task gets the report-level
+    checks only.
   - `replay` re-runs evidence, but only the commands the PLAN declared for the task:
     an evidence command is text another agent wrote, so it is never executed because
     the report contains it. Each declared command runs as an argv (shlex.split, no
     shell); a plan that needs shell syntax writes `sh -c '...'`, which is shown before
     it runs. Anything the verification hook classifies as a commit, push, tag or
     publish is refused. A timeout kills the command's whole process group.
+
+  Evidence matches a declared command when their argvs are equal, so whitespace and
+  quoting style do not matter, and `100x verified --name X -- <cmd>` counts as `<cmd>`:
+  replay runs the plain declared command, never the wrapper.
 
     agent_report.py extract message.md [-o report.json]   # LAST ```json block
     agent_report.py lint report.json|message.md [--graph plan.json --cwd WT [--base REV]]
@@ -29,7 +36,7 @@ Exit codes: 0 clean, 1 findings or replay mismatch, 2 unreadable input or a miss
 (undeclared or refused commands).
 Python stdlib only.
 """
-import argparse, json, os, pathlib, re, shlex, signal, subprocess, sys
+import argparse, difflib, json, os, pathlib, re, shlex, signal, subprocess, sys
 
 import _paths
 import plan_dag
@@ -40,6 +47,16 @@ DOORS = ("two-way", "one-way")
 LIST_KEYS = ("inputs_read", "assumptions", "questions", "plan_issues", "decisions",
              "changes", "evidence", "follow_ups")
 REQUIRED = ("agent", "task_id", "status", "understanding") + LIST_KEYS
+KNOWN_KEYS = {"schema", "findings"} | set(REQUIRED)
+SEVERITIES = ("critical", "major", "minor", "trivial")
+CONFIDENCES = ("definite", "probable", "possible")
+# The "writes code? no" rows of the roster in docs/OPERATING-MODEL.md §1; the test
+# suite fails when this drifts from that table. These roles review a task rather than
+# own one, so their report's task_id need not be a plan task.
+READ_ONLY_ROLES = ("requirements-analyst", "solution-architect", "code-reviewer",
+                   "security-reviewer", "independent-verifier")
+COMMIT_HINT = ("did the agent commit? pass --base <fork point>, or set \"base\" in "
+               "plan.json")
 MAX_QUESTIONS = 5  # §5: one batch of at most five
 TAIL_LINES = 15
 CLOSE_FENCE = re.compile(r"^```\s*$")
@@ -133,12 +150,92 @@ def actual_changes(cwd, base, exclude=()):
     return sorted(paths), None
 
 
-def lint(r, plan=None, actual=None):
+def cmd_key(cmd):
+    """A command's comparison key: its argv, with a `100x verified [--name X] --`
+    wrapper removed. Unparseable text falls back to whitespace-collapsed words."""
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return tuple(cmd.split())
+    if len(argv) > 2 and os.path.basename(argv[0]) == "100x" and argv[1] == "verified" \
+            and "--" in argv:
+        i = argv.index("--")
+        if argv[2:i] == [] or (len(argv[2:i]) == 2 and argv[2] == "--name"):
+            return tuple(argv[i + 1:])
+    return tuple(argv)
+
+
+def git_head(cwd):
+    r = _git(cwd, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def fork_point(cwd):
+    """The merge-base of a linked worktree's HEAD with the main checkout's HEAD, or
+    None when `cwd` is not a linked worktree or either side cannot be resolved."""
+    def path(*args):
+        r = _git(cwd, "rev-parse", *args)
+        return (pathlib.Path(cwd) / r.stdout.strip()).resolve() if r.returncode == 0 else None
+    common, gitdir = path("--git-common-dir"), path("--git-dir")
+    if common is None or gitdir is None or common == gitdir or common.name != ".git":
+        return None
+    main_head = git_head(common.parent)
+    if main_head is None:
+        return None
+    r = _git(cwd, "merge-base", "HEAD", main_head)
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+
+
+def resolve_base(cwd, plan, explicit):
+    """(base revision, where it came from)."""
+    if explicit:
+        return explicit, "--base"
+    pb = plan.get("base") if isinstance(plan, dict) else None
+    if isinstance(pb, str) and pb.strip():
+        return pb.strip(), 'plan.json "base"'
+    fp = fork_point(cwd)
+    if fp:
+        return fp, "the worktree's fork point from the main checkout"
+    return "HEAD", "HEAD (no --base, no plan \"base\", no fork point)"
+
+
+def _check_findings(r, errors):
+    if "findings" not in r:
+        return
+    if not isinstance(r["findings"], list):
+        errors.append("\"findings\" must be a list")
+        return
+    for n, f in enumerate(r["findings"]):
+        if not isinstance(f, dict):
+            errors.append(f"findings[{n}] must be an object")
+            continue
+        for k in ("id", "location", "issue", "fix"):
+            if not isinstance(f.get(k), str) or not f[k].strip():
+                errors.append(f"findings[{n}]: \"{k}\" must be a non-empty string")
+        if f.get("severity") not in SEVERITIES:
+            errors.append(f"findings[{n}]: \"severity\" {f.get('severity')!r} is not one "
+                          f"of {', '.join(SEVERITIES)}")
+        if f.get("confidence") not in CONFIDENCES:
+            errors.append(f"findings[{n}]: \"confidence\" {f.get('confidence')!r} is not "
+                          f"one of {', '.join(CONFIDENCES)}")
+        if not isinstance(f.get("blocking"), bool):
+            errors.append(f"findings[{n}]: \"blocking\" must be true or false")
+
+
+def lint(r, plan=None, actual=None, notes=None, base_hint=None):
     """Every row of the §3 rejection table, plus shape checks. Returns (errors, warns).
 
     `actual` is the worktree's real changed-file list (actual_changes); with a plan it
-    replaces trust in the report's own `changes`."""
+    replaces trust in the report's own `changes`. `notes` collects informational lines;
+    `base_hint` is appended to a "claimed change is not there" error."""
     errors, warns = [], []
+    notes = [] if notes is None else notes
+    for k in r:
+        if k not in KNOWN_KEYS:
+            near = difflib.get_close_matches(k, sorted(KNOWN_KEYS), n=1, cutoff=0.6)
+            errors.append(f"unknown key \"{k}\" — "
+                          + (f"did you mean \"{near[0]}\"?" if near
+                             else f"known: {', '.join(sorted(KNOWN_KEYS))}"))
     if "schema" not in r:
         warns.append(f"no \"schema\" field — read as schema {SCHEMA}; add \"schema\": {SCHEMA}")
     elif r["schema"] != SCHEMA:
@@ -171,6 +268,8 @@ def lint(r, plan=None, actual=None):
             errors.append(f"evidence[{n}]: \"exit_code\" must be an integer")
         if "output_tail" in e and not isinstance(e["output_tail"], str):
             errors.append(f"evidence[{n}]: \"output_tail\" must be a string")
+        if "expect_exit" in e and type(e["expect_exit"]) is not int:
+            errors.append(f"evidence[{n}]: \"expect_exit\" must be an integer")
     for n, q in enumerate(_items(r, "questions")):
         if not isinstance(q.get("question"), str) or not q["question"].strip():
             errors.append(f"questions[{n}]: \"question\" must be a non-empty string")
@@ -186,6 +285,7 @@ def lint(r, plan=None, actual=None):
     for n, c in enumerate(_items(r, "changes")):
         if not isinstance(c.get("path"), str) or not c["path"].strip():
             errors.append(f"changes[{n}]: \"path\" must be a non-empty string")
+    _check_findings(r, errors)
 
     # --- the §3 rejection table, row by row ---
     evidence = _items(r, "evidence")
@@ -194,9 +294,13 @@ def lint(r, plan=None, actual=None):
             errors.append("status done with no evidence — done without proof is a claim; "
                           "run the task's verify commands and record each with its exit code")
         for e in evidence:
-            if type(e.get("exit_code")) is int and e["exit_code"] != 0:
+            want = e.get("expect_exit", 0)
+            if type(e.get("exit_code")) is int and type(want) is int \
+                    and e["exit_code"] != want:
                 errors.append(f"status done but evidence {e.get('cmd')!r} exited "
-                              f"{e['exit_code']} — fix it, or report failed/needs-decision")
+                              f"{e['exit_code']}"
+                              + (f", expected {want}" if want != 0 else "")
+                              + " — fix it, or report failed/needs-decision")
     for d in _items(r, "decisions"):
         door = d.get("door")
         if door == "one-way":
@@ -206,10 +310,11 @@ def lint(r, plan=None, actual=None):
         elif door not in DOORS:
             errors.append(f"decision {d.get('id', '?')}: \"door\" must be two-way or one-way")
     blocking = ([q for q in _items(r, "questions") if q.get("blocking") is True]
-                + [p for p in _items(r, "plan_issues") if p.get("blocking") is True])
+                + [p for p in _items(r, "plan_issues") if p.get("blocking") is True]
+                + [f for f in _items(r, "findings") if f.get("blocking") is True])
     if status == "needs-decision" and not blocking:
-        errors.append("status needs-decision with no blocking question or plan issue — a "
-                      "stop must say what unblocks it")
+        errors.append("status needs-decision with no blocking question, plan issue or "
+                      "finding — a stop must say what unblocks it")
     if status == "done" and blocking:
         ids = ", ".join(str(x.get("id", "?")) for x in blocking)
         errors.append(f"status done while blocking item(s) {ids} are still listed — "
@@ -224,19 +329,30 @@ def lint(r, plan=None, actual=None):
     if plan is not None:
         by_id, _ = plan_dag.graph(plan.get("tasks", []))
         task = by_id.get(r.get("task_id"))
-        if task is None:
-            errors.append(f"task_id {r.get('task_id')!r} is not a task in the supplied plan")
+        agent = r.get("agent")
+        if task is None and agent in READ_ONLY_ROLES:
+            notes.append(f"task_id {r.get('task_id')!r} is not a plan task and {agent} is "
+                         f"a read-only role: owned-file, owner and declared-verify checks "
+                         f"skipped; report-level checks still apply")
+        elif task is None:
+            errors.append(f"task_id {r.get('task_id')!r} is not a task in the supplied plan"
+                          + (f" — {agent} writes files, so it needs a task that owns them"
+                             if agent in plan_dag.ROSTER else ""))
         else:
-            errors += _plan_checks(r, task, status, evidence, actual, warns)
+            if isinstance(agent, str) and agent != task.get("owner"):
+                errors.append(f"agent {agent!r} is not {r['task_id']}'s owner "
+                              f"{task.get('owner')!r} — a task's report comes from the "
+                              f"agent the plan assigned it to")
+            errors += _plan_checks(r, task, status, evidence, actual, warns, base_hint)
     if status == "blocked" and not blocking:
-        errors.append("status blocked with no blocking question or plan issue — a block "
-                      "must say what unblocks it (§3)")
+        errors.append("status blocked with no blocking question, plan issue or finding — "
+                      "a block must say what unblocks it (§3)")
     if status == "failed" and not evidence:
         errors.append("status failed with no evidence — a failure must show what failed (§3)")
     return errors, warns
 
 
-def _plan_checks(r, task, status, evidence, actual, warns):
+def _plan_checks(r, task, status, evidence, actual, warns, base_hint=None):
     errors, tid = [], r["task_id"]
     owned = plan_dag._ids(task.get("files"))
     owned_s = ", ".join(owned) or "none"
@@ -255,18 +371,19 @@ def _plan_checks(r, task, status, evidence, actual, warns):
         for p in missing:
             errors.append(f"change {p!r} is claimed but the worktree has no change to it "
                           f"since the task's base — the report describes work that is "
-                          f"not there")
+                          f"not there" + (f" ({base_hint})" if base_hint else ""))
         if status == "done" and not actual:
             warns.append(f"status done but no file changed since the task's base — "
                          f"right only for a verification-only task")
     if status == "done":
-        ran = {e["cmd"].strip() for e in evidence
+        ran = {cmd_key(e["cmd"]) for e in evidence
                if isinstance(e.get("cmd"), str) and e.get("exit_code") == 0}
         for v in plan_dag._ids(task.get("verify")):
-            if v.strip() not in ran:
+            if cmd_key(v) not in ran:
                 errors.append(f"status done but {tid}'s declared verify command {v!r} is "
-                              f"not in the evidence with exit 0 — run it exactly as the "
-                              f"plan writes it and record the result")
+                              f"not in the evidence with exit 0 — run it as the plan "
+                              f"writes it (bare, or via `100x verified --name X -- …`) "
+                              f"and record the result")
     return errors
 
 
@@ -302,7 +419,8 @@ def cmd_lint(a):
     if err:
         print(f"agent_report lint: {err}", file=sys.stderr)
         return 2
-    plan = actual = None
+    plan = actual = base_hint = None
+    notes = []
     if a.graph:
         if not a.cwd:
             print("agent_report lint: --graph needs --cwd <the task's worktree>: owned "
@@ -313,11 +431,19 @@ def cmd_lint(a):
         if plan is None:
             return 2
         exclude = [a.graph] + ([a.report] if a.report != "-" else [])
-        actual, why = actual_changes(pathlib.Path(a.cwd), a.base, exclude)
+        cwd = pathlib.Path(a.cwd)
+        base, source = resolve_base(cwd, plan, a.base)
+        actual, why = actual_changes(cwd, base, exclude)
         if why:
-            print(f"agent_report lint: {why}", file=sys.stderr)
+            print(f"agent_report lint: {why} (base from {source})", file=sys.stderr)
             return 2
-    errors, warns = lint(r, plan, actual)
+        notes.append(f"base {base} — from {source}")
+        base_sha = _git(cwd, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+        if base_sha.stdout.strip() == git_head(cwd):
+            base_hint = COMMIT_HINT
+    errors, warns = lint(r, plan, actual, notes, base_hint)
+    for n_ in notes:
+        print(f"  NOTE  {n_}")
     for w in warns:
         print(f"  WARN  {w}")
     for n, e in enumerate(errors, 1):
@@ -352,23 +478,51 @@ def run_argv(argv, cwd, timeout):
         return "timeout", out or ""
 
 
+def argv_problems(cmd, argv, cwd):
+    """Screen the argv replay is about to execute, not the text plan_dag linted. The
+    hook's parser reads `#` as a comment wherever a token starts, while shlex.split and
+    sh only treat it so at a word start: `env A=1#x git tag v9` linted clean and then
+    tagged. So the argv is re-quoted before parsing, and an `sh -c` script, which the
+    shell will read itself, is screened with every `#` neutralised; that can only
+    refuse more, never less."""
+    extra = getattr(plan_dag, "replay_argv_problems", None)
+    out = list(extra(cmd, cwd)) if extra is not None else []
+    texts = [shlex.join(argv)]
+    script = plan_dag.shell_wrapped(argv)
+    if script is not None:
+        texts += [script, script.replace("#", "_")]
+    gated = []
+    for t in texts:
+        gated += plan_dag.gated_actions(t, cwd)
+    if gated:
+        out.append(f"performs a gated action ({', '.join(dict.fromkeys(gated))}) in the "
+                   f"argv replay would run — a verify command proves the work, it never "
+                   f"ships it")
+    return out
+
+
 def plan_replay(r, task, cwd):
     """Sort every evidence entry into run / undeclared / refused, and list declared
     verify commands the report has no evidence for."""
-    declared = [v.strip() for v in plan_dag._ids(task.get("verify"))]
+    declared = {}
+    for v in plan_dag._ids(task.get("verify")):
+        declared.setdefault(cmd_key(v), v.strip())
     run, undeclared, refused = [], [], []
     for e in _items(r, "evidence"):
-        cmd = e["cmd"].strip()
-        if cmd not in declared:
+        cmd = declared.get(cmd_key(e["cmd"]))
+        if cmd is None:
             undeclared.append(e)
             continue
         problems = plan_dag.command_problems(cmd, cwd)
+        argv = None if problems else shlex.split(cmd)
+        if argv is not None:
+            problems = argv_problems(cmd, argv, cwd)
         if problems:
             refused.append((e, problems[0]))
             continue
-        run.append((e, shlex.split(cmd)))
-    have = {e["cmd"].strip() for e in _items(r, "evidence")}
-    missing = [v for v in declared if v not in have]
+        run.append((e, argv, cmd))
+    have = {cmd_key(e["cmd"]) for e in _items(r, "evidence")}
+    missing = [v for k, v in declared.items() if k not in have]
     return run, undeclared, refused, missing
 
 
@@ -404,9 +558,11 @@ def cmd_replay(a):
     run, undeclared, refused, missing = plan_replay(r, task, cwd)
     tid = r.get("task_id", "?")
     print(f"agent_report replay: {tid} in {cwd}")
-    for e, argv in run:
+    for e, argv, cmd in run:
         script = plan_dag.shell_wrapped(argv)
         print(f"  declared  $ {e['cmd']}    (claimed exit {e['exit_code']})")
+        if cmd != e["cmd"].strip():
+            print(f"            runs the plan's form: {cmd}")
         if script is not None:
             print(f"            runs a shell script: {script}")
     for e in undeclared:
@@ -427,7 +583,7 @@ def cmd_replay(a):
               f"declared command(s) above.")
         return 3
     mismatches = 0
-    for e, argv in run:
+    for e, argv, _ in run:
         actual, out = run_argv(argv, cwd, a.timeout)
         if actual == e["exit_code"]:
             print(f"  ok        $ {e['cmd']}  (exit {actual})")
@@ -451,7 +607,7 @@ def cmd_replay(a):
 
 
 def cmd_summary(a):
-    questions, issues, seen = [], [], set()
+    questions, issues, findings, seen = [], [], [], set()
     for src in a.reports:
         r, err = load_report(src)
         if err:
@@ -477,15 +633,23 @@ def cmd_summary(a):
             issues.append({"from": who, "id": p.get("id"), "issue": p.get("issue"),
                            "impact": p.get("impact"), "proposal": p.get("proposal"),
                            "blocking": p.get("blocking") is True})
+        for f in _items(r, "findings"):
+            findings.append({"from": who, "id": f.get("id"), "severity": f.get("severity"),
+                             "confidence": f.get("confidence"),
+                             "location": f.get("location"), "issue": f.get("issue"),
+                             "fix": f.get("fix"), "blocking": f.get("blocking") is True})
     # stable sort keeps report order inside each group, which is the agents' impact order
     questions.sort(key=lambda q: not q["blocking"])
     issues.sort(key=lambda p: not p["blocking"])
+    rank = {s: n for n, s in enumerate(SEVERITIES)}
+    findings.sort(key=lambda f: (not f["blocking"], rank.get(f["severity"], len(rank))))
     for q in questions:
         del q["_key"]
     batch, deferred = questions[:MAX_QUESTIONS], questions[MAX_QUESTIONS:]
     if a.json:
         print(json.dumps({"questions": batch, "deferred_questions": deferred,
-                          "plan_issues": issues}, indent=2, ensure_ascii=False))
+                          "plan_issues": issues, "findings": findings},
+                         indent=2, ensure_ascii=False))
         return 0
     print(f"Questions ({len(batch)} of {len(questions)}, blocking first):")
     for n, q in enumerate(batch, 1):
@@ -509,6 +673,15 @@ def cmd_summary(a):
             print(f"    proposal: {p['proposal']}")
     if not issues:
         print("- none")
+    print(f"\nFindings ({len(findings)}, blocking first, then by severity):")
+    for f in findings:
+        tag = "BLOCKING" if f["blocking"] else "non-blocking"
+        print(f"- [{tag}] {f['from']} {f['id'] or '?'} {f['severity']}/{f['confidence']} "
+              f"at {f['location']}: {f['issue']}")
+        if f["fix"]:
+            print(f"    fix: {f['fix']}")
+    if not findings:
+        print("- none")
     return 0
 
 
@@ -524,9 +697,10 @@ def main():
     p.add_argument("--graph", help="plan.json: check the worktree's real changes stay in "
                                    "the task's owned files and every verify command ran")
     p.add_argument("--cwd", help="the task's worktree (required with --graph)")
-    p.add_argument("--base", default="HEAD",
-                   help="the commit the task started from (default HEAD: uncommitted "
-                        "work only)")
+    p.add_argument("--base",
+                   help="the commit the task started from (default: plan.json's "
+                        "\"base\", else the worktree's fork point from the main "
+                        "checkout, else HEAD)")
     p.set_defaults(fn=cmd_lint)
     p = sub.add_parser("replay", help="re-run the task's declared verify commands and "
                                       "compare exit codes with the evidence")
@@ -538,7 +712,8 @@ def main():
                    help="actually run the declared commands; without it they are only "
                         "printed")
     p.set_defaults(fn=cmd_replay)
-    p = sub.add_parser("summary", help="merge questions and plan issues across reports")
+    p = sub.add_parser("summary", help="merge questions, plan issues and findings "
+                                       "across reports")
     p.add_argument("reports", nargs="+")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_summary)

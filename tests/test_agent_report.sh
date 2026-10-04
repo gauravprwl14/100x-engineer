@@ -66,7 +66,7 @@ lint_fails() { # lint_fails <message> <expected substring> [extra args]
 lint_fails done-no-evidence          "status done with no evidence"
 lint_fails done-nonzero-evidence     "evidence 'test -f missing-file.txt' exited 1"
 lint_fails one-way-decision          "decision D2 is a one-way door"
-lint_fails needs-decision-unblocked  "needs-decision with no blocking question or plan issue"
+lint_fails needs-decision-unblocked  "needs-decision with no blocking question, plan issue or finding"
 lint_fails done-with-blocking        "status done while blocking item(s) P1"
 lint_fails class-c-assumption        "assumption A2 is class C"
 lint_fails bad-schema                "status 'finished' is not one of"
@@ -107,6 +107,7 @@ rm -r "$WT/backend/src/tagging/dto"
 # committed work: invisible against HEAD, seen against the task's base
 ( cd "$WT" && git add -A && git commit -qm work )
 lintg "$M/done-valid.md"; rc_is 1 $? "lint --graph: committed work is not seen against HEAD"
+has "did the agent commit? pass --base <fork point>"
 lintg "$M/done-valid.md" --base "$BASE"; rc_is 0 $? "lint --graph --base: committed work since the base passes"
 lintg "$M/done-valid.md" --base nope; rc_is 2 $? "lint --graph: an unknown --base is exit 2"
 python3 "$A" lint "$M/done-valid.md" --graph "$EX/plan.json" --cwd "$TMP/none" >"$O" 2>&1
@@ -140,6 +141,123 @@ python3 "$A" lint "$M/done-valid.md" --graph "$WT/plan-copy.json" --cwd "$WT" --
 rc_is 0 $? "lint --graph: the plan file itself, inside the worktree, is not counted as a change"
 rm "$WT/plan-copy.json"
 
+# committed work with plan.json's "base": no --base needed, and the base is named
+python3 - "$EX/plan.json" "$TMP/plan-base.json" "$BASE" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1])); p["base"] = sys.argv[3]; json.dump(p, open(sys.argv[2], "w"))
+PY
+python3 "$A" lint "$M/done-valid.md" --graph "$TMP/plan-base.json" --cwd "$WT" >"$O" 2>&1
+rc_is 0 $? "lint --graph: committed work passes against plan.json's \"base\""
+has "NOTE  base $BASE — from plan.json \"base\""
+no "did the agent commit"
+# a missing claim against a real base carries no commit hint (it would mislead)
+python3 - "$TMP" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1] + "/r.json"))
+r["changes"].append({"path": "backend/src/tagging/services/ghost.ts", "summary": "x"})
+json.dump(r, open(sys.argv[1] + "/ghost.json", "w"))
+PY
+python3 "$A" lint "$TMP/ghost.json" --graph "$TMP/plan-base.json" --cwd "$WT" >"$O" 2>&1
+rc_is 1 $? "lint --graph: a claimed file absent since the plan base is rejected"
+has "'backend/src/tagging/services/ghost.ts' is claimed but"
+no "did the agent commit"
+
+# a linked worktree with no base anywhere: its fork point from the main checkout
+MAIN="$TMP/main"; mkdir -p "$MAIN"; cp "$EX/plan.json" "$MAIN/"
+( cd "$MAIN" && git init -q && git config user.email e@e && git config user.name e \
+  && git add -A && git commit -qm base && git worktree add -q -b wt-T1 "$TMP/wt-linked" )
+FORK="$(git -C "$MAIN" rev-parse HEAD)"
+mkdir -p "$TMP/wt-linked/backend/src/tagging/services"
+echo 'export class TagService {}' > "$TMP/wt-linked/backend/src/tagging/services/tag.service.ts"
+echo 'export class TaggingModule {}' > "$TMP/wt-linked/backend/src/tagging/tagging.module.ts"
+( cd "$TMP/wt-linked" && git add -A && git commit -qm work )
+( cd "$MAIN" && echo y > later && git add later && git commit -qm "main moves on" )
+python3 "$A" lint "$M/done-valid.md" --graph "$EX/plan.json" --cwd "$TMP/wt-linked" >"$O" 2>&1
+rc_is 0 $? "lint --graph: a linked worktree's committed work is seen from its fork point"
+has "NOTE  base $FORK — from the worktree's fork point"
+no "'later'"
+
+# --- read-only roles, owners, findings, expect_exit, unknown keys ---
+python3 "$A" lint "$M/review-findings.md" >"$O" 2>&1
+rc_is 0 $? "lint: a reviewer's done report with findings and expect_exit 1 evidence passes"
+no "WARN"; no "unknown key"
+lintg "$M/review-findings.md" --base "$BASE"
+rc_is 0 $? "lint --graph: a reviewer whose task_id is not a plan task passes"
+has "NOTE  task_id 'R-T3' is not a plan task and code-reviewer is a read-only role"
+no "is not a task in the supplied plan"
+python3 "$A" lint "$M/review-blocking.md" >"$O" 2>&1
+rc_is 0 $? "lint: needs-decision unblocked only by a blocking finding passes"
+lintg "$M/writer-unknown-task.md"; rc_is 1 $? "lint --graph: a writer with a task not in the plan"
+has "task_id 'T9' is not a task in the supplied plan — backend-engineer writes files"
+no "read-only role"
+lintg "$M/agent-not-owner.md" --base "$BASE"; rc_is 1 $? "lint --graph: agent is not the task's owner"
+has "agent 'frontend-engineer' is not T1's owner 'backend-engineer'"
+lintg "$M/done-valid.md" --base "$BASE"; no "owner"
+sed 's/"agent": "backend-engineer"/"agent": "code-reviewer"/' "$M/done-valid.md" > "$TMP/ro-owner.md"
+lintg "$TMP/ro-owner.md" --base "$BASE"; rc_is 1 $? "lint --graph: a read-only role reporting on a real task must still own it"
+has "agent 'code-reviewer' is not T1's owner"
+python3 "$A" lint "$M/unknown-key.md" >"$O" 2>&1; rc_is 1 $? "lint: an unknown top-level key"
+has 'unknown key "evidance" — did you mean "evidence"?'
+for f in done-valid needs-decision review-findings review-blocking; do
+  python3 "$A" lint "$M/$f.md" >"$O" 2>&1; no "unknown key"
+done
+
+python3 - "$M" "$TMP" <<'PY'
+import json, re, sys
+text = open(sys.argv[1] + "/review-findings.md").read()
+r = json.loads(re.findall(r"```json\n(.*?)\n```", text, re.S)[-1])
+out = sys.argv[2]
+def dump(name, rep): json.dump(rep, open(f"{out}/{name}.json", "w"))
+x = json.loads(json.dumps(r)); del x["evidence"][0]["expect_exit"]; dump("no-expect", x)
+x = json.loads(json.dumps(r)); x["evidence"][0]["expect_exit"] = "1"; dump("str-expect", x)
+x = json.loads(json.dumps(r)); x["findings"][0]["blocking"] = True; dump("done-blocking-finding", x)
+x = json.loads(json.dumps(r)); x["findings"][0].update(severity="high", confidence="sure")
+del x["findings"][1]["blocking"]; x["findings"][1]["fix"] = ""; dump("bad-findings", x)
+x = json.loads(json.dumps(r)); x["findings"] = {"F1": "x"}; dump("findings-not-list", x)
+PY
+python3 "$A" lint "$TMP/no-expect.json" >"$O" 2>&1; rc_is 1 $? "lint: done with exit 1 and no expect_exit"
+has "evidence 'test -f backend/test/tagging.e2e-spec.ts' exited 1 — fix it"
+python3 "$A" lint "$TMP/str-expect.json" >"$O" 2>&1; rc_is 1 $? "lint: a non-integer expect_exit"
+has 'evidence[0]: "expect_exit" must be an integer'
+python3 "$A" lint "$TMP/done-blocking-finding.json" >"$O" 2>&1; rc_is 1 $? "lint: done with a blocking finding"
+has "status done while blocking item(s) F1"
+python3 "$A" lint "$TMP/bad-findings.json" >"$O" 2>&1; rc_is 1 $? "lint: malformed findings"
+has "findings[0]: \"severity\" 'high' is not one of critical, major, minor, trivial"
+has "findings[0]: \"confidence\" 'sure' is not one of definite, probable, possible"
+has 'findings[1]: "blocking" must be true or false'
+has 'findings[1]: "fix" must be a non-empty string'
+python3 "$A" lint "$TMP/findings-not-list.json" >"$O" 2>&1; rc_is 1 $? "lint: findings that are not a list"
+has '"findings" must be a list'
+
+# the roles allowed to report on no task are exactly §1's "writes code? no" rows
+python3 - "$ROOT" >"$O" 2>&1 <<'PY'
+import pathlib, re, sys
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import agent_report
+doc = pathlib.Path(sys.argv[1], "docs/OPERATING-MODEL.md").read_text()
+rows = re.findall(r"^\| ([a-z-]+) \| [^|]+ \| ([^|]+) \|", doc, re.M)
+no = sorted(n for n, w in rows if w.strip() == "no")
+assert len(no) >= 3 and no == sorted(agent_report.READ_ONLY_ROLES), (no, agent_report.READ_ONLY_ROLES)
+PY
+rc_is 0 $? "READ_ONLY_ROLES matches the read-only rows of OPERATING-MODEL §1"
+
+# evidence run through `100x verified --name X --`, or spaced differently, is the declared command
+lintg "$M/done-verified-wrapper.md" --base "$BASE"
+rc_is 0 $? "lint --graph: wrapped and re-spaced verify evidence counts as the declared command"
+no "declared verify command"
+python3 - "$TMP" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1] + "/r.json"))
+r["evidence"][0]["cmd"] = "100x verified --name x -- test -f other.json"
+json.dump(r, open(sys.argv[1] + "/wrap-other.json", "w"))
+r["evidence"][0]["cmd"] = "100x verified --force -- test -f plan.json"
+json.dump(r, open(sys.argv[1] + "/wrap-bad.json", "w"))
+PY
+lintg "$TMP/wrap-other.json" --base "$BASE"; rc_is 1 $? "lint --graph: a wrapper around a different command does not count"
+has "declared verify command 'test -f plan.json' is not in the evidence"
+lintg "$TMP/wrap-bad.json" --base "$BASE"; rc_is 1 $? "lint --graph: an unrecognised wrapper flag does not count"
+has "declared verify command 'test -f plan.json' is not in the evidence"
+
 # --- replay: only the plan's declared verify commands ever run ---
 python3 "$A" replay "$M/done-valid.md" --cwd "$WT" --yes >"$O" 2>&1; rc_is 2 $? "replay: --graph is required"
 has "--graph plan.json is required"
@@ -149,6 +267,9 @@ has "2/2 reproduced"
 python3 "$A" replay "$M/lying.md" --graph "$EX/plan.json" --cwd "$EX" --yes >"$O" 2>&1
 rc_is 1 $? "replay: claimed-0-actual-1 fails"
 has "MISMATCH  \$ test -f backend/test/tagging.e2e-spec.ts"; has "claimed exit 0, actual 1"; has "actual output tail:"
+python3 "$A" replay "$M/done-verified-wrapper.md" --graph "$EX/plan.json" --cwd "$WT" --yes >"$O" 2>&1
+rc_is 0 $? "replay: wrapped evidence replays the plain declared command"
+has "2/2 reproduced"; has "runs the plan's form: test -f plan.json"
 
 # a task-local plan for the remaining replay cases
 mkplan() { # mkplan <verify command>...
@@ -186,6 +307,21 @@ has "refused   \$ sh -c"
   && ok "replay: refused commands did not run" || bad "replay: a gated command ran"
 python3 "$P" lint "$TMP/p.json" >"$O" 2>&1; rc_is 1 $? "plan_dag lint rejects the same gated verify commands"
 has "performs a gated action (git commit)"
+
+# the argv replay runs is screened, not the comment-stripped text plan_dag linted
+mkplan "env A=1#x git tag -a v9 -m shipped"
+mkrep done '[{"cmd":"env A=1#x git tag -a v9 -m shipped","exit_code":0}]'
+replay --yes; rc_is 3 $? "replay: a gated action hidden behind a mid-word # is refused"
+has "refused   \$ env A=1#x git tag -a v9 -m shipped"; has "gated action (git tag)"
+[ -z "$(git -C "$RP" tag -l)" ] && ok "replay: no tag was created" || bad "replay: created a tag"
+mkplan "sh -c 'env A=1#x git tag v8'"
+mkrep done '[{"cmd":"sh -c '"'"'env A=1#x git tag v8'"'"'","exit_code":0}]'
+replay --yes; rc_is 3 $? "replay: the same inside sh -c is refused"
+[ -z "$(git -C "$RP" tag -l)" ] && ok "replay: no tag was created by the sh -c script" || bad "replay: sh -c created a tag"
+mkplan "sh -c 'echo a#b; echo c # trailing comment'"
+mkrep done '[{"cmd":"sh -c '"'"'echo a#b; echo c # trailing comment'"'"'","exit_code":0}]'
+replay --yes; rc_is 0 $? "replay: a harmless # in a declared script still runs"
+has "1/1 reproduced"
 
 # a declared command that needs a shell but is not wrapped is refused, not mis-run
 mkplan "test -f f && touch pwned"
@@ -243,7 +379,19 @@ PY
 [ $? -eq 0 ] && ok "summary: deduplicated, blocking first, capped at 5, 2 deferred, plan issues blocking-first" \
   || { bad "summary: batch shape"; cat "$TMP/sum.chk"; }
 python3 "$A" summary "$M/done-valid.md" >"$O" 2>&1; rc_is 0 $? "summary: a report with nothing open"
-has "Questions (0 of 0"; has "- none"
+has "Questions (0 of 0"; has "- none"; has "Findings (0"
+python3 "$A" summary "$M/review-findings.md" "$M/review-blocking.md" --json >"$O" 2>&1
+python3 - "$O" >"$TMP/sum.chk" 2>&1 <<'PY'
+import json, sys
+f = json.load(open(sys.argv[1]))["findings"]
+got = [(x["from"], x["id"], x["blocking"]) for x in f]
+assert got == [("SEC-T1/security-reviewer", "F1", True), ("R-T3/code-reviewer", "F1", False),
+               ("R-T3/code-reviewer", "F2", False)], got
+PY
+[ $? -eq 0 ] && ok "summary: findings merged across reports, blocking first, then by severity" \
+  || { bad "summary: findings order"; cat "$TMP/sum.chk"; }
+python3 "$A" summary "$M/review-findings.md" "$M/review-blocking.md" >"$O" 2>&1
+has "- [BLOCKING] SEC-T1/security-reviewer F1 critical/probable at backend/src/tagging/services/tag.service.ts:remove"
 
 # --- blocked/failed must say why (§3) ---
 base='"agent":"x","task_id":"T1","understanding":"u","inputs_read":[],"assumptions":[],"decisions":[],"changes":[],"follow_ups":[]'
