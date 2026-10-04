@@ -68,8 +68,9 @@ Without that list, "we might need it later" wins every argument.
 
 4. Do not add anything in the tier's `not_required` list without an ADR that says why
    this case is the exception.
-   *Enforced by:* `python3 scripts/decide.py lint` (the ADR needs options and a
-   deciding factor)
+   *Enforced by:* review — no tool detects a `not_required` item that arrived
+   without an ADR; once the ADR exists, `decide.py lint` checks it has options
+   and a deciding factor
 
 5. Keep the PRD's tier and the spec's tier the same. A silent mismatch means two
    documents describe different systems.
@@ -77,7 +78,8 @@ Without that list, "we might need it later" wins every argument.
 
 6. A tier change is a re-plan, not a patch. Moving up invalidates decisions made under
    the old tier — supersede them rather than editing them.
-   *Enforced by:* `python3 scripts/decide.py drift` after changing the tier
+   *Enforced by:* review — `decide.py drift` flags only decisions whose `affects`
+   files changed since recording; it does not watch the tier field
 
 7. State the p95 budget as a number and split it across the call chain. An unstated
    budget means every hop assumes it has the whole thing.
@@ -99,7 +101,8 @@ print('NOT REQUIRED:');[print(' -',x) for x in t['not_required']]"
 # PRD and spec must agree on the tier
 python3 scripts/prd.py align prds/checkout specs/checkout
 
-# after a tier change, decisions made under the old tier are stale
+# decisions whose `affects` files changed since they were recorded (a lead for
+# rule 6, not a tier-change detector: it never reads the tier)
 python3 scripts/decide.py drift
 ```
 
