@@ -84,12 +84,12 @@ def gated_actions(cmd, cwd="."):
     hook = _hook()
     cwd = os.path.abspath(cwd)
     if hook is not None:
+        # parse_command fills a State the way the hook does at runtime; passing anything
+        # else used to raise inside a broad except and silently drop to the regex below.
         try:
-            return [x.label for x in hook.parse_command(cmd, cwd)]
+            return [x.label for x in hook.parse_command(cmd, hook.State(cwd, cmd))]
         except ValueError:
-            return [x.label for x in hook._fallback_actions(cmd, cwd)]
-        except Exception:
-            pass
+            return [x.label for x in hook._fallback_actions(cmd, hook.State(cwd, cmd))]
     return ["completion-shaped command"] if GATED_FALLBACK.search(cmd) else []
 
 
