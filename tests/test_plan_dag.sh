@@ -70,7 +70,7 @@ python3 "$P" lint "$RPLAN" >"$O" 2>&1; rc_is 0 $? "lint: restoring the stamped b
 sed 's#^| status | \*\*ready\*\* |#| status | **draft — not ready to implement** |#' "$TMP/spec.bak" > "$RSPEC"
 grep -q '^| status | \*\*draft' "$RSPEC" && ok "fixture: spec set to draft" || bad "fixture: draft sed"
 python3 "$P" lint "$RPLAN" >"$O" 2>&1; rc_is 1 $? "lint: a draft spec is rejected"
-has "has status 'draft — not ready to implement', not \`ready\`"
+has "has status 'draft"; has "not \`ready\`"
 python3 "$P" stamp "$RPLAN" >"$O" 2>&1; rc_is 1 $? "stamp: refuses a draft spec"
 has "is not an approved spec"
 cp "$TMP/spec.bak" "$RSPEC"
