@@ -4,14 +4,14 @@
 
 | phase | skill | fires when | lines |
 |---|---|---|--:|
-| 0 start here | [100x](100x/SKILL.md) | START HERE for any engineering task — build, fix, debug, incident, review, onboard, plan, PRD, test plan, release: classifies intent, asks at most fiv | 173 |
-| 0 start here | [orchestrate](orchestrate/SKILL.md) | Split work across engineers or agents: turn an approved plan into a parallel task graph, run backend, frontend, mobile and QA agents in worktrees, lin | 201 |
-| 0 start here | [requirements-intake](requirements-intake/SKILL.md) | Vague request, ticket or one-line ask → requirements: restate the goal, apply industry defaults, ask at most five plan-changing questions with recomme | 179 |
+| 0 start here | [100x](100x/SKILL.md) | START HERE for any engineering task — build, fix, debug, incident, review, onboard, plan, PRD, test plan, release: classifies intent, asks at most fiv | 175 |
+| 0 start here | [orchestrate](orchestrate/SKILL.md) | Split work across engineers or agents: turn an approved plan into a parallel task graph, run backend, frontend, mobile and QA agents in worktrees, lin | 214 |
+| 0 start here | [requirements-intake](requirements-intake/SKILL.md) | Vague request, ticket or one-line ask → requirements: restate the goal, apply industry defaults, ask at most five plan-changing questions with recomme | 180 |
 | 1 before code | [api-contract](api-contract/SKILL.md) | REST, GraphQL or gRPC API contract: versioning, error shape, pagination, idempotency, PATCH, renaming or removing a field without breaking clients, de | 237 |
 | 1 before code | [approach-selection](approach-selection/SKILL.md) | Decide between options — which database, ORM (Prisma vs TypeORM), queue, state manager, monolith vs service, library vs hand-rolled: weighted scoring  | 173 |
 | 1 before code | [data-modeling](data-modeling/SKILL.md) | Database schema, tables, ORM model or migration: money columns, soft delete, audit trails, state machines, multi-tenant and PII columns, indexes on ex | 242 |
 | 1 before code | [decision-records](decision-records/SKILL.md) | ADR, decision record, assumption — which decision governs this file, why did we choose X: record a choice with a falsifiable assumption, trace it, fin | 159 |
-| 1 before code | [feature-planning](feature-planning/SKILL.md) | Build, implement or add a feature, endpoint, screen, payment flow, upload or integration: scaffold a spec with the edge cases and decisions it always  | 221 |
+| 1 before code | [feature-planning](feature-planning/SKILL.md) | Build, implement or add a feature, endpoint, screen, payment flow, upload or integration: scaffold a spec with the edge cases and decisions it always  | 232 |
 | 1 before code | [scale-appropriateness](scale-appropriateness/SKILL.md) | Scale tier and over-engineering check at the start of a spec, or before adding caching, sharding or a queue: users, traffic, data growth, latency, ava | 171 |
 | 1 before code | [solution-architecture](solution-architecture/SKILL.md) | PRD, solution proposal, system design, build vs buy, rewrite vs extend a service, migration plan bigger than one feature: frame the problem, compare a | 246 |
 | 2 while writing | [accessibility](accessibility/SKILL.md) | Accessibility (a11y) for buttons, modals, forms, icon buttons, images: keyboard and focus, screen reader names, labels, alt text, WCAG 2.2 AA contrast | 222 |
@@ -37,7 +37,7 @@
 | 3 before shipping | [release-rollout](release-rollout/SKILL.md) | Production deploy, rollout or release: feature flags, kill switches, canary, roll out gradually, rollback plan and triggers, migration ordering, smoke | 156 |
 | 3 before shipping | [review-gates](review-gates/SKILL.md) | PR templates, CODEOWNERS, merge queues, required checks, sign-off/DCO, AI-authored PR policy: merge machinery CI can verify, not checkbox ceremony. No | 187 |
 | 3 before shipping | [security-baseline](security-baseline/SKILL.md) | Repo security posture: SECURITY.md, dependabot or Renovate, CodeQL/Semgrep scanning, GitHub Actions pinning, vulnerability reports, persona authz test | 177 |
-| 3 before shipping | [verification-gate](verification-gate/SKILL.md) | Done, finished, commit, push, PR or release: bind each check's pass to the exact code with a receipt so tests-pass is evidence; set up required checks | 198 |
+| 3 before shipping | [verification-gate](verification-gate/SKILL.md) | Done, finished, commit, push, PR or release: bind each check's pass to the exact code with a receipt so tests-pass is evidence; set up required checks | 206 |
 | 4 when broken | [bug-fix](bug-fix/SKILL.md) | Fix a bug, crash, regression, wrong output or failing test: reproduce first, commit the failing test, fix the narrowest thing, grep for sibling bugs.  | 173 |
 | 4 when broken | [root-cause-analysis](root-cause-analysis/SKILL.md) | Incident, outage, postmortem, production broken after a deploy, flaky or CI-only failure — find the cause: timeline, hypotheses, five whys, root cause | 196 |
 | 5 understanding | [codebase-comprehension](codebase-comprehension/SKILL.md) | How does this code work: explain, map or onboard to an unfamiliar repo, module or flow — entry points, data flow, boundaries, the hot file, an archite | 210 |
