@@ -28,6 +28,9 @@ tail_status 14 python3 scripts/run_evals.py || rc=1
 echo
 echo "=== skill contract lint ==="
 python3 scripts/lint_skills.py || rc=1
+
+echo "=== term index freshness ==="
+python3 scripts/check_index.py --check-terms >/dev/null || { echo "TERMS.md is stale: run python3 scripts/check_index.py --gen-terms"; rc=1; }
 echo
 [ "$rc" -eq 0 ] && echo "ALL SUITES PASSED" || echo "FAILURES PRESENT"
 exit "$rc"

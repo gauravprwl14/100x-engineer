@@ -165,9 +165,11 @@ def lint(r, plan=None):
                     errors.append(f"change {p!r} is outside {r['task_id']}'s owned files "
                                   f"({', '.join(owned) or 'none'}) — collisions break "
                                   f"parallel work; revert it or raise a plan issue")
-    if status in ("blocked", "failed") and not (blocking or evidence):
-        warns.append(f"status {status} with no evidence and no blocking item — say what "
-                     f"failed or what would unblock it")
+    if status == "blocked" and not blocking:
+        errors.append("status blocked with no blocking question or plan issue — a block "
+                      "must say what unblocks it (§3)")
+    if status == "failed" and not evidence:
+        errors.append("status failed with no evidence — a failure must show what failed (§3)")
     return errors, warns
 
 

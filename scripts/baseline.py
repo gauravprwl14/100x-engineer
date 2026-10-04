@@ -26,8 +26,7 @@ RISK_BY_KIND = _tiers["_risk"]["implied_by_kind"]
 
 # Skills being written in parallel; an owner_skill naming one of these is not an
 # error yet. Once the skill directory exists, lint asks for it to leave this list.
-PENDING_SKILLS = {"ui-baseline", "app-security", "release-rollout", "data-lifecycle",
-                  "qa-strategy"}
+PENDING_SKILLS: set = set()
 
 # enforced_by may name an external tool; it must be one a reader can install, not prose.
 EXTERNAL_TOOLS = {"npx", "gitleaks", "semgrep", "checkov", "trivy", "syft", "buf",

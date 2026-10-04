@@ -122,7 +122,7 @@ echo x > f.txt; git add -A; git commit -qm init
 FAILED_KINDS=""
 for k in $EXPECT_KINDS; do
   name="feat-$(echo "$k" | tr -cd 'a-z0-9')"
-  python3 "$ROOT/scripts/plan_feature.py" new "$name" --kind "$k" > "$OUT" 2>&1
+  python3 "$ROOT/scripts/plan_feature.py" new "$name" --kind "$k" --tier small > "$OUT" 2>&1
   rc=$?
   if [ "$rc" -ne 0 ] || [ ! -f "$CONS/specs/$name/spec.md" ]; then
     FAILED_KINDS="$FAILED_KINDS $k"
@@ -135,14 +135,14 @@ else
 fi
 
 # ---------- 7. combining an infra kind with an existing kind works and dedups edge cases ----------
-python3 "$ROOT/scripts/plan_feature.py" new checkout --kind payment,webhook,queue > "$OUT" 2>&1
+python3 "$ROOT/scripts/plan_feature.py" new checkout --kind payment,webhook,queue --tier small > "$OUT" 2>&1
 rc_is 0 $? "plan_feature.py new: combines payment (core) + webhook,queue (infra)"
 has "checkout"
 grep -q "edge cases seeded" "$OUT" && ok "reports edge case count for combined kinds" \
   || bad "no edge case count reported"
 
 # ---------- 8. unknown kind still rejected (regression: merge must not loosen validation) ----------
-python3 "$ROOT/scripts/plan_feature.py" new bogus --kind notarealkind > "$OUT" 2>&1
+python3 "$ROOT/scripts/plan_feature.py" new bogus --kind notarealkind --tier small > "$OUT" 2>&1
 rc_is 2 $? "plan_feature.py new: unknown kind still rejected after merge"
 
 # ---------- 9. audit runs against a spec scaffolded from an infra-only kind ----------

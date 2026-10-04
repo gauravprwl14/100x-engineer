@@ -115,6 +115,17 @@ PY
 python3 "$A" summary "$M/done-valid.md" >"$O" 2>&1; rc_is 0 $? "summary: a report with nothing open"
 has "Questions (0 of 0"; has "- none"
 
+# --- blocked/failed must say why (§3) ---
+base='"agent":"x","task_id":"T1","understanding":"u","inputs_read":[],"assumptions":[],"decisions":[],"changes":[],"follow_ups":[]'
+printf '{%s,"status":"blocked","questions":[],"plan_issues":[],"evidence":[]}' "$base" >"$TMP/blk.json"
+python3 "$A" lint "$TMP/blk.json" >"$O" 2>&1; [ $? -ne 0 ] && grep -q "blocked with no blocking" "$O" && ok "lint: blocked with nothing blocking is rejected" || bad "lint: blocked with nothing blocking"
+printf '{%s,"status":"blocked","questions":[],"plan_issues":[{"id":"P1","issue":"i","impact":"m","proposal":"p","blocking":true}],"evidence":[]}' "$base" >"$TMP/blk2.json"
+python3 "$A" lint "$TMP/blk2.json" >"$O" 2>&1; [ $? -eq 0 ] && ok "lint: blocked with a blocking plan issue passes" || bad "lint: blocked with a blocking plan issue"
+printf '{%s,"status":"failed","questions":[],"plan_issues":[],"evidence":[]}' "$base" >"$TMP/fl.json"
+python3 "$A" lint "$TMP/fl.json" >"$O" 2>&1; [ $? -ne 0 ] && grep -q "failed with no evidence" "$O" && ok "lint: failed without evidence is rejected" || bad "lint: failed without evidence"
+printf '{%s,"status":"failed","questions":[],"plan_issues":[],"evidence":[{"cmd":"false","exit_code":1,"output_tail":""}]}' "$base" >"$TMP/fl2.json"
+python3 "$A" lint "$TMP/fl2.json" >"$O" 2>&1; [ $? -eq 0 ] && ok "lint: failed with evidence passes" || bad "lint: failed with evidence"
+
 echo
 echo "agent_report: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

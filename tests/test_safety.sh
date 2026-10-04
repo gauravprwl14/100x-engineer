@@ -33,7 +33,7 @@ python3 "$ROOT/scripts/safety_audit.py" >/dev/null 2>&1 \
 # ---------- path traversal ----------
 for name in "../../etc/passwd" "../escape" "/absolute" ".hidden"; do
   before=$(tree_hash "$C")
-  python3 "$ROOT/scripts/plan_feature.py" new "$name" --kind crud >$OUT/sf.out 2>&1
+  python3 "$ROOT/scripts/plan_feature.py" new "$name" --kind crud --tier small >$OUT/sf.out 2>&1
   after=$(tree_hash "$C")
   if [ "$before" = "$after" ]; then ok "traversal refused, nothing written: $name"
   else bad "traversal WROTE something: $name"; fi
@@ -48,7 +48,7 @@ grep -q "not inside a git repository" $OUT/sf.out \
 cd "$C"
 
 # ---------- --dry-run writes nothing ----------
-for tool in "plan_feature.py new dr --kind crud" "prd.py new dr --kind auth" "decide.py new dr"; do
+for tool in "plan_feature.py new dr --kind crud --tier small" "prd.py new dr --kind auth --tier small" "decide.py new dr"; do
   before=$(tree_hash "$C")
   python3 "$ROOT/scripts/$tool" --dry-run >$OUT/sf.out 2>&1
   after=$(tree_hash "$C")
@@ -87,8 +87,8 @@ grep -q "^## Contents" "$C/research/long.md" && ok "--fix-stubs --yes inserts th
 cd "$C"
 echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
   | python3 "$ROOT/hooks/require_verification.py" >$OUT/sf.out 2>&1
-grep -q '^{}$' $OUT/sf.out && ok "hook is inert with no policy file" \
-  || bad "hook acted without a policy file"
+! grep -q '"permissionDecision"' $OUT/sf.out && ok "hook does not block with no policy file" \
+  || bad "hook blocked without a policy file"
 echo 'not json at all' | python3 "$ROOT/hooks/require_verification.py" >$OUT/sf.out 2>&1
 [ $? -eq 0 ] && ok "hook fails open on malformed input" || bad "hook crashed on bad input"
 
