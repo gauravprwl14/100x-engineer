@@ -295,7 +295,17 @@ def cmd_lint(a):
         print(f"cannot read {path}: {ex}", file=sys.stderr)
         return 2
     against = a.against or (None if a.file else "HEAD")
-    errs, warns = lint(data, committed_ids(BASELINE_PATH, against) if against else None)
+    committed = committed_ids(BASELINE_PATH, against) if against else None
+    if against and committed is None:
+        # Skipping the id-retention check silently would report "valid" for a catalogue
+        # nobody compared: say so, and refuse when the comparison was asked for by name.
+        if a.against:
+            print(f"cannot read the committed catalogue at {a.against!r} (not a git work "
+                  f"tree, file not committed, or unknown revision)", file=sys.stderr)
+            return 2
+        print("  NOTE  committed-catalogue check skipped: no git history for "
+              f"{BASELINE_PATH.name} here, so deleted or renamed ids are not detected")
+    errs, warns = lint(data, committed)
     n = len(data.get("items", []) or [])
     by = {c: sum(1 for i in data.get("items", []) if i.get("class") == c) for c in CLASSES}
     print(f"lint {path.name}: version {data.get('version')}, {n} items "

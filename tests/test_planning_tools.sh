@@ -292,9 +292,13 @@ grep -q "7 accepted as default" $OUT/pt.out && ok "plan: counts defaults correct
   || bad "plan: default count wrong"
 
 # ---------- decide ----------
-python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
-rc_is 0 $? "decide: index regenerates"
-[ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
+  rc_is 0 $? "decide: index regenerates"
+  [ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
+else
+  echo "  skip decide index on the plugin's own records: $ROOT is not a git work tree"
+fi
 grep -qE "^\| \[ADR-0001\]" "$ROOT/decisions/INDEX.md" 2>/dev/null \
   && ok "decide: index table contains the ADR row" || bad "decide: ADR row missing"
 

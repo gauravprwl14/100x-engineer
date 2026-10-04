@@ -58,8 +58,14 @@ def _inside(path, root):
 
 
 def _temp_roots():
-    return {os.path.realpath(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp",
-                                          "/dev/shm") if os.path.isdir(p)}
+    roots = [tempfile.gettempdir(), "/tmp", "/var/tmp", "/dev/shm"]
+    # macOS gives each user a private temp dir under /var/folders that TMPDIR usually
+    # names; when TMPDIR is unset or redirected, gettempdir() no longer returns it.
+    if sys.platform == "darwin":
+        r = subprocess.run(["getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True, text=True)
+        if r.returncode == 0:
+            roots.append(r.stdout.strip())
+    return {os.path.realpath(p) for p in roots if p and os.path.isdir(p)}
 
 
 def _tool_managed(directory):

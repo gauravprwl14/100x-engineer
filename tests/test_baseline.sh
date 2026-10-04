@@ -54,7 +54,14 @@ lint_bad 'items["api.rate-limit"]["since"] = 5' "since must be an integer from 1
 lint_bad 'items["api.rate-limit"]["deprecated"] = "yes"' "deprecated must be true or false" "non-boolean deprecated"
 lint_bad 'items["web-ui.reflow-320"]["enforced_by"] = "100x ui_baseline_check --only fixed-width + vibes"' "'vibes' is neither" "a bad part of a compound enforced_by"
 
-# ids are never deleted or renamed: compared with the committed catalogue
+# ids are never deleted or renamed: compared with the committed catalogue. These need
+# the plugin's own git history, which an archive or cache copy does not have.
+if ! git -C "$ROOT" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  echo "  skip committed-catalogue cases: $ROOT is not a git work tree"
+  python3 "$B" lint >"$OUT" 2>&1; has "committed-catalogue check skipped"
+  python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
+  rc_is 2 $? "lint --against with no history refuses instead of passing"
+else
 mutate 'd["items"] = [i for i in d["items"] if i["id"] != "api.rate-limit"]'
 python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
 rc_is 1 $? "lint rejects: an id deleted since the committed catalogue"
@@ -65,6 +72,7 @@ rc_is 1 $? "lint rejects: a renamed id"
 mutate 'items["api.rate-limit"]["deprecated"] = True; d["version"] = 2; d["items"].append(dict(items["api.ssrf-guard"], id="api.new-rule", since=2))'
 python3 "$B" lint --file "$TMP/b.json" --against HEAD >"$OUT" 2>&1
 rc_is 0 $? "lint accepts a deprecated item and a newer item with since (no false positive)"
+fi
 python3 - "$ROOT" <<'PY' && ok "show/applicable: deprecated items and items past a pin are filtered" || bad "applicable filtering"
 import sys; sys.path.insert(0, sys.argv[1] + "/scripts")
 import baseline as bl
