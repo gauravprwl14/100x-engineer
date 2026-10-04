@@ -5,7 +5,7 @@
 # Run: bash tests/test_perf_check.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 PC="$ROOT/scripts/perf_check.py"
 cd "$TMP"; git init -q; git config user.email t@t; git config user.name t
 mkdir -p src
@@ -15,13 +15,13 @@ git add -A; git commit -qm init
 PASS=0; FAIL=0
 expect() { # expect <0|1> <label> [--only X]
   local exp="$1" label="$2"; shift 2
-  python3 "$PC" "$@" >/tmp/pc.out 2>&1; local got=$?
+  python3 "$PC" "$@" >$OUT/pc.out 2>&1; local got=$?
   if [ "$got" -eq "$exp" ]; then PASS=$((PASS+1)); printf '  ok   %-55s\n' "$label"
-  else FAIL=$((FAIL+1)); printf '  FAIL %-55s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' /tmp/pc.out; fi
+  else FAIL=$((FAIL+1)); printf '  FAIL %-55s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' $OUT/pc.out; fi
 }
-has() { grep -q "$1" /tmp/pc.out && { PASS=$((PASS+1)); printf '  ok   %-55s\n' "reported: $1"; } \
+has() { grep -q "$1" $OUT/pc.out && { PASS=$((PASS+1)); printf '  ok   %-55s\n' "reported: $1"; } \
         || { FAIL=$((FAIL+1)); printf '  FAIL %-55s\n' "NOT reported: $1"; }; }
-nothas() { grep -q "$1" /tmp/pc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-55s\n' "false positive: $1"; } \
+nothas() { grep -q "$1" $OUT/pc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-55s\n' "false positive: $1"; } \
         || { PASS=$((PASS+1)); printf '  ok   %-55s\n' "no false positive: $1"; }; }
 reset_diff() { git add -A >/dev/null 2>&1; git commit -qm wip >/dev/null 2>&1; }
 

@@ -5,7 +5,7 @@
 # Run: bash tests/test_fe_layers_check.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 FC="$ROOT/scripts/fe_layers_check.py"
 cd "$TMP"; git init -q; git config user.email t@t; git config user.name t
 mkdir -p src
@@ -15,13 +15,13 @@ git add -A; git commit -qm init >/dev/null
 PASS=0; FAIL=0
 expect() { # expect <0|1> <label> [--only X ...]
   local exp="$1" label="$2"; shift 2
-  python3 "$FC" "$@" >/tmp/fc.out 2>&1; local got=$?
+  python3 "$FC" "$@" >$OUT/fc.out 2>&1; local got=$?
   if [ "$got" -eq "$exp" ]; then PASS=$((PASS+1)); printf '  ok   %-56s\n' "$label"
-  else FAIL=$((FAIL+1)); printf '  FAIL %-56s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' /tmp/fc.out; fi
+  else FAIL=$((FAIL+1)); printf '  FAIL %-56s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' $OUT/fc.out; fi
 }
-has() { grep -q -- "$1" /tmp/fc.out && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "reported: $1"; } \
+has() { grep -q -- "$1" $OUT/fc.out && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "reported: $1"; } \
         || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "NOT reported: $1"; }; }
-nothas() { grep -q -- "$1" /tmp/fc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "false positive: $1"; } \
+nothas() { grep -q -- "$1" $OUT/fc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "false positive: $1"; } \
         || { PASS=$((PASS+1)); printf '  ok   %-56s\n' "no false positive: $1"; }; }
 reset_diff() { git checkout -q -- . ; git clean -qfd . ; }
 
@@ -312,13 +312,13 @@ python3 "$FC" --list | grep -q "presentation-io (blocking)" \
   && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "--list marks presentation-io blocking"; } \
   || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "--list did not mark presentation-io blocking"; }
 
-python3 "$FC" --only bogus-check >/tmp/fc.out 2>&1
+python3 "$FC" --only bogus-check >$OUT/fc.out 2>&1
 [ $? -eq 2 ] && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "unknown --only check exits 2"; } \
              || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "unknown --only check did not exit 2"; }
 
 reset_diff
-python3 "$FC" >/tmp/fc.out 2>&1
-grep -q "no changes to inspect" /tmp/fc.out \
+python3 "$FC" >$OUT/fc.out 2>&1
+grep -q "no changes to inspect" $OUT/fc.out \
   && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "no diff reports no changes"; } \
   || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "no diff did not report no changes"; }
 
