@@ -14,6 +14,19 @@ Sections are split per platform; a diff usually only needs one.
 
 ---
 
+## Contents
+
+| # | section | what it answers | size |
+|---|---------|-----------------|------|
+| 1 | [Applies when](#applies-when) | the Gradle/Xcode signals that put this reviewer in scope | 4 lines |
+| 2 | [Blocking rules](#blocking-rules) | the test/lint commands per platform that must pass | 9 lines |
+| 3 | [Android](#android) | **start here for Kotlin**: main-thread I/O, lifecycle leaks, R8 keep rules, DI and coroutine ownership | 34 lines |
+| 4 | [iOS](#ios) | **start here for Swift**: retain cycles, off-main UI updates, force unwraps, `@MainActor` misuse | 29 lines |
+| 5 | [UI layer (Compose / SwiftUI)](#ui-layer-compose--swiftui) | accessibility names, font scaling, 48dp/44pt targets and dark theme, with a detection each | 8 lines |
+| 6 | [Edge cases routinely missed](#edge-cases-routinely-missed) | process death, offline cold start, deep links, push, RTL, Doze, and how to trigger each | 16 lines |
+| 7 | [Approach selection](#approach-selection) | recurring platform choices, each with a DEFAULT | 13 lines |
+| 8 | [Sources](#sources) | the production apps and platform docs every claim is grounded in | 20 lines |
+
 ## Applies when
 Android: `build.gradle`/`build.gradle.kts` present with an `com.android.application`/`library`
 plugin, diff touches `.kt`/`.java` under `src/main`.
@@ -95,6 +108,15 @@ git diff -U5 -- '*.swift' | grep -B5 '\bself\.' | grep -L "weak self"
 
 ---
 
+## UI layer (Compose / SwiftUI)
+
+| # | platform | what the model does | why it looks right | detection | correct move |
+|---|----------|---------------------|--------------------|-----------|--------------|
+| 1 | Both | An icon-only button with no spoken name: Compose `Icon(..., contentDescription = null)` inside an `IconButton`, or SwiftUI `Button { } label: { Image(systemName: "trash") }` with no `.accessibilityLabel` | It renders correctly and `null` compiles; `null` is the documented value for *decorative* images, so it reads as idiomatic | `grep -rn -B3 "contentDescription = null" <changed .kt>` and inspect any hit inside a clickable; iOS: `XCUIApplication().performAccessibilityAudit()` in a UI test (Xcode 15+) flags elements with no description | `contentDescription = stringResource(...)` on anything actionable, `null` only for decoration; `.accessibilityLabel("Delete")` on an image-only `Button` |
+| 2 | Both | Text that ignores the user's font scale: Compose `with(LocalDensity.current) { 14.dp.toSp() }` (divides out `fontScale`) or `Text` inside a fixed `Modifier.height(40.dp)` row; SwiftUI `.font(.system(size: 14))` | Pixel-matches the design mock at the default system font size | `grep -rn "\.toSp()" <changed .kt>`; `grep -rnE "\.font\(\.system\(size:" <changed .swift>`; the iOS audit above also checks Dynamic Type; then run at the largest font scale (edge case #9) | Android: `sp` via `MaterialTheme.typography`, `heightIn(min = …)` not a fixed height; iOS: text styles (`.font(.body)`) and `@ScaledMetric` for spacing, so text reflows instead of clipping |
+| 3 | Both | Shrinks a tap target below the platform minimum: `Modifier.size(24.dp).clickable { }`, SwiftUI `.frame(width: 24, height: 24)` on a `Button` | The visible glyph is the size the design asked for | review question: "is every tappable element at least 48×48dp (Android) / 44×44pt (iOS), counting padding?"; Compose UI test `assertHeightIsAtLeast(48.dp)`; iOS audit's hit-region check | keep the glyph small and grow the hit area: Material components already pad to 48dp when they have a callback; on iOS add `.contentShape(Rectangle())` with a 44pt frame |
+| 4 | Both | Hard-coded colours (`Color(0xFFFFFFFF)`, `Color.white`, `Color(red:green:blue:)`) in screens instead of theme roles | Looks right in light mode, the only mode the developer runs | `grep -rnE "Color\(0x\|Color\.(White\|Black)" <changed .kt>`, `grep -rnE "Color\.(white\|black)\|Color\(red:" <changed .swift>`; then switch the device to dark mode and look | `MaterialTheme.colorScheme.*` with a `darkColorScheme()`; SwiftUI semantic colours (`Color(.label)`, `Color(.systemBackground)`) or asset-catalog colours with a dark appearance |
+
 ## Edge cases routinely missed
 | # | platform | edge case | why it is missed | test that would catch it |
 |---|----------|-----------|-------------------|---------------------------|
@@ -143,3 +165,5 @@ git diff -U5 -- '*.swift' | grep -B5 '\bself\.' | grep -L "weak self"
 - `research/33-findings-mobile-verification.md` — Room/Core Data/GRDB migration testing, staged
   rollout, remote-config kill switches, `PrivacyInfo.xcprivacy` absence, prove-it commands
   (referenced, not repeated)
+- Compose: `contentDescription` required on `Image`/`Icon`, `null` only for decorative images, "minimum size of 48dp" for interactive elements: `developer.android.com/develop/ui/compose/accessibility/api-defaults`. Text in `sp`: `developer.android.com/guide/topics/resources/more-resources#Dimension`. Dark theme: `developer.android.com/develop/ui/views/theming/darktheme`.
+- iOS: hit targets "at least 44x44 pt" and Dynamic Type: `developer.apple.com/design/human-interface-guidelines/accessibility`; `accessibilityLabel(_:)`: `developer.apple.com/documentation/swiftui/view/accessibilitylabel(_:)`; `performAccessibilityAudit`: `developer.apple.com/documentation/xctest/xcuiapplication/performaccessibilityaudit(for:_:)`; semantic colours and Dark Mode: `developer.apple.com/design/human-interface-guidelines/dark-mode`.

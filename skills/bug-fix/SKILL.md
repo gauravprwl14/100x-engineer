@@ -39,8 +39,10 @@ you are just doing step 2 onward, with the mechanism already known.
 2. Commit the reproduction as a **failing** test before writing any fix, and see it
    fail for the right reason — assert on the specific wrong output, not just "it
    throws".
-   *Enforced by:* `git stash && <single-test-runner> <new-test-path>` must exit
-   non-zero with the fix stashed away; `git stash pop` restores it. See Verify.
+   *Enforced by:* commit the test first, then `git stash push -- <src-paths>`
+   and `<single-test-runner> <new-test-path>` must exit non-zero; `git stash pop`
+   restores the fix. A bare `git stash` also hides a test added to an existing
+   tracked file, so its non-zero exit proves nothing. See Verify.
 
 3. Before theorizing about a new cause, check whether the bug is a violated
    assumption — one of the most common root causes there is, and the cheapest to
@@ -75,10 +77,11 @@ curl -s localhost:3000/orders/999           # or the failing test's node id, or 
 #   ~seconds
 
 # 2. commit the reproduction as a FAILING test, and watch it fail for the right reason
-git stash                                    # hide any fix already in progress
+git add tests/test_bug.py && git commit -m "test: reproduce <bug>"   # the test is now safe from stash
+git stash push -- src/                       # hide ONLY the source fix in progress, never the test
+#   (no fix written yet? skip push/pop: a pop would restore an unrelated older stash)
 pytest tests/test_bug.py::test_repro -x      # or: npx jest test_bug -t "..." / go test ./... -run TestBug
-echo "expect non-zero: $?"
-git stash pop
+rc=$?; git stash pop; [ "$rc" -ne 0 ]        # must fail without the fix
 #   ~seconds to a minute, one test only — never the whole suite here
 
 # 3. is this a violated assumption? cheapest thing to check before theorizing

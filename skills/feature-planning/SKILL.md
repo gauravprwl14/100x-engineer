@@ -61,7 +61,9 @@ Three rules, because a process that asks twenty questions is worse than no proce
 
 4. Any decision that departs from the recommended default needs an ADR. Accepting a
    default is also recorded, as `default`, so a later reader can tell "we chose this
-   deliberately" from "nobody looked at it."
+   deliberately" from "nobody looked at it." When a decision has no default, or
+   the default's deciding factor does not hold here, hand off to
+   `approach-selection` to compare the options, then record its result as the ADR.
    *Enforced by:* `python3 scripts/decide.py new` + the audit's ADR-reference check
 
 5. Generate a level-2 sequence diagram (≤30 nodes, implementer detail) of the planned
@@ -83,6 +85,8 @@ Three rules, because a process that asks twenty questions is worse than no proce
 # 1. scaffold: seeds edge cases + pre-answered decisions for the feature kind
 python3 scripts/plan_feature.py new login --kind auth,crud --stack nestjs
 #    kinds: universal auth crud payment upload search realtime migration integration
+#    + infra: cache queue cron webhook third-party-api multi-tenancy pii-compliance
+#      batch-job file-storage notification
 #    combine them — a checkout feature is `payment,crud`
 
 # 2. fill sections 1-4 and 8-9, resolve every edge case, then gate on it
@@ -127,8 +131,9 @@ This skill rejects:
 - **A sequence diagram still containing template text.**
 
 **Honest limitations:**
-- The catalogue covers 9 feature kinds and 60 edge cases. A feature outside those
-  kinds gets only the 10 universal cases — add to `scripts/data/edge_cases.json`
+- The catalogue covers 19 kinds and 140 edge cases: 9 kinds (including `universal`)
+  and 60 cases in `edge_cases.json`, 10 kinds and 80 cases in `edge_cases_infra.json`.
+  A feature outside those gets only the 10 universal cases — add to the catalogue
   rather than pretending coverage.
 - The audit checks **structure, not judgement**. It cannot tell whether a test named
   in the `test` column actually exercises the edge case. That gap is real and is why
@@ -152,8 +157,9 @@ which is cheaper to review than a diff. At `org` the decision log matters more t
 the spec, because the expensive question becomes "why is it like this" years later.
 
 ## Sources
-- Edge-case catalogue (60 cases, 9 kinds) and required-decision defaults (24
-  decisions): `scripts/data/edge_cases.json`, `scripts/data/decisions_required.json` —
+- Edge-case catalogue (140 cases, 19 kinds) and required-decision defaults (24
+  decisions, 8 kinds): `scripts/data/edge_cases.json`, `edge_cases_infra.json`,
+  `scripts/data/decisions_required.json` —
   `SOURCE: original`, assembled from the failure classes named across
   `research/23`, `research/33`, `research/35` and `research/36`.
 - The "one named command proves it works" rule appears in 30+ of 48 surveyed

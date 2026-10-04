@@ -151,13 +151,16 @@ exactly the deletion test in `research/01-skill-contract.md`.
 
 ## Scale
 
-`solo`: rules 1, 4, 5, plus rule 3 only for secrets-bearing workflows.
+**Every tier, `solo` included:** rule 7. A missing negative authz assertion
+is a correctness bug (role A reads role B's data) at any team size, and one
+`it("viewer cannot read another tenant's invoice")` costs minutes.
+`solo`: also rules 1, 4, 5, plus rule 3 only for secrets-bearing workflows.
 `small-team (2-10)`: add 2, 6, 8 — the threat-model paragraph and dependency
 cooldown are near-free and remove whole categories of noise and risk.
-`org (10+)`: add 7, 9, numeric disclosure SLAs (2 business days is a reasonable
-floor; 1 day is near the ceiling without a dedicated security team), OSS-Fuzz if you
-parse untrusted input in a memory-unsafe language, and a metrics-naming convention
-before cardinality bites.
+`org (10+)`: add 9, numeric disclosure SLAs (2 business days is a reasonable
+floor; 1 day is near the ceiling without a dedicated security team), and OSS-Fuzz
+if you parse untrusted input in a memory-unsafe language. (Metrics naming and
+cardinality belong to `observability-design`, not here.)
 `high-blast-radius`: a formal security team, private distributor list, and
 multi-sanitizer fuzzing (address + undefined + memory; MSan catches uninitialized
 reads the others miss, and is reasonably run non-blocking while its false-positive

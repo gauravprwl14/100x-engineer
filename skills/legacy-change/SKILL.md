@@ -135,9 +135,14 @@ python3 scripts/test_design_check.py --strict --max-files 15   # org-scale: trea
 # scope creep beyond the seam you needed (~1-3s, diff-scoped)
 python3 scripts/bloat_check.py --only file-creation-ratio,commented-code
 
-# the characterization test must fail if you revert your change and only your
-# change -- proves it actually pins behaviour, not just "runs"
-git stash && <single-test-runner> <new-characterization-test> ; echo "expect non-zero: $?" ; git stash pop
+# characterization tests pin CURRENT behaviour: they pass before AND after a
+# refactor. Only the new-behaviour test must fail without your source change.
+# Commit the tests first; stash only the source so the tests stay in place.
+git stash push -- <src-paths>
+<single-test-runner> <characterization-test>; before=$?
+<single-test-runner> <new-behaviour-test>; new=$?
+git stash pop
+[ "$before" -eq 0 ] && [ "$new" -ne 0 ] && <single-test-runner> <characterization-test> <new-behaviour-test>
 ```
 
 ## Failure modes
