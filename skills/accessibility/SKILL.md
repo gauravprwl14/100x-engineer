@@ -37,8 +37,13 @@ or a copy/config-only change with no new element or interaction.
 
 ## Rules
 
-1. Reach for the semantic element first. A `div`/`span`/`li` with `onClick` and
-   no `role`/`tabIndex` is not a button — it's invisible to assistive tech.
+1. Reach for the semantic element first. Any non-interactive element (`div`,
+   `span`, `p`, `section`, `li`, `td`, `img`, a heading…) with `onClick` and no
+   `role`/`tabIndex` is not a button — it's invisible to assistive tech.
+   `<label>` is exempt: clicking it activates its control. Adding a widget role
+   is not enough on its own: `role="button"` (or `link`, `checkbox`, `tab`,
+   `menuitem`…) also needs `tabIndex` *and* a key handler (`onKeyDown`), or the
+   element still cannot be reached or activated from the keyboard.
    *Enforced by:* `100x a11y_check --only onclick-non-interactive`
 
 2. Every interactive element must be reachable and operable by keyboard alone
@@ -47,7 +52,9 @@ or a copy/config-only change with no new element or interaction.
    *Enforced by:* review
 
 3. Never remove the default focus outline without a compliant replacement. A
-   `:focus-visible` rule in the same file is the minimum bar.
+   `:focus-visible` rule in the same file is the minimum bar; for Tailwind,
+   `outline-none`/`outline-0` needs a `focus-visible:` (or `focus:` ring/border)
+   utility in the same class list.
    *Enforced by:* `100x a11y_check --only outline-none-no-focus-visible`
 
 4. Don't use a positive `tabIndex`. It reorders focus away from DOM order and
@@ -98,7 +105,8 @@ or a copy/config-only change with no new element or interaction.
 
 13. Respect `prefers-reduced-motion`. A parallax hero or a spinning loader
     with no reduced-motion guard can trigger vestibular symptoms, not just
-    annoy.
+    annoy. For Tailwind, write `motion-safe:animate-spin`, or pair a bare
+    `animate-*` with a `motion-reduce:` override in the same class list.
     *Enforced by:* `100x a11y_check --only animation-no-reduced-motion`
 
 14. Meet the WCAG 2.2 target-size minimum: pointer targets at least **24×24
@@ -132,7 +140,9 @@ Diff-scoped; runs in well under a second on a typical component PR.
 `a11y_check.py` is heuristic — regex plus a hand-rolled tag scanner, not a real
 JSX/HTML parser (its own docstring says so). It cannot see runtime state: a
 conditionally-applied `role`, whether an "icon" component secretly renders
-text, whether a CSS class actually strips the focus ring in the browser. It
+text, whether a CSS class actually strips the focus ring in the browser. The
+Tailwind checks (rules 3 and 13) read literal `class`/`className` strings only;
+a class list built by `cn()`/`clsx()` is skipped, not guessed at. It
 under-fires on ambiguous input by design — a missed violation is cheap, a false
 positive is what gets a checker like this disabled. It complements, and does
 not replace, `eslint-plugin-jsx-a11y` if your stack already runs one (Next.js
@@ -146,7 +156,9 @@ ARIA tree correctness).
 This skill rejects:
 
 - **`<div onClick={...}>` instead of `<button>`** — the canonical defect: not
-  focusable, not keyboard-operable, not announced as a control.
+  focusable, not keyboard-operable, not announced as a control. Same for
+  `<li>`, `<td>`, `<img>` or a heading with `onClick`, and for
+  `<div role="button" onClick={...}>` with no `tabIndex` or key handler.
 - **An icon-only `<button><TrashIcon /></button>` with no `aria-label`** — a
   screen reader announces "button", nothing else.
 - **A form `<input>` with a placeholder and no `<label>`/`aria-label`** — the

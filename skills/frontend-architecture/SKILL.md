@@ -49,7 +49,12 @@ then correctly layered, so the difference is visible, not described.
 
 1. A `.tsx` component never calls `fetch`/`axios`/an API client method, and never
    embeds a raw backend URL. If a component needs data, it calls a hook that
-   returns it.
+   returns it. Exception: a React Server Component, where fetching in the
+   component is the documented data-loading pattern. The checker treats a file
+   as one when it has no `'use client'` directive and either sits under an
+   `app/` route tree or declares an `async` component (a client component
+   cannot be async), and skips `presentation-io` for it. Add `'use client'` and
+   the rule applies again.
    *Enforced by:* `100x fe_layers_check --only presentation-io`
    (**blocking**)
 
@@ -115,8 +120,8 @@ then correctly layered, so the difference is visible, not described.
 # the reference doc: the SAME component badly layered, then correctly layered
 sed -n '1,80p' reviewers/_frontend-layers.md
 
-# prove the checker itself works (49 assertions, ~24 clean-file false-positive
-# checks — the important half, ~2s)
+# prove the checker itself works (54 assertions, including the clean-file
+# false-positive checks — the important half, ~2s)
 bash tests/test_fe_layers_check.sh
 ```
 
@@ -204,8 +209,12 @@ that actually is even at scale.
 - `vercel/commerce` (cited fully in `reviewers/nextjs-react.md`) — `lib/`
   (business/data-shaping) kept separate from `components/`; no `.tsx` in
   `lib/`.
+- Rule 1's Server Component exemption: react.dev, "Server Components"
+  (https://react.dev/reference/rsc/server-components): async components that
+  fetch during render are a Server Component feature, and "async components are
+  not supported on the client".
 - `scripts/fe_layers_check.py`'s 8 diff-scoped checks and
-  `tests/test_fe_layers_check.sh`'s 49 assertions (24 clean-file false-positive
-  checks): `SOURCE: original` — no surveyed repo runs a purpose-built checker
+  `tests/test_fe_layers_check.sh`'s 54 assertions (clean-file false-positive
+  checks included): `SOURCE: original` — no surveyed repo runs a purpose-built checker
   for this specific three-layer split; built because the survey found the gap,
   not a tool to match.
