@@ -17,6 +17,8 @@ Python stdlib only.
 import argparse, fnmatch, json, pathlib, re, sys
 from functools import lru_cache
 
+from testplan import parse_acs
+
 # Must track the roster table in docs/OPERATING-MODEL.md §1; tests/test_plan_dag.sh
 # fails if a name here is missing from that table.
 ROSTER = (
@@ -28,7 +30,6 @@ ROSTER = (
 PLAN_FIELDS = {"feature", "tier", "tasks"}
 TASK_FIELDS = {"id", "title", "owner", "depends_on", "files", "acceptance", "verify",
                "contract", "consumes"}
-AC_RX = re.compile(r"\bAC-\d+\b")
 WILD = set("*?[")
 
 
@@ -295,13 +296,20 @@ def lint(plan, spec=None, agents_dir=None):
         except OSError as e:
             errors.append(f"--spec {spec}: cannot read ({e})")
             text = ""
-        spec_ids = set(AC_RX.findall(text))
+        # Only DEFINED criteria count (testplan.parse_acs, the parser every AC tool
+        # shares): a verification row or a prose line that merely mentions `AC-3`
+        # must not make AC-3 look like a criterion the plan has to deliver.
+        spec_ids = set(parse_acs(text))
+        if text and not spec_ids:
+            errors.append(f"--spec {spec} defines no acceptance criteria — write each "
+                          f"as a line `AC-<n>: <observable outcome> (R<k>)`; with none, "
+                          f"coverage cannot be checked")
         covered = {a for t in by_id.values() for a in _ids(t.get("acceptance"))}
         for ac in sorted(spec_ids - covered, key=_ac_key):
             errors.append(f"{ac} in {spec} is covered by no task — add it to the "
                           f"\"acceptance\" of the task that delivers it")
         for ac in sorted(covered - spec_ids, key=_ac_key):
-            warns.append(f"{ac} is claimed by a task but does not appear in {spec}")
+            warns.append(f"{ac} is claimed by a task but is not defined in {spec}")
     return errors, warns
 
 

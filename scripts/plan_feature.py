@@ -13,52 +13,36 @@ Design constraints taken from how this gets used in practice:
     silently become "nobody decided".
 
     plan_feature.py new login --kind auth --work api,web-ui --tier small --stack nestjs
-    plan_feature.py audit specs/login
+    plan_feature.py audit docs/engineering/specs/login
+
+Specs live under the root `_paths.py` resolves (docs/engineering/ by default).
     plan_feature.py index
 
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
 import _mutation_guard as mg
+import _paths
 import baseline as bl
+from testplan import parse_criteria, AC_TAG
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
-def project_root():
-    """Where the USER's decisions/specs live: the git root of the current directory,
-    not the plugin's own directory.
-
-    Resolving these against the plugin root meant a consumer project's records were
-    written into the installed plugin — invisible to their repo and lost on upgrade.
-
-    Returns (root, in_git_repo). When cwd is not inside a git repo, root falls back
-    to cwd for READ purposes (rel(), audit) but callers that write MUST check
-    in_git_repo via mg.require_git_root() first -- see cmd_new / cmd_index.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
 
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT, IN_GIT_REPO = project_root()
+# ROOT is the user's git root (never the plugin's directory: records written into the
+# installed plugin are invisible to the project and lost on upgrade). Outside a repo it
+# falls back to cwd for READS only; writers check IN_GIT_REPO via
+# mg.require_git_root() first. Records live under RECORDS, see _paths.py.
+ROOT, IN_GIT_REPO = _paths.git_root()
+RECORDS, _ = _paths.resolve(ROOT)
 DATA = PLUGIN / "scripts" / "data"
-SPECS = ROOT / "specs"
+SPECS = RECORDS / "specs"
+PRDS = RECORDS / "prds"
 EDGE = json.loads((DATA / "edge_cases.json").read_text())
 
 # Component-keyed failure modes (cache, queue, cron, webhook, ...) live in a
@@ -175,10 +159,13 @@ def cmd_new(a):
     n_ask = sum(1 for r in base if "| ASK: " in r)
     work_arg = ",".join(work) or '""'
 
+    prd_dir = PRDS / a.name
+    prd_link = str(rel(prd_dir)) if (prd_dir / "prd.md").exists() else "none"
     s = [f"# {a.name} — spec", "",
          f"| field | value |", "|---|---|",
          f"| kinds | {', '.join(kinds)} |",
          f"| stack | {a.stack or 'unspecified'} |",
+         f"| prd | {prd_link} |",
          f"| created | {today} |",
          f"| status | **draft — not ready to implement** |", "",
          "Status becomes `ready` only when `100x plan_feature audit` passes. "
@@ -215,6 +202,16 @@ def cmd_new(a):
          "| # | in scope | | # | explicitly OUT of scope |", "|---|---|---|---|---|",
          "| S1 | <!-- --> | | O1 | <!-- the thing a reader would assume is included --> |", "",
          "Out-of-scope is load-bearing: it is the difference between a gap and a decision.", "",
+         "## 2b. Acceptance criteria", "",
+         "One line per criterion, `AC-<n>: <observable outcome> (R<k>, S<k>)`. The outcome "
+         "is something a test can observe (a response, a stored state, what a screen "
+         "shows), not an implementation step. `R<k>` names the PRD requirement it "
+         "satisfies and is required when the feature has a PRD; `S<k>` names the in-scope "
+         "row(s) above it delivers, and every in-scope row needs at least one criterion. "
+         "Ids are unique and never renumbered: tests and `plan.json` reference them "
+         "(`100x testplan trace`, `100x plan_dag lint --spec`), so a removed criterion "
+         "leaves a gap and its id is not reused.", "",
+         "AC-1: <!-- observable outcome --> (R1, S1)", "",
          "## 3. Interfaces touched", "",
          "| # | surface | change | backward compatible? |", "|---|---|---|---|",
          "| I1 | <!-- endpoint / screen / event / table --> | <!-- --> | <!-- yes/no + why --> |", "",
@@ -256,11 +253,13 @@ def cmd_new(a):
         s.append(f"| E{i} | {kind} | {esc(what)} | {esc(why)} | TODO | "
                  f"_suggested:_ {esc(test)} |")
     s += ["", "## 8. Verification plan", "",
-          "| # | check | command | gate |", "|---|---|---|---|",
-          "| V1 | types | <!-- --> | pre-commit |",
-          "| V2 | unit | <!-- --> | pre-commit |",
-          "| V3 | integration | <!-- --> | pre-PR |",
-          "| V4 | the edge cases above | <!-- --> | pre-PR |", "",
+          "`covers` lists the acceptance criteria a row proves (`—` for a row that proves "
+          "none, such as types); every AC needs at least one row.", "",
+          "| # | check | command | gate | covers |", "|---|---|---|---|---|",
+          "| V1 | types | <!-- --> | pre-commit | — |",
+          "| V2 | unit | <!-- --> | pre-commit | AC-1 |",
+          "| V3 | integration | <!-- --> | pre-PR | AC-1 |",
+          "| V4 | the edge cases above | <!-- --> | pre-PR | — |", "",
           "Bind these to the code with `100x verified` so a passing result cannot "
           "be reused after an edit.", "",
           "## 9. Rollout and reversal", "",
@@ -287,13 +286,13 @@ def cmd_new(a):
     if dry:
         old_text = (d / "spec.md").read_text() if (d / "spec.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(d / "spec.md")))
-        print(f"[dry-run] would also regenerate specs/INDEX.md; nothing written")
+        print(f"[dry-run] would also regenerate {rel(SPECS / 'INDEX.md')}; nothing written")
         return 0
 
     d.mkdir(parents=True, exist_ok=True)
     (d / "spec.md").write_text(new_text)
 
-    print(f"created {(d / 'spec.md').relative_to(ROOT)}")
+    print(f"created {rel(d / 'spec.md')}")
     print(f"  scale tier: {tier_name} (p95 starting point {tier['p95_budget_ms']}ms)")
     if risk != a.risk:
         print(f"  risk: {risk} (raised from {a.risk}: kinds {', '.join(kinds)} imply "
@@ -306,7 +305,7 @@ def cmd_new(a):
     print(f"  {len(base)} implicit requirements seeded ({n_ask} to ask)")
     print(f"  {len(decs)} decisions pre-answered with defaults")
     print(f"  {len(edges)} edge cases seeded (all TODO)")
-    print(f"\nNext: fill §0b and sections 1-14, then `100x plan_feature audit specs/{a.name}`")
+    print(f"\nNext: fill §0b and sections 1-14, then `100x plan_feature audit {rel(d)}`")
     cmd_index(a)
     return 0
 
@@ -442,6 +441,128 @@ def audit_baseline(text, work, tier, risk, errs, warns):
     return rows
 
 
+AC_SECTION_RX = re.compile(r"^##\s+(?:\d+[a-z]?\.\s+)?Acceptance criteria\s*$", re.I)
+AC_CANONICAL = re.compile(r"^AC-\d+: \S")
+MIN_OUTCOME_WORDS = 3
+
+
+def section_by_rx(text, rx):
+    """(first line number, body) of the '## ' section whose heading matches rx."""
+    lines = text.splitlines()
+    for i, l in enumerate(lines):
+        if rx.match(l.strip()):
+            body = []
+            for m in lines[i + 1:]:
+                if m.startswith("## "):
+                    break
+                body.append(m)
+            return i + 2, "\n".join(body)
+    return None, None
+
+
+def linked_prd(text, spec_dir):
+    """The PRD this spec answers to: the header's `prd` field (a directory relative to
+    the git root), else <records>/prds/<feature>/. None when there is no PRD."""
+    m = re.search(r"^\|\s*prd\s*\|\s*(.+?)\s*\|\s*$", text, re.I | re.M)
+    if m and m.group(1).strip().lower() not in ("none", "-", "—", ""):
+        d = pathlib.Path(m.group(1).strip().strip("`"))
+        p = (d if d.is_absolute() else ROOT / d)
+        p = p if p.name == "prd.md" else p / "prd.md"
+        return p if p.exists() else ("missing", m.group(1).strip())
+    p = PRDS / spec_dir.name / "prd.md"
+    return p if p.exists() else None
+
+
+def prd_requirement_ids(prd_text):
+    return [r[0].strip() for r in rows_of(prd_text, "| # | requirement |")
+            if len(r) > 1 and r[1].strip() and "<!--" not in r[1]]
+
+
+def audit_acceptance(text, spec_dir, errs, warns):
+    """The acceptance-criteria rules. Returns the parsed criteria of §2b.
+
+    AC ids are the join key of the whole pipeline -- PRD requirement -> AC -> task in
+    plan.json -> tagged test -- so a missing link here is a gap every later tool
+    inherits silently."""
+    start, body = section_by_rx(text, AC_SECTION_RX)
+    if body is None:
+        errs.append("no '## 2b. Acceptance criteria' section — write each criterion as "
+                    "`AC-<n>: <observable outcome> (R<k>, S<k>)`")
+        return []
+    crits = parse_criteria(body)
+    if not crits:
+        errs.append("§2b has no acceptance criteria — at least one "
+                    "`AC-<n>: <observable outcome> (R<k>, S<k>)` line is required")
+        return []
+    for c in crits:
+        if not AC_CANONICAL.match(c["raw"]):
+            errs.append(f"{c['id']}: write it as `{c['id']}: <observable outcome> "
+                        f"(R<k>, S<k>)` on its own line (got {c['raw'].strip()[:50]!r})")
+    everywhere = parse_criteria(text)
+    counts = {}
+    for c in everywhere:
+        counts[c["id"]] = counts.get(c["id"], 0) + 1
+    dups = sorted((k for k, v in counts.items() if v > 1), key=lambda k: int(k[3:]))
+    if dups:
+        errs.append(f"acceptance criterion id(s) defined more than once: {', '.join(dups)} "
+                    f"— ids are unique and never renumbered; give a new criterion the "
+                    f"next unused number")
+    here = {c["id"] for c in crits}
+    outside = sorted({c["id"] for c in everywhere} - here, key=lambda k: int(k[3:]))
+    if outside:
+        errs.append(f"acceptance criteria defined outside §2b: {', '.join(outside)} — "
+                    f"keep them in one section so every tool reads the same list")
+    vague = [c["id"] for c in crits if "<!--" in c["text"]
+             or len(re.findall(r"[A-Za-z]{2,}", c["text"])) < MIN_OUTCOME_WORDS]
+    if vague:
+        errs.append(f"{len(vague)} acceptance criterion/criteria with no observable "
+                    f"outcome (first: {vague[0]}) — state what a test would see")
+
+    scope = [r[0].strip() for r in rows_of(text, "| # | in scope |")
+             if len(r) > 1 and r[0].strip() and r[1].strip() and "<!--" not in r[1]]
+    s_links = {s for c in crits for s in c["links"] if s.startswith("S")}
+    unmapped = [s for s in scope if s not in s_links]
+    if unmapped:
+        errs.append(f"in-scope item(s) with no acceptance criterion: {', '.join(unmapped)} "
+                    f"— add `(… {unmapped[0]})` to the AC that delivers it, or move it out "
+                    f"of scope")
+    unknown_s = sorted(s_links - set(scope))
+    if unknown_s and scope:
+        errs.append(f"acceptance criteria link in-scope row(s) that do not exist: "
+                    f"{', '.join(unknown_s)}")
+
+    prd = linked_prd(text, spec_dir)
+    if isinstance(prd, tuple):
+        errs.append(f"the header's prd field names {prd[1]!r}, which has no prd.md")
+    elif prd is not None:
+        req_ids = set(prd_requirement_ids(prd.read_text(errors="replace")))
+        nolink = [c["id"] for c in crits if not any(l.startswith("R") for l in c["links"])]
+        if nolink:
+            errs.append(f"{len(nolink)} acceptance criterion/criteria with no PRD "
+                        f"requirement link (first: {nolink[0]}) — {rel(prd)} exists, so "
+                        f"each AC names the R<k> it satisfies")
+        bad_r = sorted({l for c in crits for l in c["links"]
+                        if l.startswith("R") and l not in req_ids})
+        if bad_r:
+            errs.append(f"acceptance criteria link requirement(s) not in {rel(prd)}: "
+                        f"{', '.join(bad_r)}")
+    elif any(l.startswith("R") for c in crits for l in c["links"]):
+        warns.append("acceptance criteria name R<k> requirements but no PRD was found "
+                     "(header `prd` field, or prds/<feature>/prd.md) — the links are "
+                     "unchecked")
+
+    verif = rows_of(text, "| # | check |")
+    proven = {f"AC-{n}" for r in verif for cell in r[1:] for n in AC_TAG.findall(cell)}
+    unproven = [c["id"] for c in crits if c["id"] not in proven]
+    if verif and unproven:
+        errs.append(f"acceptance criteria no verification row covers: "
+                    f"{', '.join(unproven)} — list each in the `covers` column of §8")
+    ghost = sorted(proven - {c["id"] for c in everywhere}, key=lambda k: int(k[3:]))
+    if ghost:
+        errs.append(f"verification plan covers undefined criteria: {', '.join(ghost)}")
+    return crits
+
+
 def cmd_audit(a):
     d = pathlib.Path(a.dir)
     if not d.is_absolute():
@@ -559,6 +680,8 @@ def cmd_audit(a):
     if novcmd:
         errs.append(f"{len(novcmd)} verification row(s) with no command")
 
+    crits = audit_acceptance(text, d, errs, warns)
+
     if "sequenceDiagram" not in text:
         warns.append("no mermaid sequenceDiagram — design_drift.py has nothing to check")
 
@@ -580,6 +703,7 @@ def cmd_audit(a):
     print(f"  edge cases : {len(edges)} total, {len(covered)} covered, {len(todo)} TODO")
     print(f"  decisions  : {len(ds)} total, {len(defaults)} accepted as default")
     print(f"  questions  : {len(qs)}")
+    print(f"  acceptance : {len(crits)} criteria")
     for w in warns:
         print(f"  WARN  {w}")
     for e in errs:
@@ -621,10 +745,10 @@ def cmd_index(a):
     new_text = "\n".join(out)
     if dry:
         old_text = (SPECS / "INDEX.md").read_text() if (SPECS / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "specs/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(SPECS / "INDEX.md")))
         return 0
     (SPECS / "INDEX.md").write_text(new_text)
-    print(f"wrote specs/INDEX.md ({len(rows)} specs)")
+    print(f"wrote {rel(SPECS / 'INDEX.md')} ({len(rows)} specs)")
     return 0
 
 

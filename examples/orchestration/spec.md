@@ -5,9 +5,7 @@ Minimal spec used by the orchestration examples and tests. Acceptance criteria c
 
 ## Acceptance criteria
 
-| id | criterion |
-|---|---|
-| AC-1 | A member can add a tag to a photo in an album they can view. |
-| AC-2 | Tags are listed on the photo detail view, newest first. |
-| AC-3 | A tag can be removed by its author or an album admin. |
-| AC-4 | Adding, listing and removing tags are covered by automated tests. |
+AC-1: A member can add a tag to a photo in an album they can view.
+AC-2: Tags are listed on the photo detail view, newest first.
+AC-3: A tag can be removed by its author or an album admin.
+AC-4: Adding, listing and removing tags are covered by automated tests.

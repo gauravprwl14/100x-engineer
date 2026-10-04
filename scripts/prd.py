@@ -13,57 +13,44 @@ Design constraints, matching plan_feature.py:
   - Every required decision (constraints, the do-nothing option) ships a
     pre-answered default so the agent proceeds without interrogating the human.
   - Everything is a table with stable ids: reviewable, diffable, machine-checked.
-  - `audit` is mechanical and structural. `align` is mechanical and NAME-LEVEL —
-    it matches shared keywords between the PRD and the spec, not meaning. It says
-    so in its own output, loudly, because a false sense of semantic coverage is
-    worse than no check at all.
+  - `audit` is mechanical and structural. `align` is mechanical and ID-LEVEL: it
+    follows the links the documents declare — each spec acceptance criterion names
+    the requirement it satisfies, `AC-3: ... (R2, S1)`, and each success metric's
+    measurement method cites a verification row (`spec V4`) — rather than matching
+    shared words. A declared link proves the trace exists, not that the criterion
+    really satisfies the requirement; the output says so, because a false sense of
+    semantic coverage is worse than no check at all.
 
     prd.py new login --kind auth --tier small
-    prd.py audit prds/login
-    prd.py align prds/login specs/login
+    prd.py audit docs/engineering/prds/login
+    prd.py align docs/engineering/prds/login docs/engineering/specs/login
+
+Records live under the root `_paths.py` resolves (docs/engineering/ by default).
     prd.py index
 
 Python stdlib only.
 """
 import argparse, datetime, json, pathlib, re, sys
 import _mutation_guard as mg
+import _paths
 import baseline as bl
+from testplan import parse_criteria
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
 
-def project_root():
-    """Where the USER's prds/specs live: the git root of the current directory,
-    not the plugin's own directory.
-
-    Resolving these against the plugin root meant a consumer project's records were
-    written into the installed plugin — invisible to their repo and lost on upgrade.
-
-    Returns (root, in_git_repo); see plan_feature.py's project_root for why.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip()), True
-    return pathlib.Path.cwd(), False
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT, IN_GIT_REPO = project_root()
-PRDS = ROOT / "prds"
-SPECS = ROOT / "specs"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); records live
+# under RECORDS (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, IN_GIT_REPO = _paths.git_root()
+RECORDS, _ = _paths.resolve(ROOT)
+PRDS = RECORDS / "prds"
+SPECS = RECORDS / "specs"
 DATA = PLUGIN / "scripts" / "data"
 
 TIERS = json.loads((DATA / "scale_tiers.json").read_text())
@@ -192,7 +179,7 @@ def cmd_new(a):
     today = datetime.date.today().isoformat()
     stack = a.stack or f"<!-- one of: {STACK_HINT}, or a combination -->"
     stack_src = "user" if a.stack else "<!-- user|assumed|default|code -->"
-    spec_guess = (f"specs/{a.name}/spec.md (run `100x plan_feature new {a.name} "
+    spec_guess = (f"{rel(SPECS / a.name / 'spec.md')} (run `100x plan_feature new {a.name} "
                   f"--tier {tier_name} --risk {risk} --kind ... --work ...` for it)")
     ph = "<!-- -->"
     src = "<!-- user|assumed|default|code -->"
@@ -301,7 +288,7 @@ def cmd_new(a):
     if dry:
         old_text = (d / "prd.md").read_text() if (d / "prd.md").exists() else ""
         mg.print_diff_or_noop(old_text, new_text, str(rel(d / "prd.md")))
-        print(f"[dry-run] would also regenerate prds/INDEX.md; nothing written")
+        print(f"[dry-run] would also regenerate {rel(PRDS / 'INDEX.md')}; nothing written")
         return 0
 
     d.mkdir(parents=True, exist_ok=True)
@@ -312,7 +299,7 @@ def cmd_new(a):
     if TIER_ORDER.index(tier_name) < TIER_ORDER.index("growth"):
         print(f"  note: a PRD is optional below the growth tier; the spec alone may do")
     print("  1 option pre-answered (do-nothing), 3 risks seeded, rest to fill")
-    print(f"\nNext: fill every section, then `100x prd audit prds/{a.name}`")
+    print(f"\nNext: fill every section, then `100x prd audit {rel(d)}`")
     cmd_index(a)
     return 0
 
@@ -514,21 +501,6 @@ def cmd_audit(a):
 # align
 # ---------------------------------------------------------------------------
 
-STOPWORDS = {"should", "which", "their", "there", "these", "those", "about",
-             "where", "after", "before", "other", "using", "while", "every",
-             "first", "being", "still", "would", "could", "within", "without"}
-WORD_RX = re.compile(r"[a-z][a-z0-9_.\-]{4,}")
-
-
-def keywords(text):
-    """Lowercase words of 5+ chars, a handful of connective stopwords dropped.
-
-    Deliberately crude: this is what makes `align` NAME-LEVEL rather than semantic,
-    and both the skill and the tool's own output say so.
-    """
-    return {w for w in WORD_RX.findall((text or "").lower()) if w not in STOPWORDS}
-
-
 def spec_scope_items(spec_text):
     """The spec's '## 2. In scope / out of scope' dual table: in-scope column only."""
     out = []
@@ -536,6 +508,9 @@ def spec_scope_items(spec_text):
         if len(cells) >= 2 and cells[0].strip() and not is_placeholder(cells[1]):
             out.append((cells[0].strip(), cells[1].strip()))
     return out
+
+
+V_ID = re.compile(r"\bV\d+\b")
 
 
 def cmd_align(a):
@@ -553,9 +528,9 @@ def cmd_align(a):
         return 2
 
     print(f"PRD <-> spec alignment: {rel(prd_dir)} <-> {rel(spec_dir)}")
-    print("(keyword-level matching only — shared significant words, not meaning. A "
-          "real match phrased differently is missed; a coincidental shared word can "
-          "produce a false match. Treat findings as a lead for review, not proof.)")
+    print("(id-level tracing: the R<k> links on each acceptance criterion and the V<k> "
+          "rows each metric cites. A link proves the trace was declared, not that the "
+          "criterion really satisfies the requirement — review the wording.)")
     print()
 
     prd_text = prd_path.read_text()
@@ -588,50 +563,77 @@ def cmd_align(a):
         print(f"  OK    both declare '{prd_tier}'")
     print()
 
-    prd_kw = keywords(prd_text)
-    spec_kw = keywords(spec_text)
-
-    # 1. PRD requirements -> spec coverage
-    reqs = [(r[0], r[1]) for r in rows_of(prd_text, "| # | requirement |")
+    reqs = [(r[0].strip(), r[1]) for r in rows_of(prd_text, "| # | requirement |")
             if len(r) > 1 and not is_placeholder(r[1])]
+    req_ids = {rid for rid, _ in reqs}
+    crits = {}
+    for c in parse_criteria(spec_text):
+        crits.setdefault(c["id"], c)
+    if not crits:
+        print(f"{rel(spec_path)} defines no acceptance criteria — nothing traces to the "
+              f"PRD. Write each as `AC-<n>: <observable outcome> (R<k>, S<k>)` in the "
+              f"spec's '2b. Acceptance criteria' section.")
+        return 1
+
+    def r_links(c):
+        return [l for l in c["links"] if l.startswith("R")]
+
+    # 1. every PRD requirement is satisfied by at least one acceptance criterion
     missing_reqs = []
-    print("Requirements -> spec coverage:")
+    print("Requirements -> acceptance criteria:")
     if not reqs:
         print("  (none recorded)")
     for rid, text in reqs:
-        kw = keywords(text)
-        if kw & spec_kw:
-            print(f"  OK    {rid}  {text[:70]}")
+        by = [k for k, c in crits.items() if rid in r_links(c)]
+        if by:
+            print(f"  OK    {rid}  {text[:60]}  <- {', '.join(by)}")
         else:
-            missing_reqs.append((rid, text))
+            missing_reqs.append(rid)
             print(f"  MISS  {rid}  {text[:70]}")
-            print(f"        no shared keyword with {rel(spec_path)}")
+            print(f"        no acceptance criterion in {rel(spec_path)} names {rid}")
     print()
 
-    # 2. spec in-scope items -> PRD coverage (scope creep the PRD never asked for)
-    scope = spec_scope_items(spec_text)
+    # 2. every acceptance criterion traces back to a PRD requirement
+    orphan_acs = []
+    print("Acceptance criteria -> requirements:")
+    for k, c in crits.items():
+        links = r_links(c)
+        unknown = [l for l in links if l not in req_ids]
+        if links and not unknown:
+            print(f"  OK    {k}  -> {', '.join(links)}")
+        else:
+            orphan_acs.append(k)
+            why = (f"names {', '.join(unknown)}, not in {rel(prd_path)}" if unknown
+                   else "names no requirement — add `(R<k>)`, or it builds something "
+                        "the PRD never asked for")
+            print(f"  MISS  {k}  {c['text'][:60]}")
+            print(f"        {why}")
+    print()
+
+    # 3. spec in-scope items -> PRD, through the criteria that deliver them
     missing_scope = []
-    print("Spec in-scope -> PRD coverage:")
+    print("Spec in-scope -> PRD (via acceptance criteria):")
+    scope = spec_scope_items(spec_text)
     if not scope:
         print("  (spec has no in-scope table)")
     for sid, text in scope:
-        kw = keywords(text)
-        if kw & prd_kw:
-            print(f"  OK    {sid}  {text[:70]}")
+        by = [k for k, c in crits.items() if sid in c["links"]]
+        traced = [k for k in by if k not in orphan_acs]
+        if traced:
+            print(f"  OK    {sid}  {text[:60]}  <- {', '.join(traced)}")
         else:
-            missing_scope.append((sid, text))
+            missing_scope.append(sid)
             print(f"  MISS  {sid}  {text[:70]}")
-            print(f"        no shared keyword with {rel(prd_path)} — implements "
-                  f"nothing the PRD asked for")
+            print(f"        " + ("its criteria (" + ", ".join(by) + ") trace to no PRD "
+                                 "requirement" if by else "no acceptance criterion delivers it")
+                  + " — implements nothing the PRD asked for")
     print()
 
-    # 3. success metrics -> spec verification plan
-    metrics = [(m[0], m[1], m[4]) for m in rows_of(prd_text, "| # | metric |")
+    # 4. success metrics -> spec verification plan, by cited row id
+    metrics = [(m[0].strip(), m[1], m[4]) for m in rows_of(prd_text, "| # | metric |")
                if len(m) > 4 and not is_placeholder(m[1])]
     verif_rows = rows_of(spec_text, "| # | check |")
-    verif_kw = set()
-    for v in verif_rows:
-        verif_kw |= keywords(" ".join(v))
+    v_ids = {v[0].strip() for v in verif_rows if v}
     missing_metrics = []
     print("Success metrics -> spec verification plan:")
     if not metrics:
@@ -639,20 +641,24 @@ def cmd_align(a):
     if not verif_rows:
         print("  (spec has no verification plan table)")
     for mid, name, method in metrics:
-        kw = keywords(method) or keywords(name)
-        if kw & verif_kw:
-            print(f"  OK    {mid}  {name[:60]}")
+        cited = [v for v in V_ID.findall(method) if v in v_ids]
+        named = [v[0].strip() for v in verif_rows
+                 if any(re.search(rf"\b{re.escape(mid)}\b", c) for c in v[1:])]
+        if cited or named:
+            print(f"  OK    {mid}  {name[:50]}  <- {', '.join(sorted(set(cited + named)))}")
         else:
-            missing_metrics.append((mid, name))
+            missing_metrics.append(mid)
             print(f"  MISS  {mid}  {name[:60]}")
-            print(f"        measurement method has no counterpart in the spec's "
-                  f"verification plan")
+            print(f"        its measurement method cites no verification row of the spec "
+                  f"(e.g. `spec V4`), and no row names {mid}")
     print()
 
-    total = len(missing_reqs) + len(missing_scope) + len(missing_metrics) + (1 if tier_mismatch else 0)
+    total = (len(missing_reqs) + len(missing_scope) + len(missing_metrics)
+             + len(orphan_acs) + (1 if tier_mismatch else 0))
     print(f"{len(missing_reqs)} requirement(s) with no spec coverage, "
           f"{len(missing_scope)} spec item(s) implementing nothing in the PRD, "
-          f"{len(missing_metrics)} metric(s) with no verification step"
+          f"{len(missing_metrics)} metric(s) with no verification step, "
+          f"{len(orphan_acs)} acceptance criterion/criteria tracing to no requirement"
           f"{', scale tier mismatch' if tier_mismatch else ''}")
     return 1 if total else 0
 
@@ -693,10 +699,10 @@ def cmd_index(a):
     new_text = "\n".join(out)
     if dry:
         old_text = (PRDS / "INDEX.md").read_text() if (PRDS / "INDEX.md").exists() else ""
-        mg.print_diff_or_noop(old_text, new_text, "prds/INDEX.md")
+        mg.print_diff_or_noop(old_text, new_text, str(rel(PRDS / "INDEX.md")))
         return 0
     (PRDS / "INDEX.md").write_text(new_text)
-    print(f"wrote prds/INDEX.md ({len(rows)} PRDs)")
+    print(f"wrote {rel(PRDS / 'INDEX.md')} ({len(rows)} PRDs)")
     return 0
 
 

@@ -64,21 +64,27 @@ echo x > f.txt; git add -A; git commit -qm init
 python3 "$ROOT/scripts/plan_feature.py" new notier --kind crud --work api >$OUT/pt.out 2>&1
 rc_is 2 $? "plan: new without --tier is refused"
 has "tier is required: one of"
-[ ! -d "$CONS/specs/notier" ] && ok "plan: nothing written without a tier" || bad "plan: wrote a spec with no tier"
+[ ! -d "$CONS/docs/engineering/specs/notier" ] && ok "plan: nothing written without a tier" || bad "plan: wrote a spec with no tier"
 
 python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud --tier small --work api >$OUT/pt.out 2>&1
-[ -f "$CONS/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
+[ -f "$CONS/docs/engineering/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
   || bad "plan: spec not created in the consumer repo"
 [ ! -d "$ROOT/specs/thing" ] && ok "plan: did NOT write into the plugin dir" \
   || bad "plan: leaked a spec into the plugin dir"
 
-python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/thing" >$OUT/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/docs/engineering/specs/thing" >$OUT/pt.out 2>&1
 rc_is 1 $? "plan: fresh spec fails audit"
 has "still TODO"
 has "no recommendation"
 
 has "still contain a template placeholder"
 has "§0b implicit requirement(s) still TODO"
+grep -q "^## 2b. Acceptance criteria" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && grep -q "^AC-1: <!-- observable outcome --> (R1, S1)" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && ok "plan: new spec scaffolds the acceptance-criteria section" || bad "plan: no AC section scaffolded"
+grep -q "^| # | check | command | gate | covers |" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && ok "plan: verification plan has a covers column" || bad "plan: no covers column"
+[ ! -e "$CONS/specs" ] && ok "plan: nothing written at the repo top level" || bad "plan: wrote specs/ at the top level"
 
 python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind --tier small >$OUT/pt.out 2>&1
 rc_is 2 $? "plan: unknown kind rejected"
@@ -88,21 +94,21 @@ rc_is 2 $? "plan: unknown work type rejected"
 # risk floor: auth implies elevated even when --risk none is passed
 python3 "$ROOT/scripts/plan_feature.py" new authy --kind auth --tier small --work api --risk none >$OUT/pt.out 2>&1
 has "risk: elevated (raised from none"
-grep -q "^| risk | elevated |" "$CONS/specs/authy/spec.md" && ok "plan: raised risk written to §0" \
+grep -q "^| risk | elevated |" "$CONS/docs/engineering/specs/authy/spec.md" && ok "plan: raised risk written to §0" \
   || bad "plan: raised risk not written to §0"
-grep -q "^| all.pii-out-of-logs |" "$CONS/specs/authy/spec.md" && ok "plan: elevated risk seeds PII row" \
+grep -q "^| all.pii-out-of-logs |" "$CONS/docs/engineering/specs/authy/spec.md" && ok "plan: elevated risk seeds PII row" \
   || bad "plan: elevated risk did not seed PII row"
 
 # regulated small app: compliance rows yes, capacity rows no
 python3 "$ROOT/scripts/plan_feature.py" new reg --kind crud --tier small --work api,iac --risk regulated >$OUT/pt.out 2>&1
-grep -q "^| all.audit-trail |" "$CONS/specs/reg/spec.md" && ok "plan: regulated seeds audit trail" \
+grep -q "^| all.audit-trail |" "$CONS/docs/engineering/specs/reg/spec.md" && ok "plan: regulated seeds audit trail" \
   || bad "plan: regulated did not seed audit trail"
-grep -qE "^\| iac\.multi-(region|az) \|" "$CONS/specs/reg/spec.md" \
+grep -qE "^\| iac\.multi-(region|az) \|" "$CONS/docs/engineering/specs/reg/spec.md" \
   && bad "plan: regulated small app forced into multi-AZ/region" || ok "plan: regulated small app has no multi-AZ/region"
 
 # public-api alias pre-answers the audience question
 python3 "$ROOT/scripts/plan_feature.py" new pub --kind crud --tier prototype --work public-api >$OUT/pt.out 2>&1
-grep -q "^| ask.api-audience | .* | ASK(public" "$CONS/specs/pub/spec.md" && ok "plan: public-api answers ask.api-audience" \
+grep -q "^| ask.api-audience | .* | ASK(public" "$CONS/docs/engineering/specs/pub/spec.md" && ok "plan: public-api answers ask.api-audience" \
   || bad "plan: public-api did not answer ask.api-audience"
 
 # ---------- audit rules, one defect at a time from the passing worked spec ----------
@@ -116,7 +122,9 @@ if old not in t:
 p.write_text(t.replace(old, new, 1))
 PY2
 }
-W="$CONS/specs/w"; mkdir -p "$W"
+W="$CONS/docs/engineering/specs/w"; mkdir -p "$W"
+# the worked spec's header links its PRD at examples/login (relative to the git root)
+mkdir -p "$CONS/examples/login"; cp "$ROOT/examples/login/prd.md" "$CONS/examples/login/prd.md"
 fresh() { cp "$ROOT/specs/login/spec.md" "$W/spec.md"; }
 audit_w() { python3 "$ROOT/scripts/plan_feature.py" audit "$W" >$OUT/pt.out 2>&1; }
 
@@ -217,6 +225,64 @@ has "'## 14. Cost' is blank"
 fresh; swap "$W/spec.md" "## 11. Privacy" "## 11. Notes"
 audit_w; rc_is 1 $? "audit: missing design-doc section rejected"
 has "missing section '## 11. Privacy'"
+
+# ---------- acceptance criteria: the join key PRD -> AC -> plan.json -> test ----------
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"## 2b\. Acceptance criteria\n.*?(?=\n## 3\.)", "", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: missing acceptance-criteria section rejected"
+has "no '## 2b. Acceptance criteria' section"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"^AC-\d+: .*\n", "", t, flags=re.M)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: section with zero ACs rejected"
+has "§2b has no acceptance criteria"
+
+fresh; swap "$W/spec.md" "AC-2: A wrong password" "AC-1: A wrong password"
+audit_w; rc_is 1 $? "audit: duplicate AC id rejected"
+has "defined more than once: AC-1"
+
+fresh; swap "$W/spec.md" "AC-6: A user can sign in with Google through OAuth, and a callback with a replayed \`state\` or a missing PKCE verifier is rejected. (R5, S5)" "AC-6: OAuth works. (R5, S5)"
+audit_w; rc_is 1 $? "audit: AC with no observable outcome rejected"
+has "no observable outcome (first: AC-6)"
+
+fresh; swap "$W/spec.md" "is rejected. (R5, S5)" "is rejected. (R5)"
+audit_w; rc_is 1 $? "audit: in-scope item with no AC rejected"
+has "in-scope item(s) with no acceptance criterion: S5"
+
+fresh; swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 1 $? "audit: AC without a requirement link rejected when a PRD exists"
+has "no PRD requirement link (first: AC-5)"
+
+fresh; swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (R9, S4)"
+audit_w; rc_is 1 $? "audit: AC linking a requirement the PRD lacks rejected"
+has "link requirement(s) not in examples/login/prd.md: R9"
+
+fresh; swap "$W/spec.md" "| prd | examples/login |" "| prd | none |"
+swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 0 $? "audit: no PRD -> requirement links are not required (no false positive)"
+grep -q "no PRD was found" $OUT/pt.out && ok "audit: warns that R links are unchecked without a PRD" \
+  || bad "audit: silent about unchecked R links"
+
+fresh; swap "$W/spec.md" "| pre-PR | AC-1, AC-2, AC-3, AC-4, AC-5 |" "| pre-PR | AC-1, AC-2, AC-3, AC-4 |"
+swap "$W/spec.md" "| AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 |" "| AC-1, AC-2, AC-3, AC-4, AC-6 |"
+audit_w; rc_is 1 $? "audit: AC no verification row covers rejected"
+has "no verification row covers: AC-5"
+
+fresh; swap "$W/spec.md" "| pre-commit | AC-2, AC-6 |" "| pre-commit | AC-2, AC-6, AC-9 |"
+audit_w; rc_is 1 $? "audit: verification row covering an undefined AC rejected"
+has "covers undefined criteria: AC-9"
+
+fresh; swap "$W/spec.md" "AC-3: Logout" "- **AC-3** Logout"
+audit_w; rc_is 1 $? "audit: non-canonical AC shape in §2b rejected"
+has "write it as \`AC-3: <observable outcome>"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
