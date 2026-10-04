@@ -40,11 +40,36 @@ reset_diff
 
 cat > src/ok_role.tsx <<'EOF'
 export function Row({ onSelect }) {
-  return <div role="button" tabIndex={0} onClick={onSelect}>click me</div>;
+  return <div role="button" tabIndex={0} onClick={onSelect} onKeyDown={onKey}>click me</div>;
 }
 EOF
-expect 0 "onclick-non-interactive: div+onClick+role+tabIndex is clean" --only onclick-non-interactive --strict
+expect 0 "onclick-non-interactive: div+onClick+role+tabIndex+key handler is clean" --only onclick-non-interactive --strict
 nothas "no role/tabIndex"
+nothas "not keyboard-operable"
+reset_diff
+
+for tag in section article p img td li; do
+  printf 'export function R({ f }) {\n  return <%s onClick={f}>x</%s>;\n}\n' "$tag" "$tag" > "src/bad_$tag.tsx"
+  expect 1 "onclick-non-interactive: <$tag onClick> detected" --only onclick-non-interactive
+  has "<$tag> has onClick"
+  reset_diff
+done
+
+printf 'export function R({ f }) {\n  return <div role="button" onClick={f}>x</div>;\n}\n' > src/bad_role1.tsx
+printf 'export function R({ f }) {\n  return <span role="button" tabIndex={0} onClick={f}>x</span>;\n}\n' > src/bad_role2.tsx
+printf 'export function R({ f }) {\n  return <div role="link" onKeyDown={f}>x</div>;\n}\n' > src/bad_role3.tsx
+expect 1 "onclick-non-interactive: widget role missing tabIndex or key handler" --only onclick-non-interactive
+has 'bad_role1.tsx:2: <div role="button"> without tabIndex or a key handler'
+has 'bad_role2.tsx:2: <span role="button"> without a key handler'
+has 'bad_role3.tsx:2: <div role="link"> without tabIndex --'
+reset_diff
+
+cat > src/ok_label.tsx <<'EOF'
+export function R({ f }) {
+  return (<><label onClick={f}>Name</label><div role="presentation">x</div><div role={kind} onClick={f}>y</div></>);
+}
+EOF
+expect 0 "onclick-non-interactive: <label>, presentation role, dynamic role are clean" --only onclick-non-interactive --strict
 reset_diff
 
 cat > src/ok_button.tsx <<'EOF'
@@ -249,6 +274,80 @@ cat > src/ok_anim_zero.css <<'EOF'
 EOF
 expect 0 "animation-no-reduced-motion: zero-duration transition is clean" --only animation-no-reduced-motion --strict
 nothas "prefers-reduced-motion guard"
+reset_diff
+
+# =========================================================================
+# Tailwind: outline-none without focus-visible:, animate-* without motion-*
+# =========================================================================
+cat > src/bad_tw_outline.tsx <<'EOF'
+export function A() {
+  return (<>
+    <button className="px-2 outline-none">a</button>
+    <input aria-label="q" className="focus:outline-none border" />
+  </>);
+}
+EOF
+expect 1 "outline-none-no-focus-visible: Tailwind outline-none / focus:outline-none" --only outline-none-no-focus-visible --strict
+has 'bad_tw_outline.tsx:3: `outline-none`'
+has 'bad_tw_outline.tsx:4: `focus:outline-none`'
+reset_diff
+
+cat > src/ok_tw_outline.tsx <<'EOF'
+export function A() {
+  return (<>
+    <button className="outline-none focus-visible:ring-2 focus-visible:ring-blue-500">a</button>
+    <input aria-label="q" className={`focus:outline-none focus:ring-2`} />
+    <div className="outline-dashed">x</div>
+  </>);
+}
+EOF
+expect 0 "outline-none-no-focus-visible: Tailwind replacement indicator is clean" --only outline-none-no-focus-visible --strict
+reset_diff
+
+cat > src/bad_tw_anim.tsx <<'EOF'
+export function A() {
+  return <span className="h-4 w-4 animate-spin">.</span>;
+}
+EOF
+expect 1 "animation-no-reduced-motion: Tailwind animate-spin unguarded" --only animation-no-reduced-motion --strict
+has 'bad_tw_anim.tsx:2: `animate-spin`'
+reset_diff
+
+cat > src/ok_tw_anim.tsx <<'EOF'
+export function A() {
+  return (<>
+    <span className="motion-safe:animate-spin">.</span>
+    <span className="animate-pulse motion-reduce:animate-none">.</span>
+    <span className="animate-none">.</span>
+  </>);
+}
+EOF
+expect 0 "animation-no-reduced-motion: motion-safe:/motion-reduce: handling is clean" --only animation-no-reduced-motion --strict
+reset_diff
+
+# =========================================================================
+# --strict changes the exit code, never the reported severity
+# =========================================================================
+cat > src/mixed.tsx <<'EOF'
+export function A({ f }) {
+  return (<>
+    <div onClick={f}>x</div>
+    <div tabIndex={3}>y</div>
+    <input autoFocus aria-label="q" />
+  </>);
+}
+EOF
+expect 1 "--strict: advisory findings fail the run" --strict
+has "1 blocking, 2 advisory"
+has "(--strict: advisory findings fail)"
+has "\[ADVISORY\] positive-tabindex"
+expect 1 "without --strict: same summary, fails on the blocking finding"
+has "1 blocking, 2 advisory"
+reset_diff
+
+printf 'export function A() { return <div tabIndex={3}>x</div>; }\n' > src/adv_only.tsx
+expect 1 "--strict: an advisory-only diff fails" --only positive-tabindex --strict
+has "0 blocking, 1 advisory"
 reset_diff
 
 # =========================================================================
