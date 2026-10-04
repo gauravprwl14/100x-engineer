@@ -807,6 +807,8 @@ def claim_lines(body):
             out.append(s)
         elif s.startswith("|") and not re.match(r"^\|[\s:|-]+\|?$", s):
             out.append(s)
+        elif s and l[:1] in (" ", "\t") and out and not out[-1].startswith("|"):
+            out[-1] += " " + s  # a wrapped bullet continues on an indented line
     return out
 
 

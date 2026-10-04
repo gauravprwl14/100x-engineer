@@ -345,6 +345,8 @@ has "need the top 3"
 sed 's#src/photos/photos.controller.ts:6#the photos controller#' "$NOTE" > "$TMP/n4.md"
 python3 "$RM" --lint-note "$TMP/n4.md" >$OUT/rm.out 2>&1
 rc_is 1 $? "lint-note: rejects an entry point with no file:line"
+python3 "$RM" --lint-note "$ROOT/skills/codebase-comprehension/references/architecture-template.md" >$OUT/rm.out 2>&1
+rc_is 0 $? "lint-note: the skill's own template passes (template and lint agree)"
 sed '/^## Open questions/,$d' "$NOTE" > "$TMP/n5.md"
 python3 "$RM" --lint-note "$TMP/n5.md" >$OUT/rm.out 2>&1
 rc_is 1 $? "lint-note: rejects a missing section"
