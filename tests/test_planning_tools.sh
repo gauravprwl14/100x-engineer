@@ -355,6 +355,27 @@ rc_is 0 $? "decide: a higher score that FAILS fit does not outrank the chosen op
 adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 9 2 2)},{\"name\":\"cron\",\"fit\":\"fail\",\"chosen\":false,\"why_not\":\"slow\"}]"
 rc_is 1 $? "decide: a score outside 1-5 rejected"
 has "integer 1-5"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\"},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)},{\"name\":\"NATS\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"new\",$(sc 4 4 4 4 4)}]"
+rc_is 1 $? "decide: an unscored chosen option among scored alternatives rejected"
+has "has no scores while 2 fit-passing options are scored"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 5 5 5 5 5)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 2 2 2 2 2)},{\"name\":\"NATS\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"new\",$(sc 4 4 4 4 4)}]"
+rc_is 0 $? "decide: a scored top choice among scored alternatives passes"
+no "has no scores"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\"},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 0 $? "decide: one scored alternative does not force a score on the choice"
+adr "[{\"name\":\"Queue\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Queue\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 1 $? "decide: duplicate option names do not hide a higher score"
+has "is not the top fit-passing score"
+adr '["SQS",{"name":"cron","fit":"pass","chosen":true,"why":"simple"}]'
+rc_is 1 $? "decide: a non-object option is a lint error"
+has "option #1 is str"
+no "Traceback"
+python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
+no "Traceback"
+adr '"SQS"'
+rc_is 1 $? "decide: options that are not a list are a lint error"
+has "options must be a list"
+no "Traceback"
 rm -f "$CONS/docs/engineering/decisions/ADR-0010-queue.md"
 python3 -c "import sys; sys.path.insert(0, '$ROOT/scripts'); import decide, prd; sys.exit(0 if prd.WEIGHTS is decide.WEIGHTS else 1)" >/dev/null 2>&1
 rc_is 0 $? "decide and prd score with one shared weight table"
