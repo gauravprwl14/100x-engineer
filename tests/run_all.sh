@@ -28,6 +28,17 @@ tail_status 14 python3 scripts/run_evals.py || rc=1
 echo
 echo "=== skill contract lint ==="
 python3 scripts/lint_skills.py || rc=1
+# lint_skills must find this plugin's skills from any directory, and must refuse
+# (exit 2) rather than pass when there is nothing to lint.
+LS_TMP="$(mktemp -d)"
+( cd "$LS_TMP" && python3 "$ROOT/scripts/lint_skills.py" >/dev/null 2>&1 ) \
+  || { echo "lint_skills self-test: failed when run outside the plugin root"; rc=1; }
+python3 scripts/lint_skills.py --root "$LS_TMP" >/dev/null 2>&1
+[ $? -eq 2 ] || { echo "lint_skills self-test: no skills/ dir did not exit 2"; rc=1; }
+mkdir -p "$LS_TMP/skills"
+python3 scripts/lint_skills.py --root "$LS_TMP" >/dev/null 2>&1
+[ $? -eq 2 ] || { echo "lint_skills self-test: empty skills/ dir did not exit 2"; rc=1; }
+rm -rf "$LS_TMP"
 
 echo "=== term index freshness ==="
 python3 scripts/check_index.py --check-terms >/dev/null || { echo "TERMS.md is stale: run python3 scripts/check_index.py --gen-terms"; rc=1; }

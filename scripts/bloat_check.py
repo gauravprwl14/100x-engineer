@@ -169,6 +169,37 @@ def check_commented_code(added, mod, base):
     return out
 
 
+def blank_strings(line):
+    """The line with string-literal contents blanked, up to its first comment.
+
+    `status = 'TODO'` is data, not a note to anybody; a comment is kept verbatim
+    because an apostrophe in prose ("don't") is not a string delimiter there.
+    """
+    out, quote, i, n = [], None, 0, len(line)
+    while i < n:
+        c = line[i]
+        if quote:
+            if c == "\\":
+                out.append("  ")
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+                out.append(c)
+            else:
+                out.append(" ")
+        elif c in "'\"`":
+            quote = c
+            out.append(c)
+        elif c == "#" or line.startswith("//", i) or line.startswith("/*", i):
+            out.append(line[i:])
+            break
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def check_bare_todo(added, mod, base):
     """A TODO with no issue reference is a note to nobody."""
     out = []
@@ -177,7 +208,7 @@ def check_bare_todo(added, mod, base):
         if not p.endswith(tuple(CODE_EXT)):
             continue
         for line in added_lines(p, base):
-            if RX.search(line):
+            if RX.search(blank_strings(line)):
                 out.append((p, f"TODO/FIXME with no issue reference: {line.strip()[:60]}"))
                 break
     return out

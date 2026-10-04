@@ -49,6 +49,12 @@ Grounded thresholds (full citations in reviewers/_code-craft.md):
                       config flags a literal boolean at a call site.
   bare except/catch   BLOCKING  -- mechanical, near-zero legitimate use,
                       same bar as bloat_check.py's assertionless-test check.
+                      Waiver: a handler that must swallow on purpose (a hook
+                      that fails open so it never blocks the session) carries
+                      `# fail-open: <reason>` (`// fail-open: <reason>` in JS)
+                      on its except/catch line or the first line of its body.
+                      The reason is required; a bare `# fail-open:` waives
+                      nothing.
 
     craft_check.py                          # all checks vs HEAD
     craft_check.py --base origin/main
@@ -448,11 +454,20 @@ def check_boolean_flag_arg(added, mod, base):
     return out
 
 
+FAIL_OPEN_RX = re.compile(r"(?:#|//)\s*fail-open:\s*\S")
+
+
+def fail_open_waived(lines, ln):
+    """An explicit `fail-open: <reason>` comment on line ln or the line after it."""
+    return any(FAIL_OPEN_RX.search(lines[i]) for i in (ln - 1, ln) if 0 <= i < len(lines))
+
+
 def check_bare_except(added, mod, base):
     out = []
     for p in added + mod:
         touched = touched_lines(p, base)
         if is_py(p):
+            src_lines = (read(p) or "").splitlines()
             tree, _ = parse_py(p)
             if tree is None:
                 continue
@@ -468,7 +483,7 @@ def check_bare_except(added, mod, base):
                 only_pass = len(stmts) == 1 and isinstance(stmts[0], ast.Pass)
                 only_log = len(stmts) == 1 and isinstance(stmts[0], ast.Expr) and isinstance(stmts[0].value, ast.Call) \
                     and LOGGING_NAME_RX.search(ast.dump(stmts[0].value.func))
-                if only_pass or only_log:
+                if (only_pass or only_log) and not fail_open_waived(src_lines, node.lineno):
                     out.append((f"{p}:{node.lineno}", "except block swallows the error (no raise) -- "
                                                        "empty or log-only, same failure mode as bloat_check's assertionless test"))
         elif is_js(p):
@@ -487,7 +502,7 @@ def check_bare_except(added, mod, base):
                 stmts = [s for s in body.split(";") if s.strip()]
                 is_empty = body == ""
                 is_log_only = len(stmts) <= 1 and bool(LOGGING_NAME_RX.search(body)) and body != ""
-                if is_empty or is_log_only:
+                if (is_empty or is_log_only) and not fail_open_waived(text.splitlines(), ln):
                     out.append((f"{p}:{ln}", "catch block swallows the error (no throw) -- "
                                               "empty or log-only, same failure mode as bloat_check's assertionless test"))
     return out
