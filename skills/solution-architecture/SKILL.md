@@ -185,9 +185,10 @@ This skill rejects:
 - **A rewrite recommended on "the code is old" alone** — rule 9's three criteria
   are conjunctive on purpose; a rewrite that only clears one or two is a refactor
   wearing a bigger word.
-- **A PRD nobody checked against its spec** — `align` catches a requirement like
-  "supports hardware security keys" that never made it into the spec's in-scope
-  table, and a spec route that implements something the PRD never asked for.
+- **A PRD nobody checked against its spec** — `align` lists PRD requirements
+  that share no significant word with the spec, and spec in-scope items that
+  share none with the PRD. It is a lead for review: one shared word is enough to
+  report a requirement as covered when the spec never implements it.
 - **A recommendation described only in prose**, with no diagram a reviewer who
   wasn't in the room can check the options table against.
 
