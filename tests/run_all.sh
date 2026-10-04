@@ -9,8 +9,22 @@ for t in tests/test_*.sh; do
   bash "$t" || rc=1
   echo
 done
+# Prints the last <n> lines of a command's output (all of it on failure) and
+# returns the command's own exit status. A bare `cmd | tail` returns tail's
+# status, which silently passed an eval regression.
+tail_status() {
+  local n="$1"; shift
+  local out status
+  out="$("$@" 2>&1)"; status=$?
+  if [ "$status" -eq 0 ]; then printf '%s\n' "$out" | tail -n "$n"
+  else printf '%s\n' "$out"; echo "exit status $status: $*"; fi
+  return "$status"
+}
+if tail_status 1 python3 -c 'import sys; sys.exit(3)' >/dev/null; then
+  echo "run_all.sh self-test: tail_status swallowed a non-zero exit"; rc=1
+fi
 echo "=== seeded-defect evals ==="
-python3 scripts/run_evals.py | tail -14 || rc=1
+tail_status 14 python3 scripts/run_evals.py || rc=1
 echo
 echo "=== skill contract lint ==="
 python3 scripts/lint_skills.py || rc=1

@@ -12,7 +12,9 @@ so it is runnable on a large existing codebase.
 
 Exit 1 if any enabled check finds a violation.
 """
-import argparse, ast, os, re, subprocess, sys, pathlib, collections
+import argparse, ast, io, os, re, subprocess, sys, pathlib, collections, tokenize
+
+from _mutation_guard import enter_git_root
 
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
@@ -58,6 +60,52 @@ def added_lines(path, base):
     return [l[1:] for l in out.splitlines() if l.startswith("+") and not l.startswith("+++")]
 
 
+def strip_py_comments(src):
+    """Blank out `#` comments, keeping line and column positions, so a commented-out
+    `assert` does not count as one. Falls back to the source if it won't tokenize."""
+    lines = src.splitlines(keepends=True)
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(src).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return src
+    for t in toks:
+        if t.type == tokenize.COMMENT:
+            (row, col), (_, ecol) = t.start, t.end
+            ln = lines[row - 1]
+            lines[row - 1] = ln[:col] + " " * (ecol - col) + ln[ecol:]
+    return "".join(lines)
+
+
+def strip_c_comments(src):
+    """Blank out // and /* */ comments outside string literals, keeping newlines so
+    line numbers survive. A URL inside a string is not a comment."""
+    out, i, n, quote = [], 0, len(src), None
+    while i < n:
+        c = src[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(src[i + 1]); i += 2; continue
+            # '...' and "..." cannot span lines, so an apostrophe in JSX text
+            # stops at the newline instead of swallowing the rest of the file.
+            if c == quote or (c == "\n" and quote != "`"):
+                quote = None
+            i += 1
+        elif c in "\"'`":
+            quote = c; out.append(c); i += 1
+        elif src.startswith("//", i):
+            j = src.find("\n", i)
+            j = n if j == -1 else j
+            out.append(" " * (j - i)); i = j
+        elif src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            out.append("".join(ch if ch == "\n" else " " for ch in src[i:j])); i = j
+        else:
+            out.append(c); i += 1
+    return "".join(out)
+
+
 # ---------------- checks ----------------
 
 def check_new_docs(added, mod, base):
@@ -80,6 +128,7 @@ def check_assertionless(added, mod, base):
             src = pathlib.Path(p).read_text(errors="replace")
         except OSError:
             continue
+        src = strip_py_comments(src) if p.endswith(".py") else strip_c_comments(src)
         if p.endswith(".py"):
             try:
                 tree = ast.parse(src)
@@ -114,8 +163,9 @@ def check_commented_code(added, mod, base):
     """Commented-out code added in a diff is dead on arrival."""
     out = []
     CODE_LIKE = re.compile(
-        r"^\s*(#|//)\s*(if|for|while|return|def |func |class |const |let |var |import |"
-        r"from |print\(|console\.|await |async |try:|except|\w+\s*=\s*\w|\w+\([^)]*\)\s*;?)\s")
+        r"^\s*(#|//)\s*(?:(?:if|for|while|return|except)\b|def |func |class |const |let |"
+        r"var |import |from |print\(|console\.|await |async |try:|"
+        r"\w+(?:\.\w+)*\s*=\s*[\w\[{(\"']|\w+(?:\.\w+)*\([^)]*\)\s*;?\s*$)")
     for p in added + mod:
         if not p.endswith(tuple(CODE_EXT)):
             continue
@@ -171,7 +221,9 @@ def check_file_creation_ratio(added, mod, base):
     """Many new files alongside few edits is the signature of an agent rebuilding
     rather than integrating."""
     a = [p for p in added if p.endswith(tuple(CODE_EXT)) and not TEST_RX.search(p)]
-    m = [p for p in mod if p.endswith(tuple(CODE_EXT))]
+    # Tests are excluded from both sides: new ones already were, so counting edited
+    # ones let any diff that touched an existing spec dilute the ratio.
+    m = [p for p in mod if p.endswith(tuple(CODE_EXT)) and not TEST_RX.search(p)]
     if len(a) >= 3 and len(a) > 2 * max(len(m), 1):
         return [("(diff)", f"{len(a)} new code files vs {len(m)} edited - "
                            f"prefer editing existing modules over creating new ones")]
@@ -241,6 +293,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("bloat_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
     if not added and not mod:
         print("bloat_check: no changes to inspect")

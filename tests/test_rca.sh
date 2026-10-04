@@ -3,13 +3,13 @@
 # Asserts detection AND absence of false positives, same shape as test_planning_tools.sh.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %-54s\n' "$1"; }
-bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s /tmp/rca.out ] && sed 's/^/       /' /tmp/rca.out | head -8; }
+bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s $OUT/rca.out ] && sed 's/^/       /' $OUT/rca.out | head -8; }
 rc_is(){ [ "$2" -eq "$1" ] && ok "$3" || bad "$3 (exit exp=$1 got=$2)"; }
-has()  { grep -q "$1" /tmp/rca.out && ok "reports: $1" || bad "does NOT report: $1"; }
-no()   { grep -q "$1" /tmp/rca.out && bad "false positive: $1" || ok "no false positive: $1"; }
+has()  { grep -q "$1" $OUT/rca.out && ok "reports: $1" || bad "does NOT report: $1"; }
+no()   { grep -q "$1" $OUT/rca.out && bad "false positive: $1" || ok "no false positive: $1"; }
 
 # rca.py must write into the CONSUMER repo, never into the plugin dir.
 CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
@@ -18,7 +18,7 @@ echo x > f.txt; git add -A; git commit -qm init
 
 # ---------- new: scaffold a fresh record ----------
 python3 "$ROOT/scripts/rca.py" new "Sessions dropped after deploy" --affects "src/auth/**" --severity high \
-  >/tmp/rca.out 2>&1
+  >$OUT/rca.out 2>&1
 rc_is 0 $? "new: exits 0"
 RECFILE=$(ls "$CONS"/rca/RCA-0001-*.md 2>/dev/null | head -1)
 [ -n "$RECFILE" ] && ok "new: record created in the consumer repo" || bad "new: record not created"
@@ -26,7 +26,7 @@ RECFILE=$(ls "$CONS"/rca/RCA-0001-*.md 2>/dev/null | head -1)
   || bad "new: leaked an rca/ dir into the plugin dir"
 
 # ---------- lint: a fresh (unfilled) record fails ----------
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: fresh record fails"
 has "no reproduction recorded"
 has "no root cause recorded"
@@ -95,61 +95,61 @@ PY
 }
 
 fill_complete
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 0 $? "lint: a complete record passes"
 
 # each individual rule rejects its own violation, with everything else complete
 fill_complete; set_field 'meta["root_cause"] = meta["symptom"]'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects root cause identical to symptom"
 has "identical to the symptom"
 
 fill_complete; set_field 'meta["regression_test"] = ""'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects missing regression test"
 has "no regression test reference"
 
 fill_complete; set_field 'meta["reproduction"]["command"] = ""'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects missing reproduction"
 has "no reproduction recorded"
 
 fill_complete; set_field 'meta["hypotheses"] = []'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects no hypotheses at all"
 has "no hypotheses recorded"
 
 fill_complete; set_field 'meta["hypotheses"][0]["falsify_with"] = ""; meta["hypotheses"][1]["falsify_with"] = ""'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects hypotheses with no falsifying evidence"
 has "no hypothesis states falsifying evidence"
 
 fill_complete; set_field 'meta["timeline"] = []'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects missing timeline"
 has "no timeline recorded"
 
 fill_complete; set_field 'meta["five_whys"] = meta["five_whys"][:1]'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects five-whys with fewer than 2 levels"
 has "five-whys has 1 real level"
 
 fill_complete; set_field 'meta["contributing_factors"] = []'
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 1 $? "lint: rejects empty contributing-factors section"
 has "contributing-factors section is empty"
 
 # restore a fully complete record for the rest of the suite
 fill_complete
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 0 $? "lint: complete record passes again after restore"
 
 # a complete record with no decision link still passes lint, but warns
-grep -q "no decision link recorded" /tmp/rca.out && ok "lint: warns (not errors) on no decision link" \
+grep -q "no decision link recorded" $OUT/rca.out && ok "lint: warns (not errors) on no decision link" \
   || bad "lint: missing the no-decision-link warning"
 
 # ---------- index ----------
-python3 "$ROOT/scripts/rca.py" index >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" index >$OUT/rca.out 2>&1
 rc_is 0 $? "index: regenerates cleanly for a complete record"
 [ -f "$CONS/rca/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
 grep -qE "^\| \[RCA-0001\]" "$CONS/rca/INDEX.md" 2>/dev/null \
@@ -168,7 +168,7 @@ cat > "$CONS/decisions/ADR-0001-session-strategy.md" <<'MD'
 ```
 MD
 python3 "$ROOT/scripts/rca.py" link RCA-0001 --decision ADR-0001 --assumption A1 \
-  --note "SameSite hardening violated the SSO assumption" >/tmp/rca.out 2>&1
+  --note "SameSite hardening violated the SSO assumption" >$OUT/rca.out 2>&1
 rc_is 0 $? "link: exits 0 against an existing decision"
 has "linked RCA-0001 -> ADR-0001"
 grep -q '"decision": "ADR-0001"' "$RECFILE" && ok "link: decision reference written into the record" \
@@ -178,18 +178,18 @@ grep -q '"assumption": "A1"' "$RECFILE" && ok "link: assumption id written into 
 grep -q '"status": "violated"' "$RECFILE" && ok "link: violated status recorded" \
   || bad "link: violated status not recorded"
 
-python3 "$ROOT/scripts/rca.py" lint >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" lint >$OUT/rca.out 2>&1
 rc_is 0 $? "lint: still passes after link"
-grep -q "no decision link recorded" /tmp/rca.out && bad "lint: still warns after a link was recorded" \
+grep -q "no decision link recorded" $OUT/rca.out && bad "lint: still warns after a link was recorded" \
   || ok "lint: warning clears once a decision link is recorded"
 
 # link against a decision that doesn't exist on disk: recorded anyway, with a warning
-python3 "$ROOT/scripts/rca.py" link RCA-0001 --decision ADR-9999 >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" link RCA-0001 --decision ADR-9999 >$OUT/rca.out 2>&1
 rc_is 0 $? "link: still exits 0 for an unknown decision id"
 has "no decision record found for ADR-9999"
 
 # link against an unknown RCA id fails
-python3 "$ROOT/scripts/rca.py" link RCA-9999 --decision ADR-0001 >/tmp/rca.out 2>&1
+python3 "$ROOT/scripts/rca.py" link RCA-9999 --decision ADR-0001 >$OUT/rca.out 2>&1
 rc_is 2 $? "link: rejects an unknown RCA id"
 has "no such RCA record"
 

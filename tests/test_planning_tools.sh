@@ -3,13 +3,13 @@
 # Asserts detection AND absence of false positives.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %-54s\n' "$1"; }
-bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s /tmp/pt.out ] && sed 's/^/       /' /tmp/pt.out | head -6; }
+bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s $OUT/pt.out ] && sed 's/^/       /' $OUT/pt.out | head -6; }
 rc_is(){ [ "$2" -eq "$1" ] && ok "$3" || bad "$3 (exit exp=$1 got=$2)"; }
-has()  { grep -q "$1" /tmp/pt.out && ok "reports: $1" || bad "does NOT report: $1"; }
-no()   { grep -q "$1" /tmp/pt.out && bad "false positive: $1" || ok "no false positive: $1"; }
+has()  { grep -q "$1" $OUT/pt.out && ok "reports: $1" || bad "does NOT report: $1"; }
+no()   { grep -q "$1" $OUT/pt.out && bad "false positive: $1" || ok "no false positive: $1"; }
 
 # ---------- design_drift ----------
 mkdir -p "$TMP/specs/f" "$TMP/src"
@@ -35,7 +35,7 @@ TS
 cat > "$TMP/src/order.service.ts" <<'TS'
 export class OrderService { async placeOrder(dto) { return 1; } }
 TS
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 1 $? "drift: missing participant detected"
 has "PaymentGateway"
 no "OrderService"
@@ -44,13 +44,13 @@ no "(Client)"
 cat > "$TMP/src/payment.gateway.ts" <<'TS'
 export class PaymentGateway { async charge(amount: number) { return true; } }
 TS
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 0 $? "drift: clears once implemented"
 
 # a comment naming a symbol must NOT count as implementation
 rm "$TMP/src/payment.gateway.ts"
 printf '// TODO wire PaymentGateway and charge the amount\nexport const x = 1;\n' > "$TMP/src/note.ts"
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 1 $? "drift: a comment does not count as implementation"
 has "PaymentGateway"
 rm "$TMP/src/note.ts"
@@ -61,44 +61,44 @@ CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
 git init -q; git config user.email e@e; git config user.name e
 echo x > f.txt; git add -A; git commit -qm init
 
-python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud >$OUT/pt.out 2>&1
 [ -f "$CONS/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
   || bad "plan: spec not created in the consumer repo"
 [ ! -d "$ROOT/specs/thing" ] && ok "plan: did NOT write into the plugin dir" \
   || bad "plan: leaked a spec into the plugin dir"
 
-python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/thing" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/thing" >$OUT/pt.out 2>&1
 rc_is 1 $? "plan: fresh spec fails audit"
 has "still TODO"
 has "no recommendation"
 
-python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >$OUT/pt.out 2>&1
 rc_is 2 $? "plan: unknown kind rejected"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
-python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/login" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/login" >$OUT/pt.out 2>&1
 rc_is 0 $? "plan: the completed worked spec passes audit"
-grep -q "7 accepted as default" /tmp/pt.out && ok "plan: counts defaults correctly (pipe-escaping)" \
+grep -q "7 accepted as default" $OUT/pt.out && ok "plan: counts defaults correctly (pipe-escaping)" \
   || bad "plan: default count wrong"
 
 # ---------- decide ----------
-python3 "$ROOT/scripts/decide.py" index >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
 rc_is 0 $? "decide: index regenerates"
 [ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
 grep -qE "^\| \[ADR-0001\]" "$ROOT/decisions/INDEX.md" 2>/dev/null \
   && ok "decide: index table contains the ADR row" || bad "decide: ADR row missing"
 
-python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
 rc_is 0 $? "decide: the real ADR passes lint"
 
-python3 "$ROOT/scripts/decide.py" verify >/tmp/pt.out 2>&1
-grep -q "unverifiable" /tmp/pt.out && ok "decide: reports unverifiable assumptions" \
+python3 "$ROOT/scripts/decide.py" verify >$OUT/pt.out 2>&1
+grep -q "unverifiable" $OUT/pt.out && ok "decide: reports unverifiable assumptions" \
   || bad "decide: hides unverifiable assumptions"
 
-python3 "$ROOT/scripts/decide.py" trace examples/login/src/auth.service.ts >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" trace examples/login/src/auth.service.ts >$OUT/pt.out 2>&1
 has "ADR-0001"
-python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >$OUT/pt.out 2>&1
 has "no recorded decision"
 
 # a decision record that names a winner and nothing else must be rejected
@@ -111,7 +111,7 @@ cat > "$CONS/decisions/ADR-0009-thin.md" <<'MD'
 ```
 MD
 cd "$CONS"
-python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
 rc_is 1 $? "decide: lint rejects a single-option record"
 has "not a decision"
 has "no assumptions recorded"
@@ -130,25 +130,25 @@ export async function register(email: string) {
   return db.users.insert(email);
 }
 TS
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
 rc_is 0 $? "review_scope: runs on a diff"
 has "R1"
 has "R6"
 has "R7"
-grep -q "src/orders.ts" /tmp/pt.out && ok "review_scope: attributes the question to the file" \
+grep -q "src/orders.ts" $OUT/pt.out && ok "review_scope: attributes the question to the file" \
   || bad "review_scope: file attribution missing"
 
 # non-code and fixture files must not be attributed to code questions
 printf '# notes\n' > README_EXTRA.md
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
-grep -q "README_EXTRA.md" /tmp/pt.out && bad "review_scope: attributed a markdown file to a code question" \
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
+grep -q "README_EXTRA.md" $OUT/pt.out && bad "review_scope: attributed a markdown file to a code question" \
   || ok "review_scope: excludes non-code files"
 rm -f README_EXTRA.md
 
 # a clean repo with no changes must say so
 git add -A >/dev/null 2>&1; git commit -qm x >/dev/null 2>&1
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
-grep -q "no changes to review" /tmp/pt.out && ok "review_scope: quiet with no changes" \
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
+grep -q "no changes to review" $OUT/pt.out && ok "review_scope: quiet with no changes" \
   || bad "review_scope: noisy with no changes"
 cd "$ROOT"
 

@@ -3,12 +3,12 @@
 # Asserts detection AND absence of false positives.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %-54s\n' "$1"; }
-bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s /tmp/pd.out ] && sed 's/^/       /' /tmp/pd.out | head -8; }
+bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s $OUT/pd.out ] && sed 's/^/       /' $OUT/pd.out | head -8; }
 rc_is(){ [ "$2" -eq "$1" ] && ok "$3" || bad "$3 (exit exp=$1 got=$2)"; }
-has()  { grep -qF "$1" /tmp/pd.out && ok "reports: $1" || bad "does NOT report: $1"; }
+has()  { grep -qF "$1" $OUT/pd.out && ok "reports: $1" || bad "does NOT report: $1"; }
 
 # Literal (non-regex) find-and-replace of one line in a file — avoids sed/perl
 # regex-escaping bugs for cells containing '+', '(', '.', etc.
@@ -31,13 +31,13 @@ CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
 git init -q; git config user.email e@e; git config user.name e
 echo x > f.txt; git add -A; git commit -qm init
 
-python3 "$ROOT/scripts/prd.py" new demo --kind auth --stack nestjs >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" new demo --kind auth --stack nestjs >$OUT/pd.out 2>&1
 [ -f "$CONS/prds/demo/prd.md" ] && ok "new: prd.md created in the consumer repo" \
   || bad "new: prd.md not created in the consumer repo"
 [ ! -f "$ROOT/prds/demo/prd.md" ] && ok "new: did NOT write into the plugin dir" \
   || bad "new: leaked a prds/ dir into the plugin dir"
 
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: fresh PRD fails"
 has "placeholder"
 has "no out-of-scope"
@@ -138,7 +138,7 @@ MD
 }
 
 fill_all
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 0 $? "audit: a fully filled PRD passes"
 
 # --- metric with no number ---
@@ -146,7 +146,7 @@ fill_all
 swap "$CONS/prds/demo/prd.md" \
   "| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard |" \
   "| M1 | login success rate | improves a lot | 20% baseline | tracked via analytics dashboard |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: metric with no number is rejected"
 has "no number in the target"
 
@@ -155,7 +155,7 @@ fill_all
 swap "$CONS/prds/demo/prd.md" \
   "| M1 | login success rate | +15% conversion | 20% baseline | tracked via analytics dashboard |" \
   "| M1 | login success rate | +15% conversion | 20% baseline | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: metric with no measurement method is rejected"
 has "no measurement method"
 
@@ -164,7 +164,7 @@ fill_all
 swap "$CONS/prds/demo/prd.md" \
   "| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | 5 | 35 |" \
   "| O2 | Build new auth service | flexible | <!-- --> | 3 | 3 | 2 | 1 | 3 | 5 | 35 |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: option with no con is rejected"
 has "no con"
 
@@ -173,21 +173,21 @@ fill_all
 swap "$CONS/prds/demo/prd.md" \
   "| O2 | Build new auth service | flexible | more moving parts to operate | 3 | 3 | 2 | 1 | 3 | 5 | 35 |" \
   "| O2 | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: fewer than 2 options is rejected"
 has "need >=2"
 
 # --- no recommendation ---
 fill_all
 swap "$CONS/prds/demo/prd.md" "| chosen option | O2 |" "| chosen option | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: no recommendation is rejected"
 has "no recommendation named"
 
 # --- no deciding factor ---
 fill_all
 swap "$CONS/prds/demo/prd.md" "| single deciding factor | fit |" "| single deciding factor | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: no deciding factor is rejected"
 has "no deciding factor named"
 
@@ -196,14 +196,14 @@ fill_all
 swap "$CONS/prds/demo/prd.md" \
   "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | ship behind a flag to a small cohort first |" \
   "| RI1 | Adoption is lower than assumed | 3 | 3 | 9 | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: risk with no mitigation is rejected"
 has "no mitigation"
 
 # --- no out-of-scope ---
 fill_all
 swap "$CONS/prds/demo/prd.md" "| X1 | MFA is out of scope |" "| X1 | <!-- --> |"
-python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$CONS/prds/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "audit: no out-of-scope is rejected"
 has "no out-of-scope items"
 
@@ -228,14 +228,14 @@ cat > "$CONS/specs/demo/spec.md" <<'MD'
 | V1 | conversion dashboard check | manual review of the analytics dashboard | pre-PR |
 MD
 
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
 rc_is 0 $? "align: matched requirement and metric pass clean"
 has "keyword-level matching"
 has "0 requirement(s) with no spec coverage"
 
 # no spec yet: align must not error, and must say so
 rm -rf "$CONS/specs/demo"
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
 rc_is 0 $? "align: no spec yet is not an error"
 has "nothing to check"
 
@@ -259,22 +259,22 @@ MD
 swap "$CONS/prds/demo/prd.md" \
   "| R1 | must support email login | core ask |" \
   "| R1 | must support hardware security key WebAuthn | zzz |"
-python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" align "$CONS/prds/demo" "$CONS/specs/demo" >$OUT/pd.out 2>&1
 rc_is 1 $? "align: an unmatched requirement is detected"
 has "MISS  R1"
 has "1 requirement(s) with no spec coverage"
 
 # ---------- index ----------
-python3 "$ROOT/scripts/prd.py" index >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" index >$OUT/pd.out 2>&1
 rc_is 0 $? "index: regenerates"
 [ -f "$CONS/prds/INDEX.md" ] && ok "index: INDEX.md exists" || bad "index: no INDEX.md"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
-python3 "$ROOT/scripts/prd.py" audit "$ROOT/examples/login" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" audit "$ROOT/examples/login" >$OUT/pd.out 2>&1
 rc_is 0 $? "audit: the worked example (examples/login/prd.md) passes"
 
-python3 "$ROOT/scripts/prd.py" align "$ROOT/examples/login" "$ROOT/specs/login" >/tmp/pd.out 2>&1
+python3 "$ROOT/scripts/prd.py" align "$ROOT/examples/login" "$ROOT/specs/login" >$OUT/pd.out 2>&1
 rc_is 0 $? "align: the worked example aligns clean against specs/login"
 has "0 requirement(s) with no spec coverage, 0 spec item(s) implementing nothing in the PRD, 0 metric(s) with no verification step"
 

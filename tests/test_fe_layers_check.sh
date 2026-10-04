@@ -5,7 +5,7 @@
 # Run: bash tests/test_fe_layers_check.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 FC="$ROOT/scripts/fe_layers_check.py"
 cd "$TMP"; git init -q; git config user.email t@t; git config user.name t
 mkdir -p src
@@ -15,13 +15,13 @@ git add -A; git commit -qm init >/dev/null
 PASS=0; FAIL=0
 expect() { # expect <0|1> <label> [--only X ...]
   local exp="$1" label="$2"; shift 2
-  python3 "$FC" "$@" >/tmp/fc.out 2>&1; local got=$?
+  python3 "$FC" "$@" >$OUT/fc.out 2>&1; local got=$?
   if [ "$got" -eq "$exp" ]; then PASS=$((PASS+1)); printf '  ok   %-56s\n' "$label"
-  else FAIL=$((FAIL+1)); printf '  FAIL %-56s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' /tmp/fc.out; fi
+  else FAIL=$((FAIL+1)); printf '  FAIL %-56s exit exp=%s got=%s\n' "$label" "$exp" "$got"; sed 's/^/       /' $OUT/fc.out; fi
 }
-has() { grep -q -- "$1" /tmp/fc.out && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "reported: $1"; } \
+has() { grep -q -- "$1" $OUT/fc.out && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "reported: $1"; } \
         || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "NOT reported: $1"; }; }
-nothas() { grep -q -- "$1" /tmp/fc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "false positive: $1"; } \
+nothas() { grep -q -- "$1" $OUT/fc.out && { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "false positive: $1"; } \
         || { PASS=$((PASS+1)); printf '  ok   %-56s\n' "no false positive: $1"; }; }
 reset_diff() { git checkout -q -- . ; git clean -qfd . ; }
 
@@ -39,6 +39,59 @@ export function OrderList() {
 EOF
 expect 1 "presentation-io: fetch()+.then() in component detected" --only presentation-io --strict
 has "presentation layer performing I/O"
+reset_diff
+
+# Server components (Next.js App Router) fetch by design; client components do not.
+mkdir -p app/products app/dashboard src/components
+cat > app/products/page.tsx <<'EOF'
+export default async function Page() {
+  const res = await fetch('https://api.example.com/products', { next: { revalidate: 60 } });
+  const products = await res.json();
+  return <ul>{products.map((p) => <li key={p.id}>{p.name}</li>)}</ul>;
+}
+EOF
+cat > app/layout.tsx <<'EOF'
+export default async function RootLayout({ children }) {
+  const nav = await fetch('/api/nav').then((r) => r.json());
+  return <html><body><nav>{nav.title}</nav>{children}</body></html>;
+}
+EOF
+cat > app/dashboard/Stats.tsx <<'EOF'
+export function Stats({ id }) {
+  const stats = use(fetch(`/api/stats/${id}`).then((r) => r.json()));
+  return <p>{stats.count}</p>;
+}
+EOF
+cat > src/components/ProductList.tsx <<'EOF'
+export default async function ProductList() {
+  const items = await fetch('/api/items').then((r) => r.json());
+  return <ul>{items.map((i) => <li key={i.id}>{i.name}</li>)}</ul>;
+}
+EOF
+expect 0 "presentation-io: async server components and app/ files without 'use client' are clean" --only presentation-io --strict
+nothas "presentation layer performing I/O"
+reset_diff
+
+mkdir -p app/dashboard src/components
+cat > app/dashboard/page.tsx <<'EOF'
+// Dashboard page.
+'use client';
+export default function Page() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { fetch('/api/rows').then((r) => r.json()).then(setRows); }, []);
+  return <ul>{rows.map((r) => <li key={r.id}>{r.name}</li>)}</ul>;
+}
+EOF
+cat > src/components/Live.tsx <<'EOF'
+"use client"
+export const Live = async () => {
+  const data = await fetch('/api/live');
+  return <p>{data.status}</p>;
+};
+EOF
+expect 1 "presentation-io: 'use client' under app/ (and async client component) still flagged" --only presentation-io --strict
+has "app/dashboard/page.tsx:5: presentation layer performing I/O"
+has "src/components/Live.tsx:3: presentation layer performing I/O"
 reset_diff
 
 cat > src/UserBadge.tsx <<'EOF'
@@ -312,13 +365,13 @@ python3 "$FC" --list | grep -q "presentation-io (blocking)" \
   && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "--list marks presentation-io blocking"; } \
   || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "--list did not mark presentation-io blocking"; }
 
-python3 "$FC" --only bogus-check >/tmp/fc.out 2>&1
+python3 "$FC" --only bogus-check >$OUT/fc.out 2>&1
 [ $? -eq 2 ] && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "unknown --only check exits 2"; } \
              || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "unknown --only check did not exit 2"; }
 
 reset_diff
-python3 "$FC" >/tmp/fc.out 2>&1
-grep -q "no changes to inspect" /tmp/fc.out \
+python3 "$FC" >$OUT/fc.out 2>&1
+grep -q "no changes to inspect" $OUT/fc.out \
   && { PASS=$((PASS+1)); printf '  ok   %-56s\n' "no diff reports no changes"; } \
   || { FAIL=$((FAIL+1)); printf '  FAIL %-56s\n' "no diff did not report no changes"; }
 

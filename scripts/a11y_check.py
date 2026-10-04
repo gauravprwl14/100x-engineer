@@ -32,6 +32,8 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 JSX_EXT = (".tsx", ".jsx")
 HTML_EXT = (".html", ".htm")
 MARKUP_EXT = JSX_EXT + HTML_EXT
@@ -174,7 +176,23 @@ def scan_children(text, tag, after_gt_idx):
 # checks
 # ---------------------------------------------------------------------------
 
-NONINTERACTIVE_TAGS = {"div", "span", "li"}
+# Elements with no native activation behaviour. <label> is left out: clicking it
+# activates its control, so an onClick there is not inherently inaccessible.
+NONINTERACTIVE_TAGS = {
+    "div", "span", "p", "section", "article", "aside", "header", "footer", "main",
+    "nav", "ul", "ol", "li", "dl", "dt", "dd", "img", "figure", "figcaption",
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4",
+    "h5", "h6", "blockquote", "pre", "code", "strong", "em", "b", "i", "small",
+}
+# Widget roles promise keyboard operability: Enter/Space on a <div role="button">
+# does nothing unless the author wires a key handler, and without tabIndex the
+# element cannot be reached at all. WAI-ARIA 1.2, widget roles.
+INTERACTIVE_ROLES = {
+    "button", "link", "checkbox", "radio", "switch", "tab", "menuitem",
+    "menuitemcheckbox", "menuitemradio", "option", "treeitem", "slider",
+    "spinbutton", "combobox", "textbox", "searchbox",
+}
+KEY_HANDLERS = ("onKeyDown", "onKeyUp", "onKeyPress", "onkeydown", "onkeyup", "onkeypress")
 
 
 def check_onclick_non_interactive(files, base):
@@ -187,12 +205,27 @@ def check_onclick_non_interactive(files, base):
             continue
         touched = touched_lines(p, base)
         for tag, attrs, _, _, start in jsx_tags(text, NONINTERACTIVE_TAGS):
-            if not has_attr(attrs, "onClick") and not has_attr(attrs, "onclick"):
-                continue
-            if has_attr(attrs, "role") or has_attr(attrs, "tabIndex") or has_attr(attrs, "tabindex"):
-                continue
             ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
+                continue
+            onclick = has_attr(attrs, "onClick") or has_attr(attrs, "onclick")
+            tabindex = has_attr(attrs, "tabIndex") or has_attr(attrs, "tabindex")
+            rv = attr_value(attrs, "role")
+            role = rv.strip("\"'{} ").lower() if rv else None
+            # A role computed at runtime ({expr}) cannot be judged from source.
+            if rv and rv.startswith("{") and not re.fullmatch(r"\{\s*[\"'][\w-]+[\"']\s*\}", rv):
+                continue
+            if role in INTERACTIVE_ROLES:
+                missing = [w for w, ok in (
+                    ("tabIndex", tabindex),
+                    ("a key handler (onKeyDown)", any(has_attr(attrs, k) for k in KEY_HANDLERS)),
+                ) if not ok]
+                if missing:
+                    out.append((f"{p}:{ln}",
+                                f'<{tag} role="{role}"> without {" or ".join(missing)} -- '
+                                f"not keyboard-operable; use a native <button>/<a>"))
+                continue
+            if not onclick or has_attr(attrs, "role") or tabindex:
                 continue
             out.append((f"{p}:{ln}",
                         f"<{tag}> has onClick with no role/tabIndex -- not focusable, "
@@ -336,6 +369,20 @@ def check_control_no_accessible_name(files, base):
 
 OUTLINE_NONE_RX = re.compile(r"outline\s*:\s*(?:none|0)\b")
 FOCUS_VISIBLE_RX = re.compile(r":focus-visible")
+# A literal class list: class="..", className='..', className={`..`} or
+# className={".."}. Lists built by cn()/clsx() are not read -- under-fire.
+CLASS_ATTR_RX = re.compile(
+    r"\bclass(?:Name)?\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|\{\s*`([^`]*)`\s*\}"
+    r"|\{\s*\"([^\"]*)\"\s*\})")
+TW_OUTLINE_NONE_RX = re.compile(r"^(?:[\w-]+:)*outline-(?:none|0)$")
+TW_ANIMATE_RX = re.compile(r"^animate-(?!none$)\S+$")
+
+
+def class_lists(text):
+    """Yield (start_idx, [tokens]) for every literal class attribute."""
+    for m in CLASS_ATTR_RX.finditer(text):
+        val = next(g for g in m.groups() if g is not None)
+        yield m.start(), val.split()
 
 
 def check_outline_none(files, base):
@@ -344,16 +391,36 @@ def check_outline_none(files, base):
         if not p.endswith(SCAN_EXT):
             continue
         text = read(p)
-        if text is None or FOCUS_VISIBLE_RX.search(text):
+        if text is None:
             continue
         touched = touched_lines(p, base)
-        for m in OUTLINE_NONE_RX.finditer(text):
-            ln = line_of(text, m.start())
+        if not FOCUS_VISIBLE_RX.search(text):
+            for m in OUTLINE_NONE_RX.finditer(text):
+                ln = line_of(text, m.start())
+                if not overlaps(touched, ln, ln):
+                    continue
+                out.append((f"{p}:{ln}",
+                            "outline removed (outline: none/0) with no :focus-visible "
+                            "rule in this file -- keyboard users lose the focus indicator"))
+        if not p.endswith(MARKUP_EXT):
+            continue
+        for start, toks in class_lists(text):
+            removed = [t for t in toks if TW_OUTLINE_NONE_RX.match(t)]
+            if not removed:
+                continue
+            # Any focus-visible: utility, or a focus: utility other than another
+            # outline removal (focus:ring-2, focus:border-blue-500), draws a
+            # replacement indicator.
+            if any(t.startswith("focus-visible:") or
+                   (t.startswith("focus:") and not TW_OUTLINE_NONE_RX.match(t))
+                   for t in toks):
+                continue
+            ln = line_of(text, start)
             if not overlaps(touched, ln, ln):
                 continue
             out.append((f"{p}:{ln}",
-                        "outline removed (outline: none/0) with no :focus-visible "
-                        "rule in this file -- keyboard users lose the focus indicator"))
+                        f"`{removed[0]}` with no focus-visible: replacement in the same "
+                        f"class list -- keyboard users lose the focus indicator"))
     return out
 
 
@@ -483,6 +550,17 @@ def check_animation_no_reduced_motion(files, base):
         if text is None or REDUCED_MOTION_RX.search(text):
             continue
         touched = touched_lines(p, base)
+        if p.endswith(MARKUP_EXT):
+            for start, toks in class_lists(text):
+                anim = [t for t in toks if TW_ANIMATE_RX.match(t)]
+                if not anim or any(t.startswith("motion-reduce:") for t in toks):
+                    continue
+                ln = line_of(text, start)
+                if not overlaps(touched, ln, ln):
+                    continue
+                out.append((f"{p}:{ln}",
+                            f"`{anim[0]}` runs for every user -- write it as "
+                            f"motion-safe:{anim[0]}, or add a motion-reduce: override"))
         seen = set()
         for m in DURATION_RX.finditer(text):
             dur = float(m.group(1))
@@ -538,6 +616,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("a11y_check", args.base) is None:
+        return 2
     added, mod = changed(args.base)
     files = added + mod
     if not files:
@@ -553,7 +633,7 @@ def main():
             continue
         if not res:
             continue
-        adv = n not in BLOCKING and not args.strict
+        adv = n not in BLOCKING
         print(f"\n[{'ADVISORY' if adv else 'FAIL'}] {n}")
         for loc, msg in res[:12]:
             print(f"  {loc}: {msg}")
@@ -564,10 +644,13 @@ def main():
         else:
             hard += len(res)
 
-    print(f"\na11y_check: {len(files)} file(s) touched | {hard} blocking, {advisory} advisory")
+    # Severities are reported as declared; --strict changes the exit code only, so
+    # the summary never presents an advisory heuristic as a blocking defect.
+    print(f"\na11y_check: {len(files)} file(s) touched | {hard} blocking, {advisory} advisory"
+          + (" (--strict: advisory findings fail)" if args.strict and advisory else ""))
     print("heuristic tool: regex + tag scanning, no runtime state -- pair with a "
           "keyboard-only pass and a screen-reader pass (see skills/accessibility/SKILL.md)")
-    return 1 if hard else 0
+    return 1 if hard or (args.strict and advisory) else 0
 
 
 if __name__ == "__main__":

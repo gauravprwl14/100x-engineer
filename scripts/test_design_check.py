@@ -21,6 +21,8 @@ Exit 1 if any blocking check finds a violation (or any enabled check, --strict).
 """
 import argparse, ast, json, os, pathlib, re, subprocess, sys
 
+from _mutation_guard import enter_git_root
+
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
 
@@ -427,6 +429,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("test_design_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
     if not added and not mod:
         print("test_design_check: no changes to inspect")

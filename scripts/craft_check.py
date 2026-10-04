@@ -60,6 +60,8 @@ Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
 import argparse, ast, os, re, subprocess, sys, pathlib
 
+from _mutation_guard import enter_git_root
+
 PY_EXT = (".py",)
 JS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 CODE_EXT = PY_EXT + JS_EXT
@@ -642,6 +644,8 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("craft_check", args.base) is None:
+        return 2
     added, mod = changed(args.base)
     if not added and not mod:
         print("craft_check: no changes to inspect")
