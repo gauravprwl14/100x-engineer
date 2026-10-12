@@ -1,0 +1,18 @@
+{
+ "T2-01": {
+  "overall": 5,
+  "wrong_claims": []
+ },
+ "T2-02": {
+  "overall": 6,
+  "wrong_claims": []
+ },
+ "T2-03": {
+  "overall": 7,
+  "wrong_claims": []
+ },
+ "T2-04": {
+  "overall": 8,
+  "wrong_claims": []
+ }
+}

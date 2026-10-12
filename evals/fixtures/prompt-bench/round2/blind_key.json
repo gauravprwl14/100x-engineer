@@ -1,0 +1,389 @@
+{
+ "seed": 20261013,
+ "labels": {
+  "T1-01": {
+   "task": "h1-review",
+   "run": "h1-review-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v1",
+   "chars": 4824
+  },
+  "T1-02": {
+   "task": "h1-review",
+   "run": "h1-review-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 5122
+  },
+  "T1-03": {
+   "task": "h1-review",
+   "run": "h1-review-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v2",
+   "chars": 6136
+  },
+  "T1-04": {
+   "task": "h1-review",
+   "run": "h1-review-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v1",
+   "chars": 7054
+  },
+  "T1-05": {
+   "task": "h1-review",
+   "run": "h1-review-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v2",
+   "chars": 5773
+  },
+  "T1-06": {
+   "task": "h1-review",
+   "run": "h1-review-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v1",
+   "chars": 6099
+  },
+  "T1-07": {
+   "task": "h1-review",
+   "run": "h1-review-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v1",
+   "chars": 6329
+  },
+  "T1-08": {
+   "task": "h1-review",
+   "run": "h1-review-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 6114
+  },
+  "T1-09": {
+   "task": "h1-review",
+   "run": "h1-review-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v1",
+   "chars": 6537
+  },
+  "T1-10": {
+   "task": "h1-review",
+   "run": "h1-review-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v2",
+   "chars": 6617
+  },
+  "T1-11": {
+   "task": "h1-review",
+   "run": "h1-review-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v2",
+   "chars": 6160
+  },
+  "T1-12": {
+   "task": "h1-review",
+   "run": "h1-review-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v2",
+   "chars": 5246
+  },
+  "T1-13": {
+   "task": "h1-review",
+   "run": "h1-review-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v2",
+   "chars": 10015
+  },
+  "T1-14": {
+   "task": "h1-review",
+   "run": "h1-review-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v2",
+   "chars": 8402
+  },
+  "T1-15": {
+   "task": "h1-review",
+   "run": "h1-review-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v2",
+   "chars": 5363
+  },
+  "T1-16": {
+   "task": "h1-review",
+   "run": "h1-review-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v1",
+   "chars": 7077
+  },
+  "T2-01": {
+   "task": "h2-migration",
+   "run": "h2-migration-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v2",
+   "chars": 7689
+  },
+  "T2-02": {
+   "task": "h2-migration",
+   "run": "h2-migration-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v2",
+   "chars": 9899
+  },
+  "T2-03": {
+   "task": "h2-migration",
+   "run": "h2-migration-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v1",
+   "chars": 9813
+  },
+  "T2-04": {
+   "task": "h2-migration",
+   "run": "h2-migration-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v1",
+   "chars": 10148
+  },
+  "T2-05": {
+   "task": "h2-migration",
+   "run": "h2-migration-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v1",
+   "chars": 11700
+  },
+  "T2-06": {
+   "task": "h2-migration",
+   "run": "h2-migration-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v2",
+   "chars": 9927
+  },
+  "T2-07": {
+   "task": "h2-migration",
+   "run": "h2-migration-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v2",
+   "chars": 11022
+  },
+  "T2-08": {
+   "task": "h2-migration",
+   "run": "h2-migration-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 9845
+  },
+  "T2-09": {
+   "task": "h2-migration",
+   "run": "h2-migration-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v1",
+   "chars": 9049
+  },
+  "T2-10": {
+   "task": "h2-migration",
+   "run": "h2-migration-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v1",
+   "chars": 8461
+  },
+  "T2-11": {
+   "task": "h2-migration",
+   "run": "h2-migration-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v2",
+   "chars": 12435
+  },
+  "T2-12": {
+   "task": "h2-migration",
+   "run": "h2-migration-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v1",
+   "chars": 9703
+  },
+  "T2-13": {
+   "task": "h2-migration",
+   "run": "h2-migration-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 6934
+  },
+  "T2-14": {
+   "task": "h2-migration",
+   "run": "h2-migration-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v2",
+   "chars": 12081
+  },
+  "T2-15": {
+   "task": "h2-migration",
+   "run": "h2-migration-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v2",
+   "chars": 9430
+  },
+  "T2-16": {
+   "task": "h2-migration",
+   "run": "h2-migration-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v2",
+   "chars": 7948
+  },
+  "T3-01": {
+   "task": "h3-fix",
+   "run": "h3-fix-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 1654
+  },
+  "T3-02": {
+   "task": "h3-fix",
+   "run": "h3-fix-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v2",
+   "chars": 2443
+  },
+  "T3-03": {
+   "task": "h3-fix",
+   "run": "h3-fix-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 1388
+  },
+  "T3-04": {
+   "task": "h3-fix",
+   "run": "h3-fix-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v1",
+   "chars": 1507
+  },
+  "T3-05": {
+   "task": "h3-fix",
+   "run": "h3-fix-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v2",
+   "chars": 2709
+  },
+  "T3-06": {
+   "task": "h3-fix",
+   "run": "h3-fix-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v1",
+   "chars": 1415
+  },
+  "T3-07": {
+   "task": "h3-fix",
+   "run": "h3-fix-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v2",
+   "chars": 2768
+  },
+  "T3-08": {
+   "task": "h3-fix",
+   "run": "h3-fix-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v2",
+   "chars": 2887
+  },
+  "T3-09": {
+   "task": "h3-fix",
+   "run": "h3-fix-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v1",
+   "chars": 1535
+  },
+  "T3-10": {
+   "task": "h3-fix",
+   "run": "h3-fix-5",
+   "arm": "A",
+   "rep": 1,
+   "version": "v2",
+   "chars": 2880
+  },
+  "T3-11": {
+   "task": "h3-fix",
+   "run": "h3-fix-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v2",
+   "chars": 2586
+  },
+  "T3-12": {
+   "task": "h3-fix",
+   "run": "h3-fix-3",
+   "arm": "user",
+   "rep": 1,
+   "version": "v2",
+   "chars": 2517
+  },
+  "T3-13": {
+   "task": "h3-fix",
+   "run": "h3-fix-6",
+   "arm": "A",
+   "rep": 2,
+   "version": "v1",
+   "chars": 1537
+  },
+  "T3-14": {
+   "task": "h3-fix",
+   "run": "h3-fix-8",
+   "arm": "B",
+   "rep": 2,
+   "version": "v2",
+   "chars": 2546
+  },
+  "T3-15": {
+   "task": "h3-fix",
+   "run": "h3-fix-4",
+   "arm": "user",
+   "rep": 2,
+   "version": "v1",
+   "chars": 1627
+  },
+  "T3-16": {
+   "task": "h3-fix",
+   "run": "h3-fix-7",
+   "arm": "B",
+   "rep": 1,
+   "version": "v1",
+   "chars": 1587
+  }
+ }
+}

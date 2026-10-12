@@ -1,0 +1,101 @@
+{
+ "seed": 1,
+ "labels": {
+  "T1-01": {
+   "task": "p1",
+   "run": "p1-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T1-02": {
+   "task": "p1",
+   "run": "p1-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  },
+  "T1-03": {
+   "task": "p1",
+   "run": "p1-3",
+   "arm": "rule",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T1-04": {
+   "task": "p1",
+   "run": "p1-4",
+   "arm": "rule",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  },
+  "T2-01": {
+   "task": "p2",
+   "run": "p2-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T2-02": {
+   "task": "p2",
+   "run": "p2-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  },
+  "T2-03": {
+   "task": "p2",
+   "run": "p2-3",
+   "arm": "rule",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T2-04": {
+   "task": "p2",
+   "run": "p2-4",
+   "arm": "rule",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  },
+  "T3-01": {
+   "task": "p3",
+   "run": "p3-1",
+   "arm": "placebo",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T3-02": {
+   "task": "p3",
+   "run": "p3-2",
+   "arm": "placebo",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  },
+  "T3-03": {
+   "task": "p3",
+   "run": "p3-3",
+   "arm": "rule",
+   "rep": 1,
+   "version": "v1",
+   "chars": 800
+  },
+  "T3-04": {
+   "task": "p3",
+   "run": "p3-4",
+   "arm": "rule",
+   "rep": 2,
+   "version": "v1",
+   "chars": 800
+  }
+ }
+}

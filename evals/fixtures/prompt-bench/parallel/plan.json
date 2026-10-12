@@ -1,0 +1,144 @@
+{
+ "schema": 1,
+ "category": "always-on",
+ "design": "parallel-arms",
+ "reps": 2,
+ "placebo": "placebo",
+ "arms": {
+  "placebo": "Keep the existing project conventions.",
+  "rule": "(always-on rule under test)"
+ },
+ "runs": [
+  {
+   "id": "p1-1",
+   "task": "p1",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/p1-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p1-2",
+   "task": "p1",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/p1-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p1-3",
+   "task": "p1",
+   "arm": "rule",
+   "rep": 1,
+   "dir": "runs/p1-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p1-4",
+   "task": "p1",
+   "arm": "rule",
+   "rep": 2,
+   "dir": "runs/p1-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p2-1",
+   "task": "p2",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/p2-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p2-2",
+   "task": "p2",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/p2-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p2-3",
+   "task": "p2",
+   "arm": "rule",
+   "rep": 1,
+   "dir": "runs/p2-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p2-4",
+   "task": "p2",
+   "arm": "rule",
+   "rep": 2,
+   "dir": "runs/p2-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p3-1",
+   "task": "p3",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/p3-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p3-2",
+   "task": "p3",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/p3-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p3-3",
+   "task": "p3",
+   "arm": "rule",
+   "rep": 1,
+   "dir": "runs/p3-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  },
+  {
+   "id": "p3-4",
+   "task": "p3",
+   "arm": "rule",
+   "rep": 2,
+   "dir": "runs/p3-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": null
+  }
+ ],
+ "tasks": [
+  {
+   "id": "p1",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/p1"
+  },
+  {
+   "id": "p2",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/p2"
+  },
+  {
+   "id": "p3",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/p3"
+  }
+ ]
+}

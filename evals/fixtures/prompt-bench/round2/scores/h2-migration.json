@@ -1,0 +1,207 @@
+{
+ "T2-01": {
+  "correctness": 9,
+  "precision": 8,
+  "surgical": 9,
+  "usefulness": 8,
+  "concision": 9,
+  "overall": 8,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2"
+  ]
+ },
+ "T2-02": {
+  "correctness": 9,
+  "precision": 9,
+  "surgical": 7,
+  "usefulness": 9,
+  "concision": 6,
+  "overall": 8.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2"
+  ]
+ },
+ "T2-03": {
+  "correctness": 8,
+  "precision": 7,
+  "surgical": 6,
+  "usefulness": 7,
+  "concision": 6,
+  "overall": 7,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2"
+  ]
+ },
+ "T2-04": {
+  "correctness": 7,
+  "precision": 5,
+  "surgical": 7,
+  "usefulness": 6,
+  "concision": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3",
+   "claim 4"
+  ]
+ },
+ "T2-05": {
+  "correctness": 8,
+  "precision": 6,
+  "surgical": 7,
+  "usefulness": 8,
+  "concision": 6,
+  "overall": 7,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-06": {
+  "correctness": 7,
+  "precision": 5,
+  "surgical": 8,
+  "usefulness": 6,
+  "concision": 7,
+  "overall": 6.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-07": {
+  "correctness": 9,
+  "precision": 8,
+  "surgical": 7,
+  "usefulness": 9,
+  "concision": 6,
+  "overall": 8.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-08": {
+  "correctness": 7,
+  "precision": 5,
+  "surgical": 7,
+  "usefulness": 6,
+  "concision": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3",
+   "claim 4"
+  ]
+ },
+ "T2-09": {
+  "correctness": 8,
+  "precision": 7,
+  "surgical": 7,
+  "usefulness": 8,
+  "concision": 7,
+  "overall": 7.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-10": {
+  "correctness": 9,
+  "precision": 8,
+  "surgical": 7,
+  "usefulness": 8,
+  "concision": 7,
+  "overall": 8,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2"
+  ]
+ },
+ "T2-11": {
+  "correctness": 9,
+  "precision": 8,
+  "surgical": 7,
+  "usefulness": 9,
+  "concision": 5,
+  "overall": 8,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-12": {
+  "correctness": 8,
+  "precision": 6,
+  "surgical": 7,
+  "usefulness": 7,
+  "concision": 6,
+  "overall": 7,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-13": {
+  "correctness": 7,
+  "precision": 6,
+  "surgical": 8,
+  "usefulness": 6,
+  "concision": 8,
+  "overall": 6.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-14": {
+  "correctness": 9,
+  "precision": 7,
+  "surgical": 7,
+  "usefulness": 8,
+  "concision": 5,
+  "overall": 7.5,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ },
+ "T2-15": {
+  "correctness": 9,
+  "precision": 8,
+  "surgical": 8,
+  "usefulness": 8,
+  "concision": 7,
+  "overall": 8,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2"
+  ]
+ },
+ "T2-16": {
+  "correctness": 8,
+  "precision": 7,
+  "surgical": 8,
+  "usefulness": 7,
+  "concision": 8,
+  "overall": 7,
+  "wrong_claims": [
+   "claim 1",
+   "claim 2",
+   "claim 3"
+  ]
+ }
+}

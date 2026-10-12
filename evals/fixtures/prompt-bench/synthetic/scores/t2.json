@@ -1,0 +1,126 @@
+{
+ "T2-01": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-02": {
+  "correctness": 7,
+  "overall": 7,
+  "wrong_claims": [
+   "x"
+  ]
+ },
+ "T2-03": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-04": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x"
+  ]
+ },
+ "T2-05": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-06": {
+  "correctness": 7,
+  "overall": 7,
+  "wrong_claims": [
+   "x"
+  ]
+ },
+ "T2-07": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-08": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x"
+  ]
+ },
+ "T2-09": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-10": {
+  "correctness": 5,
+  "overall": 5,
+  "wrong_claims": [
+   "x",
+   "x",
+   "x"
+  ]
+ },
+ "T2-11": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-12": {
+  "correctness": 5,
+  "overall": 5,
+  "wrong_claims": [
+   "x",
+   "x",
+   "x"
+  ]
+ },
+ "T2-13": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-14": {
+  "correctness": 9,
+  "overall": 9,
+  "wrong_claims": [
+   "x"
+  ]
+ },
+ "T2-15": {
+  "correctness": 6,
+  "overall": 6,
+  "wrong_claims": [
+   "x",
+   "x"
+  ]
+ },
+ "T2-16": {
+  "correctness": 8,
+  "overall": 8,
+  "wrong_claims": [
+   "x"
+  ]
+ }
+}
