@@ -1,0 +1,56 @@
+<!--
+  Technique: Highlighted anatomy  (id: highlighted-anatomy, group: 5 · Explain)
+  What it is: One real artefact (a URL, prompt, config line) with each part coloured and a legend explaining the colours.
+  Best for: Showing the parts of one artefact (URL, prompt, config) · Formats: HTML · Markdown (bold/code)
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-highlighted-anatomy">
+<h2 style="margin-top:0">Highlighted anatomy</h2>
+<p class="what">
+<b>What it is:</b> One real artefact (a URL, prompt, config line) with each part coloured and a legend explaining the colours.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows the structure hidden inside something that looks like one string.</li>
+<li>Teaches the name of each part.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Showing the parts of one artefact (URL, prompt, config)</div>
+<div>
+<b class="bad">Avoid when</b>The artefact has no meaningful parts</div>
+<div>
+<b>Formats</b>HTML · Markdown (bold/code)</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> The parts of a short URL: domain, short code, optional tracking.</p>
+<p class="legend">
+<span class="hl-t">scheme + domain</span>
+<span class="hl-c">short code</span>
+<span class="hl-o">optional tracking</span>
+</p>
+<div class="box" style="font-family:var(--mono)">
+<span class="hl-t">https://sho.rt/</span>
+<span class="hl-c">aB3xK9q</span>
+<span class="hl-o">?utm_source=mail</span>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Match each coloured part to the legend above it.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Colours map to the legend above the box.</li>
+<li>Illustrative URL.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> Coloured spans with a legend. Markdown: bold/code for each part with a list explaining them.</p>
+</div>

@@ -40,6 +40,23 @@ python3 scripts/lint_skills.py --root "$LS_TMP" >/dev/null 2>&1
 [ $? -eq 2 ] || { echo "lint_skills self-test: empty skills/ dir did not exit 2"; rc=1; }
 rm -rf "$LS_TMP"
 
+# Sibling plugins in this marketplace (plugins/<name>/): their own suites and the same
+# skill contract. They are not part of 100x's counts (root skills/ and tests/ only).
+for p in plugins/*/; do
+  [ -d "$p" ] || continue
+  for t in "$p"tests/test_*.sh; do
+    [ -f "$t" ] || continue
+    echo "=== $t ==="
+    bash "$t" || rc=1
+    echo
+  done
+  if [ -d "${p}skills" ]; then
+    echo "=== skill contract lint: $p ==="
+    python3 scripts/lint_skills.py --root "$p" || rc=1
+    echo
+  fi
+done
+
 echo "=== term index freshness ==="
 python3 scripts/check_index.py --check-terms >/dev/null || { echo "TERMS.md is stale: run python3 scripts/check_index.py --gen-terms"; rc=1; }
 echo

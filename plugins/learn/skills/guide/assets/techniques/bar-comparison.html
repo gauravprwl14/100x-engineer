@@ -1,0 +1,58 @@
+<!--
+  Technique: Bar comparison  (id: bar-comparison, group: 4 · Numbers)
+  What it is: Horizontal bars whose length shows the size of each value.
+  Best for: Comparing magnitudes · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-bar-comparison">
+<h2 style="margin-top:0">Bar comparison</h2>
+<p class="what">
+<b>What it is:</b> Horizontal bars whose length shows the size of each value.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Makes differences in magnitude obvious at a glance.</li>
+<li>Shows which value dominates.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Comparing magnitudes</div>
+<div>
+<b class="bad">Avoid when</b>Precise values matter more than shape — use a table</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Writes vs reads vs peak reads per second — reads dominate, which is why caching matters.</p>
+<div class="svgwrap">
+<svg id="g9" viewBox="0 0 900 170" style="min-width:720px" role="img" aria-label="Bar chart, log scale: average writes 40/s, average reads 4,000/s, peak reads 20,000/s">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Longer bar = bigger value.</li>
+<li>Here the scale is logarithmic: each step is 10×, because the values differ hugely.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Log scale: each gridline is 10×.</li>
+<li>Shows reads dwarf writes — the reason caching matters.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG rectangles sized by value (log scale when values span orders of magnitude). Markdown: a table.</p>
+</div>
+<script>
+W["g9"] = {"kind": "bars", "items": [["Average writes/s", 40], ["Average reads/s", 4000], ["Peak reads/s", 20000]]};
+function drawBars(k){const S=W[k],svg=document.getElementById(k);svg.innerHTML="";const max=Math.log10(100000);S.items.forEach(([n,v],i)=>{const y=20+i*48,w=Math.log10(v)/max*560;txt(svg,10,y+19,n,{"font-size":13});
+ el("rect",{x:190,y,width:w,height:28,rx:4,fill:cv("--l5")},svg);txt(svg,198+w,y+19,v.toLocaleString(),{"font-size":13,"font-weight":600});});}
+DRAWERS.push(() => drawBars("g9"));
+</script>

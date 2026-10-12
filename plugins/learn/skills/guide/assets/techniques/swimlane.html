@@ -1,0 +1,61 @@
+<!--
+  Technique: Swimlane  (id: swimlane, group: 2 · Process & time)
+  What it is: A process diagram split into horizontal rows ('lanes'), one per role, team or system. Each step sits in the lane of whoever does it.
+  Best for: Work split across roles or services · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-swimlane">
+<h2 style="margin-top:0">Swimlane</h2>
+<p class="what">
+<b>What it is:</b> A process diagram split into horizontal rows (&#x27;lanes&#x27;), one per role, team or system. Each step sits in the lane of whoever does it.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows who is responsible for each step, not just the order.</li>
+<li>Makes hand-offs between roles visible (a step moving to another lane is a hand-off).</li>
+<li>Exposes work that happens separately or later, such as async jobs.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Work split across roles or services</div>
+<div>
+<b class="bad">Avoid when</b>One role — use flow</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Creating and sharing a link: the user submits, the API server takes a code, the key service refills its batch, analytics count clicks later in their own lane.</p>
+<div class="svgwrap">
+<svg id="g6" viewBox="0 0 900 300" style="min-width:720px" role="img" aria-label="Swimlane: six steps of creating and sharing a short link across user, API server, key service and analytics lanes">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Each row is one actor; its name is on the left.</li>
+<li>Numbered cards show the order across all lanes.</li>
+<li>When consecutive cards jump lanes, work is handed off.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>One row per role; numbered cards show order.</li>
+<li>The analytics lane runs later and separately — async work is easy to spot.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG: one coloured band per lane, step cards placed by lane (row) and order (column). Markdown: Mermaid flowchart with one subgraph per lane, or a table (step · lane).</p>
+</div>
+<script>
+W["g6"] = {"kind": "swim", "lanes": ["User", "API server", "Key service", "Analytics"], "steps": [[0, "Submit long URL"], [1, "Take code from batch"], [2, "Refill batch (1,000 codes)"], [1, "Save mapping, return short URL"], [0, "Share link"], [3, "Count clicks (async)"]]};
+function drawSwim(k){const S=W[k],svg=document.getElementById(k);svg.innerHTML="";const lh=68;S.lanes.forEach((l,i)=>{el("rect",{x:0,y:10+i*lh,width:900,height:lh,fill:i%2?cv("--panel"):cv("--soft")},svg);txt(svg,12,10+i*lh+lh/2+5,l,{"font-size":13,"font-weight":600});});
+ S.steps.forEach(([ln,t],i)=>{const x=150+i*122,y=10+ln*lh+14;el("rect",{x,y,width:112,height:40,rx:8,fill:cv("--panel"),stroke:cv("--l3"),"stroke-width":1.8},svg);txt(svg,x+56,y+16,`${i+1}.`,{"text-anchor":"middle","font-size":11.5,fill:cv("--muted")});
+  const words=t.split(" ");txt(svg,x+56,y+31,words.length>3?words.slice(0,3).join(" ")+"…":t,{"text-anchor":"middle","font-size":11.5});});}
+DRAWERS.push(() => drawSwim("g6"));
+</script>

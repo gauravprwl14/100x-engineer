@@ -3,11 +3,17 @@
   "owner": {
     "name": "gauravprwl14"
   },
-  "description": "The 100x-engineer plugin: a /100x router, eleven specialist agents, built-in engineering defaults and verification gates that turn a plain-English request into planned, tested and verified work. Python stdlib and git only.",
+  "description": "Two plugins. 100x: a /100x router, eleven specialist agents, built-in engineering defaults and verification gates that turn a plain-English request into planned, tested and verified work (Python stdlib and git only). learn: optional visual learning guides from RFCs, design docs and transcripts.",
   "plugins": [
     {
-      "name": "100x-engineer",
-      "source": "./"
+      "name": "100x",
+      "source": "./",
+      "description": "Engineering router, specialist agents, defaults and verification gates. Python stdlib and git only."
+    },
+    {
+      "name": "learn",
+      "source": "./plugins/learn",
+      "description": "Visual learning guides, walkthroughs and cheat sheets from RFCs, design docs, postmortems and talk transcripts, with a computed coverage check. Optional; install separately."
     }
   ]
 }

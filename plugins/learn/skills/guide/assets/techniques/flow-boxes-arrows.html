@@ -1,0 +1,60 @@
+<!--
+  Technique: Flow (boxes + arrows)  (id: flow-boxes-arrows, group: 2 · Process & time)
+  What it is: A row of boxes joined by arrows, where each box is one step and the arrow means 'then'.
+  Best for: 3–6 step processes with one actor · Formats: HTML · Mermaid flowchart LR · numbered list
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-flow-boxes-arrows-">
+<h2 style="margin-top:0">Flow (boxes + arrows)</h2>
+<p class="what">
+<b>What it is:</b> A row of boxes joined by arrows, where each box is one step and the arrow means &#x27;then&#x27;.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows a process in the order it happens.</li>
+<li>Makes it obvious which step depends on which.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>3–6 step processes with one actor</div>
+<div>
+<b class="bad">Avoid when</b>Branching logic — use a decision tree</div>
+<div>
+<b>Formats</b>HTML · Mermaid flowchart LR · numbered list</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Creating a short link: submit → get a code → save → return the short URL.</p>
+<div class="flow">
+<div class="step">
+<b>1. Submit</b>long URL</div>
+<div class="arrow">→</div>
+<div class="step">
+<b>2. Code</b>from key service</div>
+<div class="arrow">→</div>
+<div class="step">
+<b>3. Save</b>KV store</div>
+<div class="arrow">→</div>
+<div class="step">
+<b>4. Return</b>short URL</div>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Read left to right.</li>
+<li>Each box causes or enables the next one.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Read left to right; each box causes the next.</li>
+<li>One actor only — several actors need a swimlane.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> HTML flex row of step boxes with arrow characters between them. Markdown: Mermaid flowchart LR.</p>
+</div>

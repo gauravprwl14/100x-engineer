@@ -1,0 +1,47 @@
+<!--
+  Technique: Before / after  (id: before-after, group: 3 · Compare & decide)
+  What it is: Two panels side by side showing a situation before and after a change.
+  Best for: Showing an improvement or fix · Formats: All formats
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-before-after">
+<h2 style="margin-top:0">Before / after</h2>
+<p class="what">
+<b>What it is:</b> Two panels side by side showing a situation before and after a change.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Makes the effect of a fix or design change concrete.</li>
+<li>Shows the size of the improvement.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Showing an improvement or fix</div>
+<div>
+<b class="bad">Avoid when</b>The difference is invisible side by side</div>
+<div>
+<b>Formats</b>All formats</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Redirect traffic before and after adding a Redis cache.</p>
+<div class="grid2">
+<div class="box">
+<span class="tag bad">Before</span><pre>Every redirect → KV store
+20,000 reads/s at peak hit the DB</pre></div>
+<div class="box">
+<span class="tag good">After</span><pre>Hot links → Redis
+~80% of reads never reach the DB</pre></div>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Compare the same line in both panels; the difference is the point.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> Two boxes tagged red/green. Markdown: two short code blocks or a 3-column table (aspect · before · after).</p>
+</div>

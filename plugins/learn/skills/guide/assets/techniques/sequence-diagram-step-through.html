@@ -1,0 +1,92 @@
+<!--
+  Technique: Sequence diagram (step-through)  (id: sequence-diagram-step-through, group: 2 · Process & time)
+  What it is: A diagram with one vertical line per participant (person or system) and horizontal arrows for each message between them, in time order from top to bottom.
+  Best for: Messages between systems or people · Formats: HTML/SVG · Mermaid sequenceDiagram
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-sequence-diagram-step-through-">
+<h2 style="margin-top:0">Sequence diagram (step-through)</h2>
+<p class="what">
+<b>What it is:</b> A diagram with one vertical line per participant (person or system) and horizontal arrows for each message between them, in time order from top to bottom.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows who talks to whom, and in what order.</li>
+<li>Reveals round trips, waiting and hidden dependencies.</li>
+<li>The step-through buttons let readers follow one message at a time.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Messages between systems or people</div>
+<div>
+<b class="bad">Avoid when</b>A single actor — use flow</div>
+<div>
+<b>Formats</b>HTML/SVG · Mermaid sequenceDiagram</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> A browser opening a short link: API checks Redis, falls back to the KV store, answers with a 302.</p>
+<div class="row">
+<button class="btn ghost" data-seq="g4" data-act="prev">◀ Back</button>
+<button class="btn" data-seq="g4" data-act="next">Next step ▶</button>
+<button class="btn ghost" data-seq="g4" data-act="all">Show all</button>
+<span class="c" id="g4c" style="font-size:14px">
+</span>
+</div>
+<div class="svgwrap">
+<svg id="g4" viewBox="0 0 900 220" style="min-width:720px" role="img" aria-label="Sequence diagram: browser, API, Redis and KV store exchanging four messages for one redirect, shown step by step">
+</svg>
+</div>
+<div class="box detail" id="g4d">
+</div>
+<ul class="note">
+<li>Static text: hot links are served from Redis (≈20% of links, 80% of traffic); misses read the KV store; the answer is a 302.</li>
+</ul>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Column headers are the participants; the dashed lines under them are their &#x27;lifelines&#x27;.</li>
+<li>Each arrow is one message; read them top to bottom.</li>
+<li>Press Next to highlight one step and read why it happens.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Columns are participants; arrows run top to bottom in time.</li>
+<li>Step notes explain why each message exists — and are repeated as static text below.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG generated from a list of [from, to, label, note] steps plus Back/Next state. Markdown: Mermaid sequenceDiagram (static).</p>
+</div>
+<script>
+W["g4"] = {"kind": "seq", "parts": ["Browser", "API", "Redis", "KV store"], "steps": [[0, 1, "GET /aB3xK9q", "Short code in path."], [1, 2, "lookup", "Hot link? ~20% of links get 80% of traffic."], [1, 3, "on miss: get", "KV store keyed by short code."], [1, 0, "302 → long URL", "302 keeps analytics."]]};
+function drawSeq(k){
+  const S = W[k], st = ST[k] || (ST[k] = {i:0, all:false}); const svg = document.getElementById(k); svg.innerHTML = "";
+  const n = S.parts.length, Wd = 900, top = 50, gap = 38, H = top + S.steps.length * gap + 20;
+  svg.setAttribute("viewBox", `0 0 ${Wd} ${H}`);
+  const xs = S.parts.map((_, i) => 80 + i * ((Wd - 160) / Math.max(1, n - 1)));
+  const defs = el("defs", {}, svg); mk(defs, k + "a", cv("--muted")); mk(defs, k + "b", cv("--l7"));
+  S.parts.forEach((p, i) => { el("rect", {x:xs[i] - 58, y:8, width:116, height:28, rx:7, fill:cv("--soft"), stroke:cv("--line")}, svg);
+    txt(svg, xs[i], 27, p, {"text-anchor":"middle", "font-size":13, "font-weight":600});
+    el("line", {x1:xs[i], y1:36, x2:xs[i], y2:H - 6, stroke:cv("--line"), "stroke-width":1.5, "stroke-dasharray":"4 4"}, svg); });
+  S.steps.forEach(([a, b, l], i) => { if (!(st.all || i <= st.i)) return;
+    const y = top + i * gap + 12, cur = !st.all && i === st.i, x1 = xs[a], x2 = xs[b], dir = x2 >= x1 ? 1 : -1;
+    if (a === b) { el("path", {d:`M${x1},${y - 8} h40 v16 h-34`, fill:"none", stroke:cur ? cv("--l7") : cv("--muted"), "stroke-width":cur ? 3 : 1.6, "marker-end":`url(#${k}${cur ? "b" : "a"})`}, svg);
+      txt(svg, x1 + 48, y + 4, `${i + 1}. ${l}`, {"font-size":12.5, "font-weight":cur ? 700 : 400, fill:cur ? cv("--l7") : cv("--ink")}); return; }
+    el("line", {x1:x1 + dir * 4, y1:y, x2:x2 - dir * 6, y2:y, stroke:cur ? cv("--l7") : cv("--muted"), "stroke-width":cur ? 3 : 1.6, "marker-end":`url(#${k}${cur ? "b" : "a"})`}, svg);
+    txt(svg, (x1 + x2) / 2, y - 7, `${i + 1}. ${l}`, {"text-anchor":"middle", "font-size":12.5, "font-weight":cur ? 700 : 400, fill:cur ? cv("--l7") : cv("--ink")}); });
+  document.getElementById(k + "c").textContent = st.all ? `All ${S.steps.length} steps` : `Step ${st.i + 1} of ${S.steps.length}`;
+  const s = S.steps[st.i];
+  document.getElementById(k + "d").innerHTML = st.all ? '<span class="c">Showing the full flow. Press Next to step through.</span>' : `<b>${st.i + 1}. ${esc(S.parts[s[0]])} → ${esc(S.parts[s[1]])}: ${esc(s[2])}</b><p style="margin:4px 0 0">${esc(s[3])}</p>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-seq]"); if (!b) return; const k = b.dataset.seq, S = W[k], st = ST[k];
+  if (b.dataset.act === "next") { if (st.all) { st.all = false; st.i = 0; } else st.i = Math.min(S.steps.length - 1, st.i + 1); }
+  else if (b.dataset.act === "prev") { st.all = false; st.i = Math.max(0, st.i - 1); } else st.all = true; drawSeq(k); });
+DRAWERS.push(() => drawSeq("g4"));
+</script>

@@ -1,0 +1,61 @@
+<!--
+  Technique: Decision wizard / tree  (id: decision-wizard-tree, group: 3 · Compare & decide)
+  What it is: A short series of yes/no questions that ends in a recommendation.
+  Best for: Rules that lead to a recommendation · Formats: HTML · React · Mermaid flowchart TD
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-decision-wizard-tree">
+<h2 style="margin-top:0">Decision wizard / tree</h2>
+<p class="what">
+<b>What it is:</b> A short series of yes/no questions that ends in a recommendation.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Turns rules of thumb into a direct answer for the reader&#x27;s situation.</li>
+<li>Shows which factor decides the choice.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Rules that lead to a recommendation</div>
+<div>
+<b class="bad">Avoid when</b>Judgement calls with no clear rules</div>
+<div>
+<b>Formats</b>HTML · React · Mermaid flowchart TD</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Choosing between a DB sequence, a distributed counter and a key service.</p>
+<div class="box" id="g8">
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Answer each question honestly; the first matching rule gives the result.</li>
+<li>Start again to explore other answers.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Answer yes/no; the first matching rule gives the result.</li>
+<li>Static version: a decision tree in Mermaid flowchart TD.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> HTML: questions in a list with yes/no targets and a results map. Markdown: Mermaid flowchart TD with diamond decision nodes.</p>
+</div>
+<script>
+W["g8"] = {"kind": "wizard", "qs": [["Will you create more than ~1,000 links per second?", 1, "seq"], ["Must codes be unpredictable (no enumeration)?", "keysvc", "counter"]], "res": {"seq": ["DB sequence + base62", "Simplest at small scale."], "keysvc": ["Key service", "Random pre-generated batches; no collisions."], "counter": ["Distributed counter + base62", "Fast; IDs are predictable."]}};
+function drawWizard(k){
+  const S = W[k], st = ST[k] || (ST[k] = {i:0, r:null}), box = document.getElementById(k);
+  if (st.r) { const [t, d] = S.res[st.r]; box.innerHTML = `<span class="tag good">Recommendation</span><h3 style="margin:8px 0 4px">${esc(t)}</h3><p>${esc(d)}</p><button class="btn ghost" data-wz="${k}" data-a="reset">Start again</button>`; return; }
+  const q = S.qs[st.i]; box.innerHTML = `<p style="margin-top:0"><b>Q${st.i + 1}.</b> ${esc(q[0])}</p><div class="row"><button class="btn" data-wz="${k}" data-a="1">Yes</button><button class="btn ghost" data-wz="${k}" data-a="2">No</button></div>`;
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-wz]"); if (!b) return; const k = b.dataset.wz, S = W[k], st = ST[k];
+  if (b.dataset.a === "reset") { st.i = 0; st.r = null; } else { const nx = S.qs[st.i][+b.dataset.a]; if (typeof nx === "number") st.i = nx; else st.r = nx; } drawWizard(k); });
+DRAWERS.push(() => drawWizard("g8"));
+</script>

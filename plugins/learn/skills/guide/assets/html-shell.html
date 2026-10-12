@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{GUIDE_TITLE}}</title>
+<script>/* apply a saved theme before first paint (no flash) */try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<!--
+  VISUAL LEARNING GUIDE — HTML SHELL (self-contained: no external fonts, scripts or requests)
+  How to use:
+  1. Replace {{GUIDE_TITLE}} / {{SUBTITLE}} (escaped text, see 6).
+  2. Add one <section> per page. Required attributes:
+       id           short slug used in #links (letters, digits, -)
+       data-title   page title shown in the sidebar
+       data-group   category name (sidebar groups by this, in document order)
+       data-color   a category token, e.g. var(--l3) (only var(--l1)…var(--l7) / var(--ink) are applied)
+     Start each page with one <h1>; it receives focus when the page changes.
+  3. Category colours: --l1 … --l7 (light + dark variants below; light values meet 4.5:1 on --panel).
+  4. Reusable blocks (see the example section): .tldr, .box, .grid2/.grid3, .tbl>table,
+     .pc (pros/cons), .flow/.step/.arrow, .read (reading notes), .tabs[data-tabs]+.pane,
+     .kpis/.kpi, details.cat, .tag.good/.bad/.warn, .lbl-src (evidence labels), pre/code.
+  5. Coverage tags: put data-kp="kp-N" on the element that states key point kp-N
+     (see scripts/coverage_check.py). One element may carry several ids: data-kp="kp-1 kp-2".
+  6. ESCAPING — all source-derived text is untrusted (a transcript about XSS contains script tags):
+     - In markup and attribute values: escape & < > " '  (&amp; &lt; &gt; &quot; &#39;),
+       including inside <pre>/<code> and data-title/data-group.
+     - Data for widgets goes in <script type="application/json" id="…"> as JSON, with every
+       "</" written as "<\/" (stops a closing script tag in the source from ending the block).
+       Read it with JSON.parse(el.textContent). Never build JS string or template literals
+       from source text.
+     - At runtime render with textContent / txt() / el(); if markup is unavoidable, wrap every
+       interpolated value in esc(). Never assign raw source text to innerHTML.
+  7. Put page-specific widgets in the WIDGETS block of the script.
+     Ready-made widgets: assets/techniques/<id>.html (see assets/techniques/INDEX.md).
+-->
+<style>
+:root{
+  --bg:#F4F6F8; --panel:#FFFFFF; --ink:#16202E; --muted:#5B6675; --line:#DCE1E7; --soft:#EEF1F5; --code:#F0F3F7;
+  --accent:#2F5BEA; --good:#19723A; --good-bg:#E6F4EA; --bad:#C62D35; --bad-bg:#FBE9EA; --warn:#8A5A00; --warn-bg:#FCF2DC;
+  --l1:#2F5BEA; --l2:#7A3FD1; --l3:#0C7A7C; --l4:#D1343B; --l5:#946500; --l6:#27783A; --l7:#B83A84;
+  --sans:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10151D; --panel:#171E28; --ink:#E6EBF2; --muted:#9AA5B4; --line:#2A3441; --soft:#1D2530; --code:#1B232E;
+    --accent:#7C9BFF; --good:#5FCB7E; --good-bg:#16301F; --bad:#FF7A80; --bad-bg:#3A1C1F; --warn:#F2B84B; --warn-bg:#35290F;
+    --l1:#7C9BFF; --l2:#B48CFF; --l3:#3CC6C8; --l4:#FF6B72; --l5:#F2B84B; --l6:#5FCB7E; --l7:#F07BC0;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10151D; --panel:#171E28; --ink:#E6EBF2; --muted:#9AA5B4; --line:#2A3441; --soft:#1D2530; --code:#1B232E;
+  --accent:#7C9BFF; --good:#5FCB7E; --good-bg:#16301F; --bad:#FF7A80; --bad-bg:#3A1C1F; --warn:#F2B84B; --warn-bg:#35290F;
+  --l1:#7C9BFF; --l2:#B48CFF; --l3:#3CC6C8; --l4:#FF6B72; --l5:#F2B84B; --l6:#5FCB7E; --l7:#F07BC0;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:env(safe-area-inset-top,0px);height:100vh;overflow-y:auto;border-right:1px solid var(--line);background:var(--panel);padding:20px 16px 40px}
+.brand{font-weight:700;font-size:17px;line-height:1.25;margin:0 0 4px}
+.brand-sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+.search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px;margin-bottom:12px}
+.navgroup{margin:14px 0 4px;font-size:12.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:8px}
+.navgroup i{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+.nav a{display:block;padding:6px 10px 6px 18px;border-radius:6px;text-decoration:none;color:var(--ink);font-size:14.5px;border-left:3px solid transparent}
+.nav a:hover{background:var(--soft)}
+.nav a[aria-current="page"]{background:var(--soft);border-left-color:var(--accent);font-weight:600}
+h1:focus{outline:none}
+@media print{
+  .side,.menu-btn,.pagenav,.theme-btn,.tabs{display:none!important}
+  .app{display:block} main{max-width:none;padding:0}
+  section,.pane{display:block!important;break-before:page}
+  section:first-of-type{break-before:auto}
+  .svgwrap svg{min-width:0}
+  a{color:inherit}
+}
+.theme-btn{margin-top:18px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;font-size:13px}
+.menu-btn{display:none}
+main{padding:28px clamp(16px,4vw,48px) 80px;max-width:1100px;width:100%}
+section{display:none}
+section.on{display:block}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--ink)}
+.chip i{width:9px;height:9px;border-radius:50%;display:inline-block}
+h1{font-size:clamp(26px,3.4vw,36px);line-height:1.15;margin:10px 0 8px;letter-spacing:-.01em}
+h2{font-size:21px;margin:32px 0 10px;line-height:1.25}
+h3{font-size:17px;margin:20px 0 8px}
+p{margin:8px 0;max-width:78ch}
+ul{margin:6px 0;padding-left:20px;max-width:80ch}
+li{margin:4px 0}
+.tldr{border-left:4px solid var(--accent);background:var(--panel);padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0 6px}
+.tldr b{display:block;font-size:13px;color:var(--muted);margin-bottom:2px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.tbl{overflow-x:auto;margin:10px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--soft);font-weight:600}
+tr:last-child td{border-bottom:0}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-family:var(--mono);font-size:13.5px;line-height:1.55;margin:10px 0;white-space:pre}
+code{font-family:var(--mono);font-size:.92em;background:var(--code);padding:1px 5px;border-radius:4px}
+pre code{background:none;padding:0}
+.c{color:var(--muted)}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.tag{display:inline-block;font-size:12.5px;font-weight:600;padding:2px 8px;border-radius:6px}
+.tag.good{background:var(--good-bg)} .tag.bad{background:var(--bad-bg)} .tag.warn{background:var(--warn-bg)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tabs button{border:1px solid var(--line);background:var(--panel);padding:6px 12px;border-radius:8px;font-size:14px}
+.tabs button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.pane{display:none}.pane.on{display:block}
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:7px 14px;border-radius:8px;font-size:14px;font-weight:500}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+label.sl{display:flex;flex-direction:column;gap:4px;font-size:14px;min-width:160px;flex:1}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=number],select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px;width:100%}
+.bar{height:22px;background:var(--soft);border-radius:6px;overflow:hidden}
+.bar > span{display:block;height:100%;background:var(--accent);transition:width .25s}
+.barrow{display:grid;grid-template-columns:120px 1fr 56px;gap:10px;align-items:center;font-size:14px;margin:6px 0}
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:13.5px;margin:3px;background:var(--panel)}
+.pill.g{background:var(--good-bg);border-color:transparent}
+.pill.r{background:var(--bad-bg);border-color:transparent}
+.pagenav{display:flex;justify-content:space-between;gap:12px;margin-top:40px;padding-top:16px;border-top:1px solid var(--line)}
+.pagenav button{border:1px solid var(--line);background:var(--panel);padding:10px 14px;border-radius:10px;text-align:left;max-width:48%}
+.pagenav small{display:block;color:var(--muted);font-size:12px}
+.svgwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin:12px 0 6px}
+.svgwrap svg{display:block;min-width:720px;width:100%;height:auto}
+svg text{font-family:var(--sans);fill:var(--ink)}
+.station{cursor:pointer}
+.station:hover circle,.station:hover rect{stroke-width:4}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;margin:12px 0}
+.flow .step{flex:1 1 150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px}
+.flow .arrow{align-self:center;padding:0 6px;color:var(--muted);font-size:20px}
+.flow .step b{display:block;font-size:14.5px}
+.read{font-size:14px;background:var(--soft);border-radius:10px;padding:8px 14px 8px 14px;margin:6px 0 14px}
+.read > b{font-size:13px;display:block;margin-top:2px}
+.read ul{margin:4px 0}
+.pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
+.pc > div{background:var(--soft);border-radius:8px;padding:8px 12px;font-size:14px}
+.pc > div > b{display:block;font-size:13px;margin-bottom:2px}
+.pc ul{padding-left:18px;margin:2px 0}
+.layer{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel);display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;margin:6px 0;transition:background .2s}
+.layer .n{width:26px;height:26px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:600;font-size:13px}
+.layer.flag{background:var(--warn-bg)} .layer.block{background:var(--bad-bg)} .layer.pass{background:var(--good-bg)} .layer.na{opacity:.55}
+.chat{display:flex;flex-direction:column;gap:8px}
+.msg{max-width:88%;padding:9px 12px;border-radius:12px;font-size:14.5px}
+.msg.u{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:3px}
+.msg.a{align-self:flex-start;background:var(--soft);border-bottom-left-radius:3px}
+.msg small{display:block;opacity:.7;font-size:12px;margin-bottom:2px}
+.hl-t{background:rgba(47,91,234,.14);border-bottom:2px solid var(--l1)}
+.hl-c{background:rgba(209,52,59,.12);border-bottom:2px solid var(--l4)}
+.hl-o{background:rgba(46,139,62,.14);border-bottom:2px solid var(--l6)}
+.legend span{margin-right:14px;font-size:13.5px}
+.detail{min-height:80px}
+.quiz-q button{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);padding:8px 12px;border-radius:8px;margin:5px 0;font-size:14.5px}
+.quiz-q button.right{background:var(--good-bg);border-color:var(--good)}
+.quiz-q button.wrong{background:var(--bad-bg);border-color:var(--bad)}
+.explain{font-size:14px;color:var(--muted);display:none;margin-top:4px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi b{display:block;font-size:22px;font-family:var(--mono);font-weight:500}
+.kpi span{font-size:13px;color:var(--muted)}
+details.cat{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:6px 0}
+details.cat summary{cursor:pointer;padding:10px 14px;display:grid;grid-template-columns:12px minmax(160px,240px) 1fr;gap:12px;align-items:baseline;list-style:none}
+details.cat summary::-webkit-details-marker{display:none}
+details.cat summary i{width:10px;height:10px;border-radius:50%;display:inline-block}
+details.cat[open] summary{border-bottom:1px solid var(--line)}
+details.cat .body{padding:4px 14px 12px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.filters button{border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:999px;font-size:13px;display:inline-flex;gap:6px;align-items:center}
+.filters button i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.filters button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.note{font-size:13.5px;color:var(--muted)}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;z-index:20;left:0;top:0;width:86%;max-width:320px;transform:translateX(-105%);transition:transform .2s;height:100%;padding-top:calc(20px + env(safe-area-inset-top,0px))}
+  .side:not(.open){visibility:hidden;transition:transform .2s,visibility 0s .2s}
+  .side.open{transform:none;visibility:visible;box-shadow:0 0 0 100vmax rgba(0,0,0,.35)}
+  .menu-btn{display:inline-flex;position:sticky;top:env(safe-area-inset-top,0px);z-index:10;margin:10px 0 0 12px;border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:8px;font-size:14px}
+  main{padding-top:12px}
+  .barrow{grid-template-columns:92px 1fr 50px}
+  details.cat summary{grid-template-columns:12px 1fr}
+  details.cat summary .what{grid-column:2}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+
+.lbl-src{font-size:12px;font-weight:600;padding:1px 7px;border-radius:5px;background:var(--soft);color:var(--muted);margin-left:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+<button class="menu-btn" id="menuBtn" aria-controls="side" aria-expanded="false">☰ Contents</button>
+<div class="app">
+<aside class="side" id="side">
+  <p class="brand">{{GUIDE_TITLE}}</p>
+  <p class="brand-sub">{{SUBTITLE}}</p>
+  <input class="search" id="navSearch" type="search" placeholder="Filter topics…" aria-label="Filter topics">
+  <nav class="nav" id="nav" aria-label="Pages"></nav>
+  <button class="theme-btn" id="themeBtn" type="button">Switch light / dark</button>
+</aside>
+<main id="main">
+
+<!-- ===== EXAMPLE PAGE — copy this block for each topic ===== -->
+<section id="example-topic" data-title="Example topic" data-group="1 · Category name" data-color="var(--l1)">
+  <span class="chip"><i style="background:var(--l1)"></i>1 · Category name</span>
+  <h1>Plain-English title</h1>
+  <div class="tldr"><b>In 10 seconds</b>One or two sentences that carry the whole point.</div>
+
+  <h2>Core idea</h2>
+  <ul><li data-kp="kp-1">Short bullet that states key point kp-1.</li><li data-kp="kp-2">Short bullet.</li></ul>
+
+  <!-- Example only when the source supports one; otherwise an Illustrative example, labelled, or none. -->
+  <h2>Example <span class="lbl-src">Illustrative</span></h2>
+  <pre>Concrete example here (escape &amp; &lt; &gt; in source text)</pre>
+
+  <h2>Visual</h2>
+  <div class="flow">
+    <div class="step"><b>1. Step</b>What happens</div><div class="arrow">→</div>
+    <div class="step"><b>2. Step</b>What happens</div><div class="arrow">→</div>
+    <div class="step"><b>3. Step</b>What happens</div>
+  </div>
+  <div class="read"><b>Reading this diagram</b><ul><li>What the shapes mean.</li><li>What to notice.</li></ul></div>
+
+  <div class="pc">
+    <div><b class="good">Pros</b><ul><li>…</li></ul></div>
+    <div><b class="bad">Cons</b><ul><li>…</li></ul></div>
+    <div><b>Use when</b><ul><li>…</li></ul></div>
+    <div><b>Avoid when</b><ul><li>…</li></ul></div>
+  </div>
+
+  <h3>Where it's used</h3>
+  <ul><li>…</li></ul>
+</section>
+
+<nav class="pagenav" id="pagenav" aria-label="Previous and next page"></nav>
+</main>
+</div>
+<script>
+(function(){
+"use strict";
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+/* esc(): for the rare case markup must be built from data. Prefer textContent / txt(). */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const cv = cssVar;
+/* Only category tokens are applied as colours, so a data-color attribute can never inject CSS. */
+const safeColor = c => /^var\(--(l[1-7]|ink|accent|muted)\)$/.test(String(c || "").trim()) ? c.trim() : "var(--muted)";
+/* Widget data: <script type="application/json" id="x"> with "</" written as "<\/". */
+const data = id => { const n = document.getElementById(id); return n ? JSON.parse(n.textContent) : null; };
+const mobile = matchMedia("(max-width:860px)");
+
+/* Theme */
+const themeBtn = $("#themeBtn");
+function syncThemeBtn(){
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  themeBtn.setAttribute("aria-pressed", String(dark));
+}
+themeBtn.addEventListener("click", () => {
+  const root = document.documentElement, cur = root.getAttribute("data-theme");
+  const darkNow = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", darkNow ? "light" : "dark");
+  try { localStorage.setItem("theme", darkNow ? "light" : "dark"); } catch(e){}
+  syncThemeBtn(); redraw();
+});
+
+/* Drawer (mobile): closed drawer is hidden + inert, so Tab never lands on invisible links */
+const side = $("#side"), menuBtn = $("#menuBtn");
+function setDrawer(open, focusBack){
+  side.classList.toggle("open", open);
+  menuBtn.setAttribute("aria-expanded", String(open));
+  side.toggleAttribute("inert", mobile.matches && !open);
+  if (open) { const a = $("#nav a[aria-current]") || $("#nav a"); if (a) a.focus(); }
+  else if (focusBack) menuBtn.focus();
+}
+menuBtn.addEventListener("click", () => setDrawer(!side.classList.contains("open")));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && side.classList.contains("open")) setDrawer(false, true); });
+mobile.addEventListener("change", () => setDrawer(false));
+
+/* Navigation built from sections (textContent only) */
+const sections = $$("main section"), nav = $("#nav");
+let lastGroup = null;
+sections.forEach(s => {
+  if (s.dataset.group !== lastGroup) {
+    lastGroup = s.dataset.group;
+    const g = document.createElement("div"); g.className = "navgroup";
+    const dot = document.createElement("i"); dot.style.background = safeColor(s.dataset.color);
+    g.append(dot, document.createTextNode(lastGroup || "")); nav.appendChild(g);
+  }
+  const a = document.createElement("a"); a.href = "#" + s.id; a.textContent = s.dataset.title || s.id; a.dataset.id = s.id; nav.appendChild(a);
+});
+function navButton(sec, label, alignRight){
+  const b = document.createElement("button"); b.type = "button"; b.dataset.go = sec.id;
+  if (alignRight) b.style.textAlign = "right";
+  const sm = document.createElement("small"); sm.textContent = label;
+  b.append(sm, document.createTextNode(sec.dataset.title || sec.id)); return b;
+}
+let current = null;
+/* id may be a page id, or any element id inside a page (glossary term, heading) */
+function show(id, moveFocus){
+  const el = id ? document.getElementById(id) : null;
+  const target = (el && sections.find(s => s === el || s.contains(el))) || sections[0];
+  if (!target) return;
+  if (target !== current) {
+    sections.forEach(s => s.classList.toggle("on", s === target));
+    $$("#nav a").forEach(a => { if (a.dataset.id === target.id) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    const i = sections.indexOf(target), prev = sections[i-1], next = sections[i+1];
+    const pn = $("#pagenav"); pn.replaceChildren(
+      prev ? navButton(prev, "Previous") : document.createElement("span"),
+      next ? navButton(next, "Next", true) : document.createElement("span"));
+    current = target;
+  }
+  if (side.classList.contains("open")) setDrawer(false);
+  if (el && el !== target) { el.scrollIntoView(); if (moveFocus) { if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1"); el.focus({preventScroll:true}); } }
+  else {
+    window.scrollTo(0, 0);
+    if (moveFocus) { const h = $("h1", target); if (h) { if (!h.hasAttribute("tabindex")) h.setAttribute("tabindex", "-1"); h.focus({preventScroll:true}); } }
+  }
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) location.hash = b.dataset.go; });
+window.addEventListener("hashchange", () => show(decodeURIComponent(location.hash.slice(1)), true));
+$("#navSearch").addEventListener("input", e => {
+  const q = e.target.value.toLowerCase();
+  $$("#nav a").forEach(a => { const sec = document.getElementById(a.dataset.id);
+    a.style.display = (!q || a.textContent.toLowerCase().includes(q) || sec.textContent.toLowerCase().includes(q)) ? "" : "none"; });
+});
+
+/* Tabs: .tabs[data-tabs] > button[data-pane="pane-id"] */
+$$("[data-tabs]").forEach(group => {
+  group.setAttribute("role", "tablist");
+  $$("button[data-pane]", group).forEach(x => { x.setAttribute("role", "tab"); x.setAttribute("aria-selected", String(x.classList.contains("on"))); x.setAttribute("aria-controls", x.dataset.pane); });
+  group.addEventListener("click", e => {
+    const b = e.target.closest("button[data-pane]"); if (!b) return;
+    $$("button[data-pane]", group).forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); const p = document.getElementById(x.dataset.pane); if (p) p.classList.toggle("on", on); });
+  });
+});
+
+/* SVG helpers for data-driven diagrams: txt() sets textContent, so labels need no escaping */
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent){ const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
+function txt(parent, x, y, s, attrs={}){ const t = el("text", Object.assign({x, y}, attrs), parent); t.textContent = s; return t; }
+/* Arrow-head marker for SVG lines: mk(defs, "id", colour) then "marker-end":"url(#id)" */
+function mk(defs, id, color){ const m = el("marker", {id, viewBox:"0 0 10 10", refX:9, refY:5, markerWidth:7, markerHeight:7, orient:"auto"}, defs); el("path", {d:"M0,0 L10,5 L0,10 z", fill:color}, m); }
+/* Makes an element keyboard-operable: focusable, a role, an accessible name, Enter/Space. */
+function clickable(g, fn, label, role){
+  if (!g.hasAttribute("tabindex")) g.setAttribute("tabindex", "0");
+  if (!g.hasAttribute("role")) g.setAttribute("role", role || "button");
+  if (label && !g.hasAttribute("aria-label")) g.setAttribute("aria-label", label);
+  g.addEventListener("click", fn);
+  g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } });
+}
+
+/* ===== WIDGETS: add page-specific diagrams / simulators here =====
+   Pattern: content in a JSON data block (see 6 in the header), render with el()/txt(),
+   register draw fns in DRAWERS. W and ST are shared stores used by the technique snippets. */
+const W = {}, ST = {};
+const DRAWERS = [];
+function redraw(){ DRAWERS.forEach(fn => fn()); }
+
+redraw(); syncThemeBtn();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { syncThemeBtn(); redraw(); });
+side.toggleAttribute("inert", mobile.matches);
+show(decodeURIComponent(location.hash.slice(1)), false);
+})();
+</script>
+</body>
+</html>

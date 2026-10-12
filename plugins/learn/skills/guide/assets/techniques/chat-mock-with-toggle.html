@@ -1,0 +1,57 @@
+<!--
+  Technique: Chat mock with toggle  (id: chat-mock-with-toggle, group: 5 · Explain)
+  What it is: A fake chat conversation showing how a bot or model answers, with a switch that changes one condition.
+  Best for: Behaviour of a bot or model · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-chat-mock-with-toggle">
+<h2 style="margin-top:0">Chat mock with toggle</h2>
+<p class="what">
+<b>What it is:</b> A fake chat conversation showing how a bot or model answers, with a switch that changes one condition.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows behaviour, not just rules.</li>
+<li>The toggle proves what one change (a prompt line, a setting) does.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Behaviour of a bot or model</div>
+<div>
+<b class="bad">Avoid when</b>Static facts</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> A model answering &#x27;use 301?&#x27; with and without a design rule about analytics.</p>
+<label class="row" style="gap:8px;font-size:14px">
+<input type="checkbox" id="chatT"> Add a design rule to the prompt</label>
+<div class="chat" id="chatBox" style="margin-top:8px">
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Read the conversation, then flip the toggle and compare the answer.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Toggle to see how one line changes the answer.</li>
+<li>Illustrative.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> Chat bubbles + a checkbox that swaps the answer. Markdown: two short transcripts (before / after).</p>
+</div>
+<script>
+/* fixed demo strings; with source text build bubbles via textContent or esc() */
+(function(){
+const chat=()=>{const on=document.getElementById("chatT").checked;document.getElementById("chatBox").innerHTML=`<div class="msg u"><small>User</small>Should the shortener use 301 redirects?</div><div class="msg a"><small>Model ${on?"(rule: we need click analytics)":"(no rule)"}</small>${on?"Use 302: 301 is cached by browsers, so repeat clicks would skip analytics.":"Yes, 301 is permanent and efficient."}</div>`;};document.getElementById("chatT").onchange=chat;chat();
+})();
+</script>
