@@ -78,7 +78,7 @@ h = d["hookSpecificOutput"]
 assert h["hookEventName"] == "SessionStart", h
 ctx = h["additionalContext"]
 assert 0 < len(ctx.splitlines()) <= 10, len(ctx.splitlines())
-for need in ("/100x-engineer:100x", "100x list", "/opt/plugin/docs/OPERATING-MODEL.md"):
+for need in ("/100x:100x", "100x list", "/opt/plugin/docs/OPERATING-MODEL.md", "OPERATING-MODEL §9", "INDEX.md"):
     assert need in ctx, need
 ' && ok "SessionStart emits valid, short additionalContext" || bad "SessionStart JSON shape"
 printf 'garbage' | python3 "$SESSION" >/dev/null 2>&1 && ok "SessionStart tolerates any stdin" \

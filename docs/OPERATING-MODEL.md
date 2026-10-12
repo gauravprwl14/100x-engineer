@@ -16,6 +16,7 @@ agent definition and this file disagree, this file wins.
 | 6 | [Orchestration](#6-orchestration) | the AC-<n> format and the `<feature>/AC-<n>` test tag, how a plan is stamped against an approved spec, where a feature's files live, and how a plan becomes parallel tasks without two agents colliding | ~90 lines |
 | 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~10 lines |
 | 8 | [Indexing](#8-indexing) | where records live (the records root and `.100x.json`'s keys), how record arguments resolve, and how every written artifact stays findable | ~40 lines |
+| 9 | [Generated documents: index first, then detail](#9-generated-documents-index-first-then-detail) | how any generated doc opens with its answer, when it needs a Contents table, and when a folder needs an `INDEX.md` | ~25 lines |
 
 ## 1. Roles
 
@@ -361,3 +362,23 @@ it beside the spec, or to pass `--force` to write a fresh one. A root that is ab
 refused. A repo with legacy top-level record directories and no config keeps using them,
 with a warning. This plugin's own repo commits `{"root": "."}`, so its examples sit at
 `specs/`, `decisions/` and `ledger/`.
+
+## 9. Generated documents: index first, then detail
+
+Applies to any markdown/doc you generate (reports, specs, reviews, plans, research, notes).
+
+1. **Top of every file = the answer.** Open with a 2–5 line summary or a summary table of
+   the key insights/decisions/status — what a reader needs if they read nothing else.
+2. **Long file → Contents table.** A file over ~150 lines with 4+ sections gets a
+   `## Contents` table right after the summary: one row per section, saying what the
+   section *answers* (not its heading restated), linked by anchor.
+3. **Multiple files → one INDEX.md.** When a task produces 2+ files in a folder, write or
+   update that folder's `INDEX.md`: a table of every file with one line on what it answers,
+   and a "start here" pointer. Every child file links back to `INDEX.md` on its first line.
+4. **Nested folders → nested indexes.** A parent `INDEX.md` lists child folders and links
+   to their `INDEX.md`; never list grandchildren directly.
+5. **Prefer** diagram (mermaid) > table > bullets > prose for anything enumerable or flow-shaped.
+6. **Skip it when trivial.** Under ~150 lines, a single file, or a generated file — no
+   Contents table, no INDEX. Ceremony on short files is what gets the rule ignored.
+7. If a tool or skill already generates an index (e.g. `100x pr_review index`,
+   `check_index --gen-collections`), run it instead of hand-writing one.

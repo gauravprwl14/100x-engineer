@@ -14,12 +14,14 @@ def main():
         str(pathlib.Path(__file__).resolve().parent.parent)
     lines = [
         "The 100x-engineer plugin is installed.",
-        "Start any engineering task with the `/100x-engineer:100x` router skill; it "
+        "Start any engineering task with the `/100x:100x` router skill; it "
         "picks the skills the task needs.",
         "Plugin tools run as `100x <tool>`; `100x list` shows them.",
         f"Agent protocol and report contract: {root}/docs/OPERATING-MODEL.md",
         "Commit, push, PR and publish commands need a fresh signed receipt from "
         "`100x verified` in repositories that configure .claude/verification-policy.json.",
+        "Generated docs: summary first, Contents table on long files, INDEX.md for "
+        "multi-file output — see OPERATING-MODEL §9.",
     ]
     return {"hookSpecificOutput": {"hookEventName": "SessionStart",
                                    "additionalContext": "\n".join(lines)}}
