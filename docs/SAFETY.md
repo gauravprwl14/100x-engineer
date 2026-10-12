@@ -14,7 +14,7 @@ Every mutation happens silently, so the only protection is what the code refuses
 | 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root, or the PR review root), what guards it, how writes stay inside the repo, and when `pr-review` posts to GitHub | 62 lines |
 | 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run a plan's declared commands | 32 lines |
 | 4 | [Refusals](#refusals) | path traversal, a records root outside the repo, and non-git directories | 25 lines |
-| 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop, SessionStart and the PostToolUse index nudge, fail-open | 96 lines |
+| 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop, the Stop re-check, SessionStart and the PostToolUse index nudge, fail-open | 97 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
 | 7 | [Residual risks](#residual-risks) | what is still on you | 23 lines |
 
@@ -168,13 +168,14 @@ cannot make the record writers write outside the project.
 
 ## The hooks
 
-Four hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
+Five hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 `${CLAUDE_PLUGIN_ROOT}/hooks/`.
 
 | hook | event | what it can do |
 |---|---|---|
 | `require_verification.py` | `PreToolUse` (Bash) | `deny`, `ask`, or nothing; never `allow` |
 | `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
+| `recheck_gate.py` | `Stop`, `SubagentStop` (opt-in) | block ending a substantive turn (a file edit, or a final answer of 1500+ chars) once, with the re-check prompt from `skills/recheck/references/recheck-prompt.md` as the reason; on `SubagentStop` only when `subagents` is `all` or lists the agent type; skipped under `stop_hook_active`, `HUNDREDX_RECHECK=manual\|off` or `~/.config/100x/recheck.json`; reads the transcript's last 2 MB (a subagent's own file when it has one), its `.meta.json`, and that file, writes nothing, runs no subprocess |
 | `session_start.py` | `SessionStart` | add six lines of context naming `/100x:100x`, `100x list`, the operating model, the receipt rule and the generated-docs index rule; reads nothing in your repo |
 | `index_check.py` | `PostToolUse` (Write, Edit, MultiEdit) | add context only, never blocks: after a `.md` write, warns when a long multi-section file lacks `## Contents`, when its folder has 2+ docs and no `INDEX.md`, or when the folder's `INDEX.md` does not list it (OPERATING-MODEL §9); reads that file and lists its folder, writes nothing, runs no subprocess |
 

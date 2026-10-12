@@ -17,6 +17,7 @@ agent definition and this file disagree, this file wins.
 | 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~10 lines |
 | 8 | [Indexing](#8-indexing) | where records live (the records root and `.100x.json`'s keys), how record arguments resolve, and how every written artifact stays findable | ~40 lines |
 | 9 | [Generated documents: index first, then detail](#9-generated-documents-index-first-then-detail) | how any generated doc opens with its answer, when it needs a Contents table, and when a folder needs an `INDEX.md` | ~25 lines |
+| 10 | [Re-check pass](#10-re-check-pass) | when a turn gets one automatic skeptical second pass, how to turn it off, and what it costs, and opting subagents in | ~20 lines |
 
 ## 1. Roles
 
@@ -382,3 +383,24 @@ Applies to any markdown/doc you generate (reports, specs, reviews, plans, resear
    Contents table, no INDEX. Ceremony on short files is what gets the rule ignored.
 7. If a tool or skill already generates an index (e.g. `100x pr_review index`,
    `check_index --gen-collections`), run it instead of hand-writing one.
+
+## 10. Re-check pass
+
+A substantive turn — one that edited a file, or ended in a final answer of at least 1500
+characters — gets one skeptical second pass before it stops: the `Stop` hook
+`hooks/recheck_gate.py` blocks once with the prompt in
+`skills/recheck/references/recheck-prompt.md`, and the answer ends with a `Re-check:` line.
+In blind A/B runs a second pass turned 0/8 safe answers to a silent money bug into 7/8; the
+wording mattered far less ([evidence](../skills/recheck/references/evidence.md)).
+
+| mode | effect | set with |
+|---|---|---|
+| `auto` (default) | one pass per substantive turn, never twice per stop | — |
+| `manual` | only `/100x:recheck` | `HUNDREDX_RECHECK=manual` or `~/.config/100x/recheck.json` `{"mode": "manual"}` |
+| `off` | never | `HUNDREDX_RECHECK=off` or `{"mode": "off"}` |
+
+| subagents | opt-in: the same hook on `SubagentStop`; `"subagents": "all"` or a list of agent types | `HUNDREDX_RECHECK_SUBAGENTS=all` or `~/.config/100x/recheck.json` |
+
+Cost: ~1.5–2 minutes and a few thousand tokens per substantive turn — and, with subagents on,
+per substantive subagent run, so every such agent finishes that much later. Off by default
+there, because the main session's review of agent reports is already a second pass.
