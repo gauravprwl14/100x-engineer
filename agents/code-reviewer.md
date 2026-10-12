@@ -8,9 +8,9 @@ description: >
   never edits code.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:diff-review
-  - 100x-engineer:code-craft
-  - 100x-engineer:minimal-diff
+  - 100x:diff-review
+  - 100x:code-craft
+  - 100x:minimal-diff
 color: red
 ---
 

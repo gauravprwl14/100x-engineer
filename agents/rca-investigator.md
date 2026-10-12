@@ -8,7 +8,7 @@ description: >
   RCA record only; never ships the fix.
 tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 skills:
-  - 100x-engineer:root-cause-analysis
+  - 100x:root-cause-analysis
 color: orange
 ---
 

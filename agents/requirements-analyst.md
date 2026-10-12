@@ -8,8 +8,8 @@ description: >
   PRD/spec and QA requests. Read-only; never writes code.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:requirements-intake
-  - 100x-engineer:scale-appropriateness
+  - 100x:requirements-intake
+  - 100x:scale-appropriateness
 color: cyan
 ---
 

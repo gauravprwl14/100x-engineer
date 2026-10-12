@@ -8,11 +8,11 @@ description: >
   shutdown. Use for any backend, API, worker or data task in an orchestrated plan.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 skills:
-  - 100x-engineer:api-contract
-  - 100x-engineer:data-modeling
-  - 100x-engineer:distributed-correctness
-  - 100x-engineer:observability-design
-  - 100x-engineer:data-lifecycle
+  - 100x:api-contract
+  - 100x:data-modeling
+  - 100x:distributed-correctness
+  - 100x:observability-design
+  - 100x:data-lifecycle
 color: blue
 ---
 

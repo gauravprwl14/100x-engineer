@@ -34,7 +34,7 @@ why its examples live at `specs/login`, `decisions/` and `ledger/`.
 ## 0. Start here: say it in plain English
 
 ```text
-/100x-engineer:100x Add tagging to albums so users can find photos by tag
+/100x:100x Add tagging to albums so users can find photos by tag
 ```
 
 | the router does | you do |

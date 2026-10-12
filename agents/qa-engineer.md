@@ -8,8 +8,8 @@ description: >
   files only, never production code.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 skills:
-  - 100x-engineer:qa-strategy
-  - 100x-engineer:test-design
+  - 100x:qa-strategy
+  - 100x:test-design
 color: yellow
 ---
 

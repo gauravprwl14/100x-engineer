@@ -8,8 +8,8 @@ description: >
   never code.
 tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 skills:
-  - 100x-engineer:codebase-comprehension
-  - 100x-engineer:diagramming
+  - 100x:codebase-comprehension
+  - 100x:diagramming
 color: cyan
 ---
 

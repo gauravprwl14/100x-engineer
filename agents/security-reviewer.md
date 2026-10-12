@@ -8,8 +8,8 @@ description: >
   uploads, webhooks or outbound calls. Read-only; never edits.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:app-security
-  - 100x-engineer:security-baseline
+  - 100x:app-security
+  - 100x:security-baseline
 color: red
 ---
 

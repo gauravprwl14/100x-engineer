@@ -54,7 +54,7 @@ sequenceDiagram
 | incident | production broken or was broken, outage, intermittent/CI-only failure, cause unknown |
 | understand | "how does X work", "explain", "onboard me", "where is", before touching unfamiliar code |
 | review-own | "review my changes", before your own commit/PR |
-| review-other | a PR number, a teammate's or another agent's diff |
+| review-other | a PR number, a teammate's or another agent's diff; a PR URL whose review should be posted as comments |
 | plan-PRD | "PRD", "spec", "design doc", "approach", "should we", build-vs-buy, anything bigger than one feature |
 | change-untested | modify code with no tests covering the part being touched |
 | QA | "test plan", "is this covered", "write tests", regression suite |
@@ -65,7 +65,7 @@ to different pipelines **and** the wrong one would change code or data.
 
 ## Pipeline per intent
 
-Skills run in the order listed. Agents are this plugin's subagents (`100x-engineer:<name>`).
+Skills run in the order listed. Agents are this plugin's subagents (`100x:<name>`).
 
 | intent | skills, in order | agents | gates |
 |---|---|---|---|
@@ -74,7 +74,7 @@ Skills run in the order listed. Agents are this plugin's subagents (`100x-engine
 | incident | root-cause-analysis → bug-fix → release-rollout (rollback or flag-off first if users are hurting) → project-learning | rca-investigator, then the engineer for the area, independent-verifier | `100x rca lint`, `100x rca link`, `100x decide drift` |
 | understand | codebase-comprehension → diagramming → project-learning | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index` |
 | review-own | diff-review → minimal-diff → code-craft → verification-gate | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
-| review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check` |
+| review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code; pr-review when the findings go to GitHub as comments | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check`; for pr-review `100x pr_review_gate` |
 | plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag stamp` + `lint` |
 | change-untested | requirements-intake → codebase-comprehension → legacy-change (characterisation tests first) → test-design → minimal-diff → diff-review | comprehension-mapper, qa-engineer, the engineer for the area, code-reviewer | characterisation tests pass before the change, `100x bloat_check`, `100x verified` |
 | QA | requirements-intake → qa-strategy → test-design → accessibility → performance-budgets at growth+ | qa-engineer, independent-verifier | `100x testplan new` + `trace`, `100x test_design_check`, `100x verified` |

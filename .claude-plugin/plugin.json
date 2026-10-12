@@ -1,5 +1,5 @@
 {
-  "name": "100x-engineer",
+  "name": "100x",
   "version": "0.2.0",
   "description": "Plain English in, verified work out: a /100x router that asks at most five questions, eleven specialist agents run in parallel with replayed evidence, built-in defaults by work type, tier and risk, PRD to spec to test traceability through AC ids, QA test plans, verification gates with signed receipts, and codebase comprehension and root-cause analysis. Python stdlib and git only.",
   "author": {

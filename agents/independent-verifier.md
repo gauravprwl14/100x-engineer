@@ -8,7 +8,7 @@ description: >
   what it finds.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:verification-gate
+  - 100x:verification-gate
 color: pink
 ---
 

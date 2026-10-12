@@ -8,11 +8,11 @@ description: >
   edits code.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
-  - 100x-engineer:solution-architecture
-  - 100x-engineer:approach-selection
-  - 100x-engineer:api-contract
-  - 100x-engineer:data-modeling
-  - 100x-engineer:distributed-correctness
+  - 100x:solution-architecture
+  - 100x:approach-selection
+  - 100x:api-contract
+  - 100x:data-modeling
+  - 100x:distributed-correctness
 color: purple
 ---
 

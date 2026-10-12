@@ -57,7 +57,7 @@ expect_error "name != filename is rejected" "!= filename" \
 expect_error "a preloaded skill that does not exist is rejected" "does not exist under skills/" \
   "rm -rf skills/minimal-diff"
 expect_error "a bare (un-namespaced) skill name is rejected" "is not namespaced" \
-  "sed -i.bak 's/^  - 100x-engineer:minimal-diff/  - minimal-diff/' agents/code-reviewer.md"
+  "sed -i.bak 's/^  - 100x:minimal-diff/  - minimal-diff/' agents/code-reviewer.md"
 expect_error "a roster agent with no file is rejected" "has no file" \
   "rm agents/rca-investigator.md"
 expect_error "an agent outside the roster is rejected" "not in the OPERATING-MODEL" \

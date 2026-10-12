@@ -8,9 +8,9 @@ description: >
   switch. Use for any mobile task in an orchestrated plan.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 skills:
-  - 100x-engineer:ui-baseline
-  - 100x-engineer:accessibility
-  - 100x-engineer:mobile-release-safety
+  - 100x:ui-baseline
+  - 100x:accessibility
+  - 100x:mobile-release-safety
 color: orange
 ---
 
