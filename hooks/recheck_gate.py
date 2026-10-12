@@ -28,6 +28,11 @@ CONFIG_REL = (".config", "100x", "recheck.json")
 AGENT_TYPE_KEYS = ("agent_type", "agentType", "subagent_type", "agent_name")
 TAIL_BYTES = 2 * 1024 * 1024
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+# A Bash command that changes files counts as an edit too: in-place editors, tee, git
+# commits, Python file writes, and output redirected to a path (not /dev/null or an fd).
+BASH_WRITE = re.compile(
+    r"\b(?:sed|perl)\s+-i|\btee\b|\bgit\s+(?:commit|apply|am)\b|\.write_text\(|"
+    r"open\([^)]*['\"][wa]b?['\"]|(?<![0-9&])>>?\s*(?!&|/dev/null)[\w./~$\"'-]")
 PROMPT_REL = ("skills", "recheck", "references", "recheck-prompt.md")
 START, END = "<!-- recheck-prompt:start -->", "<!-- recheck-prompt:end -->"
 # A turn that already asked for the re-check: the user typed the command (matched only in
@@ -148,7 +153,9 @@ def scan(turn):
                 if b.get("name") == "Skill" and COMMAND.search(
                         "/" + str((b.get("input") or {}).get("skill", ""))):
                     return edited, "", True
-                edited = edited or b.get("name") in EDIT_TOOLS
+                edited = edited or b.get("name") in EDIT_TOOLS or (
+                    b.get("name") == "Bash" and bool(BASH_WRITE.search(
+                        str((b.get("input") or {}).get("command", "")))))
                 final = []
             elif b.get("type") == "text":
                 final.append(b.get("text") or "")

@@ -76,10 +76,19 @@ fixture skilltool  '[["user","double-check that"],["tool","Skill",{"skill":"100x
 fixture meta_mid   '[["user","fix the parser"],'"$EDIT"',["meta","<local-command-stdout>ok</local-command-stdout>"],["text","Fixed."]]'
 fixture sidechain  '[["user","ask an agent"],["tool","Task",{"prompt":"x"}],["side"],["text","The agent finished."]]'
 
+fixture bash_sed   '[["user","bump it"],["tool","Bash",{"command":"sed -i.bak s/a/b/ app.py"}],["text","Bumped."]]'
+fixture bash_redir '[["user","write it"],["tool","Bash",{"command":"cat > notes.md <<EOF\nx\nEOF"}],["text","Written."]]'
+fixture bash_commit '[["user","commit"],["tool","Bash",{"command":"git add -A && git commit -m x"}],["text","Committed."]]'
+fixture bash_read  '[["user","check"],["tool","Bash",{"command":"git status 2>&1 | head > /dev/null; ls -la"}],["text","Clean."]]'
+
 echo "--- decisions"
 expect block "edit turn blocks with the prompt"                     edit
 expect block "long text answer (>= 1500 chars) blocks"               long
 expect none  "short Q&A after an earlier edit turn: no block"        short
+expect block "Bash sed -i counts as an edit"                         bash_sed
+expect block "Bash redirect to a file counts as an edit"             bash_redir
+expect block "Bash git commit counts as an edit"                     bash_commit
+expect none  "read-only Bash (2>&1, >/dev/null) is not an edit"      bash_read
 expect none  "read-only tools and a short answer: no block"          readonly
 expect block "NotebookEdit counts as an edit"                        notebook
 expect none  "stop_hook_active: never loops"                         edit true
