@@ -96,6 +96,17 @@ commands, are in the README under "Migrating from 0.1".
   `Write|Edit|MultiEdit`) warns after a `.md` write that breaks it; it adds context only,
   never blocks, writes nothing and fails open.
 
+- Skill `recheck` and a `Stop`/`SubagentStop` hook (`hooks/recheck_gate.py`): once per
+  substantive turn (files edited, or an answer of 1,500+ characters) Claude re-audits its own
+  answer with one shared prompt (`skills/recheck/references/recheck-prompt.md`). Modes
+  `auto|manual|off` via `~/.config/100x/recheck.json` or `HUNDREDX_RECHECK`; subagents are
+  opt-in (`subagents: "all"` or an agent-type list). Evidence from two blind A/B rounds is in
+  `skills/recheck/references/evidence.md`; `docs/OPERATING-MODEL.md` §10.
+- Skill `prompt-bench` and tool `prompt_bench` (`init`, `record`, `snapshot`, `blind`,
+  `judge-plan`, `probe`, `aggregate`, `report`): evaluate a prompt or instruction against a
+  placebo arm with hidden-ground-truth tasks, isolated subagent runs and blind judges; reports a
+  sign-test verdict, ceiling and small-n warnings, cost, and where the prompt belongs.
+
 ### Changed
 
 - The commit gate parses the command line instead of matching its first words, so it
