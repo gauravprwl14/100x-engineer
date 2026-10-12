@@ -1,0 +1,17 @@
+{
+  "9999-BUG-01": {
+    "cmd": null,
+    "result": "applies cleanly — typecheck not run (no node_modules in the snapshot)",
+    "sha256": "365a1455a933d66a9c52ba885a78b43d0a9c0fd69eda534204195c3fe3b18a4f"
+  },
+  "9999-CNV-01": {
+    "cmd": null,
+    "result": "applies cleanly — typecheck not run (no node_modules in the snapshot)",
+    "sha256": "acb731d78f01ae70d579877cc82aae00f1a1fa154db3190e893d8b229b26a67c"
+  },
+  "9999-TST-01": {
+    "cmd": null,
+    "result": "applies cleanly — typecheck not run (no node_modules in the snapshot)",
+    "sha256": "6a4ac65202aeae238e79324281fd512619b13fae75a7b6fd172403de019d5ce8"
+  }
+}

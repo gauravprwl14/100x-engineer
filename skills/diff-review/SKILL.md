@@ -153,6 +153,8 @@ no ticket is uncertain — say so. The nine questions are measured gaps, not a c
 Every question passes: `verification-gate` before commit. An accepted gap or an undocumented decision
 the PR changes goes to `decision-records` before merge. A known framework: run `stack-reviewer`
 alongside, not after. A blocking fix in code you did not write: `codebase-comprehension` first.
+Someone else's PR whose findings should become comments posted to GitHub: `pr-review`, which records
+and posts them using these rules.
 
 ## Scale
 

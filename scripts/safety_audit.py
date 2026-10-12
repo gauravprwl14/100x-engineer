@@ -57,6 +57,8 @@ SCOPED_WRITERS = {
     "02_enrich_gql.py": "research/raw/",
     "03_score.py": "research/raw/",
     "04_corpus_doc.py": "research/10-repo-corpus.md",
+    "pr_review.py": "the review root it resolves or is given: rendered files, review.json via merge/mark-posted, INDEX.md, and init's CONTEXT.md + _meta/ stubs (never overwritten)",
+    "pr_snapshot.py": "--dest only (exported trees, diffs, PINS.md); the clone gets only git fetch",
 }
 
 

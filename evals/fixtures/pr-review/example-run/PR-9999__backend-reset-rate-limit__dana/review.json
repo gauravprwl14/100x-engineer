@@ -1,0 +1,294 @@
+{
+  "_illustrative": "ILLUSTRATIVE ONLY: PR 9999 in acme/widgets on git.example.com is fictional. Copy the shape, never the facts.",
+  "pr": {
+    "url": "https://git.example.com/acme/widgets/pull/9999",
+    "number": 9999,
+    "title": "feat(reset): cap password-reset mails at 3 per minute",
+    "author": "dana",
+    "head_sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+    "base": "main",
+    "behind": 4,
+    "ci": "pass 2/2",
+    "additions": 41,
+    "deletions": 3
+  },
+  "run": {
+    "date": "2030-01-15",
+    "for": "sam",
+    "agents": [
+      {
+        "role": "PR reviewer (+ security pass)",
+        "model": "claude-opus"
+      }
+    ],
+    "recheck_of": null,
+    "existing_comments": {
+      "checked": true,
+      "count": 1,
+      "note": "1 bot thread asking to log the 429 — answered by the author; nothing below repeats it"
+    }
+  },
+  "summary": {
+    "what_it_does": [
+      "Anyone could ask for unlimited password-reset mails to any address, so one inbox could be flooded.",
+      "This PR counts reset requests and refuses the 4th within 60 seconds with `429 Try again later`.",
+      "The count is kept in memory on each server."
+    ],
+    "recommendation": "request_changes",
+    "reason": "The cap counts per sender IP, so an attacker with 2 IPs still sends 6 mails a minute to one inbox — the exact problem the PR is meant to stop.",
+    "lang": "en"
+  },
+  "items": [
+    {
+      "id": "9999-BUG-01",
+      "kind": "issue",
+      "blocks": "merge",
+      "severity": "major",
+      "status": "open",
+      "title": "Cap is per sender IP, not per email address",
+      "why": "The issue is about flooding ONE inbox. Keyed on the IP, 2 IPs send 6 mails a minute to the same address.",
+      "where": {
+        "path": "src/reset/limiter.ts",
+        "line": 10,
+        "start_line": null,
+        "in_diff": true
+      },
+      "ask": {
+        "who": "author",
+        "where": "line comment"
+      },
+      "comment": "The cap is keyed on the sender IP, so `--ips 198.51.100.7,203.0.113.9` still sends 6 mails a minute to `user@acme.test`; issue 9990 asks for 3 per address. Could we key it on the email instead?",
+      "change": {
+        "type": "suggestion",
+        "body": "    const key = `reset:${email.toLowerCase()}`;",
+        "checked": "applies cleanly — typecheck not run (no node_modules in the snapshot)"
+      },
+      "evidence": {
+        "type": "ran",
+        "detail": "`node scripts/try-reset.js user@acme.test --ips 2` → 6 mails in 60 s"
+      },
+      "confirm_by": null,
+      "unknown": null,
+      "dup_of_existing_comment": null
+    },
+    {
+      "id": "9999-SEC-01",
+      "kind": "question",
+      "blocks": "rollout",
+      "severity": "major",
+      "status": "question",
+      "title": "How many API instances run in production?",
+      "why": "Each server counts alone. With 4 servers the real cap is about 12 a minute, not 3. Fine for one server, wrong for many.",
+      "where": {
+        "path": "src/reset/limiter.ts",
+        "line": 6,
+        "start_line": null,
+        "in_diff": true
+      },
+      "ask": {
+        "who": "author",
+        "where": "line comment"
+      },
+      "also_ask": [
+        {
+          "who": "Infra on-call",
+          "where": "Slack #infra",
+          "say": "How many replicas does the `api` deployment run in production today (`kubectl get deploy api -o jsonpath='{.spec.replicas}'`)? We need it for the reset-mail cap in PR 9999."
+        }
+      ],
+      "comment": "This `Map` lives in one process. If prod runs more than 1 instance (the LB spreads calls), the effective cap is 3 × instances. How many run today, and is a shared counter (e.g. Redis `INCR` with a 60 s TTL) planned before we turn this on?",
+      "change": {
+        "type": "none",
+        "body": "",
+        "checked": "n/a"
+      },
+      "evidence": {
+        "type": "inferred",
+        "detail": "`private readonly hits = new Map<string, number[]>()` — per process; replica count not visible in this repo"
+      },
+      "confirm_by": "`kubectl get deploy api -o jsonpath='{.spec.replicas}'` in prod; > 1 means the cap is multiplied",
+      "unknown": "Whether prod runs more than one API instance",
+      "dup_of_existing_comment": null
+    },
+    {
+      "id": "9999-TST-01",
+      "kind": "suggestion",
+      "blocks": "none",
+      "severity": "minor",
+      "status": "open",
+      "title": "Test the 4th call is refused",
+      "why": "The only test checks the 1st call is allowed. Nothing proves the cap itself works.",
+      "where": {
+        "path": "src/reset/reset.controller.spec.ts",
+        "line": 4,
+        "start_line": null,
+        "in_diff": false
+      },
+      "ask": {
+        "who": "author",
+        "where": "PR comment"
+      },
+      "comment": "The spec only checks that the 1st call passes. Could we add a case where the 4th call within 60 s returns `false`?",
+      "change": {
+        "type": "diff",
+        "body": "--- a/src/reset/reset.controller.spec.ts\n+++ b/src/reset/reset.controller.spec.ts\n@@ -7,2 +7,8 @@\n   });\n+\n+  it('refuses the 4th call within 60 s', () => {\n+    const l = new ResetLimiter();\n+    [0, 1, 2].forEach((t) => l.allow('198.51.100.7', 'user@acme.test', t));\n+    expect(l.allow('198.51.100.7', 'user@acme.test', 3)).toBe(false);\n+  });\n });",
+        "checked": "applies cleanly — typecheck not run (no node_modules in the snapshot)"
+      },
+      "evidence": {
+        "type": "read",
+        "detail": "`expect(l.allow('198.51.100.7', 'user@acme.test', 0)).toBe(true);` is the only assertion"
+      },
+      "confirm_by": null,
+      "unknown": null,
+      "dup_of_existing_comment": null
+    },
+    {
+      "id": "9999-CNV-01",
+      "kind": "nit",
+      "blocks": "none",
+      "severity": "trivial",
+      "status": "open",
+      "title": "Name the 60000 and the 3",
+      "why": "Repo convention: no magic numbers. Named constants also make the cap easy to find.",
+      "where": {
+        "path": "src/reset/limiter.ts",
+        "line": 11,
+        "start_line": null,
+        "in_diff": true
+      },
+      "ask": {
+        "who": "author",
+        "where": "PR comment"
+      },
+      "comment": "Could `60000` and `3` become `WINDOW_MS` and `MAX_MAILS` constants?",
+      "change": {
+        "type": "diff",
+        "body": "--- a/src/reset/limiter.ts\n+++ b/src/reset/limiter.ts\n@@ -11,2 +11,2 @@\n-    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < 60000);\n-    if (recent.length >= 3) return false;\n+    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);\n+    if (recent.length >= MAX_MAILS) return false;",
+        "checked": "applies cleanly — typecheck not run (no node_modules in the snapshot)"
+      },
+      "evidence": {
+        "type": "read",
+        "detail": "`filter((t) => now - t < 60000)` and `recent.length >= 3`"
+      },
+      "confirm_by": null,
+      "unknown": null,
+      "dup_of_existing_comment": null
+    },
+    {
+      "id": "9999-PRD-01",
+      "kind": "praise",
+      "blocks": "none",
+      "severity": "trivial",
+      "status": "open",
+      "title": "Clear 429 answer",
+      "why": "Worth saying: the client gets a standard status code, so the UI follow-up is easy.",
+      "where": {
+        "path": null,
+        "line": null,
+        "start_line": null,
+        "in_diff": false
+      },
+      "ask": {
+        "who": "author",
+        "where": "PR comment"
+      },
+      "comment": "Nice that the refusal is a plain `429` — the UI follow-up can key on it directly.",
+      "change": {
+        "type": "none",
+        "body": "",
+        "checked": "n/a"
+      },
+      "evidence": {
+        "type": "read",
+        "detail": "PR body: \"answers 429 Try again later\""
+      },
+      "confirm_by": null,
+      "unknown": null,
+      "dup_of_existing_comment": null
+    },
+    {
+      "id": "9999-PRD-02",
+      "kind": "suggestion",
+      "blocks": "none",
+      "severity": "minor",
+      "status": "accepted",
+      "title": "UI shows no wait time yet",
+      "why": "The author deferred the \"try again in N s\" message to slice 2 of issue 9990.",
+      "where": {
+        "path": null,
+        "line": null,
+        "start_line": null,
+        "in_diff": false
+      },
+      "ask": {
+        "who": "author",
+        "where": "PR comment"
+      },
+      "comment": "Deferred to slice 2 of issue 9990 (`Retry-After` header + message).",
+      "change": {
+        "type": "pseudo",
+        "body": "slice 2: send Retry-After: 45 and show \"Try again in 45 s\"",
+        "checked": "n/a"
+      },
+      "evidence": {
+        "type": "read",
+        "detail": "PR body \"Not in this PR: UI message (issue 9990 slice 2)\""
+      },
+      "confirm_by": null,
+      "unknown": null,
+      "dup_of_existing_comment": null
+    }
+  ],
+  "not_to_raise": [
+    {
+      "topic": "In-memory instead of Redis",
+      "why": "Author's stated choice (no Redis in this service yet); the instance question covers the risk"
+    },
+    {
+      "topic": "UI message for a blocked user",
+      "why": "Deferred to issue 9990 slice 2, on purpose"
+    }
+  ],
+  "coverage": [
+    {
+      "dimension": "Product / spec",
+      "checked": "Issue 9990 vs code: 3 per address per 60 s",
+      "result": "9999-BUG-01, 9999-PRD-02 (accepted)"
+    },
+    {
+      "dimension": "Correctness",
+      "checked": "Window math at t = 0, 59 999, 60 000 ms",
+      "result": "9999-BUG-01"
+    },
+    {
+      "dimension": "Security / data",
+      "checked": "Key choice, multi-instance counting, header spoofing",
+      "result": "9999-SEC-01"
+    },
+    {
+      "dimension": "Conventions",
+      "checked": "Repo CLAUDE.md: constants, file placement",
+      "result": "9999-CNV-01"
+    },
+    {
+      "dimension": "Tests",
+      "checked": "`reset.controller.spec.ts`",
+      "result": "9999-TST-01"
+    },
+    {
+      "dimension": "Performance",
+      "checked": "Map growth: one entry per key, never evicted",
+      "result": "Nothing found at today's traffic (≈ 200 resets/day)"
+    },
+    {
+      "dimension": "Impact",
+      "checked": "Callers of `ResetLimiter.allow` (1)",
+      "result": "Nothing found"
+    },
+    {
+      "dimension": "Existing PR comments",
+      "checked": "1 bot thread",
+      "result": "Not duplicated"
+    }
+  ]
+}
