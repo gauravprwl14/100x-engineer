@@ -14,8 +14,9 @@ commands, are in the README under "Migrating from 0.1".
 
 | what changed | 0.1 | 0.2 | what to do |
 |---|---|---|---|
-| marketplace name, so the install id | `100x-engineer@100x-local` | `100x-engineer@100x-engineer` | `claude plugin marketplace remove 100x-local`, then `claude plugin marketplace add gauravprwl14/100x-engineer` and `claude plugin install 100x-engineer@100x-engineer`; rename any hand-written `enabledPlugins` key |
-| skill | `decision-log` | `decision-records` | update references (`/100x-engineer:<skill>`, agent `skills:` lists, notes) |
+| plugin name, so the skill prefix and install id | `100x-engineer:<skill>`, `100x-engineer@100x-engineer` | `100x:<skill>`, `100x@100x-engineer` | `claude plugin uninstall 100x-engineer@100x-engineer`, then `claude plugin install 100x@100x-engineer`; rename any hand-written `enabledPlugins` key and `100x-engineer:` references |
+| marketplace name, so the install id | `100x-engineer@100x-local` | `100x@100x-engineer` | `claude plugin marketplace remove 100x-local`, then `claude plugin marketplace add gauravprwl14/100x-engineer` and `claude plugin install 100x@100x-engineer`; rename any hand-written `enabledPlugins` key |
+| skill | `decision-log` | `decision-records` | update references (`/100x:<skill>`, agent `skills:` lists, notes) |
 | skill | `engineering-ledger` | `decision-records` | as above |
 | skill | `typescript-verification` | `language-verification` | as above |
 | skill | `python-verification` | `language-verification` | as above |
@@ -31,7 +32,19 @@ commands, are in the README under "Migrating from 0.1".
 
 ### Added
 
-- `/100x-engineer:100x`, a router that names the intent and tier of a plain-English
+- A second plugin in the marketplace, `learn` 0.1.0 (`plugins/learn/`, install
+  `claude plugin install learn@100x-engineer`): `/learn:guide` turns an RFC, design doc,
+  finished postmortem, architecture note or talk transcript into a visual HTML/Markdown
+  guide. Adapted from the visual-learning-guide skill with its review's fixes: a narrowed
+  description and "Not for" routing, `summary` as the no-command default for short asks,
+  key-point coverage computed by `plugins/learn/scripts/coverage_check.py` from
+  `inventory.json` and `data-kp` tags, an escaping rule for source text, a self-contained
+  shell (no web fonts) with print, focus, drawer and `aria-current` fixes, per-technique
+  snippets instead of reading the 88 KB gallery, and `INDEX.md` for multi-file Markdown.
+  No quality benchmark is claimed (`plugins/learn/evals/README.md`). `100x` does not load
+  it, and its skill and test counts exclude it; `tests/run_all.sh` also runs
+  `plugins/*/tests/` and lints `plugins/*/skills/`.
+- `/100x:100x`, a router that names the intent and tier of a plain-English
   request, applies built-in defaults and asks at most five questions.
 - Eleven specialist agents in `agents/`, with the contract in `docs/OPERATING-MODEL.md`.
 - Skills: `100x`, `orchestrate`, `requirements-intake`, `app-security`, `data-lifecycle`,
@@ -68,6 +81,20 @@ commands, are in the README under "Migrating from 0.1".
   stops a turn ending with changes and no matching receipt.
 - Policy `required_checks` as an object binding each label to its command,
   `{"test": "npm test"}`; the gate requires the receipt to have run that command.
+- Skill `pr-review`: `/pr-review <pr-url>` reviews a GitHub or GitHub Enterprise PR into one
+  `review.json` per PR and SHA-pinned rendered files under a review root outside the repo
+  (`code-review/<repo>/` beside the clone, or `~/.config/pr-review/reviews/…`); `init`
+  scaffolds that root with `CONTEXT.md` and `_meta/`; `adjust` edits the comments; `post` sends a
+  draft review only after an explicit yes. Tools `pr_review`, `pr_review_gate`, `pr_snapshot`,
+  `pr_suggest`. Judgement comes from `diff-review` and `stack-reviewer`.
+- `gh` is an allowed dependency of the `pr-review` skill's steps only, never of `scripts/`
+  (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`); `docs/SAFETY.md`
+  names `post` as the plugin's one GitHub write.
+- Generated-documents rule, `docs/OPERATING-MODEL.md` §9: summary first, a `## Contents`
+  table on long multi-section files, one `INDEX.md` per multi-file folder. The
+  `SessionStart` context points at it, and a `PostToolUse` hook (`hooks/index_check.py`,
+  `Write|Edit|MultiEdit`) warns after a `.md` write that breaks it; it adds context only,
+  never blocks, writes nothing and fails open.
 
 ### Changed
 

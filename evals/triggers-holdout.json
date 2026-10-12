@@ -80,6 +80,10 @@
     {
       "prompt": "is our button contrast accessible",
       "expect": "accessibility"
+    },
+    {
+      "prompt": "leave review comments on PR 88 for the author",
+      "expect": "pr-review"
     }
   ]
 }

@@ -10,13 +10,13 @@ Every mutation happens silently, so the only protection is what the code refuses
 
 | # | section | what it answers | size |
 |---|---------|-----------------|------|
-| 1 | [What this plugin never does](#what-this-plugin-never-does) | the destructive operations it contains zero instances of | 20 lines |
-| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root), what guards it, and how writes stay inside the repo | 47 lines |
+| 1 | [What this plugin never does](#what-this-plugin-never-does) | the destructive operations it contains zero instances of, and the one GitHub write | 23 lines |
+| 2 | [The complete mutation surface](#the-complete-mutation-surface) | every write, where it lands (under the records root, or the PR review root), what guards it, how writes stay inside the repo, and when `pr-review` posts to GitHub | 62 lines |
 | 3 | [Operations that require --yes](#operations-that-require---yes) | the operations that move or rewrite existing files, or run a plan's declared commands | 32 lines |
 | 4 | [Refusals](#refusals) | path traversal, a records root outside the repo, and non-git directories | 25 lines |
-| 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop and SessionStart, fail-open | 95 lines |
+| 5 | [The hooks](#the-hooks) | what the gate is for, what it parses and refuses, push binding, signed receipts, the bypass classes it does not close, Stop, SessionStart and the PostToolUse index nudge, fail-open | 96 lines |
 | 6 | [Keeping this true](#keeping-this-true) | the audit that stops the boundary decaying | 15 lines |
-| 7 | [Residual risks](#residual-risks) | what is still on you | 20 lines |
+| 7 | [Residual risks](#residual-risks) | what is still on you | 23 lines |
 
 ## What this plugin never does
 
@@ -37,7 +37,10 @@ appears outside a documented allowlist:
 | shell `rm -…` | 0 |
 
 **This plugin deletes nothing.** It never runs git commands that discard your work, and
-it never sends anything off your machine. If something on your system deleted a file
+no tool in it sends anything off your machine. The one exception is a skill step, not a
+tool: `pr-review`'s `post` command runs `gh api … /pulls/<n>/reviews` to create a **draft**
+review, and only after it has shown you the exact payload and you answered yes (see
+"GitHub writes" below). Its tools' only network use is `git fetch` in `pr_snapshot`. If something on your system deleted a file
 after you installed a plugin, it was not this one — check your other installed plugins.
 
 The one apparent exception is a false positive worth knowing about:
@@ -82,6 +85,9 @@ them, with a warning that says how to settle it.
 | `agent_report.py extract -o` | one report JSON | the path given (may sit outside the repo, next to a worktree) | scope: one named file; a symlink planted at the path cannot redirect the write |
 | `diagram_from_code.py` | a `.mmd` file | `tempfile.mkdtemp()` | temp dir, removed |
 | `run_evals.py` | scratch repos | `tempfile.TemporaryDirectory()` | temp dir, removed |
+| `pr_review.py` (`init`, `render`, `feature`, `merge`, `mark-posted`, `index`, `context --refresh`) | `CONTEXT.md`, `INDEX.md`, `_meta/*` (created only when missing), rendered review files, `review.json` | the review root `CR` resolved by `pr_review out-dir`: by default `<parent of the clone>/code-review/<repo>/`, else `~/.config/pr-review/reviews/…` — outside the reviewed repo, so the records-root containment above does not apply | scope: the folder it is pointed at; `init` never overwrites; `context --refresh` rewrites only the `<!-- auto -->` blocks |
+| `pr_snapshot.py` | exported head/base trees, `.diff`, `PINS.md` | `--dest` | scope: one directory; the clone only receives `git fetch` (objects and remote refs), never a checkout |
+| `pr_suggest.py` | `suggestion-checks.json`; with `--write`, `review.json` | the PR folder given | work copy in `tempfile.TemporaryDirectory()`; `--cmd` runs as argv, no shell |
 | everything else | nothing | — | read-only |
 
 **Every record write is contained.** Writers go through `_paths.safe_write_text`: the
@@ -93,6 +99,17 @@ otherwise start a line of its own in `AGENTS.md`.
 
 All record paths resolve from the **git root**, not from the plugin directory, so
 records land in your project and travel with it.
+
+### GitHub writes
+
+Only the `pr-review` skill talks to GitHub, through `gh`, from its own steps
+(`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`); no script does. Reviewing
+and `adjust` only read (`gh pr view`, `gh pr checks`, `gh issue view`, `gh api` GET). `post` is
+the single write: it checks the PR head still matches the reviewed SHA, shows the payload, asks
+once per PR, and on anything but an explicit yes posts nothing. It creates a draft review unless
+you say `submit`, and never approves or requests changes unless you name that event. This
+boundary is a skill instruction: `safety_audit` cannot see it and the commit gate does not
+intercept `gh api … /reviews`.
 
 ## Operations that require `--yes`
 
@@ -151,14 +168,15 @@ cannot make the record writers write outside the project.
 
 ## The hooks
 
-Three hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
+Four hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 `${CLAUDE_PLUGIN_ROOT}/hooks/`.
 
 | hook | event | what it can do |
 |---|---|---|
 | `require_verification.py` | `PreToolUse` (Bash) | `deny`, `ask`, or nothing; never `allow` |
 | `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
-| `session_start.py` | `SessionStart` | add five lines of context naming `/100x-engineer:100x`, `100x list`, the operating model and the receipt rule; reads nothing in your repo |
+| `session_start.py` | `SessionStart` | add six lines of context naming `/100x:100x`, `100x list`, the operating model, the receipt rule and the generated-docs index rule; reads nothing in your repo |
+| `index_check.py` | `PostToolUse` (Write, Edit, MultiEdit) | add context only, never blocks: after a `.md` write, warns when a long multi-section file lacks `## Contents`, when its folder has 2+ docs and no `INDEX.md`, or when the folder's `INDEX.md` does not list it (OPERATING-MODEL §9); reads that file and lists its folder, writes nothing, runs no subprocess |
 
 **What the gate is.** An integrity aid against a confused agent and against casual
 evasion: every natural way of phrasing a commit, push, PR or publish is meant to be
@@ -291,5 +309,8 @@ Honest list of what is still on you:
 - **Nothing here protects against the model's own edits.** The gates check *evidence*
   before a commit; they do not review the diff. That is what `diff-review` and the
   stack reviewers are for, and they are advisory.
+- **`pr-review`'s post boundary is an instruction, not code.** An agent that ignores the
+  skill could run `gh api -X POST` itself; the draft default means a mistaken post is
+  visible only to you until you submit it.
 - **Generated indexes overwrite.** `INDEX.md` and `MAP.md` are outputs; hand edits are
   lost on regeneration. They say so in their headers.

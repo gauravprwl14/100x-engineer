@@ -11,13 +11,13 @@ block "done" without evidence.
 | 1 | [How a request flows](#how-a-request-flows) | what happens between typing a request and "done" |
 | 2 | [Start here](#start-here) | install from GitHub, update, and the one command to type |
 | 3 | [Agents](#agents) | the 11 specialists, and which of them write code |
-| 4 | [Skills by phase](#skills-by-phase) | the 40 skills, grouped by when they fire |
+| 4 | [Skills by phase](#skills-by-phase) | the 41 skills, grouped by when they fire |
 | 5 | [Gates by phase](#gates-by-phase) | the check that blocks each phase, and how |
 | 6 | [Built-in defaults](#built-in-defaults) | what is applied without asking, what is asked, with three examples |
 | 7 | [Where records go](#where-records-go) | the records root and its layout |
 | 8 | [The commit gate](#the-commit-gate) | modes, signed receipts and their limit, the hooks |
 | 9 | [Does it actually work?](#does-it-actually-work) | the measured numbers, and the claim it does **not** make |
-| 10 | [Tools](#tools) | the 38 command-line tools, grouped |
+| 10 | [Tools](#tools) | the 42 command-line tools, grouped |
 | 11 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
 | 12 | [Research](#research) | the evidence every skill cites |
 | 13 | [Migrating from 0.1](#migrating-from-01) | the new install id, renamed skills and changed commands |
@@ -42,10 +42,11 @@ Small tasks skip the agents: the router decides when one person in one session i
 
 | step | do | note |
 |---|---|---|
-| 1. install | in a session: `/plugin marketplace add gauravprwl14/100x-engineer`, then `/plugin install 100x-engineer@100x-engineer` | needs `git`, and `python3` 3.9 or newer on the PATH; no other dependency |
-| | or from a shell: `claude plugin marketplace add gauravprwl14/100x-engineer`, then `claude plugin install 100x-engineer@100x-engineer` | the install id is `<plugin>@<marketplace>`, and both are named `100x-engineer` |
-| 1b. update | `claude plugin marketplace update 100x-engineer`, then `claude plugin update 100x-engineer@100x-engineer` (in a session: `/plugin marketplace update 100x-engineer`) | see the update table below |
-| 2. ask | `/100x-engineer:100x <what you want>` | e.g. `/100x-engineer:100x Add tagging to albums` |
+| 1. install | in a session: `/plugin marketplace add gauravprwl14/100x-engineer`, then `/plugin install 100x@100x-engineer` | needs `git`, and `python3` 3.9 or newer on the PATH; no other dependency |
+| | or from a shell: `claude plugin marketplace add gauravprwl14/100x-engineer`, then `claude plugin install 100x@100x-engineer` | the install id is `<plugin>@<marketplace>`, and both are named `100x-engineer` |
+| 1b. update | `claude plugin marketplace update 100x-engineer`, then `claude plugin update 100x@100x-engineer` (in a session: `/plugin marketplace update 100x-engineer`) | see the update table below |
+| 1c. optional | `claude plugin install learn@100x-engineer` (in a session: `/plugin install learn@100x-engineer`) | a second, independent plugin in the same marketplace: `/learn:guide` builds visual learning guides from RFCs, design docs and transcripts. Not loaded by `100x` and not counted in its skills; see `plugins/learn/README.md` |
+| 2. ask | `/100x:100x <what you want>` | e.g. `/100x:100x Add tagging to albums` |
 | 3. answer | at most five questions, each with a recommendation | or reply "go with your recommendations" |
 
 Everything after that is chosen for you. `docs/PLAYBOOK.md` lists the commands behind
@@ -84,7 +85,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 
 ## Skills by phase
 
-**40 skills**. The phase map and every trigger are generated into
+**41 skills**. The phase map and every trigger are generated into
 [`skills/INDEX.md`](skills/INDEX.md) by `100x check_index --gen-collections`.
 
 | phase | count | skills |
@@ -92,7 +93,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | 0 start here | 3 | 100x, orchestrate, requirements-intake |
 | 1 before code | 7 | api-contract, approach-selection, data-modeling, decision-records, feature-planning, scale-appropriateness, solution-architecture |
 | 2 while writing | 19 | accessibility, app-security, code-craft, data-lifecycle, dependency-vetting, diagramming, distributed-correctness, frontend-architecture, language-verification, legacy-change, minimal-diff, mobile-release-safety, observability-design, performance-budgets, qa-strategy, stack-reviewer, test-design, ui-baseline, web-vitals |
-| 3 before shipping | 5 | diff-review, release-rollout, review-gates, security-baseline, verification-gate |
+| 3 before shipping | 6 | diff-review, pr-review, release-rollout, review-gates, security-baseline, verification-gate |
 | 4 when broken | 2 | bug-fix, root-cause-analysis |
 | 5 understanding | 1 | codebase-comprehension |
 | 6 meta | 3 | agent-instructions, project-learning, untrusted-agent-config |
@@ -193,7 +194,8 @@ has its own. A `.claude/verification-receipt.json` left by 0.1 is ignored, with 
 | `git push origin other-branch`, or a `remote.<name>.push` refspec that makes the refs sent unknown | denied: each ref sent must be HEAD, and HEAD's tree the verified content |
 | `[skip-verify]` in the commit message | a human is asked to approve; the agent cannot approve its own bypass |
 | `Stop` hook | in block mode, stops the turn ending once if there are changes and no matching receipt |
-| `SessionStart` hook | adds five lines naming `/100x-engineer:100x` and `100x list`, so the router stays reachable when many skills are installed |
+| `SessionStart` hook | adds six lines naming `/100x:100x` and `100x list`, so the router stays reachable when many skills are installed |
+| `PostToolUse` hook (Write, Edit, MultiEdit) | after a `.md` write, adds a warning (never blocks) when a long multi-section file has no `## Contents`, or its folder's `INDEX.md` is missing or does not list it (OPERATING-MODEL §9) |
 | an internal hook error, or no `python3` | **fails open**: no decision, the gate goes quiet |
 
 **Signing has a limit.** Receipts are HMAC-signed with a key in `~/.config/100x/`, so a
@@ -221,8 +223,8 @@ Two separate questions, answered separately.
 
 | fixture | full descriptions | first 100 chars + 17 competitor skills |
 |---|--:|--:|
-| main (66 prompts, gated at ≥85%) | 100% | 97% |
-| holdout (20 prompts, not gated) | 60% | 45% |
+| main (69 prompts, gated at ≥85%) | 100% | 97% |
+| holdout (21 prompts, not gated) | 62% | 48% |
 
 The main fixture was visible while descriptions were rewritten, so its numbers are partly
 fit to it; the holdout is the honest one. History: [`evals/GRADER-CHANGELOG.md`](evals/GRADER-CHANGELOG.md).
@@ -232,7 +234,8 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**38 tools**, each run as `100x <tool>`. Python standard library and git only.
+**42 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
+skill's own steps also call `gh` (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`).
 `100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
 which check this plugin itself rather than your code. Every tool runs by name either way.
 
@@ -244,11 +247,12 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | diff checks | `bloat_check`, `craft_check`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
 | design and diagrams | `design_drift`, `diagram_from_code`, `check_diagrams` |
 | understand and learn | `repo_map`, `stack_audit`, `rca`, `learn`, `check_claims` |
+| PR review (the `pr-review` skill) | `pr_review`, `pr_review_gate`, `pr_snapshot`, `pr_suggest` |
 | agent configuration | `check_agents_md`, `audit_agent_config` |
 | maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
-bash tests/run_all.sh    # 39 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 42 test suites, the seeded-defect evals and the lints
 ```
 
 How the diff checkers behave, whichever one runs:
@@ -266,9 +270,9 @@ How the diff checkers behave, whichever one runs:
 
 ## Honest limitations
 
-- **Trigger routing is a lexical proxy.** Top-3 on the main fixture (66 prompts, visible
+- **Trigger routing is a lexical proxy.** Top-3 on the main fixture (69 prompts, visible
   while descriptions were written): 100% full, 97% truncated with competitors. On the
-  holdout (20 prompts): 60% full, 45% truncated with competitors. Misses are word-form
+  holdout (21 prompts): 62% full, 48% truncated with competitors. Misses are word-form
   gaps (golang/go, crashes/crash) a bag-of-words scorer cannot close.
 - **The commit gate is an integrity aid, not a security boundary.** It catches every
   natural phrasing of a commit, push, PR or publish, denies an edit chained into the same
@@ -318,22 +322,22 @@ names, and the commands your notes or `CLAUDE.md` call. The full list is in
 [`CHANGELOG.md`](CHANGELOG.md).
 
 **1. The install id changed.** The marketplace is now named `100x-engineer`, so the plugin
-is `100x-engineer@100x-engineer`, not `100x-engineer@100x-local`. Re-register it from a
+is `100x@100x-engineer`, not `100x-engineer@100x-local`. Re-register it from a
 shell:
 
 ```bash
 claude plugin marketplace remove 100x-local        # also uninstalls 100x-engineer@100x-local
 claude plugin marketplace add gauravprwl14/100x-engineer
-claude plugin install 100x-engineer@100x-engineer
+claude plugin install 100x@100x-engineer
 ```
 
 | if you | then also |
 |---|---|
 | installed with `--scope project` | run the add and install with `--scope project`, and commit the `.claude/settings.json` they rewrite |
-| listed `100x-engineer@100x-local` under `enabledPlugins` in any settings file by hand | change the key to `100x-engineer@100x-engineer`; the `renames` map Claude Code reads covers plugin names, not a marketplace name |
+| listed `100x-engineer@100x-local` under `enabledPlugins` in any settings file by hand | change the key to `100x@100x-engineer`; the `renames` map Claude Code reads covers plugin names, not a marketplace name |
 | worry about losing state | removing the marketplace deletes the plugin's saved options and data directory, and this plugin keeps neither: receipts live in your repository's git directory and the signing key in `~/.config/100x/` |
 
-**2. Seven skills became three.** References by the old name (`/100x-engineer:scoped-review`,
+**2. Seven skills became three.** References by the old name (`/100x:scoped-review`,
 an agent's `skills:` list, a note in `CLAUDE.md`) stop resolving, and a subagent's unknown
 `skills:` entry is skipped with only a debug-log warning.
 

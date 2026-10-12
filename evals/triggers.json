@@ -379,6 +379,31 @@
     {
       "prompt": "our LCP is bad because of the hero image and web fonts",
       "expect": "web-vitals"
+    },
+    {
+      "prompt": "review https://github.com/acme/api/pull/412 and give me comments I can paste",
+      "expect": "pr-review",
+      "reject": [
+        "review-gates"
+      ]
+    },
+    {
+      "prompt": "post my adjusted review comments to the PR as a draft",
+      "expect": "pr-review",
+      "reject": [
+        "review-gates",
+        "diff-review"
+      ]
+    },
+    {
+      "prompt": "review this pull request on our GitHub Enterprise server",
+      "expect": [
+        "pr-review",
+        "diff-review"
+      ],
+      "reject": [
+        "review-gates"
+      ]
     }
   ]
 }

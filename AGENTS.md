@@ -15,7 +15,7 @@ A Claude Code plugin. `skills/` holds SKILL.md files; `agents/` the specialist
 subagents; `scripts/` and `hooks/` the tools those skills invoke; `tests/` their
 regression suites; `research/` the evidence every claim is sourced from.
 
-Current size: **40 skills**, **11 agents**, **38 tools** (`100x list --all`), **39 test suites**
+Current size: **41 skills**, **11 agents**, **42 tools** (`100x list --all`), **42 test suites**
 (`tests/test_*.sh`). `tests/test_docs_claims.sh` fails when these drift.
 
 ## Prove-it command
@@ -98,7 +98,9 @@ it is the repo top level. In a user's project it defaults to `docs/engineering`.
 
 12. **Never add a dependency.** This plugin deliberately uses only the Python
     standard library and git, so it runs anywhere with no install step. If you
-    believe a dependency is required, stop and ask. `[review]`
+    believe a dependency is required, stop and ask. The one admitted exception is `gh`,
+    called only from the `pr-review` skill's steps, never from `scripts/`
+    (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`). `[review]`
 
 13. **Never suppress a check to make it pass** — no `# type: ignore`, no
     `|| true`, no `continue-on-error` on a gate. Fix the root cause. The repo ships
