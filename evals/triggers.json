@@ -404,6 +404,63 @@
       "reject": [
         "review-gates"
       ]
+    },
+    {
+      "prompt": "add an endpoint that returns the user's open invoices",
+      "expect": [
+        "code-craft",
+        "feature-planning"
+      ]
+    },
+    {
+      "prompt": "write a function that converts stored timestamps to the account's timezone",
+      "expect": "code-craft"
+    },
+    {
+      "prompt": "implement a class that retries failed uploads with backoff",
+      "expect": [
+        "code-craft",
+        "distributed-correctness"
+      ]
+    },
+    {
+      "prompt": "add a helper module that formats invoice numbers",
+      "expect": "code-craft"
+    },
+    {
+      "prompt": "write tests for the new discount calculator",
+      "expect": "test-design",
+      "reject": [
+        "qa-strategy"
+      ]
+    },
+    {
+      "prompt": "add unit tests for the function I just wrote",
+      "expect": "test-design",
+      "reject": [
+        "qa-strategy"
+      ]
+    },
+    {
+      "prompt": "open a PR for this branch",
+      "expect": [
+        "pr-description",
+        "verification-gate"
+      ]
+    },
+    {
+      "prompt": "write the PR description",
+      "expect": "pr-description",
+      "reject": [
+        "pr-review"
+      ]
+    },
+    {
+      "prompt": "reply to this review comment",
+      "expect": "pr-description",
+      "reject": [
+        "pr-review"
+      ]
     }
   ]
 }
