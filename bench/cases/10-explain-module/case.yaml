@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 10-explain-module
+description: Explain a module in chat. Deterministic part is bench/checks.py check_10 (prose_check --kind chat, paragraph lengths).
+tags: [writing, answer]
+context:
+  scaffold_script: scaffold.sh
