@@ -1,15 +1,16 @@
 ---
 name: language-verification
 description: >
-  tsconfig, eslint, biome, vitest, ruff, mypy, pytest, golangci-lint, go vet, race detector:
-  which TypeScript/Python/Go checks really gate CI — type errors, coverage, codegen drift. Not
-  for framework code (→ stack-reviewer).
+  tsconfig, eslint, vitest, ruff, mypy, pytest, golangci-lint, go vet, rubocop, rspec,
+  ktlint, detekt, swiftlint: which TS/Python/Go/Ruby/Kotlin/Swift checks really gate CI — type
+  errors, coverage, codegen drift. Not for framework code (→ stack-reviewer).
 ---
 
 # Language verification
 
 What 72 JS/TS, 50 Python and 40 Go production repos actually run, counted rather than
-recommended. One skill, three toolchains: pick the section for the language in the diff.
+recommended; Ruby, Kotlin and Swift rules come from each tool's own docs, with no corpus count
+yet. Pick the section for the language in the diff.
 Formerly `typescript-verification`, `python-verification` and `go-verification`.
 
 | language | rules | detail (baseline, full command sets, failure cases, sources) |
@@ -17,12 +18,15 @@ Formerly `typescript-verification`, `python-verification` and `go-verification`.
 | JavaScript / TypeScript | 1–10 | `references/typescript.md` |
 | Python | 11–18 | `references/python.md` |
 | Go | 19–27 | `references/go.md` |
+| Ruby | 28–32 | this file (no corpus count yet) |
+| Kotlin / Swift | 33–37 | this file (no corpus count yet); app code shape is `reviewers/native-mobile.md` |
 
 ## Trigger
 
-**Fire when:** writing or changing JS/TS, Python or Go; setting up or auditing a project's
-checks; configuring tsconfig, eslint/biome, vitest/jest, turbo/nx, ruff/mypy/pyright/pytest,
-uv/poetry, golangci-lint/depguard; adding code generation; deciding merge gates.
+**Fire when:** writing or changing JS/TS, Python, Go, Ruby, Kotlin or Swift; setting up or auditing
+a project's checks; configuring tsconfig, eslint/biome, vitest/jest, turbo/nx, ruff/mypy/pyright/pytest,
+uv/poetry, golangci-lint/depguard, rubocop/rspec/sorbet, ktlint/detekt, swiftlint; adding code
+generation; deciding merge gates.
 
 **Do not fire when:** editing a JSON/YAML config with no code impact; a one-off script outside a
 project or a notebook with no shipped artifact; Go touched only incidentally (a version bump in
@@ -93,6 +97,36 @@ YAML). Framework code shape (a NestJS pipe, a React list key) is `stack-reviewer
 27. Scan dependencies for known vulnerabilities.
     *Enforced by:* `govulncheck ./...`
 
+### Ruby
+
+28. Run rubocop with the framework plugins (`rubocop-rails`, `rubocop-rspec`) and fail on offenses;
+    new cops ship `pending`, so enable them deliberately rather than inheriting silence.
+    *Enforced by:* `bundle exec rubocop --force-exclusion <changed files>`
+29. Install from the committed `Gemfile.lock` and fail if it would change.
+    *Enforced by:* `BUNDLE_FROZEN=true bundle install` in CI
+30. Run specs in random order so order-dependent tests fail; request specs for endpoints.
+    *Enforced by:* `bundle exec rspec --order rand` (or `config.order = :random`)
+31. Scan for security issues and vulnerable gems; a type checker (Sorbet or Steep) is optional,
+    but once adopted it gates, as in rule 12.
+    *Enforced by:* `bundle exec brakeman -q --no-pager && bundle exec bundle-audit check --update`; `bundle exec srb tc` / `bundle exec steep check` if adopted
+32. Surface Ruby 3.4's frozen-string-literal deprecation before it becomes an error.
+    *Enforced by:* `RUBYOPT=-W:deprecated bundle exec rspec`
+
+### Kotlin / Swift
+
+33. Gate Kotlin formatting with ktlint and code smells with detekt; both fail the build.
+    *Enforced by:* `./gradlew ktlintCheck detekt`
+34. On legacy Kotlin, freeze existing detekt findings in a baseline so only new ones fail; never
+    raise the issue threshold instead.
+    *Enforced by:* `./gradlew detektBaseline` once, then `./gradlew detekt` in CI
+35. Treat Kotlin compiler warnings as errors in CI.
+    *Enforced by:* `allWarningsAsErrors = true` in `compilerOptions`, then `./gradlew build`
+36. Run SwiftLint in strict mode so warnings fail CI, and opt in to `force_unwrapping`
+    (`force_cast` and `force_try` are on by default).
+    *Enforced by:* `swiftlint lint --strict` with `opt_in_rules: [force_unwrapping]` in `.swiftlint.yml`
+37. Run Swift tests with complete strict-concurrency checking, so data races are compile errors.
+    *Enforced by:* `swift test -Xswiftc -strict-concurrency=complete` (Swift 6 language mode makes this the default)
+
 ## Verify
 
 ```bash
@@ -111,6 +145,13 @@ uv sync && uv run ruff format --check . && uv run ruff check . && uv run pytest
 test -z "$(gofmt -l .)"                # gofmt -l exits 0 even when it lists files
 go vet ./... && go test -race ./... && golangci-lint run && go mod tidy -diff
 go generate ./... && git add -N . && git diff --exit-code
+
+# Ruby minimum viable
+BUNDLE_FROZEN=true bundle install && bundle exec rubocop && bundle exec rspec --order rand
+
+# Kotlin / Swift minimum viable
+./gradlew ktlintCheck detekt build
+swiftlint lint --strict && swift test
 
 # bind whichever checks you rely on to the code being shipped
 100x verified --name test -- pnpm test        # or: uv run pytest / go test -race ./...
@@ -149,11 +190,11 @@ an `any` exception, a mypy scope) is logged with `100x decide new`. Framework di
 
 ## Scale
 
-| tier | JS/TS | Python | Go |
-|---|---|---|---|
-| `solo` | 1, 2, 8 | 11, 14, 15 | 19, 22 |
-| `small-team (2-10)` | + 3, 4, 9 | + 12, 16 | + 20, 21, 23, 25 |
-| `org` / `high-blast-radius` | + 5, 6, 7, merge queue | + 13, 17, 18, coverage floor | + 24, 26, 27, `make verify` |
+| tier | JS/TS | Python | Go | Ruby | Kotlin / Swift |
+|---|---|---|---|---|---|
+| `solo` | 1, 2, 8 | 11, 14, 15 | 19, 22 | 28, 29 | 33, 36 |
+| `small-team (2-10)` | + 3, 4, 9 | + 12, 16 | + 20, 21, 23, 25 | + 30, 31 | + 34, 35 |
+| `org` / `high-blast-radius` | + 5, 6, 7, merge queue | + 13, 17, 18, coverage floor | + 24, 26, 27, `make verify` | + 32 | + 37 |
 
 Copying a 30-hook pre-commit setup or per-shard CI timing into a three-person team is cargo-culting.
 
@@ -167,4 +208,16 @@ Copying a 30-hook pre-commit setup or per-shard CI timing into a three-person te
 - Go counts, `make verify`, drift gates: `research/32-findings-go-verification.md`;
   `tailscale/tailscale`, `cilium/cilium`, `moby/moby` (rules 20–21); depguard bans in
   `prometheus/prometheus`, `traefik/traefik`, `go-gitea/gitea`, `dapr/dapr`, `argoproj/argo-cd`, `helm/helm`.
+- Ruby (rules 28–32): `rubocop/rubocop@master:config/default.yml` (pending cops),
+  `rubocop/rubocop-rails@master:config/default.yml`, `rubygems/rubygems@master:lib/bundler/man/bundle-config.1.ronn`
+  (`BUNDLE_FROZEN`), `rspec/rspec-core@main:features/command_line/order.feature`,
+  `rspec/rspec-rails@main:README.md` (request specs), `presidentbeef/brakeman@main:README.md`,
+  `rubysec/bundler-audit@master:README.md`, `sorbet/sorbet@master:README.md`, `soutaro/steep@master:README.md`,
+  `ruby/ruby@v3_4_0:NEWS.md` (Feature #20205). No corpus count: absence of a measured Ruby baseline is recorded here.
+- Kotlin / Swift (rules 33–37): `pinterest/ktlint@master:README.md`, `JLLeitschuh/ktlint-gradle@main:README.md`
+  (`ktlintCheck`), `detekt/detekt@main:README.md` (baselines), `detekt/detekt@main:website/docs/gettingstarted/gradle.mdx` (`detektBaseline`),
+  `JetBrains/kotlin-web-site@master:docs/topics/gradle/gradle-compiler-options.md` (`allWarningsAsErrors`),
+  `realm/SwiftLint@main:README.md` (`--strict`) and `Source/SwiftLintBuiltInRules/Rules/Idiomatic/ForceUnwrappingRule.swift`
+  (`optIn: true`), `swiftlang/swift-package-manager@main:Tests/CommandsTests/TestCommandTests.swift`
+  (`-strict-concurrency=complete`; inferred: the Swift 6 default is from release notes not fetched here).
 - Advisory-gate detection patterns in `scripts/audit_ci_gates.py`: `SOURCE: original`.
