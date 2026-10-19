@@ -23,7 +23,9 @@ size the problem needed, or a new pattern where the repo already has one.
 ## Always apply without being asked
 
 Review in this order and stop widening once a blocking issue is found at a level — fixing it may
-change everything below.
+change everything below. Row 6 is a separate pass that always runs, even after a blocking finding
+stops the widening: naming and readability findings survive most fixes, and skipping them is how
+they reach merge.
 
 | order | check | source |
 |---|---|---|
@@ -32,7 +34,7 @@ change everything below.
 | 3 | **Design**: fits the approved spec, contracts and repo precedent; no speculative abstraction | Google eng-practices (design, complexity); `diff-review` |
 | 4 | **Tests can fail**: each asserts behaviour, would break if the behaviour broke, covers the ACs | `minimal-diff`; `test-design` |
 | 5 | **Minimal diff**: no drive-by refactors, formatting churn, unused code, unrequested files | `minimal-diff`; `100x bloat_check` |
-| 6 | **Naming, readability, comments**: names say what, comments say why, no narration | Google eng-practices (naming, comments); `code-craft` |
+| 6 | **Naming, readability, comments** (separate pass, never skipped): names say what, comments say why, no narration, no magic numbers; checked against `${CLAUDE_PLUGIN_ROOT}/reviewers/_engineer-standards.md` | Google eng-practices (naming, comments); `code-craft` |
 | 7 | **Baseline**: `100x baseline show --work <type> --tier <tier>` — every A item for the work type is present or explicitly waived | baseline |
 
 Before calling anything blocking, check the repo's own convention (`100x repo_map <repo> --symbol
@@ -46,6 +48,7 @@ failure scenario, its blast radius, and a label — blocking, should-fix, option
 diff. Each finding goes in `findings` (see Output): a blocking label is `"blocking": true`, should-fix
 and optional are `false`, and a question goes in `questions`. A review with an unresolved blocking
 finding is `needs-decision`, never `done`.
+Write each finding's text in the review-comment format of `${CLAUDE_PLUGIN_ROOT}/docs/WRITING.md`.
 
 ## Protocol
 
