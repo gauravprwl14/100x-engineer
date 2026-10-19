@@ -1303,6 +1303,152 @@ def judge(action, cmd):
     return 0, {"systemMessage": msg}
 
 
+# ---------------------------------------------------------------- text warnings
+# PR bodies and commit messages are checked for prose problems, and `gh pr create` for
+# scope leaks. Advisory only: it is appended to the output after the gate has decided
+# and never changes the decision, and a deny or ask is emitted exactly as before.
+
+SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+MAX_FINDINGS = 8
+HEREDOC_SUB = re.compile(r"^\$\(\s*cat\s+<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*?)\n[ \t]*\2\s*\)\s*$",
+                         re.S)
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?:\n|$)", re.S)
+
+
+def _option_values(args, names, prefixes=()):
+    vals, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in names and i + 1 < len(args):
+            vals.append(args[i + 1])
+            i += 2
+            continue
+        for p in prefixes:
+            if a.startswith(p) and len(a) > len(p):
+                vals.append(a[len(p):])
+        i += 1
+    return vals
+
+
+def _literal(value, raw):
+    """The text an argument carries: `$(cat <<'EOF' … EOF)` is unwrapped; any other
+    substitution or variable is unknown, so None."""
+    m = HEREDOC_SUB.match(value)
+    if m:
+        return m.group(3)
+    return None if "$" in value or "`" in value else value
+
+
+def _read_body(path, cwd, raw):
+    if path == "-":
+        m = HEREDOC.search(raw)
+        return m.group(3) if m else None
+    p = pathlib.Path(cwd, os.path.expanduser(path))
+    try:
+        return p.read_text(errors="replace") if p.is_file() else None
+    except OSError:
+        return None
+
+
+def _texts(cmd, cwd):
+    """[(kind, text, cwd, pr_base, is_create)] for each PR body or commit message the
+    command passes literally."""
+    found = []
+    try:
+        items = segments(prelex(cmd))
+    except ValueError:
+        return found
+    for item in items:
+        if not isinstance(item, Seg):
+            continue
+        argv = list(item.argv)
+        while argv and (argv[0] in KEYWORDS or ENV_ASSIGN.match(argv[0])):
+            argv = argv[1:]
+        if not argv:
+            continue
+        prog = prog_name(argv[0])
+        if prog == "cd" and len(argv) > 1 and "$" not in argv[1]:
+            cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(argv[1])))
+        elif prog == "gh":
+            pos = _positionals(argv[1:], OPT_ARG["gh"] | {"-H", "--head", "-B", "--base",
+                                                          "-t", "--title", "-b", "--body",
+                                                          "-F", "--body-file"})
+            if pos[:2] not in (["pr", "create"], ["pr", "edit"]):
+                continue
+            args = argv[1:]
+            bodies = [_literal(v, cmd) for v in
+                      _option_values(args, {"-b", "--body"}, ("--body=",))]
+            bodies += [_read_body(v, cwd, cmd) for v in
+                       _option_values(args, {"-F", "--body-file"}, ("--body-file=",))]
+            base = (_option_values(args, {"-B", "--base"}, ("--base=",)) or [None])[-1]
+            for text in bodies:
+                if text and text.strip():
+                    found.append(("pr", text, cwd, base, pos[1] == "create"))
+        elif prog == "git":
+            args, work_dir = argv[1:], cwd
+            while args and args[0].startswith("-"):
+                if args[0] == "-C" and len(args) > 1:
+                    work_dir = os.path.normpath(os.path.join(work_dir, os.path.expanduser(args[1])))
+                args = args[2:] if args[0] in GIT_OPT_ARG else args[1:]
+            if args[:1] != ["commit"]:
+                continue
+            # `-am msg`: a cluster ending in m or F takes the next word as its value.
+            args = [x for a in args[1:] for x in
+                    ([a[:-1], "-" + a[-1]] if re.fullmatch(r"-[a-zA-Z]+[mF]", a) else [a])]
+            msgs = [_literal(v, cmd) for v in
+                    _option_values(args, {"-m", "--message"}, ("--message=", "-m"))]
+            msgs += [_read_body(v, work_dir, cmd) for v in
+                     _option_values(args, {"-F", "--file"}, ("--file=", "-F"))]
+            if msgs and all(m is not None for m in msgs):
+                text = "\n\n".join(msgs)
+                if text.strip():
+                    found.append(("commit", text, work_dir, None, False))
+    return found
+
+
+def _import(name):
+    if str(SCRIPTS) not in sys.path:
+        sys.path.append(str(SCRIPTS))
+    try:
+        return __import__(name)
+    except ImportError:  # fail-open: the checker is optional; without it there is nothing to add
+        return None
+
+
+def text_findings(cmd, cwd):
+    """Lines of advisory findings for the command's PR bodies and commit messages."""
+    texts = _texts(cmd, cwd)
+    if not texts:
+        return []
+    prose, scope = _import("prose_check"), _import("pr_scope")
+    lines = []
+    for kind, text, wd, pr_base, is_create in texts:
+        base = scope.resolve_base(wd, pr_base) if scope and kind == "pr" else None
+        if prose and hasattr(prose, "check_text"):
+            n = scope.diff_lines(wd, base) if base else None
+            for f in prose.check_text(text, kind=kind, diff_lines=n):
+                lines.append(f"[{f.get('rule')}] {kind} line {f.get('line')}: "
+                             f"{f.get('message')}")
+        if scope and is_create:
+            for f in scope.analyse(wd, pr_base, body=text)["findings"]:
+                lines.append(f"[{f['rule']}] {f['file']}: {f['message']}")
+    return lines
+
+
+def _with_findings(out, lines):
+    """Attach advisory lines to a non-blocking output as context the agent reads."""
+    if not lines:
+        return out
+    shown = lines[:MAX_FINDINGS]
+    more = len(lines) - len(shown)
+    block = ("Writing and scope check (warn-only, does not block): fix these before "
+             "shipping.\n" + "\n".join(f"  - {s}" for s in shown)
+             + (f"\n  (+{more} more: run `100x prose_check` / `100x pr_scope`)"
+                if more else ""))
+    msg = out.get("systemMessage")
+    return note(f"{msg}\n{block}" if msg else block)
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -1314,6 +1460,17 @@ def main():
     base = payload.get("cwd")
     if not (isinstance(base, str) and os.path.isdir(base)):
         base = os.getcwd()
+    out = decide(cmd, base)
+    if (out.get("hookSpecificOutput") or {}).get("permissionDecision"):
+        return out
+    try:
+        lines = text_findings(cmd, base)
+    except Exception:  # fail-open: an advisory check must never turn into a gate failure
+        lines = []
+    return _with_findings(out, lines)
+
+
+def decide(cmd, base):
     state = State(base, cmd)
     try:
         actions = parse_command(cmd, state)
