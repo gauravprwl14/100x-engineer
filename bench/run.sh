@@ -54,6 +54,22 @@ if [[ $yes -ne 1 ]]; then
   exit 2
 fi
 
+# The eval sandbox blocks writes to the per-user temp dir, where macOS's /usr/bin/git shim
+# (xcrun) keeps its cache, so every git command an agent runs fails in every arm. Agents
+# take PATH from your login shell, so a real git must come before /usr/bin there.
+agent_git="$("${SHELL:-/bin/zsh}" -lic 'command -v git' 2>/dev/null | tail -1)"
+if [[ "$(uname)" == Darwin && "$agent_git" == /usr/bin/git && "${BENCH_ALLOW_GIT_SHIM:-0}" != 1 ]]; then
+  cat >&2 <<EOF
+run.sh: agents would run git as /usr/bin/git, the xcrun shim the eval sandbox blocks
+("couldn't create cache file ... Operation not permitted"). Cases 09 and 11 would then
+score the sandbox, not the plugin. Link the real git into a directory that comes before
+/usr/bin on your login PATH (bench/README.md, "Git in the sandbox"), for example:
+  ln -s "\$(xcrun --find git)" <dir-before-usr-bin>/git
+or set BENCH_ALLOW_GIT_SHIM=1 to run anyway.
+EOF
+  exit 2
+fi
+
 mkdir -p "$out"
 new_root="$out/snapshot-new"
 old_root="$(mktemp -d)/old"
