@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 03-hidden-context
+description: A nested services/AGENTS.md sets env var naming and module layout. Deterministic part is bench/checks.py check_03.
+tags: [code, context]
+context:
+  scaffold_script: scaffold.sh
