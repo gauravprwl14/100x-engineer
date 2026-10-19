@@ -10,14 +10,15 @@ agent definition and this file disagree, this file wins.
 |---|---|---|---|
 | 1 | [Roles](#1-roles) | who does what, and why orchestration stays in the main session | ~35 lines |
 | 2 | [Agent protocol](#2-agent-protocol) | the seven steps every specialist follows, and when it must stop | ~25 lines |
-| 3 | [Report contract](#3-report-contract) | the exact shape of an agent's result (findings, expected exits), which base lint diffs against, how reviewers report without a task, how replay runs only declared commands, and what makes a report valid | ~95 lines |
+| 3 | [Report contract](#3-report-contract) | the exact shape of an agent's result (findings, expected exits, the context card, behaviour evidence), which base lint diffs against, how reviewers report without a task, how replay runs only declared commands, and what makes a report valid | ~115 lines |
 | 4 | [Decision policy](#4-decision-policy) | which decisions an agent may take alone, and the tie-break order | ~35 lines |
 | 5 | [Question policy](#5-question-policy) | when to ask the user, how many questions, in what form, and which wait for the next batch | ~20 lines |
 | 6 | [Orchestration](#6-orchestration) | the AC-<n> format and the `<feature>/AC-<n>` test tag, how a plan is stamped against an approved spec, where a feature's files live, and how a plan becomes parallel tasks without two agents colliding | ~90 lines |
 | 7 | [Verification ladder](#7-verification-ladder) | which gate proves each phase, mechanically | ~10 lines |
 | 8 | [Indexing](#8-indexing) | where records live (the records root and `.100x.json`'s keys), how record arguments resolve, and how every written artifact stays findable | ~40 lines |
 | 9 | [Generated documents: index first, then detail](#9-generated-documents-index-first-then-detail) | how any generated doc opens with its answer, when it needs a Contents table, and when a folder needs an `INDEX.md` | ~25 lines |
-| 10 | [Re-check pass](#10-re-check-pass) | when a turn gets one automatic skeptical second pass, how to turn it off, and what it costs, and opting subagents in | ~20 lines |
+| 10 | [Re-check pass](#10-re-check-pass) | when a turn gets one automatic skeptical second pass, how to turn it off, what it costs, and which subagents get it | ~20 lines |
+| 11 | [Human-facing output](#11-human-facing-output) | which standard PR text, commits, review comments, reports and chat answers follow | ~10 lines |
 
 ## 1. Roles
 
@@ -44,9 +45,9 @@ conversation that questions must reach. `SOURCE: original`
 |---|---|---|---|
 | requirements-analyst | plain English → requirements, assumptions, ≤5 questions | no | requirements-intake, scale-appropriateness |
 | solution-architect | reviews specs and plans before build, and every diff for design fit | no | solution-architecture, approach-selection, api-contract, data-modeling, distributed-correctness |
-| backend-engineer | implements server-side tasks | yes | api-contract, data-modeling, distributed-correctness, observability-design, data-lifecycle |
-| frontend-engineer | implements web UI tasks | yes | ui-baseline, accessibility, web-vitals, frontend-architecture |
-| mobile-engineer | implements mobile tasks | yes | ui-baseline, accessibility, mobile-release-safety |
+| backend-engineer | implements server-side tasks | yes | api-contract, data-modeling, distributed-correctness, observability-design, data-lifecycle, code-craft, test-design |
+| frontend-engineer | implements web UI tasks | yes | ui-baseline, accessibility, web-vitals, frontend-architecture, code-craft, test-design |
+| mobile-engineer | implements mobile tasks | yes | ui-baseline, accessibility, mobile-release-safety, code-craft, test-design |
 | qa-engineer | test plan, acceptance-criteria traceability, automated tests | tests only | qa-strategy, test-design |
 | code-reviewer | independent review of someone else's diff | no | diff-review, code-craft, minimal-diff |
 | security-reviewer | application security review of a diff or design | no | app-security, security-baseline |
@@ -148,12 +149,28 @@ How `replay` runs a command:
 }
 ```
 
-Two optional fields. Any other top-level key is an error with a did-you-mean
-(`"evidance"` → `"evidence"`).
+**Context card.** An engineer fills it before its first edit, inside the existing fields, because
+lint rejects any new top-level key. `inputs_read` carries one entry per item, prefixed:
+
+| prefix | what it names |
+|---|---|
+| `analog:` | the closest existing example in the repo, which the change follows (§4 precedent) |
+| `instructions:` | the repo `AGENTS.md` and every nested `CLAUDE.md`/`AGENTS.md` on the touched paths |
+| `spec:` | the PRD/spec section and the mock behind each AC |
+| `naming:` | the precedent for env vars, modules and files the change adds |
+| `lessons:` | what `100x learn relevant <path>` returned for the touched paths |
+| `decisions:` | what `100x decide trace <path>` returned for the touched paths |
+
+An empty item is written as `none` (`"lessons: none"`), so a skipped step shows. `understanding`
+states in one line what the card changed about the approach.
+
+Optional fields: `findings` at the top level, `kind` and `expect_exit` on an evidence entry. Any
+other top-level key is an error with a did-you-mean (`"evidance"` → `"evidence"`).
 
 | field | shape | rule |
 |---|---|---|
 | `findings` | `[{"id", "severity": "critical\|major\|minor\|trivial", "confidence": "definite\|probable\|possible", "location", "issue", "fix", "blocking": true\|false}]` | how reviewers report; `id`, `location`, `issue`, `fix` non-empty; a blocking finding unblocks `needs-decision` and `blocked` like a blocking question; `agent_report summary` merges findings across reports, blocking first, then by severity |
+| `kind` on an evidence entry | `build`, `test` or `behaviour` | `behaviour` is a proof that the feature works as a user sees it: an HTTP transcript, an e2e run, a screenshot path or a log line from the running app. `done` on a user-visible change needs one; type checks and unit tests alone leave the work partial, said in `understanding` with the owed check in `follow_ups`. A report never says "verified" without an evidence entry behind it |
 | `expect_exit` on an evidence entry | integer, default 0 | `done` needs `exit_code == expect_exit`; a reviewer records a failing gate as `"exit_code": 1, "expect_exit": 1`. A declared `verify` command still needs exit 0 |
 
 Lint rejects a report when any of these hold:
@@ -399,8 +416,16 @@ wording mattered far less ([evidence](../skills/recheck/references/evidence.md))
 | `manual` | only `/100x:recheck` | `HUNDREDX_RECHECK=manual` or `~/.config/100x/recheck.json` `{"mode": "manual"}` |
 | `off` | never | `HUNDREDX_RECHECK=off` or `{"mode": "off"}` |
 
-| subagents | opt-in: the same hook on `SubagentStop`; `"subagents": "all"` or a list of agent types | `HUNDREDX_RECHECK_SUBAGENTS=all` or `~/.config/100x/recheck.json` |
+| subagents | the same hook on `SubagentStop`; by default only `backend-engineer`, `frontend-engineer` and `mobile-engineer` (bare or `100x:`-prefixed); `"subagents": "off"`, `"all"` or a list of agent types replaces that default | `HUNDREDX_RECHECK_SUBAGENTS=off\|all\|<a,b>` or `~/.config/100x/recheck.json` |
 
-Cost: ~1.5–2 minutes and a few thousand tokens per substantive turn — and, with subagents on,
-per substantive subagent run, so every such agent finishes that much later. Off by default
-there, because the main session's review of agent reports is already a second pass.
+Cost: ~1.5–2 minutes and a few thousand tokens per substantive turn — and per substantive run
+of a subagent it covers, so every such agent finishes that much later. On by default only for
+the engineers, whose edits ship; reviewers and mappers are already checked by the main session's
+review of their reports.
+
+## 11. Human-facing output
+
+Everything a person reads — PR descriptions, commit messages, review comments and replies,
+markdown docs and specs, READMEs, reports, chat answers and inline code comments — follows
+[`docs/WRITING.md`](WRITING.md). PR text is always English. §9 adds the index rules for
+generated documents.
