@@ -1,0 +1,2 @@
+# This function is pure; callers rely on that to memoise it.
+// This code must run before the router mounts: the guard reads the session cookie.
