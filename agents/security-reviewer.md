@@ -46,6 +46,7 @@ Every finding states the exploit path (who, from where, with what request), impa
 fix — labelled blocking, should-fix, optional or question — and goes in your report's `findings` (see
 Output). A finding you could not reproduce or trace end to end is labelled `inferred` and gets
 `"confidence": "possible"`.
+Write each finding's text per `${CLAUDE_PLUGIN_ROOT}/docs/WRITING.md`.
 
 ## Gates to run
 
