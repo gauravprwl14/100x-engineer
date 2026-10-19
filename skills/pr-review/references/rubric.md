@@ -95,12 +95,9 @@ post.
 
 ### Mapping to `diff-review` labels
 
-| `diff-review` label | `review.json` |
-|---|---|
-| **blocking** | `kind: issue`, `blocks: merge` (or `rollout` when it only matters before real users) |
-| **should-fix** | `kind: issue` or `suggestion`, `blocks: none`, severity `major`/`minor` |
-| **optional** | `kind: suggestion` or `nit`, `blocks: none` |
-| **question** | `kind: question`, `status: question`, with `unknown` + `confirm_by` |
+`diff-review` labels, comment tags and `review.json` `kind`/`blocks`/`severity` are mapped in one
+table in `$(100x root)/docs/WRITING.md` ("One vocabulary map"), which also holds the shared
+writing rules; the length and wording limits G2/G3 enforce stay in the tables above.
 
 A `blocks: merge` item with no failure scenario in `why` is a preference (`diff-review` rule 10):
 downgrade it.
