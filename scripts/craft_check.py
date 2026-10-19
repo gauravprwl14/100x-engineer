@@ -55,6 +55,19 @@ Grounded thresholds (full citations in reviewers/_code-craft.md):
                       on its except/catch line or the first line of its body.
                       The reason is required; a bare `# fail-open:` waives
                       nothing.
+  short-names, abbreviations, boolean-predicate, function-verb, method-names,
+  magic-number        advisory  -- google/styleguide pyguide.md 3.16 (naming,
+                      "descriptiveness should be proportional to the name's
+                      scope", avoid abbreviations) and airbnb/javascript
+                      README section 23 (naming conventions). Lists and
+                      thresholds (1-2 chars over more than 5 lines, the
+                      abbreviation and verb lists, the magic-number
+                      allowlist) are SOURCE: original. A repo exempts its
+                      own domain names with `"craft_allow_names": [...]` in
+                      .100x.json.
+
+Files in languages these checks do not parse (.rb .go .kt .swift .dart .java)
+are counted and named on stdout, never silently passed.
 
     craft_check.py                          # all checks vs HEAD
     craft_check.py --base origin/main
@@ -64,13 +77,16 @@ Grounded thresholds (full citations in reviewers/_code-craft.md):
 
 Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
-import argparse, ast, os, re, subprocess, sys, pathlib
+import argparse, ast, functools, json, os, re, subprocess, sys, pathlib
 
 from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
+from _paths import CONFIG_NAME
 
 PY_EXT = (".py",)
 JS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 CODE_EXT = PY_EXT + JS_EXT
+UNSUPPORTED_EXT = (".rb", ".go", ".kt", ".swift", ".dart", ".java")
+UI_FILE_RX = re.compile(r"\.(tsx|jsx|vue)$|(^|/)components?/")
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
 
 MONEY_WORDS = ("price", "amount", "total", "balance", "cost", "fee")
@@ -93,6 +109,7 @@ def changed(base):
     return changed_files(base, "craft_check")
 
 
+@functools.lru_cache(maxsize=None)
 def touched_lines(path, base):
     """Line numbers (new-file numbering) this diff added. None means 'treat the
     whole file as touched' -- true for a brand-new/untracked file, and the safe
@@ -227,13 +244,14 @@ def js_functions(text):
         stripped = line.strip()
         m = RX_FUNC_DECL.match(line) or RX_ARROW.match(line)
         name = params = None
+        kind = "function"
         if m:
             name, params = m.group(1), m.group(2)
         else:
             m2 = RX_METHOD.match(line)
             first_word = re.match(r"[A-Za-z_$][\w$]*", stripped)
             if m2 and m2.group(1) not in JS_CONTROL_WORDS and not (first_word and first_word.group(0) in JS_CONTROL_WORDS):
-                m, name, params = m2, m2.group(1), m2.group(2)
+                m, name, params, kind = m2, m2.group(1), m2.group(2), "method"
         if not m or name is None:
             continue
         brace_pos = m.group(0).rfind("{")
@@ -242,7 +260,7 @@ def js_functions(text):
         open_idx = offsets[ln - 1] + brace_pos
         close_idx = scan_matching_brace(text, open_idx)
         end_line = text.count("\n", 0, close_idx) + 1
-        out.append(dict(name=name, params=params or "", start=ln, end=end_line,
+        out.append(dict(name=name, params=params or "", start=ln, end=end_line, kind=kind, line=line,
                          body=text[open_idx + 1:close_idx], indent=len(line) - len(line.lstrip(" \t"))))
     return out
 
@@ -609,6 +627,554 @@ def check_demeter_chain(added, mod, base, min_dots):
     return out
 
 
+# ---------------- naming by scope, predicates, verbs, magic numbers ----------------
+
+SHORT_NAME_MAX = 2
+SHORT_NAME_SPAN = 5  # a name used across more lines than this needs to say what it holds
+SHORT_OK = {"i", "j", "k", "n", "x", "y", "z", "id", "db", "ok", "err", "e", "ex", "ctx", "_"}
+ABBREV_WORDS = {"tmp", "cfg", "usr", "mgr", "calc", "proc", "cnt", "idx", "btn", "arr"}
+ABBREV_WHOLE = {"str", "num", "obj"}
+PREDICATE_RX = re.compile(r"^_*(is|has|should|can|was|did|needs)(_|[A-Z])")
+CONSTANT_RX = re.compile(r"^_*[A-Z][A-Z0-9_]*$")
+VERBS = set("""
+accept activate add analyse analyze allow append apply approve archive assert assign attach audit authenticate
+authorize bill build bump cache calculate call cancel capture charge check choose classify clean clear clone
+close collect combine commit compare compile compose compute configure confirm connect consume
+convert copy count create debounce decode decorate decrypt default define delete deny deploy
+deserialize destroy detach detect diff disable discard dispatch display do download drop dump
+emit enable encode encrypt end enqueue ensure enter escape estimate evaluate exec execute exit
+expand expect explain export extend extract fail fetch fill filter find finish fix flag flatten
+flush fold format forward from gather generate get give go group guard handle hash hide hydrate
+import increment infer init initialize inject insert install invalidate invoke is join keep
+label leave limit link lint list listen load lock log login logout lookup make map mark match
+measure merge migrate mount move mutate negotiate normalize notify observe on open pad
+paginate parse patch pause persist pick ping place plan play poll pop populate post prefetch
+prepare prepend preview print process produce prompt protect provide prune publish pull
+push put query queue quote raise rank read rebuild receive recompute record redact redirect
+reduce refresh refund register reject release reload remove rename render reorder repeat replace reply
+report request require rerun reset resolve respond restore resume retry return reuse revert
+revoke rewrite rollback rotate round route run sanitize save scan schedule score search seed
+select send serialize serve set setup shift ship should show shuffle sign skip sleep slice sort spawn
+split stamp start stop store stream strip stub submit subscribe summarize swap sync tag take
+test throttle throw tick to toggle track transform translate traverse trigger trim truncate try
+unlink unlock unmount unpack unregister unsubscribe unwrap update upgrade upload upsert use
+validate verify visit wait walk warn watch wrap write yield as can has was did needs with
+""".split())
+JS_LIFECYCLE = {"constructor", "render", "componentDidMount", "componentDidUpdate",
+                "componentWillUnmount", "componentDidCatch", "getSnapshotBeforeUpdate",
+                "getDerivedStateFromProps", "main"}
+PY_EXEMPT_FUNCS = {"main", "setUp", "tearDown", "setUpClass", "tearDownClass", "setUpModule",
+                   "tearDownModule"}
+PY_GETTER_DECORATORS = {"property", "cached_property", "setter", "getter", "deleter", "fixture"}
+MAGIC_OK = {-1.0, 0.0, 1.0, 2.0, 100.0, 1000.0}
+TIMEOUT_KW_RX = re.compile(r"timeout|delay|interval|ttl", re.I)
+NUMBER_PATTERN = r"-?\d[\d_]*(?:\.\d+)?"
+
+
+def allowed_names():
+    """Names a repo has declared legitimate (domain abbreviations, an established
+    short name) under `craft_allow_names` in .100x.json at the git root."""
+    try:
+        config = json.loads(pathlib.Path(CONFIG_NAME).read_text())
+    except (OSError, ValueError):
+        return frozenset()
+    names = config.get("craft_allow_names", []) if isinstance(config, dict) else []
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        print(f"craft_check: {CONFIG_NAME}: \"craft_allow_names\" must be a list of strings; ignored",
+              file=sys.stderr)
+        return frozenset()
+    return frozenset(names)
+
+
+ALLOWED = None
+
+
+def is_allowed(name):
+    global ALLOWED
+    if ALLOWED is None:
+        ALLOWED = allowed_names()
+    return name in ALLOWED
+
+
+def name_words(name):
+    return [w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", name)]
+
+
+def js_code_only(text):
+    """`text` with comment and string-literal content blanked, newlines kept, so a
+    word inside a string is not read as a use of a variable."""
+    out, i, n, state = [], 0, len(text), None
+    while i < n:
+        char, pair = text[i], text[i:i + 2]
+        if state is None and pair in ("//", "/*"):
+            state, step, kept = pair, 2, "  "
+        elif state is None:
+            state = char if char in ("'", '"', "`") else None
+            step, kept = 1, char
+        elif state == "//":
+            state = None if char == "\n" else state
+            step, kept = 1, char if char == "\n" else " "
+        elif state == "/*" and pair == "*/":
+            state, step, kept = None, 2, "  "
+        elif state != "/*" and char == "\\":
+            step, kept = 2, "  "
+        elif state != "/*" and char == state:
+            state, step, kept = None, 1, char
+        else:
+            step, kept = 1, char if char == "\n" else " "
+        out.append(kept)
+        i += step
+    return "".join(out)
+
+
+def walk_scope(node):
+    """Descendants of `node` that belong to its own scope: nested defs and classes
+    are yielded but not entered."""
+    for child in ast.iter_child_nodes(node):
+        yield child
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield from walk_scope(child)
+
+
+def target_names(target):
+    if isinstance(target, ast.Name):
+        return [target]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [n for elt in target.elts for n in target_names(elt)]
+    if isinstance(target, ast.Starred):
+        return target_names(target.value)
+    return []
+
+
+def bound_targets(node):
+    """(Name nodes `node` binds, whether they are loop targets)."""
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+        return target_names(node.target), True
+    if isinstance(node, ast.Assign):
+        return [t for tgt in node.targets for t in target_names(tgt)], False
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        return target_names(node.target), False
+    if isinstance(node, ast.withitem) and node.optional_vars is not None:
+        return target_names(node.optional_vars), False
+    return [], False
+
+
+def py_bindings(scope):
+    """{name: (first binding line, is_loop_target, is_param)} for one scope."""
+    found = {}
+    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        a = scope.args
+        for arg in a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]:
+            if arg.arg not in PY_KEYWORD_SKIP:
+                found.setdefault(arg.arg, (arg.lineno, False, True))
+    for node in walk_scope(scope):
+        if isinstance(node, ast.ExceptHandler) and node.name:
+            found.setdefault(node.name, (node.lineno, False, False))
+        targets, loop = bound_targets(node)
+        for t in targets:
+            found.setdefault(t.id, (t.lineno, loop, False))
+    return found
+
+
+def short_name_ok(name, loop, param, in_test):
+    if len(name) > SHORT_NAME_MAX or name in SHORT_OK or loop or is_allowed(name):
+        return True
+    return (name == "t" and in_test) or (name == "fn" and param)
+
+
+def py_short_names(path, tree, touched, in_test):
+    out = []
+    scopes = [tree] + py_funcs(tree)
+    for scope in scopes:
+        uses = {}
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Name):
+                uses.setdefault(node.id, []).append(node.lineno)
+        for name, (ln, loop, param) in py_bindings(scope).items():
+            if short_name_ok(name, loop, param, in_test) or not overlaps(touched, ln, ln):
+                continue
+            span = max(uses.get(name, [ln]) + [ln]) - ln
+            if span > SHORT_NAME_SPAN:
+                out.append((f"{path}:{ln}", f"`{name}` is {len(name)} char(s) but lives {span} lines -- "
+                                            f"a name's length should grow with its scope"))
+    return out
+
+
+def js_scope_end(fns, ln, default):
+    inner = [f for f in fns if f["start"] <= ln <= f["end"]]
+    return min(inner, key=lambda f: f["end"] - f["start"])["end"] if inner else default
+
+
+def js_last_use(code_lines, name, start, end):
+    rx = re.compile(r"(?<![\w$.])" + re.escape(name) + r"(?![\w$])")
+    last = start
+    for ln in range(start, min(end, len(code_lines)) + 1):
+        if rx.search(code_lines[ln - 1]):
+            last = ln
+    return last
+
+
+def js_param_names(params):
+    names = []
+    for raw in split_top_level(params):
+        token = raw.strip()
+        if token.startswith(("{", "[")):
+            continue
+        names.append(re.split(r"[:=?]", token.lstrip("."))[0].strip())
+    return [n for n in names if n]
+
+
+def js_short_names(path, text, touched, in_test):
+    out, seen = [], set()
+    code = js_code_only(text)
+    code_lines = code.splitlines()
+    fns = js_functions(text)
+    total = len(code_lines)
+    candidates = []
+    for m in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]?)(?![\w$])", code):
+        line_no = code.count("\n", 0, m.start()) + 1
+        line_head = code_lines[line_no - 1][:m.start() - (code.rfind("\n", 0, m.start()) + 1)]
+        loop = bool(re.search(r"\bfor\s*\(\s*$", line_head))
+        candidates.append((m.group(1), line_no, loop, False, js_scope_end(fns, line_no, total)))
+    for fn in fns:
+        for name in js_param_names(fn["params"]):
+            candidates.append((name, fn["start"], False, True, fn["end"]))
+    for name, line_no, loop, param, end in candidates:
+        if (name, line_no) in seen or short_name_ok(name, loop, param, in_test) or not overlaps(touched, line_no, line_no):
+            continue
+        seen.add((name, line_no))
+        span = js_last_use(code_lines, name, line_no + (0 if param else 1), end) - line_no
+        if span > SHORT_NAME_SPAN:
+            out.append((f"{path}:{line_no}", f"`{name}` is {len(name)} char(s) but lives {span} lines -- "
+                                              f"a name's length should grow with its scope"))
+    return out
+
+
+def check_short_names(added, mod, base):
+    out = []
+    for p in added + mod:
+        touched = touched_lines(p, base)
+        in_test = bool(TEST_RX.search(p))
+        if is_py(p):
+            tree, _ = parse_py(p)
+            if tree is not None:
+                out += py_short_names(p, tree, touched, in_test)
+        elif is_js(p):
+            text = read(p)
+            if text is not None:
+                out += js_short_names(p, text, touched, in_test)
+    return out
+
+
+def abbreviation(name, loop, ui_file):
+    """The abbreviation `name` uses, or None."""
+    if is_allowed(name):
+        return None
+    if name.lower() in ABBREV_WHOLE:
+        return name
+    for w in name_words(name):
+        if w not in ABBREV_WORDS or (w == "idx" and loop) or (w == "btn" and ui_file):
+            continue
+        return w
+    return None
+
+
+def py_named_things(tree):
+    """(name, line, kind, is_loop_target) for every function, parameter and variable."""
+    for scope in [tree] + py_funcs(tree):
+        if scope is not tree:
+            yield scope.name, scope.lineno, "function", False
+        for name, (ln, loop, param) in py_bindings(scope).items():
+            yield name, ln, "parameter" if param else "variable", loop
+
+
+def js_named_things(text):
+    code = js_code_only(text)
+    for m in re.finditer(r"\b(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)", code):
+        ln = code.count("\n", 0, m.start()) + 1
+        head = code[code.rfind("\n", 0, m.start()) + 1:m.start()]
+        yield m.group(2), ln, "declaration", bool(re.search(r"\bfor\s*\(\s*$", head))
+    for fn in js_functions(text):
+        if fn["kind"] == "method":
+            yield fn["name"], fn["start"], "method", False
+        for pname in js_param_names(fn["params"]):
+            yield pname, fn["start"], "parameter", False
+
+
+def check_abbreviations(added, mod, base):
+    out = []
+    for p in added + mod:
+        if is_py(p):
+            tree, _ = parse_py(p)
+            things = py_named_things(tree) if tree is not None else []
+        elif is_js(p):
+            text = read(p)
+            things = js_named_things(text) if text is not None else []
+        else:
+            continue
+        touched = touched_lines(p, base)
+        ui_file = bool(UI_FILE_RX.search(p))
+        seen = set()
+        for name, ln, kind, loop in things:
+            abbr = abbreviation(name, loop, ui_file)
+            if abbr and (name, ln) not in seen and overlaps(touched, ln, ln):
+                seen.add((name, ln))
+                out.append((f"{p}:{ln}", f"{kind} `{name}` abbreviates (`{abbr}`) -- spell the word out"))
+    return out
+
+
+def predicate_ok(name):
+    return bool(PREDICATE_RX.match(name)) or bool(CONSTANT_RX.match(name)) or name == "ok" \
+        or is_allowed(name)
+
+
+def is_bool_literal(node):
+    return isinstance(node, ast.Constant) and isinstance(node.value, bool)
+
+
+def check_boolean_predicate(added, mod, base):
+    out = []
+    msg = "boolean `{}` does not read as a predicate -- prefix is_/has_/should_/can_/was_/did_/needs_"
+    for p in added + mod:
+        touched = touched_lines(p, base)
+        flagged = set()
+        if is_py(p):
+            tree, _ = parse_py(p)
+            if tree is None:
+                continue
+            # A class-body field (dataclass, pydantic, ORM column) names stored state
+            # whose schema or API often fixes the name; only variables are checked.
+            fields = {id(stmt) for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+                      for stmt in cls.body}
+            for node in ast.walk(tree):
+                hits = []
+                if id(node) in fields:
+                    continue
+                if isinstance(node, ast.Assign) and is_bool_literal(node.value):
+                    hits = [t for tgt in node.targets for t in target_names(tgt)]
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and (
+                        (isinstance(node.annotation, ast.Name) and node.annotation.id == "bool")
+                        or (node.value is not None and is_bool_literal(node.value))):
+                    hits = [node.target]
+                for t in hits:
+                    if t.id not in flagged and not predicate_ok(t.id) and overlaps(touched, t.lineno, t.lineno):
+                        flagged.add(t.id)
+                        out.append((f"{p}:{t.lineno}", msg.format(t.id)))
+        elif is_js(p):
+            text = read(p)
+            if text is None:
+                continue
+            code = js_code_only(text)
+            rx = re.compile(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*"
+                            r"(?::\s*boolean\b[^=;\n]*(?:=|;|$)|=\s*(?:true|false)\b)", re.M)
+            for m in rx.finditer(code):
+                name = m.group(1)
+                ln = code.count("\n", 0, m.start()) + 1
+                if name not in flagged and not predicate_ok(name) and overlaps(touched, ln, ln):
+                    flagged.add(name)
+                    out.append((f"{p}:{ln}", msg.format(name)))
+    return out
+
+
+def starts_with_verb(name):
+    words = name_words(name.lstrip("_$"))
+    if not words:
+        return False
+    first = words[0]
+    return first in VERBS or (first.endswith("s") and first[:-1] in VERBS)
+
+
+NOUN_NAME_MAX_LINES = 10
+
+
+def noun_name_ok(length):
+    # A short noun (`total()`, `median()`, `changed_files()`) reads as the value it
+    # returns; a long body behind a noun hides what the function does.
+    return length <= NOUN_NAME_MAX_LINES
+
+
+def py_decorator_names(fn):
+    names = set()
+    for d in fn.decorator_list:
+        target = d.func if isinstance(d, ast.Call) else d
+        if isinstance(target, ast.Attribute):
+            names.add(target.attr)
+        elif isinstance(target, ast.Name):
+            names.add(target.id)
+    return names
+
+
+def check_function_verb(added, mod, base):
+    out = []
+    for p in added + mod:
+        if TEST_RX.search(p):
+            continue
+        touched = touched_lines(p, base)
+        if is_py(p):
+            tree, _ = parse_py(p)
+            if tree is None:
+                continue
+            for fn in py_funcs(tree):
+                name = fn.name
+                if (name.startswith("__") and name.endswith("__")) or name.startswith("test") \
+                        or name in PY_EXEMPT_FUNCS or py_decorator_names(fn) & PY_GETTER_DECORATORS \
+                        or is_allowed(name) or starts_with_verb(name) \
+                        or noun_name_ok((fn.end_lineno or fn.lineno) - fn.lineno + 1):
+                    continue
+                if overlaps(touched, fn.lineno, fn.lineno):
+                    out.append((f"{p}:{fn.lineno}", f"function `{name}` does not start with a verb -- "
+                                                     f"name what it does (`get_`, `build_`, `parse_`...)"))
+        elif is_js(p):
+            text = read(p)
+            if text is None:
+                continue
+            component_file = p.endswith((".tsx", ".jsx"))
+            for fn in js_functions(text):
+                name = fn["name"]
+                if name in JS_LIFECYCLE or re.match(r"ng[A-Z]", name) or is_allowed(name) \
+                        or (component_file and name[:1].isupper()) \
+                        or re.search(r"\bget\s+" + re.escape(name) + r"\s*\(", fn["line"]) \
+                        or starts_with_verb(name) or noun_name_ok(fn["end"] - fn["start"] + 1):
+                    continue
+                if overlaps(touched, fn["start"], fn["start"]):
+                    out.append((f"{p}:{fn['start']}", f"{fn['kind']} `{name}` does not start with a verb -- "
+                                                       f"name what it does (`get`, `build`, `parse`...)"))
+    return out
+
+
+def check_method_names(added, mod, base):
+    out = []
+    for p in added + mod:
+        if not is_js(p):
+            continue
+        text = read(p)
+        if text is None:
+            continue
+        touched = touched_lines(p, base)
+        for fn in js_functions(text):
+            if fn["kind"] == "method" and vague_match(fn["name"]) and overlaps(touched, fn["start"], fn["start"]):
+                out.append((f"{p}:{fn['start']}", f"method named `{fn['name']}` -- reveal intent instead of a generic noun"))
+    return out
+
+
+def magic_value(literal):
+    try:
+        return float(literal.replace("_", "")) not in MAGIC_OK
+    except ValueError:
+        return False
+
+
+def py_number(node):
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = py_number(node.operand)
+        return None if inner is None else -inner
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+            and not isinstance(node.value, bool):
+        return node.value
+    return None
+
+
+STATUS_NAME_RX = re.compile(r"status|code", re.I)
+
+
+def is_http_status(value):
+    return isinstance(value, int) and 100 <= value <= 599
+
+
+def py_operand_name(node):
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return node.id if isinstance(node, ast.Name) else ""
+
+
+def py_magic(tree, src_lines):
+    """(line, literal) for each numeric literal compared against or passed as a timeout."""
+    for node in ast.walk(tree):
+        operands = []
+        if isinstance(node, ast.Compare):
+            operands = [node.left] + node.comparators
+            # `resp.status_code == 404` already names the number: HTTP defines it.
+            if any(STATUS_NAME_RX.search(py_operand_name(o)) for o in operands):
+                operands = [o for o in operands if not is_http_status(py_number(o))]
+        elif isinstance(node, ast.Call):
+            operands = [k.value for k in node.keywords if k.arg and TIMEOUT_KW_RX.search(k.arg)]
+            func = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+            if func == "sleep" and node.args:
+                operands.append(node.args[0])
+        for op in operands:
+            value = py_number(op)
+            if value is not None and float(value) not in MAGIC_OK:
+                ln = op.lineno
+                if not re.match(r"^\s*_*[A-Z][A-Z0-9_]*\s*(?::[^=]+)?=", src_lines[ln - 1]):
+                    yield ln, str(value)
+
+
+JS_CONST_DECL = re.compile(r"^\s*(?:export\s+)?(?:(?:const|let|var|static|readonly|private|public|protected)\s+)*"
+                           r"_*[A-Z][A-Z0-9_]*\s*(?::[^=]+)?=")
+JS_CMP = r"(?:===?|!==?|(?<![<>=])<=?(?![<=])|(?<![<>=])>=?(?![>=]))"
+JS_MAGIC_RX = [
+    re.compile(r"(?<![\w$.\])])(" + NUMBER_PATTERN + r")\s*" + JS_CMP),
+    re.compile(JS_CMP + r"\s*(" + NUMBER_PATTERN + r")(?![\w.\[])"),
+    re.compile(r"\b(?:setTimeout|setInterval)\s*\(.*,\s*(" + NUMBER_PATTERN + r")\s*\)"),
+    re.compile(r"\b\w*(?:[Tt]imeout|[Dd]elay|[Ii]nterval|[Tt]tl)\w*\s*:\s*(" + NUMBER_PATTERN + r")\b"),
+]
+
+
+JS_STATUS_BEFORE = re.compile(r"[\w$]*(?:[Ss]tatus|[Cc]ode)[\w$]*\s*" + JS_CMP + r"\s*$")
+JS_STATUS_AFTER = re.compile(r"^\s*" + JS_CMP + r"\s*[\w$.]*(?:[Ss]tatus|[Cc]ode)")
+
+
+def js_status_compare(line, m):
+    """True when the literal is an HTTP status compared with a status/code name."""
+    literal = m.group(1)
+    if not literal.isdigit() or not is_http_status(int(literal)):
+        return False
+    return bool(JS_STATUS_BEFORE.search(line[:m.start(1)])
+                or JS_STATUS_AFTER.match(line[m.end(1):]))
+
+
+def js_magic(text):
+    for ln, line in enumerate(js_code_only(text).splitlines(), 1):
+        if JS_CONST_DECL.match(line):
+            continue
+        for rx in JS_MAGIC_RX:
+            for m in rx.finditer(line):
+                if not js_status_compare(line, m):
+                    yield ln, m.group(1)
+
+
+def check_magic_number(added, mod, base):
+    out = []
+    for p in added + mod:
+        if TEST_RX.search(p):
+            continue
+        touched = touched_lines(p, base)
+        if is_py(p):
+            tree, src = parse_py(p)
+            hits = py_magic(tree, src.splitlines()) if tree is not None else []
+        elif is_js(p):
+            text = read(p)
+            hits = js_magic(text) if text is not None else []
+        else:
+            continue
+        seen = set()
+        for ln, literal in hits:
+            if magic_value(literal) and (ln, literal) not in seen and overlaps(touched, ln, ln):
+                seen.add((ln, literal))
+                out.append((f"{p}:{ln}", f"magic number {literal} -- name it as a constant or read it from config"))
+    return out
+
+
+def report_unsupported(paths):
+    counts = {}
+    for p in paths:
+        ext = os.path.splitext(p)[1].lower()
+        if ext in UNSUPPORTED_EXT:
+            counts[ext] = counts.get(ext, 0) + 1
+    for ext, n in sorted(counts.items()):
+        print(f"craft_check: {n} {ext} files not checked (unsupported language)")
+
+
 BLOCKING = {"bare-except"}
 
 
@@ -622,6 +1188,12 @@ def build_checks(args):
         "vague-names": check_vague_names,
         "money-as-float": check_money_as_float,
         "demeter-chain": lambda a, m, b: check_demeter_chain(a, m, b, args.demeter_depth),
+        "short-names": check_short_names,
+        "abbreviations": check_abbreviations,
+        "boolean-predicate": check_boolean_predicate,
+        "function-verb": check_function_verb,
+        "method-names": check_method_names,
+        "magic-number": check_magic_number,
     }
 
 
@@ -657,6 +1229,7 @@ def main():
     if not added and not mod:
         print("craft_check: no changes to inspect")
         return 0
+    report_unsupported(added + mod)
 
     hard = advisory = 0
     for n in names:
