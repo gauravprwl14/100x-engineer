@@ -135,6 +135,8 @@ def main():
     parser.add_argument("--rescore", action="store_true")
     parser.add_argument("--json", type=Path, help="also write the per-run scores here")
     args = parser.parse_args()
+    # checks.py runs tools from inside each run's overlay, where a relative path breaks.
+    args.tools_root = args.tools_root.resolve()
 
     new, old = (json.loads(path.read_text()) for path in (args.new, args.old))
     cache_path = args.new.parent / "bench-checks.json"
