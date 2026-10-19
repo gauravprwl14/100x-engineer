@@ -5,6 +5,37 @@ All notable changes to this plugin. The format follows
 `.claude-plugin/plugin.json`'s `version`, which is what decides when an installed copy
 updates.
 
+## [0.3.0] - Unreleased
+
+Engineer agents now apply the coding and writing standards while they write, not only at
+review. Every new check warns and never blocks.
+
+### Added
+
+| what | where |
+|---|---|
+| One writing standard for PR descriptions, commits, review comments, replies, docs, chat answers and code comments: size proportional to the change, claims next to their proof, one evidence vocabulary and one severity scheme | `docs/WRITING.md` |
+| `prose_check`: 15 text rules (body budget, long paragraph, claim without evidence, filler, self-ticked box, review comment without severity or scenario, reply without a sha, and more) | `scripts/prose_check.py` |
+| `pr-description` skill | `skills/pr-description/` |
+| `pr_scope`: files outside a PR's declared scope, or also changed on a sibling branch of a stack | `scripts/pr_scope.py` |
+| `fails_without_fix`: reverts the source change in a throwaway worktree (repo hooks off) and checks the new tests fail; `--link-deps` links gitignored `node_modules`/`.venv`/`vendor/bundle` | `scripts/fails_without_fix.py` |
+| Engineer standards card read at write time | `reviewers/_engineer-standards.md` |
+| Rails, Django/FastAPI, Express/Node and Go reviewers; insecure IaC defaults; Ruby, Kotlin and Swift in `language-verification` | `reviewers/`, `skills/language-verification/` |
+| Output benchmark: 12 scenarios run through `claude plugin eval` against no plugin, the previous version and this one | `bench/` |
+
+### Changed
+
+| what | before | now |
+|---|---|---|
+| `craft_check` naming | generic-noun stoplist | adds `short-names`, `abbreviations`, `boolean-predicate`, `function-verb`, `method-names`, `magic-number`; a repo allowlist in `.100x.json` `craft_allow_names`; unsupported languages are named, not passed silently |
+| backend, frontend and mobile engineers | no `code-craft`/`test-design`; Verify ran task commands and `bloat_check` | preload both; a context card before the first edit; `craft_check`, `perf_check`, `appsec_check` in Verify; behaviour evidence for user-visible `done` |
+| router | single-agent changes skipped review | `code-reviewer` on any 2+ file change, `security-reviewer` when routes, auth, input, tenancy, uploads or infra change |
+| `code-reviewer` | naming skipped once a higher blocking finding stopped the widening | naming and readability is a separate pass |
+| recheck on subagents | off unless configured | on for the three engineer agents by default |
+| `agent_report` | — | optional evidence `kind` (`build`, `test`, `behaviour`); warnings for UI/API `done` without behaviour evidence, source without tests, and no context card |
+| commit and PR gate | — | adds `prose_check` and `pr_scope` findings to the hook's context on `git commit` and `gh pr create/edit`; the allow or deny decision is unchanged |
+| recheck's closing line | `verified <what>` | `verified <what> (<file:line or command>)` |
+
 ## [0.2.0] - Unreleased
 
 ### BREAKING
