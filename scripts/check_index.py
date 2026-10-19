@@ -450,7 +450,7 @@ def gen_collections():
             "accessibility": "2 while writing", "web-vitals": "2 while writing",
             "observability-design": "2 while writing", "legacy-change": "2 while writing",
             "verification-gate": "3 before shipping", "diff-review": "3 before shipping",
-            "pr-review": "3 before shipping",
+            "pr-review": "3 before shipping", "pr-description": "3 before shipping",
             "recheck": "3 before shipping", "prompt-bench": "6 meta",
             "review-gates": "3 before shipping",
             "security-baseline": "3 before shipping",
