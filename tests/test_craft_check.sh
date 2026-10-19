@@ -667,6 +667,25 @@ expect 0 "function-verb: dunders, property, main, fixture, tests, components, ho
 nothas "does not start with a verb"
 reset_diff
 
+# A docstring does not count toward the noun-name limit: documenting a short function
+# must never be what flags it.
+cat > src/reports.py <<'EOF'
+def overdue_invoices(invoices, as_of):
+    """Invoices past their due date and still unpaid at the end of `as_of`.
+
+    An invoice due on `as_of` is not yet overdue. An invoice paid after `as_of`
+    counts as overdue on `as_of`, since it was unpaid on that day.
+    """
+    return [
+        invoice
+        for invoice in invoices
+        if invoice.due_date < as_of and invoice.paid_on is None
+    ]
+EOF
+expect 0 "function-verb: a short noun function with a long docstring is fine" --only function-verb --strict
+nothas "overdue_invoices"
+reset_diff
+
 # =========================================================================
 # method-names -- vague-names extended to JS/TS class methods
 # =========================================================================
