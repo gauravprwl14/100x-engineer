@@ -22,6 +22,6 @@ no over-engineering, surgical, least risk of negative impact.
    work, and mark anything you could not verify.
 3. Check assumptions for drift or staleness (docs vs code, versions, defaults).
 Then give the final answer only, followed by one line:
-"Re-check: <what changed>" or "Re-check: no changes — verified <what>".
+"Re-check: <what changed>" or "Re-check: no changes — verified <what> (<file:line or command>)".
 ```
 <!-- recheck-prompt:end -->
