@@ -13,9 +13,9 @@ crashes would wedge every session.
 
 Mode: env HUNDREDX_RECHECK (auto|manual|off) overrides ~/.config/100x/recheck.json
 {"mode": ..., "min_chars": ..., "subagents": ...}; defaults auto and 1500. manual and off
-never block a Stop. SubagentStop is opt-in: "subagents" is "off" (default), "all", or a
-list of agent types, overridden by env HUNDREDX_RECHECK_SUBAGENTS (off, all, or a comma
-list); mode "off" disables it too.
+never block a Stop. SubagentStop covers the engineer agents by default (DEFAULT_SUBAGENTS);
+"subagents" replaces that with "off", "all", or a list of agent types, overridden by env
+HUNDREDX_RECHECK_SUBAGENTS (off, all, or a comma list); mode "off" disables it too.
 """
 import json, os, pathlib, re, sys
 
@@ -23,6 +23,9 @@ MODES = ("auto", "manual", "off")
 DEFAULT_MODE = "auto"
 DEFAULT_MIN_CHARS = 1500
 CONFIG_REL = (".config", "100x", "recheck.json")
+# The agents whose edits ship as code; reviewer and mapper reports already get a second
+# pass from the main session. allowed() matches these bare or plugin-prefixed.
+DEFAULT_SUBAGENTS = frozenset({"backend-engineer", "frontend-engineer", "mobile-engineer"})
 # SubagentStop documents agent_type; the others are read defensively in case a host
 # version names it differently.
 AGENT_TYPE_KEYS = ("agent_type", "agentType", "subagent_type", "agent_name")
@@ -56,7 +59,7 @@ def subagent_setting(value):
 
 
 def config():
-    mode, min_chars, subagents = DEFAULT_MODE, DEFAULT_MIN_CHARS, "off"
+    mode, min_chars, subagents = DEFAULT_MODE, DEFAULT_MIN_CHARS, set(DEFAULT_SUBAGENTS)
     try:
         cfg = json.loads(pathlib.Path.home().joinpath(*CONFIG_REL).read_text())
     except (OSError, ValueError):
