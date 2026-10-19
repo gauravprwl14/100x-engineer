@@ -69,16 +69,16 @@ Skills run in the order listed. Agents are this plugin's subagents (`100x:<name>
 
 | intent | skills, in order | agents | gates |
 |---|---|---|---|
-| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag stamp` + `lint`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x review_scope`, `100x verified` |
-| fix | bug-fix → test-design (regression test first) → minimal-diff → diff-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier | failing test before the fix, `100x bloat_check`, `100x verified` |
+| build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → code-craft → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag stamp` + `lint`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x craft_check`, `100x review_scope`, `100x verified` |
+| fix | bug-fix → test-design (regression test first) → minimal-diff → code-craft → diff-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier; security-reviewer if routes, auth, input, tenancy, uploads or infra changed | failing test before the fix, `100x bloat_check`, `100x craft_check`, `100x verified` |
 | incident | root-cause-analysis → bug-fix → release-rollout (rollback or flag-off first if users are hurting) → project-learning | rca-investigator, then the engineer for the area, independent-verifier | `100x rca lint`, `100x rca link`, `100x decide drift` |
 | understand | codebase-comprehension → diagramming → project-learning | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index` |
-| review-own | diff-review → minimal-diff → code-craft → verification-gate | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
+| review-own | diff-review → minimal-diff → code-craft → verification-gate → pr-description when it opens a PR | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
 | review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code; pr-review when the findings go to GitHub as comments | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check`; for pr-review `100x pr_review_gate` |
 | plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag stamp` + `lint` |
 | change-untested | requirements-intake → codebase-comprehension → legacy-change (characterisation tests first) → test-design → minimal-diff → diff-review | comprehension-mapper, qa-engineer, the engineer for the area, code-reviewer | characterisation tests pass before the change, `100x bloat_check`, `100x verified` |
 | QA | requirements-intake → qa-strategy → test-design → accessibility → performance-budgets at growth+ | qa-engineer, independent-verifier | `100x testplan new` + `trace`, `100x test_design_check`, `100x verified` |
-| ship | release-rollout → data-lifecycle for migrations or deletions → mobile-release-safety for mobile → observability-design → verification-gate | solution-architect (rollout/rollback), independent-verifier | `100x verified`, the `PreToolUse` receipt gate, the `Stop` hook |
+| ship | release-rollout → data-lifecycle for migrations or deletions → mobile-release-safety for mobile → observability-design → verification-gate → pr-description when it opens a PR | solution-architect (rollout/rollback), independent-verifier | `100x verified`, the `PreToolUse` receipt gate, the `Stop` hook |
 
 Every intent that builds or reviews runs `100x baseline show --work <type> --tier <tier>` for each
 work type touched: its A items are applied, its in-tier B items listed, its C items asked.
@@ -87,7 +87,7 @@ work type touched: its A items are applied, its in-tier B items listed, its C it
 
 | situation | do |
 |---|---|
-| one specialist, a handful of files | work in the main session with the pipeline's skills; no agents |
+| one specialist, a handful of files | work in the main session with the pipeline's skills; a build or fix touching 2+ files still runs code-reviewer before done, and security-reviewer when routes, auth, input, tenancy, uploads or infra change |
 | two or more specialists, or tasks that can run in parallel | `orchestrate`: approved spec → `plan.json` → `100x plan_dag stamp` → `100x plan_dag lint` → `100x plan_dag waves` → one agent per task, each in its own worktree |
 | any non-trivial build, before merge | independent-verifier re-runs each task's declared verify commands; code-reviewer and security-reviewer review the merged diff |
 
