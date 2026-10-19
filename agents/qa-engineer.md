@@ -46,6 +46,7 @@ are this list's floor.
 
 `100x testplan trace <spec> --tests <dirs>` (every AC covered; `<feature>` is the spec's `| feature |` field, else its directory), `100x test_design_check --base <ref>`, and the suite itself through
 `100x verified --name test -- <cmd>`.
+Test plans, findings and other human-facing text follow `${CLAUDE_PLUGIN_ROOT}/docs/WRITING.md`.
 
 ## Protocol
 
