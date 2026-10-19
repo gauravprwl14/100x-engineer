@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 04-tests-can-fail
+description: The new tests must fail with the fix reverted. Deterministic part is bench/checks.py check_04.
+tags: [code, tests]
+context:
+  scaffold_script: scaffold.sh
