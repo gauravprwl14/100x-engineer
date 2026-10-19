@@ -485,6 +485,71 @@ printf 'not json\n' > "$OTHER/r2/.claude/verification-policy.json"
 expect deny   "malformed policy fails closed"       "$C" "$OTHER/r2" "invalid"
 expect silent "not a git repository: nothing to gate" "$C" "$OTHER"
 
+echo "--- writing and scope warnings (advisory, never change the decision)"
+# has <label> <output> <pattern> / lacks <label> <output> <pattern>
+has()   { printf '%s' "$2" | grep -q -- "$3" && ok "$1" || { bad "$1 (missing '$3')"; printf '       %s\n' "$2" | head -c 600; echo; }; }
+lacks() { printf '%s' "$2" | grep -q -- "$3" && { bad "$1 (unexpected '$3')"; printf '       %s\n' "$2" | head -c 600; echo; } || ok "$1"; }
+W="$OTHER/r3"; mkdir -p "$W/app/reactions" "$W/app/tagging"
+(cd "$W" && git init -q && git config user.email t@t && git config user.name t \
+  && git symbolic-ref HEAD refs/heads/main && echo a > app/reactions/a.rb && echo a > app/tagging/t.rb \
+  && git add -A && git commit -qm i && git checkout -qb feat/reactions \
+  && echo b >> app/reactions/a.rb && echo b >> app/tagging/t.rb && git commit -qam r)
+SLOP='This PR adds reactions.
+- [x] Tested
+- [x] Verified everything works'
+CLEAN='Closes #12
+
+Add reaction counts to posts, from one grouped query per page.'
+q() { python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$1"; }
+out="$(run "$W" "gh pr create --base main --title t --body $(q "$SLOP")")"
+[ "$(kind "$out")" = message ] && ok "slop PR body: still allowed (no decision)" || bad "slop PR body: still allowed (got $(kind "$out"))"
+has   "slop PR body: warnings reach the agent as context" "$out" "additionalContext.*self-ticked-box"
+has   "slop PR body: the not-configured notice is kept"   "$out" "not configured"
+out="$(run "$W" "gh pr create --base main --title t --body $(q "$CLEAN")")"
+lacks "clean PR body: no writing warnings" "$out" "Writing and scope check"
+out="$(run "$W" "gh pr create --base main --title t --body $(q "$CLEAN
+
+scope: app/reactions/**")")"
+has   "gh pr create: file outside the body's scope is flagged" "$out" "out-of-scope.*app/tagging/t.rb"
+lacks "gh pr create: in-scope file is not flagged" "$out" "app/reactions/a.rb:"
+printf '%s\n' "$SLOP" > "$TMP/body.md"
+out="$(run "$W" "gh pr edit 3 --body-file $TMP/body.md")"
+[ "$(kind "$out")" = message ] && has "gh pr edit --body-file: checked, not gated" "$out" "claim-without-evidence" \
+  || bad "gh pr edit --body-file: checked, not gated (got $(kind "$out"))"
+out="$(run "$W" 'git commit -m "This commit adds reactions. Verified it works."')"
+has   "commit -m: message checked"  "$out" "\[commit\]\|commit line"
+out="$(run "$W" "$(printf 'git commit -m "$(cat <<'"'"'EOF'"'"'\nAdd reactions\n\nThis PR adds reactions.\nEOF\n)"')")"
+has   "commit -m \"\$(cat <<EOF)\": heredoc message checked" "$out" "filler-phrase"
+out="$(run "$W" 'git commit -m "Add reaction counts to posts"')"
+lacks "clean commit message: no warnings" "$out" "Writing and scope check"
+N=13; LINES=""; for i in $(seq $N); do LINES="$LINES
+- [x] Tested part $i"; done
+out="$(run "$W" "gh pr edit 3 --body $(q "$LINES")")"
+has   "findings capped at 8 plus a count" "$out" "more: run"
+[ "$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["systemMessage"].count("\n  - "))')" = 8 ] \
+  && ok "exactly 8 findings shown" || bad "exactly 8 findings shown"
+P="$TMP/plug"; mkdir -p "$P"; cp -R "$ROOT/hooks" "$ROOT/scripts" "$P/"; rm -f "$P/scripts/prose_check.py"
+rm -rf "$P/scripts/__pycache__"
+out="$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","cwd":sys.argv[1],"tool_input":{"command":sys.argv[2]}}))' \
+  "$W" "gh pr create --base main --title t --body $(q "$SLOP")" | (cd "$OTHER" && python3 "$P/hooks/require_verification.py"))"; rc=$?
+[ "$rc" -eq 0 ] && [ "$(kind "$out")" = message ] && ok "prose_check absent: fail-open, still allowed" \
+  || bad "prose_check absent: fail-open, still allowed (rc=$rc got $(kind "$out"))"
+lacks "prose_check absent: no crash reported" "$out" "hook error"
+lacks "prose_check absent: the copy without it was the one run" "$out" "self-ticked-box"
+G="$OTHER/r4"; mkdir -p "$G/.claude"
+(cd "$G" && git init -q && git config user.email t@t && git config user.name t \
+  && echo 'print("ok")' > pass_test.py \
+  && printf '{"required_checks": {"test": "python3 pass_test.py"}}\n' > .claude/verification-policy.json \
+  && git add -A && git commit -qm i)
+out="$(run "$G" "gh pr create --title t --body $(q "$SLOP")")"
+[ "$(kind "$out")" = deny ] && ok "policy + no receipt: slop PR still blocked" || bad "policy + no receipt: slop PR still blocked (got $(kind "$out"))"
+has   "policy + no receipt: the deny reason is unchanged" "$out" "no verification receipt"
+lacks "policy + no receipt: no warnings mixed into a deny" "$out" "Writing and scope check"
+(cd "$G" && python3 "$VERIFIED" --name test >/dev/null 2>&1)
+out="$(run "$G" 'git commit -m "This commit adds reactions. Verified it works."')"
+has   "policy + fresh receipt: commit passes" "$out" "PASSED"
+has   "policy + fresh receipt: writing warnings appended" "$out" "Writing and scope check"
+
 echo "--- fail open"
 printf 'not json at all' | python3 "$HOOK" >/dev/null 2>&1 && ok "malformed hook input exits 0" \
   || bad "malformed hook input exits 0"
