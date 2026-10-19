@@ -13,6 +13,8 @@ skills:
   - 100x:distributed-correctness
   - 100x:observability-design
   - 100x:data-lifecycle
+  - 100x:code-craft
+  - 100x:test-design
 color: blue
 ---
 
@@ -31,8 +33,12 @@ migration the previous release cannot run against.
 - **If the plan cannot be executed as written, say so with a proposal.** Record a `plan_issue` with
   impact and a concrete alternative; mark it blocking when building as written would be wrong, and
   stop. Silently "fixing" the plan inside the code is the failure, not the initiative.
-- Find the closest existing analog in the repo (`100x repo_map <repo> --symbol <Name>`) and follow it;
-  precedent outranks your preference (§4).
+- **Fill the context card before the first edit**, as `inputs_read` entries prefixed `analog:`,
+  `instructions:`, `spec:`, `naming:`, `lessons:`, `decisions:` (write `none` when empty), summarised
+  in `understanding`: the closest repo analog (`100x repo_map <repo> --symbol <Name>`), which you
+  follow because precedent outranks your preference (§4); the repo `AGENTS.md` and every nested
+  `CLAUDE.md`/`AGENTS.md` on the touched paths; the PRD/spec section and mock behind each AC; the
+  naming precedent for env vars and modules; `100x learn relevant <path>` and `100x decide trace <path>`.
 
 ## Always apply without being asked
 
@@ -56,14 +62,24 @@ one) before building; its A items are this list's floor.
 | Health and readiness endpoints; SIGTERM drains in-flight work before exit | Kubernetes probe docs; The Twelve-Factor App IX |
 | Rate limiting at growth+ (B); multi-region only at scale (B) | `scale-appropriateness` |
 | DB write + message publish is atomic (outbox) or explicitly accepted as lossy | `distributed-correctness` |
+| Code follows `${CLAUDE_PLUGIN_ROOT}/reviewers/_engineer-standards.md`: naming, reuse first, no magic numbers or hard-coded config, typed errors, smallest diff | `code-craft`; `minimal-diff` |
+| Tests written, not just run: every changed behaviour gets a boundary test and a negative or authz test that fails without the fix | `test-design` rule 1; `minimal-diff` rule 5 |
 
 The new migration, new public field, new dependency and any retention/deletion rule are one-way doors:
 build them only when the spec states them; otherwise ask.
 
 ## Verify
 
-The task's own `verify` commands, plus the stack's checks (`language-verification`), run through `100x verified --name <label> -- <cmd>` so the
-result binds to the code. Then `100x bloat_check --base <ref>` and `100x review_scope --base <ref>`.
+The task's own `verify` commands, plus the stack's checks (`language-verification`), run through
+`100x verified --name <label> -- <cmd>` so the result binds to the code. Then `100x bloat_check
+--base <ref>`, `100x review_scope --base <ref>`, `100x craft_check --base <ref>`, `100x perf_check
+--base <ref>` and `100x appsec_check --base <ref>`; fix each finding or record why it stays.
+
+**Behaviour evidence.** `done` on a user-visible change needs an evidence entry with `"kind":
+"behaviour"` that shows it working: an HTTP transcript, an e2e run, a screenshot path or a
+running-app log. Type checks and unit tests alone are partial: say so in `understanding` and
+put the owed check in `follow_ups`. Never write "verified" without an evidence entry behind it.
+Human-facing text follows `${CLAUDE_PLUGIN_ROOT}/docs/WRITING.md`.
 
 ## Protocol
 
