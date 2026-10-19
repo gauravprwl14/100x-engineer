@@ -11,13 +11,13 @@ block "done" without evidence.
 | 1 | [How a request flows](#how-a-request-flows) | what happens between typing a request and "done" |
 | 2 | [Start here](#start-here) | install from GitHub, update, and the one command to type |
 | 3 | [Agents](#agents) | the 11 specialists, and which of them write code |
-| 4 | [Skills by phase](#skills-by-phase) | the 43 skills, grouped by when they fire |
+| 4 | [Skills by phase](#skills-by-phase) | the 44 skills, grouped by when they fire |
 | 5 | [Gates by phase](#gates-by-phase) | the check that blocks each phase, and how |
 | 6 | [Built-in defaults](#built-in-defaults) | what is applied without asking, what is asked, with three examples |
 | 7 | [Where records go](#where-records-go) | the records root and its layout |
 | 8 | [The commit gate](#the-commit-gate) | modes, signed receipts and their limit, the hooks |
 | 9 | [Does it actually work?](#does-it-actually-work) | the measured numbers, and the claim it does **not** make |
-| 10 | [Tools](#tools) | the 43 command-line tools, grouped |
+| 10 | [Tools](#tools) | the 46 command-line tools, grouped |
 | 11 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
 | 12 | [Research](#research) | the evidence every skill cites |
 | 13 | [Migrating from 0.1](#migrating-from-01) | the new install id, renamed skills and changed commands |
@@ -85,7 +85,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 
 ## Skills by phase
 
-**43 skills**. The phase map and every trigger are generated into
+**44 skills**. The phase map and every trigger are generated into
 [`skills/INDEX.md`](skills/INDEX.md) by `100x check_index --gen-collections`.
 
 | phase | count | skills |
@@ -93,13 +93,14 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | 0 start here | 3 | 100x, orchestrate, requirements-intake |
 | 1 before code | 7 | api-contract, approach-selection, data-modeling, decision-records, feature-planning, scale-appropriateness, solution-architecture |
 | 2 while writing | 19 | accessibility, app-security, code-craft, data-lifecycle, dependency-vetting, diagramming, distributed-correctness, frontend-architecture, language-verification, legacy-change, minimal-diff, mobile-release-safety, observability-design, performance-budgets, qa-strategy, stack-reviewer, test-design, ui-baseline, web-vitals |
-| 3 before shipping | 7 | diff-review, pr-review, recheck, release-rollout, review-gates, security-baseline, verification-gate |
+| 3 before shipping | 8 | diff-review, pr-description, pr-review, recheck, release-rollout, review-gates, security-baseline, verification-gate |
 | 4 when broken | 2 | bug-fix, root-cause-analysis |
 | 5 understanding | 1 | codebase-comprehension |
 | 6 meta | 4 | agent-instructions, project-learning, prompt-bench, untrusted-agent-config |
 
-Plus 7 stack reviewers in [`reviewers/`](reviewers/INDEX.md): NestJS, Next.js/React,
-React Native + Expo, Flutter, native Android/iOS, Kubernetes, cloud IaC.
+Plus 11 stack reviewers in [`reviewers/`](reviewers/INDEX.md): NestJS, Next.js/React,
+React Native + Expo, Flutter, native Android/iOS, Kubernetes, cloud IaC, Rails,
+Django/FastAPI, Express/Node, Go services.
 
 ## Gates by phase
 
@@ -223,8 +224,11 @@ Two separate questions, answered separately.
 
 | fixture | full descriptions | first 100 chars + 17 competitor skills |
 |---|--:|--:|
-| main (69 prompts, gated at ≥85%) | 100% | 97% |
-| holdout (21 prompts, not gated) | 62% | 48% |
+| main (78 prompts, gated at ≥85%) | 100% | 96% |
+| holdout (21 prompts, not gated) | 52% | 43% |
+
+The holdout fell from 57% when `pr-description` was added: its "commit message" outranks
+`requirements-intake` on "turn this slack message … into a spec" (rank 3 → 4).
 
 The main fixture was visible while descriptions were rewritten, so its numbers are partly
 fit to it; the holdout is the honest one. History: [`evals/GRADER-CHANGELOG.md`](evals/GRADER-CHANGELOG.md).
@@ -234,7 +238,7 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**43 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
+**46 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
 skill's own steps also call `gh` (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`).
 `100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
 which check this plugin itself rather than your code. Every tool runs by name either way.
@@ -244,16 +248,17 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | plan and trace | `prd`, `plan_feature`, `baseline`, `decide`, `testplan`, `ledger`, `check_index` |
 | orchestrate | `plan_dag`, `agent_report` |
 | verify | `verified`, `verify_fingerprint`, `audit_ci_gates` |
-| diff checks | `bloat_check`, `craft_check`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
+| diff checks | `bloat_check`, `craft_check`, `fails_without_fix`, `pr_scope`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
 | design and diagrams | `design_drift`, `diagram_from_code`, `check_diagrams` |
 | understand and learn | `repo_map`, `stack_audit`, `rca`, `learn`, `check_claims` |
+| writing (`docs/WRITING.md`, the `pr-description` skill) | `prose_check` |
 | PR review (the `pr-review` skill) | `pr_review`, `pr_review_gate`, `pr_snapshot`, `pr_suggest` |
 | prompt evaluation (the `prompt-bench` skill) | `prompt_bench` |
 | agent configuration | `check_agents_md`, `audit_agent_config` |
 | maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
-bash tests/run_all.sh    # 44 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 48 test suites, the seeded-defect evals and the lints
 ```
 
 How the diff checkers behave, whichever one runs:
