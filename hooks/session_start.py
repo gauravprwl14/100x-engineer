@@ -38,6 +38,8 @@ def main(payload=None):
         "`100x verified` in repositories that configure .claude/verification-policy.json.",
         "Generated docs: summary first, Contents table on long files, INDEX.md for "
         "multi-file output — see OPERATING-MODEL §9.",
+        "Chat answers: the first sentence is the answer, not a heading; keep paragraphs "
+        "to 3 lines — see docs/WRITING.md.",
     ]
     cwd = (payload or {}).get("cwd") if isinstance(payload, dict) else None
     if isinstance(cwd, str) and os.path.isdir(cwd) and not _has_policy(cwd):
