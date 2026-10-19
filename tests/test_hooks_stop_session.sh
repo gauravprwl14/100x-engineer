@@ -78,7 +78,8 @@ h = d["hookSpecificOutput"]
 assert h["hookEventName"] == "SessionStart", h
 ctx = h["additionalContext"]
 assert 0 < len(ctx.splitlines()) <= 10, len(ctx.splitlines())
-for need in ("/100x:100x", "100x list", "/opt/plugin/docs/OPERATING-MODEL.md", "OPERATING-MODEL §9", "INDEX.md"):
+for need in ("/100x:100x", "100x list", "/opt/plugin/docs/OPERATING-MODEL.md", "OPERATING-MODEL §9", "INDEX.md",
+             "first sentence is the answer"):
     assert need in ctx, need
 ' && ok "SessionStart emits valid, short additionalContext" || bad "SessionStart JSON shape"
 ctx() { printf '{"hook_event_name":"SessionStart","source":"startup","cwd":"%s"}' "$1" \
