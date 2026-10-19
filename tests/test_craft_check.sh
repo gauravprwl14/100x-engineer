@@ -354,6 +354,506 @@ nothas "Law of Demeter"
 reset_diff
 
 # =========================================================================
+# short-names -- a 1-2 char name whose scope spans more than 5 lines
+# =========================================================================
+cat > src/short.py <<'EOF'
+def summarize(orders):
+    rs = []
+    for order in orders:
+        rs.append(order.total_cents)
+    log_count(len(orders))
+    log_count(len(orders))
+    log_count(len(orders))
+    return rs
+EOF
+cat > src/short.ts <<'EOF'
+function summarize(orders: Order[]): number[] {
+  const rs: number[] = [];
+  for (const order of orders) {
+    rs.push(order.totalCents);
+  }
+  logCount(orders.length);
+  logCount(orders.length);
+  return rs;
+}
+EOF
+expect 1 "short-names: 2-char names over a long scope detected (py + TS)" --only short-names --strict
+has "src/short.py:2: .rs. is 2 char"
+has "src/short.ts:2: .rs. is 2 char"
+reset_diff
+
+mkdir -p tests
+cat > src/short_ok.py <<'EOF'
+def add(a, b):
+    return a + b
+
+
+def total_by_customer(rows, fn):
+    totals = {}
+    for i, row in enumerate(rows):
+        for k, v in row.items():
+            totals[k] = totals.get(k, 0) + v + i
+    try:
+        fn(totals)
+    except ValueError as e:
+        raise RuntimeError(totals) from e
+    squares = [x * x for x in totals.values()]
+    return totals, squares, fn, e
+EOF
+cat > tests/test_short_ok.py <<'EOF'
+def test_totals_are_summed():
+    t = build_table()
+    t.add(1)
+    t.add(2)
+    t.add(3)
+    t.add(4)
+    assert t.total() == 10
+EOF
+cat > src/short_ok.ts <<'EOF'
+export function sumRows(rows: number[][]): number {
+  let total = 0;
+  for (let i = 0; i < rows.length; i++) {
+    for (const x of rows[i]) {
+      total += x;
+    }
+    total += i;
+  }
+  return total;
+}
+EOF
+expect 0 "short-names: loop indexes, e, fn, t-in-tests, short spans are not flagged" --only short-names --strict
+nothas "char(s) but lives"
+reset_diff
+
+# =========================================================================
+# abbreviations -- tmp/cfg/usr/mgr/calc/proc/cnt/idx/btn/arr, str/num/obj as names
+# =========================================================================
+cat > src/abbrev.py <<'EOF'
+def calc_total(usr_cnt):
+    cfg = load_settings()
+    str = cfg.name
+    return usr_cnt, str
+EOF
+cat > src/abbrev.ts <<'EOF'
+export class Billing {
+  procInvoice(invoice: Invoice): void {
+    const tmpArr = [invoice];
+    send(tmpArr);
+  }
+}
+EOF
+expect 1 "abbreviations: calc/usr/cfg/str (py) and proc/tmp (TS method + const) detected" --only abbreviations --strict
+has "function .calc_total. abbreviates"
+has "parameter .usr_cnt. abbreviates"
+has "variable .cfg. abbreviates"
+has "variable .str. abbreviates"
+has "method .procInvoice. abbreviates"
+has "declaration .tmpArr. abbreviates"
+reset_diff
+
+mkdir -p src/components
+cat > src/abbrev_ok.py <<'EOF'
+def process_order(order, strategy, counter):
+    calculated_total = 0
+    for idx, line in enumerate(order.lines):
+        calculated_total += line.price_cents * idx
+    cfg = strategy.settings
+    return calculated_total, counter, cfg
+EOF
+cat > src/components/SubmitBar.tsx <<'EOF'
+export function SubmitBar(props: SubmitBarProps) {
+  const submitBtn = useRef(null);
+  return <button ref={submitBtn}>{props.label}</button>;
+}
+EOF
+printf '{"root": ".", "craft_allow_names": ["cfg"]}\n' > .100x.json
+expect 0 "abbreviations: whole words, idx loop index, btn in a UI file, craft_allow_names" --only abbreviations --strict
+nothas "abbreviates"
+reset_diff
+
+# =========================================================================
+# boolean-predicate -- a boolean that does not read as a question
+# =========================================================================
+cat > src/flags.py <<'EOF'
+def sync(items):
+    active = True
+    enabled: bool = False
+    return active, enabled, items
+EOF
+cat > src/flags.ts <<'EOF'
+export function sync(items: Item[]): boolean {
+  let loaded = false;
+  const visible: boolean = items.length > 0;
+  return loaded && visible;
+}
+EOF
+expect 1 "boolean-predicate: active/enabled (py) and loaded/visible (TS) detected" --only boolean-predicate --strict
+has "boolean .active. does not read"
+has "boolean .enabled. does not read"
+has "boolean .loaded. does not read"
+has "boolean .visible. does not read"
+reset_diff
+
+cat > src/flags_ok.py <<'EOF'
+DEBUG = False
+
+
+def sync(items):
+    is_active = True
+    has_items: bool = bool(items)
+    ok = True
+    should_retry = len(items) > 0
+    return is_active, has_items, ok, should_retry, DEBUG
+EOF
+cat > src/flags_ok.ts <<'EOF'
+const FEATURE_ON = false;
+export function sync(items: Item[]): boolean {
+  let isLoaded = false;
+  const hasMore: boolean = items.length > 0;
+  const canRetry = items.length > 0;
+  return isLoaded && hasMore && canRetry && FEATURE_ON;
+}
+EOF
+cat > src/models_ok.py <<'EOF'
+from dataclasses import dataclass
+
+
+@dataclass
+class Task:
+    title: str
+    done: bool = False
+    archived: bool
+
+
+class Settings(BaseModel):
+    enabled = True
+EOF
+cat > src/models_ok.ts <<'EOF'
+export interface Task {
+  done: boolean;
+  archived?: boolean;
+}
+export type Flags = { enabled: boolean };
+EOF
+expect 0 "boolean-predicate: is_/has_ names, constants, ok, class fields not flagged" --only boolean-predicate --strict
+nothas "does not read as a predicate"
+reset_diff
+
+# =========================================================================
+# function-verb -- function and method names start with a verb
+# =========================================================================
+cat > src/verbs.py <<'EOF'
+def total(user):
+    return user.total
+
+
+def median(values):
+    ordered = sorted(values)
+    return ordered[len(values) // 2]
+
+
+def refund(payment):
+    return payment.reverse()
+
+
+def changed_files(base):
+    return base.files
+
+
+class Report:
+    def order_summary(self, orders):
+        lines = []
+        for order in orders:
+            lines.append(order.id)
+            lines.append(order.status)
+            lines.append(order.amount)
+            lines.append(order.customer)
+            lines.append(order.region)
+            lines.append(order.channel)
+            lines.append(order.created_at)
+        return lines
+EOF
+cat > src/verbs.ts <<'EOF'
+export function total(user: User): number {
+  return user.total;
+}
+export function pendingOrders(orders: Order[]): Order[] {
+  return orders.filter((order) => order.pending);
+}
+export class Invoice {
+  amount(rate: number, lines: Line[]): number {
+    let sum = 0;
+    for (const line of lines) {
+      sum += line.net;
+      sum += line.tax;
+      sum += line.fee;
+      sum += line.shipping;
+      sum -= line.discount;
+    }
+    sum = sum * rate;
+    return sum;
+  }
+}
+EOF
+expect 1 "function-verb: long noun-named functions and methods detected (py + TS)" --only function-verb --strict
+has "function .order_summary. does not start with a verb"
+has "method .amount. does not start with a verb"
+nothas "function .total."
+nothas "function .median."
+nothas "function .refund."
+nothas "changed_files"
+nothas "pendingOrders"
+reset_diff
+
+mkdir -p tests src/components
+cat > src/verbs_ok.py <<'EOF'
+import pytest
+
+
+class Cart:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __len__(self):
+        return len(self.lines)
+
+    @property
+    def subtotal_cents(self):
+        return sum(self.lines)
+
+    def get_line(self, position):
+        return self.lines[position]
+
+
+def main():
+    return build_cart()
+
+
+@pytest.fixture
+def empty_cart():
+    return Cart([])
+EOF
+cat > tests/test_cart.py <<'EOF'
+def cart_with_two_lines():
+    return [1, 2]
+
+
+def test_subtotal_adds_lines():
+    assert sum(cart_with_two_lines()) == 3
+EOF
+cat > src/components/OrderSummary.tsx <<'EOF'
+export function OrderSummary(props: OrderSummaryProps) {
+  const handleClick = () => props.onSelect(props.order);
+  return <button onClick={handleClick}>{props.order.label}</button>;
+}
+export function useOrders(customerId: string) {
+  return useQuery(customerId);
+}
+EOF
+cat > src/cart.ts <<'EOF'
+export class Cart {
+  constructor(private lines: number[]) {
+    this.lines = lines;
+  }
+  get total() {
+    return this.lines.length;
+  }
+  calculateTotal(): number {
+    return this.lines.length;
+  }
+}
+EOF
+expect 0 "function-verb: dunders, property, main, fixture, tests, components, hooks, getters" --only function-verb --strict
+nothas "does not start with a verb"
+reset_diff
+
+# =========================================================================
+# method-names -- vague-names extended to JS/TS class methods
+# =========================================================================
+cat > src/methods.ts <<'EOF'
+export class Orders {
+  process(order: Order): void {
+    save(order);
+  }
+  helper(): void {
+    run();
+  }
+}
+EOF
+expect 1 "method-names: vague TS method names detected" --only method-names --strict
+has "method named .process."
+has "method named .helper."
+reset_diff
+
+cat > src/methods_ok.ts <<'EOF'
+export class Orders {
+  submitOrder(order: Order): void {
+    save(order);
+  }
+}
+EOF
+expect 0 "method-names: intent-revealing method names are not flagged" --only method-names --strict
+nothas "method named"
+reset_diff
+
+# =========================================================================
+# magic-number -- unexplained literals in comparisons and timeouts
+# =========================================================================
+cat > src/magic.py <<'EOF'
+import time
+
+
+def poll(client, retries):
+    if retries > 3:
+        return None
+    time.sleep(5)
+    return client.get("/status", timeout=30)
+EOF
+cat > src/magic.ts <<'EOF'
+export function poll(attempts: number): void {
+  if (attempts >= 7) {
+    return;
+  }
+  setTimeout(check, 2500);
+  request({ timeoutMs: 30000 });
+}
+EOF
+expect 1 "magic-number: literals in comparisons, sleep and timeouts detected (py + TS)" --only magic-number --strict
+has "src/magic.py:5: magic number 3"
+has "src/magic.py:7: magic number 5"
+has "src/magic.py:8: magic number 30"
+has "src/magic.ts:2: magic number 7"
+has "src/magic.ts:5: magic number 2500"
+has "src/magic.ts:6: magic number 30000"
+reset_diff
+
+cat > src/status_timeout.py <<'EOF'
+def fetch_status(client):
+    return client.get("/status", timeout=404)
+EOF
+expect 1 "magic-number: a timeout stays flagged beside a status" --only magic-number --strict
+has "src/status_timeout.py:2: magic number 404"
+reset_diff
+
+mkdir -p tests
+cat > src/magic_ok.py <<'EOF'
+MAX_RETRIES = 5
+POLL_TIMEOUT_SECONDS = 30
+
+
+def poll(client, retries, rows, limit):
+    if retries > MAX_RETRIES or retries == -1 or retries >= 100:
+        return None
+    if rows[3] > limit:
+        return rows
+    return client.get("/status", timeout=POLL_TIMEOUT_SECONDS)
+EOF
+cat > tests/test_magic_ok.py <<'EOF'
+def test_total_is_forty_two():
+    assert compute_total() == 42
+EOF
+cat > src/magic_ok.ts <<'EOF'
+const MAX_ATTEMPTS = 5;
+export function poll(attempts: number, items: number[], threshold: number): boolean {
+  const positives = items.filter((value) => value > 0);
+  return attempts === 1 || attempts > MAX_ATTEMPTS || items[4] > threshold || positives.length > 0;
+}
+EOF
+cat > src/status_ok.py <<'EOF'
+def fetch_order(resp):
+    if resp.status_code == 404:
+        return None
+    if 500 <= resp.status <= 599 or status != 200:
+        raise RuntimeError(resp.text)
+    return resp.json()
+EOF
+cat > src/status_ok.ts <<'EOF'
+export function readOrder(res: Response, statusCode: number): boolean {
+  if (res.status === 404 || statusCode !== 201) {
+    return false;
+  }
+  return 200 === res.status;
+}
+EOF
+expect 0 "magic-number: constants, -1/0/1/100, indexes, tests, HTTP statuses not flagged" --only magic-number --strict
+nothas "magic number"
+reset_diff
+
+# =========================================================================
+# unsupported languages are named, not silently passed
+# =========================================================================
+mkdir -p app/models cmd
+printf 'class User\nend\n' > app/models/user.rb
+printf 'package main\n' > cmd/main.go
+printf 'package main\n' > cmd/serve.go
+expect 0 "unsupported: .rb/.go files are reported, exit 0" --strict
+has "craft_check: 2 .go files not checked (unsupported language)"
+has "craft_check: 1 .rb files not checked (unsupported language)"
+reset_diff
+
+printf 'def add(a, b):\n    return a + b\n' > src/plain.py
+expect 0 "unsupported: no line when every file is a supported language" --strict
+nothas "unsupported language"
+reset_diff
+
+# =========================================================================
+# every check at once, --strict, on a well-written module and a React component
+# =========================================================================
+mkdir -p src/components
+cat > src/billing.py <<'EOF'
+from dataclasses import dataclass
+
+LATE_FEE_CENTS = 500
+GRACE_PERIOD_DAYS = 14
+
+
+@dataclass
+class Invoice:
+    amount_cents: int
+    days_overdue: int
+    is_paid: bool = False
+
+
+def calculate_late_fee(invoice):
+    if invoice.is_paid or invoice.days_overdue <= GRACE_PERIOD_DAYS:
+        return 0
+    return LATE_FEE_CENTS
+
+
+def summarize_invoices(invoices):
+    total_cents = 0
+    for i, invoice in enumerate(invoices):
+        total_cents += invoice.amount_cents + calculate_late_fee(invoice) + i
+    has_overdue = any(invoice.days_overdue > 0 for invoice in invoices)
+    return total_cents, has_overdue
+EOF
+cat > src/components/InvoiceList.tsx <<'EOF'
+const PAGE_SIZE = 25;
+
+export function InvoiceList(props: InvoiceListProps) {
+  const [isExpanded, setExpanded] = useState(props.isInitiallyExpanded);
+  const visibleInvoices = isExpanded ? props.invoices : props.invoices.slice(0, PAGE_SIZE);
+  const handleToggle = () => setExpanded(!isExpanded);
+  return (
+    <section>
+      {visibleInvoices.map((invoice) => (
+        <InvoiceRow key={invoice.id} invoice={invoice} />
+      ))}
+      <button onClick={handleToggle}>{isExpanded ? "Show fewer" : "Show all"}</button>
+    </section>
+  );
+}
+
+export function formatAmount(amountCents: number): string {
+  return (amountCents / 100).toFixed(2);
+}
+EOF
+expect 0 "all checks --strict: a well-named module and React component are clean" --strict
+nothas "ADVISORY"
+nothas "FAIL"
+reset_diff
+
+# =========================================================================
 # diff-scoping: a pre-existing violation untouched by the diff is not re-flagged
 # =========================================================================
 python3 - <<'PYEOF'
@@ -363,7 +863,7 @@ lines.append("    return data")
 open("src/legacy.py", "w").write("\n".join(lines) + "\n")
 PYEOF
 git add -A; git commit -qm "pre-existing violation, committed to baseline" >/dev/null
-printf '\n\ndef unrelated_add(first_value, second_value):\n    return first_value + second_value\n' >> src/legacy.py
+printf '\n\ndef add_unrelated(first_value, second_value):\n    return first_value + second_value\n' >> src/legacy.py
 expect 0 "diff-scoping: untouched pre-existing violation is not re-flagged" --strict
 nothas "legacy_vague"
 git checkout -q -- src/legacy.py
