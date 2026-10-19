@@ -39,6 +39,13 @@ ALLOWLIST = [
     ("run_evals.py", "shutil", "operates only inside tempfile.TemporaryDirectory()"),
     ("run_workflow_evals.py", "shutil", "operates only inside a temp dir"),
     ("safety_audit.py", "*", "this file names the patterns in order to forbid them"),
+    ("fails_without_fix.py", "shutil.rmtree", "removes only the mkdtemp() parent it created "
+                                              "and __pycache__ inside its own detached worktree"),
+    ("fails_without_fix.py", "Path(worktree, p).unlink", "deletes a branch-added file inside "
+                                                         "the throwaway worktree, never the user's tree"),
+    ("fails_without_fix.py", "\"checkout\", merge_base", "reverts files inside the throwaway "
+                                                        "worktree (cwd=worktree), never the user's tree; "
+                                                        "hooks off via an empty core.hooksPath"),
     ("_paths.py", "unlink(tmp)", "removes only the O_EXCL temp file safe_write_text created "
                                  "moments earlier, after a failed write; never a user file"),
 ]
