@@ -54,7 +54,7 @@ CONFIG_NAME = ".100x.json"
 ENV_VAR = "HUNDREDX_ROOT_DIR"
 DEFAULT_ROOT = "docs/engineering"
 CONFIG_SCHEMA = 1
-CONFIG_KEYS = ("schema", "root")
+CONFIG_KEYS = ("schema", "root", "craft_allow_names")
 LEGACY_TESTPLANS = "testplans"
 FEATURE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
