@@ -30,7 +30,7 @@ there is no prior answer in this session to audit.
 | `auto` (default) | the `Stop` hook blocks once per substantive turn with the prompt as its reason | `HUNDREDX_RECHECK=auto` or config |
 | `manual` | only when you type `/100x:recheck` | `HUNDREDX_RECHECK=manual` or config |
 | `off` | never, subagents included | `HUNDREDX_RECHECK=off` or config |
-| subagents (opt-in) | the same hook on `SubagentStop` re-checks a subagent's substantive turn | `subagents`: `"off"` (default), `"all"`, or a list of agent types; env `HUNDREDX_RECHECK_SUBAGENTS=off\|all\|a,b` |
+| subagents | the same hook on `SubagentStop` re-checks a subagent's substantive turn; by default only the backend, frontend and mobile engineer agents | `subagents`: `"off"`, `"all"`, or a list of agent types (unset = the three engineers); env `HUNDREDX_RECHECK_SUBAGENTS=off\|all\|a,b` |
 
 A turn is **substantive** when it called `Write`, `Edit`, `MultiEdit` or `NotebookEdit`, or
 its final answer is at least `min_chars` long. The hook skips a turn that already ran the
@@ -83,7 +83,7 @@ agents that write code limits that.
    *Enforced by:* review
 
 4. Output the final answer only, plus one line `Re-check: <what changed>` or
-   `Re-check: no changes — verified <what>`. No "changes vs v1" section; graders marked
+   `Re-check: no changes — verified <what> (<file:line or command>)`. No "changes vs v1" section; graders marked
    process sections down, and the line is what tells the hook the pass already ran.
    *Enforced by:* `hooks/recheck_gate.py` (a `Re-check:` line suppresses the block)
 
