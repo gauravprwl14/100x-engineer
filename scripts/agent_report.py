@@ -31,6 +31,12 @@ check without trusting it:
     agent_report.py replay report.json --graph plan.json [--cwd WT] [--timeout 600] --yes
     agent_report.py summary report1.json report2.json ... [--json]
 
+  `lint` also prints advisory `warning:` lines that never change the exit code: a
+  done UI or API change with no `kind: behaviour` evidence (a type check and unit
+  tests do not show the feature works), a done change to source with no change to a
+  test, and a writer whose understanding and inputs_read name no AGENTS.md/CLAUDE.md
+  and no analog file it copied the shape from.
+
 Exit codes: 0 clean, 1 findings or replay mismatch, 2 unreadable input or a missing
 --graph/--cwd, 3 replay ran nothing (no --yes) or left something unreplayed
 (undeclared or refused commands).
@@ -50,6 +56,21 @@ REQUIRED = ("agent", "task_id", "status", "understanding") + LIST_KEYS
 KNOWN_KEYS = {"schema", "findings"} | set(REQUIRED)
 SEVERITIES = ("critical", "major", "minor", "trivial")
 CONFIDENCES = ("definite", "probable", "possible")
+EVIDENCE_KINDS = ("build", "test", "behaviour")
+# A bare `app/` also holds Rails models and Android sources, so only its UI/API
+# subdirectories count, plus Next.js app-router page and route files.
+UI_API_PATH = re.compile(r"(^|/)(frontend|pages|components|routes|controllers|api)/"
+                         r"|(^|/)app/(controllers|views|javascript|components|pages|routes|api)/"
+                         r"|(^|/)app/(.+/)?(page|route)\.(tsx|ts|jsx|js)$"
+                         r"|\.(tsx|jsx|vue|swift|kt)$")
+SOURCE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".go", ".rb",
+              ".java", ".kt", ".swift", ".dart", ".rs", ".php", ".cs", ".scala")
+TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec|e2e|androidTest|testing)/"
+                       r"|[._-](test|spec|e2e-spec)\.[a-z]+$|(^|/)test_[^/]+$|Tests?\.\w+$")
+CONVENTION_FILE = re.compile(r"\b(AGENTS|CLAUDE)\.md\b")
+# A task's own brief is not an analog: an analog is existing code the change copies.
+TASK_DOC = re.compile(r"(^|/)(spec|plan|testplan|prd)\.(md|json)(#.*)?$")
+PATH_TOKEN = re.compile(r"[\w.@-]+(?:/[\w.@-]+)+/?|[\w-]+\.[A-Za-z]{1,5}\b")
 # The "writes code? no" rows of the roster in docs/OPERATING-MODEL.md §1; the test
 # suite fails when this drifts from that table. These roles review a task rather than
 # own one, so their report's task_id need not be a plan task.
@@ -352,6 +373,41 @@ def lint(r, plan=None, actual=None, notes=None, base_hint=None):
     return errors, warns
 
 
+def quality_warnings(r, changed):
+    """Advisory gaps that do not make a report invalid. `changed` is git's list when
+    lint ran with --graph, else the report's own `changes`."""
+    out, status = [], r.get("status")
+    source = [p for p in changed if p.endswith(SOURCE_EXT) and not TEST_PATH.search(p)]
+    tests = [p for p in changed if TEST_PATH.search(p)]
+    kinds = {e.get("kind") for e in _items(r, "evidence")}
+    for n, e in enumerate(_items(r, "evidence")):
+        if "kind" in e and e["kind"] not in EVIDENCE_KINDS:
+            out.append(f"evidence[{n}]: \"kind\" {e['kind']!r} is not one of "
+                       f"{', '.join(EVIDENCE_KINDS)}; it counts as none of them")
+    if status == "done":
+        ui_api = [p for p in source if UI_API_PATH.search(p)]
+        if ui_api and "behaviour" not in kinds:
+            out.append(f"done on a UI or API change ({', '.join(ui_api[:3])}) with no "
+                       f"`kind: behaviour` evidence — add a curl/HTTP transcript, an e2e "
+                       f"run, a screenshot or a log line from the running app; without one "
+                       f"the work is not done")
+        if source and not tests:
+            out.append(f"done with {len(source)} changed source file(s) and no changed "
+                       f"test — add a boundary and a negative test, or say in follow_ups "
+                       f"why none applies")
+    if r.get("agent") not in READ_ONLY_ROLES and status in STATUSES:
+        read = [x for x in _list(r, "inputs_read") if isinstance(x, str)]
+        text = " ".join(read + [r.get("understanding") or ""])
+        own = set(changed)
+        analogs = [t for t in PATH_TOKEN.findall(text)
+                   if not TASK_DOC.search(t) and t.split("#")[0] not in own]
+        if not CONVENTION_FILE.search(text) and not analogs:
+            out.append("understanding and inputs_read name no repo convention file "
+                       "(AGENTS.md/CLAUDE.md) and no analog path — read both before "
+                       "writing, and list them")
+    return out
+
+
 def _plan_checks(r, task, status, evidence, actual, warns, base_hint=None):
     errors, tid = [], r["task_id"]
     owned = plan_dag._ids(task.get("files"))
@@ -442,14 +498,18 @@ def cmd_lint(a):
         if base_sha.stdout.strip() == git_head(cwd):
             base_hint = COMMIT_HINT
     errors, warns = lint(r, plan, actual, notes, base_hint)
+    claimed = [c["path"] for c in _items(r, "changes") if isinstance(c.get("path"), str)]
+    advice = quality_warnings(r, actual if actual is not None else claimed)
     for n_ in notes:
         print(f"  NOTE  {n_}")
     for w in warns:
         print(f"  WARN  {w}")
+    for w in advice:
+        print(f"  warning: {w}")
     for n, e in enumerate(errors, 1):
         print(f"  {n}. {e}")
     print(f"\nagent_report lint: {r.get('task_id', '?')} ({r.get('agent', '?')}, "
-          f"{r.get('status', '?')}): {len(errors)} errors, {len(warns)} warnings")
+          f"{r.get('status', '?')}): {len(errors)} errors, {len(warns) + len(advice)} warnings")
     return 1 if errors else 0
 
 
