@@ -403,6 +403,73 @@ PY
 python3 "$A" summary "$M/review-findings.md" "$M/review-blocking.md" >"$O" 2>&1
 has "- [BLOCKING] SEC-T1/security-reviewer F1 critical/probable at backend/src/tagging/services/tag.service.ts:remove"
 
+# --- advisory warnings: printed as "warning:", never change the exit code ---
+mkq() { # mkq <name> <status> <agent> <changes json> <evidence json> <inputs_read json>
+  printf '{"schema":1,"agent":"%s","task_id":"T1","status":"%s","understanding":"Add the endpoint.","inputs_read":%s,"assumptions":[],"questions":[],"plan_issues":[],"decisions":[],"changes":%s,"follow_ups":[],"evidence":%s}' \
+    "$3" "$2" "$6" "$4" "$5" > "$TMP/$1.json"
+}
+lintq() { python3 "$A" lint "$TMP/$1.json" >"$O" 2>&1; }
+READ='["AGENTS.md","backend/src/album/album.controller.ts"]'
+API='[{"path":"backend/src/api/tags.controller.ts","summary":"x"},{"path":"backend/test/tags.e2e-spec.ts","summary":"x"}]'
+UNIT='[{"cmd":"npx tsc --noEmit","exit_code":0,"kind":"build"},{"cmd":"npx jest tags","exit_code":0,"kind":"test"}]'
+CURL='[{"cmd":"npx jest tags","exit_code":0,"kind":"test"},{"cmd":"curl -sf localhost:3000/api/tags","exit_code":0,"kind":"behaviour"}]'
+
+mkq ui-nobehaviour done backend-engineer "$API" "$UNIT" "$READ"
+lintq ui-nobehaviour; rc_is 0 $? "warning: an API change with only build/test evidence still exits 0"
+has "warning: done on a UI or API change (backend/src/api/tags.controller.ts) with no \`kind: behaviour\` evidence"
+mkq ui-tsx done frontend-engineer '[{"path":"web/src/TagList.tsx","summary":"x"},{"path":"web/src/TagList.test.tsx","summary":"x"}]' "$UNIT" "$READ"
+lintq ui-tsx; rc_is 0 $? "warning: a .tsx change with no behaviour evidence exits 0"
+has "warning: done on a UI or API change (web/src/TagList.tsx)"
+mkq good done backend-engineer "$API" "$CURL" "$READ"
+lintq good; rc_is 0 $? "warning: a done API change with behaviour evidence, a test and an analog"
+no "warning:"; has "0 errors, 0 warnings"
+
+mkq notests done backend-engineer '[{"path":"backend/src/tagging/tag.service.ts","summary":"x"}]' "$CURL" "$READ"
+lintq notests; rc_is 0 $? "warning: source changed with no test change exits 0"
+has "warning: done with 1 changed source file(s) and no changed test"
+no "UI or API change"
+mkq docsonly done backend-engineer '[{"path":"docs/tags.md","summary":"x"}]' '[{"cmd":"true","exit_code":0}]' "$READ"
+lintq docsonly; no "warning:"
+mkq inprogress needs-decision backend-engineer '[{"path":"backend/src/tagging/tag.service.ts","summary":"x"}]' '[]' "$READ"
+python3 - "$TMP/inprogress.json" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1])); r["questions"] = [{"id": "Q1", "question": "q?", "blocking": True}]
+json.dump(r, open(sys.argv[1], "w"))
+PY
+lintq inprogress; rc_is 0 $? "warning: needs-decision is not asked for tests or behaviour"
+no "no changed test"; no "UI or API change"
+
+mkq noanalog done backend-engineer "$API" "$CURL" '["spec.md#acceptance-criteria","plan.json"]'
+lintq noanalog; rc_is 0 $? "warning: no convention file and no analog exits 0"
+has "warning: understanding and inputs_read name no repo convention file (AGENTS.md/CLAUDE.md) and no analog path"
+mkq ownfile done backend-engineer "$API" "$CURL" '["backend/src/api/tags.controller.ts"]'
+lintq ownfile; has "warning: understanding and inputs_read name no repo convention file"
+mkq claudeonly done backend-engineer "$API" "$CURL" '["CLAUDE.md"]'
+lintq claudeonly; no "no repo convention file"
+mkq analogonly done backend-engineer "$API" "$CURL" '["spec.md","backend/src/album/album.service.ts"]'
+lintq analogonly; no "no repo convention file"
+mkq reviewer done code-reviewer '[]' '[{"cmd":"true","exit_code":0}]' '["spec.md"]'
+lintq reviewer; no "warning:"
+
+# with --graph the warning reads git's changed files, not the report's claims
+lintg "$M/done-valid.md" --base "$BASE"; rc_is 0 $? "warning: --graph lint stays exit 0 with an advisory warning"
+has "warning: done with 2 changed source file(s) and no changed test"
+
+# kind is optional; an unknown one is a warning that leaves the exit code alone
+mkq badkind done backend-engineer "$API" '[{"cmd":"curl -sf localhost:3000/api/tags","exit_code":0,"kind":"manual"}]' "$READ"
+lintq badkind; rc_is 0 $? "warning: an unknown evidence kind still exits 0"
+has "warning: evidence[0]: \"kind\" 'manual' is not one of build, test, behaviour"
+
+# UI/API paths: Rails app/models is neither; app/controllers and a Next.js route are
+mkq railsmodel done backend-engineer '[{"path":"app/models/order.rb","summary":"x"},{"path":"spec/models/order_spec.rb","summary":"x"}]' "$UNIT" "$READ"
+lintq railsmodel; no "UI or API change"
+mkq androidsrc done mobile-engineer '[{"path":"app/src/main/java/Order.java","summary":"x"},{"path":"app/src/test/OrderTest.java","summary":"x"}]' "$UNIT" "$READ"
+lintq androidsrc; no "UI or API change"
+mkq railsctl done backend-engineer '[{"path":"app/controllers/orders_controller.rb","summary":"x"},{"path":"spec/requests/orders_spec.rb","summary":"x"}]' "$UNIT" "$READ"
+lintq railsctl; has "warning: done on a UI or API change (app/controllers/orders_controller.rb)"
+mkq nextroute done frontend-engineer '[{"path":"app/orders/route.ts","summary":"x"},{"path":"app/orders/route.test.ts","summary":"x"}]' "$UNIT" "$READ"
+lintq nextroute; has "warning: done on a UI or API change (app/orders/route.ts)"
+
 # --- blocked/failed must say why (§3) ---
 base='"agent":"x","task_id":"T1","understanding":"u","inputs_read":[],"assumptions":[],"decisions":[],"changes":[],"follow_ups":[]'
 printf '{%s,"status":"blocked","questions":[],"plan_issues":[],"evidence":[]}' "$base" >"$TMP/blk.json"
