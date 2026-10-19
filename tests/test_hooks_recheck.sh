@@ -177,7 +177,23 @@ print(json.dumps(d))' "$SESS.jsonl" "$1" "${2:-}" "${3:-false}" \
 }
 sub_expect() { local want="$1" label="$2"; shift 2; local got; got="$(sub "$@")"
   [ "$got" = "$want" ] && ok "$label" || bad "$label (want=$want got=$got)"; }
-sub_expect none  "SubagentStop, default config (subagents off): no block"  100x:backend-engineer
+# Default: engineer agents (bare or 100x:-prefixed) are re-checked, every other subagent is not.
+sub_expect block "default config: 100x:backend-engineer edit turn blocks"  100x:backend-engineer
+sub_expect block "default config: 100x:frontend-engineer blocks"            100x:frontend-engineer
+sub_expect block "default config: bare mobile-engineer blocks"             mobile-engineer
+sub_expect block "default config: engineer type read from .meta.json"      -
+sub_expect none  "default config: general-purpose subagent passes"         general-purpose
+sub_expect none  "default config: 100x:code-reviewer passes"               100x:code-reviewer
+sub_expect none  "default config: engineer stop_hook_active never loops"   100x:backend-engineer "" true
+sub_expect none  "default config: engineer short Q&A transcript passes"    100x:backend-engineer "$TMP/sub_short.jsonl"
+printf '{"subagents": "off"}\n' > "$HOME/.config/100x/recheck.json"
+sub_expect none  "config subagents off overrides the engineer default"    100x:backend-engineer
+printf '{"subagents": ["Explore"]}\n' > "$HOME/.config/100x/recheck.json"
+sub_expect none  "config allowlist replaces the engineer default"         100x:frontend-engineer
+sub_expect block "config allowlist: listed type blocks"                   Explore
+rm -f "$HOME/.config/100x/recheck.json"
+got="$(HUNDREDX_RECHECK_SUBAGENTS=off sub 100x:mobile-engineer)"
+[ "$got" = "none" ] && ok "env HUNDREDX_RECHECK_SUBAGENTS=off overrides the engineer default" || bad "env off vs default (got=$got)"
 printf '{"subagents": "all"}\n' > "$HOME/.config/100x/recheck.json"
 sub_expect block "subagents all: subagent's edit turn blocks (derived transcript)" 100x:backend-engineer
 sub_expect none  "subagents all: stop_hook_active never loops"           100x:backend-engineer "" true
