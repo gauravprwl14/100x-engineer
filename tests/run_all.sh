@@ -57,6 +57,12 @@ for p in plugins/*/; do
   fi
 done
 
+# The output benchmark's offline self-test: scaffolds build and every grader separates a
+# good result from a bad one. The paid benchmark itself is bench/run.sh, never run here.
+echo "=== bench self-test ==="
+bash bench/test_bench.sh || rc=1
+echo
+
 echo "=== term index freshness ==="
 python3 scripts/check_index.py --check-terms >/dev/null || { echo "TERMS.md is stale: run python3 scripts/check_index.py --gen-terms"; rc=1; }
 echo
