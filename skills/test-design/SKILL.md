@@ -1,9 +1,9 @@
 ---
 name: test-design
 description: >
-  Which test cases to write: boundary values, equivalence classes, pairwise inputs, state
-  transitions, mocks vs fakes, property-based tests, test names as spec. Not for a whole test
-  plan (→ qa-strategy).
+  Writing unit or integration tests for new or changed code — which cases: boundary values,
+  equivalence classes, pairwise inputs, state transitions, negative paths, mocks vs fakes,
+  property-based tests, test names as spec. Not for a whole test plan (→ qa-strategy).
 ---
 
 # Test design
@@ -19,7 +19,8 @@ they would catch anything. This skill is the missing layer: how to pick cases.
 
 ## Trigger
 
-**Fire when:** writing tests for new behavior; reviewing a diff that adds tests;
+**Fire when:** writing tests for new code or behaviour, including the tests
+that ship with a feature or fix; reviewing a diff that adds tests;
 deciding how many cases a function needs; a test suite passes but a bug still
 shipped.
 
@@ -151,6 +152,9 @@ come back here once a characterization test exists to extend from.
 
 # whether the test can fail at all -- owned by minimal-diff, run alongside this
 100x bloat_check --only assertionless,focused-tests
+
+# whether the new tests fail with the fix reverted (throwaway worktree, warn-only)
+100x fails_without_fix --base origin/main --test-cmd "<test command>"
 
 # prove the checker itself still works, false positives included (39 assertions)
 bash tests/test_test_design_check.sh
