@@ -35,6 +35,9 @@ review. Every new check warns and never blocks.
 | `agent_report` | — | optional evidence `kind` (`build`, `test`, `behaviour`); warnings for UI/API `done` without behaviour evidence, source without tests, and no context card |
 | commit and PR gate | — | adds `prose_check` and `pr_scope` findings to the hook's context on `git commit` and `gh pr create/edit`; the allow or deny decision is unchanged |
 | recheck's closing line | `verified <what>` | `verified <what> (<file:line or command>)` |
+| `function-verb` length | counted the docstring, so a documented 6-line `overdue_invoices` was flagged | counts code lines only |
+| session start | docs rule only | adds the chat rule: the first sentence is the answer, not a heading |
+| bench | one strict LLM rubric each for 07 and 09; verb-first names required; ran with git blocked | single-criterion graders; verb-first only past 10 code lines; `run.sh` stops when agents would get the blocked `/usr/bin/git` shim |
 
 ## [0.2.0] - Unreleased
 
