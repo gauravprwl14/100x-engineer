@@ -16,7 +16,7 @@ smallest case).
 
 | Case | Task given to the agent | Hidden check |
 |---|---|---|
-| 01-naming-overdue | add an overdue-invoices function | `craft_check` naming checks, the bench's own naming rule, and the correct due-date rule |
+| 01-naming-overdue | add an overdue-invoices function | `craft_check` naming checks, the bench's own naming rule (verb-first only past 10 code lines, as the fixture's noun-named function shows), and the correct due-date rule |
 | 02-reuse-helper | refund % by business days | calls the existing `business_days_between`; no copied weekday loop |
 | 03-hidden-context | SMTP reminder service | follows `services/AGENTS.md`: `TODO_` env prefix, env read only in `config.py`, flat `services/` |
 | 04-tests-can-fail | fix the pagination off-by-one, add tests | the new tests fail once the fix is reverted |
@@ -56,6 +56,22 @@ python3 bench/compare.py --new bench/results/<ts>/new.json --old bench/results/<
 Results go to `bench/results/<timestamp>/`, which is not meant to be committed. Kept
 workspaces (`/private/tmp/e-*`) are read-only; once `compare.py` has cached its scores in
 `bench-checks.json`, remove them with `chmod -R u+w` followed by `rm -rf`.
+
+## Git in the sandbox
+
+Cases 09 and 11 need git inside the agent's sandbox. On macOS `/usr/bin/git` is the xcrun
+shim, which writes a cache to the per-user temp dir under `/var/folders`. The sandbox denies
+that write, so every git command fails with `couldn't create cache file ... Operation not
+permitted`. The real binaries (`xcrun --find git`, or
+`/Library/Developer/CommandLineTools/usr/bin/git`) run fine. Agents take PATH from your
+login shell, and setting `env.PATH` in a case's `.claude/settings.json` does not change it.
+
+| Fix | Effect |
+|---|---|
+| link the real git into a directory before `/usr/bin` on your login PATH | git works in every arm; `run.sh` checks this before it starts |
+| `BENCH_ALLOW_GIT_SHIM=1` | runs anyway; the git checks in 09 and 11 then measure the sandbox |
+
+In the 2026-10-16 run git failed in 105 of 108 sessions, in all three arms.
 
 ## Reading the results
 
