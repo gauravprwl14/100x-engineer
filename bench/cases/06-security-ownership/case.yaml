@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 06-security-ownership
+description: Fetch-by-id must check tenant ownership. Deterministic part is bench/checks.py check_06.
+tags: [code, security]
+context:
+  scaffold_script: scaffold.sh
