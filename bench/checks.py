@@ -188,10 +188,27 @@ def new_functions(run, rel):
     return [node for name, node in after.items() if name not in before]
 
 
+NOUN_NAME_MAX_LINES = 10
+
+
+def code_lines(func):
+    """Lines in func, not counting its docstring."""
+    length = func.end_lineno - func.lineno + 1
+    first = func.body[0]
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+            and isinstance(first.value.value, str):
+        length -= first.end_lineno - first.lineno + 1
+    return length
+
+
 def bad_names(func):
-    """Names the bench's own (plugin-independent) naming rule rejects."""
+    """Names the bench's own (plugin-independent) naming rule rejects.
+
+    A short function may be named for the value it returns (`overdue_invoices`, as the
+    fixture's `total_outstanding_cents` is); only a longer one must start with a verb.
+    """
     found = []
-    if func.name.lstrip("_").split("_")[0] not in VERBS:
+    if func.name.lstrip("_").split("_")[0] not in VERBS and code_lines(func) > NOUN_NAME_MAX_LINES:
         found.append(func.name)
     names = {arg.arg for arg in func.args.args + func.args.kwonlyargs}
     names |= {node.id for node in ast.walk(func)
