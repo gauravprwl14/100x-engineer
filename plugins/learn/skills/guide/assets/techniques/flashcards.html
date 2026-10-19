@@ -1,0 +1,59 @@
+<!--
+  Technique: Flashcards  (id: flashcards, group: 6 · Remember)
+  What it is: Cards with a term on the front and its meaning and example on the back.
+  Best for: Terms and facts to recall · Formats: HTML · React (Markdown: <details>)
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-flashcards">
+<h2 style="margin-top:0">Flashcards</h2>
+<p class="what">
+<b>What it is:</b> Cards with a term on the front and its meaning and example on the back.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Supports recall practice, which beats re-reading for memory.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Terms and facts to recall</div>
+<div>
+<b class="bad">Avoid when</b>Procedures — use a checklist</div>
+<div>
+<b>Formats</b>HTML · React (Markdown: &lt;details&gt;)</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Three key terms from the URL shortener.</p>
+<div id="fc" class="box" style="cursor:pointer;min-height:70px">
+</div>
+<div class="row">
+<button class="btn ghost" id="fcFlip">Flip</button>
+<button class="btn ghost" id="fcNext">Next card</button>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Try to answer before flipping.</li>
+<li>Flip to check, then move to the next card.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Front: term. Back: meaning + example.</li>
+<li>Click to flip.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> A box that toggles front/back on click. Markdown: &lt;details&gt; blocks.</p>
+</div>
+<script>
+(function(){
+const cards=[["Base62","62-symbol alphabet (0–9, a–z, A–Z). Example: aB3xK9q"],["Key service","Pre-generates unique codes, hands out batches"],["302","Temporary redirect — keeps analytics"]];let ci=0,back=false;const fc=document.getElementById("fc");
+const drawFc=()=>{fc.innerHTML=back?`<span class="tag good">Back</span><p>${esc(cards[ci][1])}</p>`:`<span class="tag warn">Front</span><h3>${esc(cards[ci][0])}</h3>`;};fc.onclick=document.getElementById("fcFlip").onclick=()=>{back=!back;drawFc();};document.getElementById("fcNext").onclick=()=>{ci=(ci+1)%cards.length;back=false;drawFc();};drawFc();
+})();
+</script>

@@ -1,0 +1,254 @@
+{
+ "schema": 1,
+ "category": "follow-up",
+ "design": "paired-followup",
+ "reps": 2,
+ "placebo": "placebo",
+ "arms": {
+  "placebo": "Please double-check your answer.",
+  "user": "(the user's audit prompt)",
+  "A": "(recheck checklist)",
+  "B": "(falsify)"
+ },
+ "runs": [
+  {
+   "id": "h1-review-1",
+   "task": "h1-review",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/h1-review-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-2",
+   "task": "h1-review",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/h1-review-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-3",
+   "task": "h1-review",
+   "arm": "user",
+   "rep": 1,
+   "dir": "runs/h1-review-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-4",
+   "task": "h1-review",
+   "arm": "user",
+   "rep": 2,
+   "dir": "runs/h1-review-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-5",
+   "task": "h1-review",
+   "arm": "A",
+   "rep": 1,
+   "dir": "runs/h1-review-5",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-6",
+   "task": "h1-review",
+   "arm": "A",
+   "rep": 2,
+   "dir": "runs/h1-review-6",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-7",
+   "task": "h1-review",
+   "arm": "B",
+   "rep": 1,
+   "dir": "runs/h1-review-7",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h1-review-8",
+   "task": "h1-review",
+   "arm": "B",
+   "rep": 2,
+   "dir": "runs/h1-review-8",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-1",
+   "task": "h2-migration",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/h2-migration-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-2",
+   "task": "h2-migration",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/h2-migration-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-3",
+   "task": "h2-migration",
+   "arm": "user",
+   "rep": 1,
+   "dir": "runs/h2-migration-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-4",
+   "task": "h2-migration",
+   "arm": "user",
+   "rep": 2,
+   "dir": "runs/h2-migration-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-5",
+   "task": "h2-migration",
+   "arm": "A",
+   "rep": 1,
+   "dir": "runs/h2-migration-5",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-6",
+   "task": "h2-migration",
+   "arm": "A",
+   "rep": 2,
+   "dir": "runs/h2-migration-6",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-7",
+   "task": "h2-migration",
+   "arm": "B",
+   "rep": 1,
+   "dir": "runs/h2-migration-7",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h2-migration-8",
+   "task": "h2-migration",
+   "arm": "B",
+   "rep": 2,
+   "dir": "runs/h2-migration-8",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-1",
+   "task": "h3-fix",
+   "arm": "placebo",
+   "rep": 1,
+   "dir": "runs/h3-fix-1",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-2",
+   "task": "h3-fix",
+   "arm": "placebo",
+   "rep": 2,
+   "dir": "runs/h3-fix-2",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-3",
+   "task": "h3-fix",
+   "arm": "user",
+   "rep": 1,
+   "dir": "runs/h3-fix-3",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-4",
+   "task": "h3-fix",
+   "arm": "user",
+   "rep": 2,
+   "dir": "runs/h3-fix-4",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-5",
+   "task": "h3-fix",
+   "arm": "A",
+   "rep": 1,
+   "dir": "runs/h3-fix-5",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-6",
+   "task": "h3-fix",
+   "arm": "A",
+   "rep": 2,
+   "dir": "runs/h3-fix-6",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-7",
+   "task": "h3-fix",
+   "arm": "B",
+   "rep": 1,
+   "dir": "runs/h3-fix-7",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  },
+  {
+   "id": "h3-fix-8",
+   "task": "h3-fix",
+   "arm": "B",
+   "rep": 2,
+   "dir": "runs/h3-fix-8",
+   "prompt_v1": "(fixture)",
+   "prompt_v2": "(fixture)"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "h1-review",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/h1-review"
+  },
+  {
+   "id": "h2-migration",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/h2-migration"
+  },
+  {
+   "id": "h3-fix",
+   "task_prompt": "(fixture)",
+   "code": false,
+   "probes": [],
+   "fixture": "fixtures/h3-fix"
+  }
+ ]
+}

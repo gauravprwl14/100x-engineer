@@ -1,27 +1,17 @@
 ---
 name: distributed-correctness
 description: >
-  Use when designing or reviewing anything that crosses a network boundary more
-  than once for one logical operation — a service calling another service, a DB
-  write paired with an event/webhook/notification, a queue consumer, a retry, a
-  timeout, a cache, a fan-out to multiple downstreams, or any code that compares
-  timestamps from different machines. Covers idempotency, the dual-write/outbox
-  problem, ordering, sagas, retry and timeout budgets, backpressure, clock
-  hazards, consistency bounds, and cache correctness. Use PROACTIVELY before
-  writing an integration, a queue consumer, a webhook sender/receiver, or a
-  multi-step write, and during review of any diff that adds a retry, a timeout,
-  or a second write derived from a first one.
+  Retries, webhook, queue consumer, duplicate events, charged twice: idempotency, outbox and
+  dual writes, ordering, sagas, timeouts, clock skew, cache consistency across services. Not for
+  single-process code.
 ---
 
 # Distributed correctness
 
 Every rule below exists because a single-machine mental model was applied to code
-that runs across a network. `research/35-findings-security-reliability.md`
-already covers the resilience mechanics in depth (Envoy's retry/circuit-breaking/
-outlier-detection config, the timeout-budget rule, kestra's metrics-cardinality
-rule) — this skill builds on that and does not repeat it; it adds the correctness
-half: what makes a distributed write, delivery, or read actually right, not just
-resilient.
+that runs across a network. Resilience mechanics (retry, circuit breaking, timeout
+budgets) are in `research/35-findings-security-reliability.md` and are not
+repeated; this skill adds the correctness half of a distributed write or read.
 
 ## Trigger
 
@@ -33,9 +23,12 @@ timestamps from different machines.
 **Do not fire when:** the change is entirely in-process with one durable store
 and no network hop — there is no distribution to be incorrect about. For the
 feature-kind edge cases this generates, scaffold with
-`python3 scripts/plan_feature.py new <name> --kind <kinds>` — kinds `queue`,
+`100x plan_feature new <name> --kind <kinds> --tier <tier>` — kinds `queue`,
 `cache`, `webhook`, `third-party-api`, `cron`, `batch-job` in
 `scripts/data/edge_cases_infra.json` seed the scenarios below automatically.
+
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
 
 ## Rules
 
@@ -46,15 +39,15 @@ feature-kind edge cases this generates, scaffold with
    *Enforced by:* `grep -rniE "exactly.once" <spec-or-diff>` — a hit that isn't
    immediately followed by naming the dedup mechanism is rejected in review.
 
-2. **Idempotency key covers the request body, not just the route.** Derive the
-   key from a hash of method + route + body (or a client-supplied key stored
-   alongside the result), store it with a TTL past the client's retry window,
-   and on replay return the *original recorded response*, not reprocess. A
-   route-only key collides two different bodies; a too-short TTL lets a slow
-   retry reprocess.
-   *Enforced by:* review — the audit's `payment`/`queue` edge cases in
-   `scripts/data/edge_cases.json` and `edge_cases_infra.json` require a named
-   test for this, which forces the design question.
+2. **The client owns the idempotency key; the server stores key → (request
+   fingerprint, response).** One `Idempotency-Key` per *logical operation*,
+   client-generated (v4 UUID), reused on every retry. Never derive it from
+   method + route + body: two legitimate identical purchases would merge. Replay
+   returns the stored response; same key + different fingerprint → `422`; key
+   still in flight → `409`; a published TTL longer than the client's retry
+   window (Stripe: ≥ 24 h). Matches `api-contract` rule 6.
+   *Enforced by:* review — the `payment`/`queue` edge cases in
+   `scripts/data/edge_cases.json` and `edge_cases_infra.json` demand a named test.
 
 3. **The dual-write problem: a DB write and a publish are not one transaction.**
    `db.save(x); bus.publish(x)` loses the event on a crash between the two
@@ -152,7 +145,7 @@ feature-kind edge cases this generates, scaffold with
 
 ```bash
 # 1. does the design claim "exactly-once" without naming a dedup mechanism?
-grep -rniE "exactly.once" specs/<name>/spec.md 2>/dev/null
+grep -rniE "exactly.once" docs/engineering/specs/<name>/spec.md 2>/dev/null   # default <root>
 
 # 2. every outbound client call sets an explicit timeout
 grep -rnE "(axios|fetch\(|http\.request|requests\.(get|post|put)|httpx\.)\(" src/ \
@@ -166,8 +159,8 @@ grep -rnE "(Date\.now\(\)|time\.time\(\)|System\.currentTimeMillis)" src/ | grep
 
 # 5. scaffold the spec for this domain -- seeds queue/cache/webhook/third-party
 #    edge cases (idempotency, ordering, backpressure, outbox) before code exists
-python3 scripts/plan_feature.py new order-events --kind queue,integration
-python3 scripts/plan_feature.py audit specs/order-events   # exits 1 until every case resolves
+100x plan_feature new order-events --kind queue,integration --work worker --tier small
+100x plan_feature audit <root>/specs/order-events   # exits 1 until every case resolves
 ```
 Point greps at `git diff --name-only` output rather than the whole tree; each
 runs in under a second. Step 5 is the one that actually gates.
@@ -178,8 +171,8 @@ This skill rejects:
 
 - **A design doc or PR description claiming "exactly-once delivery"** with no
   idempotency key named — the two most common resulting bugs are a duplicate
-  charge/send, or (the less-caught direction) a key built from the route alone
-  silently merging two different request bodies into one result.
+  charge/send, or (the less-caught direction) a key hashed from the body
+  silently merging two legitimate identical purchases into one result.
 - **`db.save(x); bus.publish(x)`** in two separate transactions/connections
   with no outbox table, no CDC, and no reconciliation job — the event is lost
   on any crash between the two lines and nothing ever notices.
@@ -225,6 +218,9 @@ never a two-phase commit across services.
   retryable where gRPC's own example treats only `UNAVAILABLE`, underscoring
   rule 6: the retryable set is a judgement call, not a universal list):
   `aws/aws-sdk-go-v2@main:aws/retry/standard.go`.
+- Client-generated key; saved status+body replayed (even a `500`); parameter mismatch errors;
+  keys prunable after 24 h: `docs.stripe.com/api/idempotent_requests`. `400`/`422`/`409`,
+  fingerprint, published expiry: `datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/`.
 - Idempotency-key-at-scale in production: Temporal's Workflow ID *is* the
   idempotency key; `WorkflowIdReusePolicy` (`ALLOW_DUPLICATE` /
   `ALLOW_DUPLICATE_FAILED_ONLY` / `REJECT_DUPLICATE`) is literally "what a

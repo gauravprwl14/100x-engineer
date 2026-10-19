@@ -1,0 +1,57 @@
+<!--
+  Technique: Timeline  (id: timeline, group: 2 · Process & time)
+  What it is: A vertical or horizontal line with events placed in time order.
+  Best for: History, incidents, rollouts · Formats: HTML · Markdown table · Mermaid timeline
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-timeline">
+<h2 style="margin-top:0">Timeline</h2>
+<p class="what">
+<b>What it is:</b> A vertical or horizontal line with events placed in time order.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows what happened when, and how long things took.</li>
+<li>Makes cause and effect over time easy to follow.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>History, incidents, rollouts</div>
+<div>
+<b class="bad">Avoid when</b>Unordered facts</div>
+<div>
+<b>Formats</b>HTML · Markdown table · Mermaid timeline</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> An illustrative rollout: launch, a viral link overloads the DB, caching and a queue are added.</p>
+<div class="tl">
+<div>
+<b>Day 0</b>Launch with DB only</div>
+<div class="bad">
+<b>Week 3</b>Viral link: DB read spike</div>
+<div class="good">
+<b>Week 3</b>Redis cache for hot links added</div>
+<div class="good">
+<b>Month 2</b>Click events moved to a queue</div>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Read top to bottom (earliest first).</li>
+<li>Red dots mark problems, green dots mark fixes.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Dots in time order; red = problem, green = fix.</li>
+<li>Illustrative rollout history.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> HTML list with a left border and dots. Markdown: a table (time · event) or Mermaid timeline.</p>
+</div>

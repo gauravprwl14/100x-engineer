@@ -11,9 +11,12 @@ admitted). Those are authoritative; if this file disagrees with them, they win.
 
 ## What this repo is
 
-A Claude Code plugin. `skills/` holds SKILL.md files; `scripts/` and `hooks/` hold
-the tools those skills invoke; `tests/` holds their regression suites; `research/`
-holds the evidence every claim is sourced from.
+A Claude Code plugin. `skills/` holds SKILL.md files; `agents/` the specialist
+subagents; `scripts/` and `hooks/` the tools those skills invoke; `tests/` their
+regression suites; `research/` the evidence every claim is sourced from.
+
+Current size: **44 skills**, **11 agents**, **46 tools** (`100x list --all`), **48 test suites**
+(`tests/test_*.sh`). `tests/test_docs_claims.sh` fails when these drift.
 
 ## Prove-it command
 
@@ -21,31 +24,38 @@ holds the evidence every claim is sourced from.
 bash tests/run_all.sh
 ```
 
-Four suites (68 assertions) plus the skill-contract lint. It must pass before any
-commit. Run the narrowest check first and broaden only if needed:
+Every `tests/test_*.sh` suite, the seeded-defect evals, the skill-contract lint and the
+term-index freshness check. It must pass before any commit. Run the narrowest check
+first and broaden only if needed:
 
 ```bash
 python3 scripts/lint_skills.py            # ~0.1s, after editing any SKILL.md
 bash tests/test_verification_gate.sh      # ~5s, after touching hooks/ or verified.py
-bash tests/run_all.sh                     # ~15s, before committing
+bash tests/test_docs_claims.sh            # after editing a count in README.md or here
+bash tests/run_all.sh                     # before committing
 ```
 
 ## The pipeline
 
-Work goes through it in order; skipping a stage is how gaps reach review.
+Work goes through it in order; skipping a stage is how gaps reach review. `<root>` is the
+records root (`scripts/_paths.py`); this repo commits `.100x.json` `{"root": "."}`, so here
+it is the repo top level. In a user's project it defaults to `docs/engineering`.
 
 | stage | command | gate |
 |---|---|---|
-| plan | `plan_feature.py new <name> --kind <kinds>` | — |
-| audit the plan | `plan_feature.py audit specs/<name>` | blocks implementation |
-| record choices | `decide.py new` then `decide.py lint` | blocks a decision with one option |
+| intake | `baseline show --work <types> --tier <t>` | C items asked, never defaulted |
+| plan | `plan_feature new <name> --tier <t> --work <types> [--kind <kinds>]` | `--tier` is required; `--kind` defaults to `universal`; §6 seeds at most five asks and defers the rest |
+| audit the plan | `plan_feature audit <name>` (the path, from the git root, under `<root>`, or the bare name) | blocks implementation, including any `AC-<n>` rule, a deleted seeded edge-case or decision row, `covered`/`applied` evidence that cites no proof, and (from `growth`) a linked PRD that fails `prd audit`; warns on baseline items newer than the spec's `\| baseline \| <n> \|` pin |
+| record choices | `decide new` then `decide lint` | blocks one option, an option with no `fit`, a chosen option that fails fit |
+| orchestrate | `plan_dag stamp plan.json`, `plan_dag lint plan.json` (plan.json beside the spec in `<root>/specs/<feature>/`), then per task `agent_report lint <report> --graph plan.json --cwd <wt>` + `agent_report replay <report> --graph plan.json --cwd <wt> --yes` | blocks a spec that is not audited and `ready` or changed since the stamp, an uncovered or undefined AC, overlapping files, an unknown plan field, a verify command that needs a shell or ships something; a file git shows changed outside the task's `files`; `done` without every declared verify command at exit 0; a report not from the task's owner; a declared command whose exit code does not replay |
 | implement | — | — |
+| test plan | `testplan new <spec> --out` (writes `testplan.md` beside the spec), `testplan trace <spec> --tests <dirs>` | every AC has a live test tagged `<feature>/AC-<n>`; bare `AC-<n>` and skipped tests do not count |
 | bloat check | `bloat_check.py --base origin/main` | blocks |
-| design drift | `design_drift.py specs/<n>/spec.md <dir>` | blocks |
+| design drift | `design_drift.py <root>/specs/<n>/spec.md <dir>` | blocks |
 | assumptions | `decide.py verify && decide.py drift` | blocks |
 | scoped review | `review_scope.py --base origin/main` | questions must be answered |
-| commit | the `PreToolUse` gate requires a fresh receipt | blocks |
-| index | `check_index.py` + `check_index.py --gen-collections` | blocks |
+| commit | the `PreToolUse` gate requires a fresh, signed receipt | blocks |
+| index | `check_index.py` + `check_index.py --gen-collections` + `--gen-terms` | blocks |
 
 ## Rules
 
@@ -88,7 +98,9 @@ Work goes through it in order; skipping a stage is how gaps reach review.
 
 12. **Never add a dependency.** This plugin deliberately uses only the Python
     standard library and git, so it runs anywhere with no install step. If you
-    believe a dependency is required, stop and ask. `[review]`
+    believe a dependency is required, stop and ask. The one admitted exception is `gh`,
+    called only from the `pr-review` skill's steps, never from `scripts/`
+    (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`). `[review]`
 
 13. **Never suppress a check to make it pass** — no `# type: ignore`, no
     `|| true`, no `continue-on-error` on a gate. Fix the root cause. The repo ships
@@ -100,8 +112,9 @@ Work goes through it in order; skipping a stage is how gaps reach review.
     conversation in commit messages, PR bodies, or comments. `[review]`
 
 15. **Every traversable document carries its own index.** Any markdown file over 150
-    lines with 4+ sections, in `research/`, `docs/`, `reviewers/`, `specs/`, `prds/`,
-    `rca/` or `reviews/`, opens with a `## Contents` table: one row per section, saying
+    lines with 4+ sections, in `research/`, `docs/`, `reviewers/`, or a record
+    collection under the records root (`<root>/specs/`, `prds/`, `rca/`, `reviews/`),
+    opens with a `## Contents` table: one row per section, saying
     what that section **answers** — not restating its heading — plus its approximate
     size. A reader must be able to decide what to open without reading the file.
     `[lint: check_index.py]`
@@ -109,12 +122,16 @@ Work goes through it in order; skipping a stage is how gaps reach review.
 16. **Every collection carries a catalogue.** A directory of records has an `INDEX.md`
     listing them. These are generated, never hand-written:
     `check_index.py --gen-collections` for `research/`, `reviewers/`, `skills/`;
-    `ledger.py index` and `ledger.py map` for `prds/`, `specs/`, `decisions/`, `rca/`.
+    each record tool's `index` (`plan_feature`, `prd`, `decide`, `rca`, `learn`) for its
+    collection under `<root>/`, and `ledger.py index` / `ledger.py map` across them in
+    `<root>/ledger/`.
     Hundreds of specs with no listing file is the failure this prevents.
     `[lint: check_index.py]`
 
 17. **Do not index what is trivial.** A file under 150 lines, a fixed-structure file
-    (`SKILL.md`), or a generated index does not get a Contents table. An index on a
+    (`SKILL.md`, or a `spec.md`/`prd.md` that `plan_feature new`/`prd new` generated,
+    recognised by the header table it still carries), or a generated index does not get
+    a Contents table; `check_index.py` does not ask for one. An index on a
     short file is ceremony, and ceremony is what gets the whole convention abandoned.
     `[review]`
 

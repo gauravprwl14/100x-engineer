@@ -39,6 +39,15 @@ ALLOWLIST = [
     ("run_evals.py", "shutil", "operates only inside tempfile.TemporaryDirectory()"),
     ("run_workflow_evals.py", "shutil", "operates only inside a temp dir"),
     ("safety_audit.py", "*", "this file names the patterns in order to forbid them"),
+    ("fails_without_fix.py", "shutil.rmtree", "removes only the mkdtemp() parent it created "
+                                              "and __pycache__ inside its own detached worktree"),
+    ("fails_without_fix.py", "Path(worktree, p).unlink", "deletes a branch-added file inside "
+                                                         "the throwaway worktree, never the user's tree"),
+    ("fails_without_fix.py", "\"checkout\", merge_base", "reverts files inside the throwaway "
+                                                        "worktree (cwd=worktree), never the user's tree; "
+                                                        "hooks off via an empty core.hooksPath"),
+    ("_paths.py", "unlink(tmp)", "removes only the O_EXCL temp file safe_write_text created "
+                                 "moments earlier, after a failed write; never a user file"),
 ]
 # Writes must be guarded: either under a temp dir, or behind dry-run/--yes, or into a
 # known records path. This catches a new write that slipped in unguarded.
@@ -48,13 +57,15 @@ GUARD_HINTS = ("dry_run", "--yes", "getattr(a, \"yes\"", "tempfile", "TemporaryD
 # A tool whose whole purpose is to write one known artifact is guarded by its scope,
 # not by a flag. Each entry states the only path it writes.
 SCOPED_WRITERS = {
-    "verified.py": ".claude/verification-receipt.json",
-    "learn.py": "lessons/ (records + generated INDEX.md)",
+    "verified.py": "<git dir>/100x/verification-receipt.json (git rev-parse --git-path)",
+    "learn.py": "<root>/lessons/ (records + generated INDEX.md); AGENTS.md only via promote --yes",
     "01_harvest_candidates.py": "research/raw/ (one-shot research pipeline)",
     "02_enrich.py": "research/raw/",
     "02_enrich_gql.py": "research/raw/",
     "03_score.py": "research/raw/",
     "04_corpus_doc.py": "research/10-repo-corpus.md",
+    "pr_review.py": "the review root it resolves or is given: rendered files, review.json via merge/mark-posted, INDEX.md, and init's CONTEXT.md + _meta/ stubs (never overwritten)",
+    "pr_snapshot.py": "--dest only (exported trees, diffs, PINS.md); the clone gets only git fetch",
 }
 
 

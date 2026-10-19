@@ -1,182 +1,196 @@
 ---
 name: root-cause-analysis
 description: >
-  Use when something IS broken in production, an incident happened, or a test is
-  mysteriously failing and the cause is not yet obvious — not for a bug you already
-  understand (use bug-fix directly for that). Separates symptom from trigger from
-  mechanism from root cause, reconstructs a timeline, forces falsifiable hypotheses
-  before belief, runs an honest five-whys with a stated stop condition, and gates on
-  producing a regression test plus a check of whether an existing decision's
-  assumption silently stopped holding. Use PROACTIVELY after any incident, outage,
-  or hard-to-explain failure, before writing the fix.
+  Incident, outage, postmortem, production broken after a deploy, flaky or CI-only failure —
+  find the cause: timeline, hypotheses, five whys, root cause, action items. Not for a known bug
+  (→ bug-fix).
 ---
 
 # Root cause analysis
 
 Most "root cause analyses" stop at the trigger: "it broke because we deployed." A
-deploy is never a root cause — it is what exposed one. This skill forces the chain
-one step further, and gates on the two things an RCA actually owes the org: a
-regression test, and an honest check of whether a documented decision's assumption
-quietly stopped being true. `rca.py link` exists specifically for that connection —
-`decide.py drift` finds decisions whose governed code moved; a silently-violated
-assumption is one of the most common root causes there is.
+deploy is never a root cause; it is what exposed one. This skill forces the chain one
+step further and gates on what an incident review actually owes the organisation:
+quantified impact, a timeline you can measure response against, action items somebody
+owns, a regression test, and a check of whether a documented decision's assumption
+quietly stopped being true.
 
 ## Trigger
 
-**Fire when:** production is or was broken, an incident occurred, a test fails
-intermittently or in CI-only, or the cause of a bug is not obvious after one
-reproduction attempt.
+**Fire when:** production is or was broken; an incident was declared; a postmortem is
+requested; a test fails intermittently or only in CI; the cause of a bug is not obvious
+after one reproduction attempt. Google's SRE book lists the usual postmortem triggers:
+user-visible downtime or degradation past a threshold, any data loss, on-call
+intervention such as a rollback, resolution time past a threshold, or a monitoring
+failure where a human found the problem first.
 
-**Do not fire when:** the bug is understood after reproducing it once and the fix is
-local — that is `bug-fix`, which is lighter-weight by design. Firing this on every
-one-line bug turns a diagnostic tool into ceremony, which is exactly what gets RCA
-abandoned.
+**Do not fire when:** the bug is understood after one reproduction and the fix is local.
+That is `bug-fix`. Running this on every one-line bug turns a diagnostic tool into
+ceremony, and ceremony is what gets incident reviews abandoned.
+
+## Severity
+
+`rca.py lint` rejects any value outside this enum.
+
+| level | definition |
+|---|---|
+| SEV1 | critical: broad outage, data loss or a security breach; warrants executive and public communication |
+| SEV2 | major: a core function unavailable or badly degraded for many users |
+| SEV3 | minor: limited or partial impact, a workaround exists; needs prompt owner attention |
+| SEV4 | low: no user-facing impact, a near miss, or cosmetic |
+
+## The record
+
+```mermaid
+flowchart LR
+  T[timeline: started → detected → escalated → mitigated → resolved] --> D[durations: TTD, TTM, TTR]
+  T --> H[hypotheses, each falsifiable]
+  H --> C{one causal chain?}
+  C -->|yes| W[five whys]
+  C -->|several causes combined| F[fault tree, AND/OR gates]
+  W --> R[root cause + contributing factors]
+  F --> R
+  R --> A[action items: owner, due, prevent/detect/mitigate, ticket]
+  R --> RT[regression test]
+```
+
+| field | shape | lint rejects |
+|---|---|---|
+| `severity` | `SEV1`…`SEV4` | free text such as `high` |
+| `impact` | `users_affected`, `duration_minutes` (number), `data_impact`, `revenue_or_sla_impact` | the block or any field missing |
+| `timeline[]` | `{at, type, event}`; `type` ∈ started, detected, escalated, mitigated, resolved, note | `at` without a timezone or not ISO-8601; no `detected`; `fixed`/`closed` with no `mitigated`/`resolved`; impossible order |
+| `five_whys[]` or `fault_tree` | ≥ 2 levels, or a tree with ≥ 2 leaf causes and AND/OR gates | neither |
+| `contributing_factors[]` | the conditions that let it reach production | empty |
+| `lucky[]` | what limited the damage by chance | warns when empty |
+| `action_items[]` | `{what, owner, due: YYYY-MM-DD, type: prevent\|detect\|mitigate, ticket}` | none, or any item missing owner, due or type; warns on no ticket |
+
+`100x rca durations` computes time to detect (started→detected), time to mitigate
+(detected→mitigated), time to resolve (detected→resolved) and the impact window from
+the first event of each type, across mixed timezones.
 
 ## Rules
 
-1. Reproduce before theorizing. An RCA built on an assumed mechanism instead of a
-   reproduced one is fiction with a timeline attached.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects a record with no reproduction
+1. Reproduce before theorising. An RCA built on an assumed mechanism is fiction with a
+   timeline attached.
+   *Enforced by:* `100x rca lint` rejects a record with no reproduction
 
-2. Separate **symptom** (what was observed), **trigger** (the immediate event),
-   **mechanism** (how the trigger produces the symptom, step by step), and **root
-   cause** (the underlying condition) into four distinct statements. A root cause
-   that restates the symptom means the chain never actually ran.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects a root cause identical to the
-   symptom, and rejects a missing symptom/trigger/mechanism
+2. Classify severity with the SEV1-SEV4 enum and quantify impact: users affected,
+   minutes, data, revenue or SLO budget. An estimate is fine and says so; a severity
+   word nobody defined is not.
+   *Enforced by:* `100x rca lint` rejects free-text severity and missing impact
 
-3. Reconstruct the timeline before theorizing about mechanism — `git log`,
-   `git bisect`, deploy times. Cross-check whether a decision's assumption stopped
-   holding underneath the code first.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects no timeline;
-   `python3 scripts/decide.py drift` finds decisions whose governed code moved
+3. Build the timeline from typed events with ISO-8601 timestamps that carry a timezone.
+   A naive `14:02` read in another region is wrong by hours, and response times cannot
+   be measured from it. Put commit shas and deploy ids in the event text.
+   *Enforced by:* `100x rca lint` rejects naive or non-ISO timestamps and untyped events
 
-4. State each hypothesis with what evidence would **falsify** it, before going to get
-   that evidence. Reject the first-plausible-cause trap — the first story that fits
-   the symptom is rarely checked against alternatives, only confirmed.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects hypotheses with no stated
-   falsifying evidence
+4. Separate **symptom**, **trigger**, **mechanism** and **root cause** into four
+   statements. A root cause that restates the symptom means the chain never ran.
+   *Enforced by:* `100x rca lint` rejects a root cause identical to the symptom
 
-5. Run five-whys honestly, with a stated stop condition — and know its failure mode:
-   it forces a single causal chain, when real incidents usually have several
-   conditions acting together. That is what rule 6 is for.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects fewer than 2 real levels
+5. State each hypothesis with what evidence would **falsify** it, before collecting that
+   evidence. The first story that fits is usually only confirmed, never tested.
+   *Enforced by:* `100x rca lint` rejects hypotheses with no falsifying evidence
 
-5b. Once the mechanism is hypothesized, draw it as a level-3 diagram — every branch,
-   numbered steps, the actual path including the one that failed — instead of
-   describing it in prose. "It calls A then B" hides exactly the branch where B was
-   skipped; a diagram with a missing arrow does not.
-   *Enforced by:* `python3 scripts/diagram_from_code.py <affected-dir> --kind sequence --level 3`
+6. Use five whys for one causal chain and a fault tree when several conditions had to
+   hold at once. Forcing parallel causes into one chain hides all but one of them.
+   *Enforced by:* `100x rca lint` rejects fewer than 2 whys and no valid fault tree
 
-6. Record contributing factors distinct from the root cause. An empty section here
-   claims the root cause acted completely alone, which is rarely true — the "why
-   did this reach production" conditions (missing test coverage, a reviewer
-   unfamiliar with the flow, an alert that didn't fire) belong here, not folded into
-   the root cause itself.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects an empty contributing-factors
-   list
+7. Record contributing factors and where you got lucky. Luck that limited the damage is
+   a latent failure waiting for a worse day.
+   *Enforced by:* `100x rca lint` rejects empty contributing factors and warns on empty `lucky`
 
-7. The output must name the regression test, and state whether an existing
-   decision's assumption was violated. These are what an RCA is actually for —
-   everything above exists to earn them honestly.
-   *Enforced by:* `python3 scripts/rca.py lint` rejects no regression-test reference;
-   `python3 scripts/rca.py link RCA-000X --decision ADR-000Y` records the assumption
-   check
+8. Every action item has one owner, a due date, a type (prevent, detect or mitigate)
+   and a ticket. An unowned item is a wish, and the workbook's rule is that a
+   user-affecting outage gets at least one high-priority tracked bug.
+   *Enforced by:* `100x rca lint` rejects items missing owner, due or type
 
-8. Keep it blameless. Name the process gap, not the person — "no gate catches a
-   SameSite change against the SSO flow" survives being read by the person who wrote
-   it; "X forgot to check the SSO flow" does not, and it teaches nothing reusable.
-   *Enforced by:* review
+9. Name the regression test, and check whether an existing decision's assumption was
+   violated.
+   *Enforced by:* `100x rca lint` rejects no regression test; `100x rca link` records the check
+
+10. Write blamelessly. Assume everyone acted in good faith on the information they had,
+    and name the system gap: "the deploy pipeline has no canary stage", not "X pushed
+    without checking".
+    *Enforced by:* review (`100x rca lint` warns on phrases such as "human error", "should have")
 
 ## Verify
 
 ```bash
-# open a record for the incident
-python3 scripts/rca.py new "Sessions dropped after deploy" --affects "src/auth/**" --severity high
+# open a record (legacy words critical/high/medium/low map to SEV1-SEV4)
+100x rca new "Sessions dropped after deploy" --affects "src/auth/**" --severity SEV2
 
-# reconstruct the timeline
+# reconstruct the timeline from evidence (~1s each)
 git log --oneline --since="2026-09-28" -- src/auth
-git bisect start; git bisect bad HEAD; git bisect good <last-known-good-sha>
-python3 scripts/decide.py drift          # decisions whose governed code moved since recorded
+100x decide drift              # decisions whose governed code moved since recorded
 
-# draw the real path once the mechanism is hypothesized
-python3 scripts/diagram_from_code.py src/auth --kind sequence --level 3
+# draw the real path once the mechanism is hypothesised
+100x diagram_from_code src/auth --kind sequence --level 3
 
-# completeness gate — the point of this skill
-python3 scripts/rca.py lint
+# completeness gate, which prints the computed durations (~0.2s)
+100x rca lint
+100x rca durations RCA-0001
 
 # if an existing decision's assumption turns out to be the cause
-python3 scripts/rca.py link RCA-0001 --decision ADR-0001 --assumption A1
+100x rca link RCA-0001 --decision ADR-0001 --assumption A1
 
 # regenerate the index, never hand-maintained
-python3 scripts/rca.py index
-
-# then fix it, with the RCA's regression_test as the failing test bug-fix commits first
+100x rca index
 ```
 
 ## Failure modes
 
 This skill rejects:
 
-- **A root cause identical to the symptom** — "it crashed because it crashed" wearing
-  RCA formatting.
-- **Stopping at the trigger** — "a deploy happened" with no mechanism connecting the
-  deploy to the symptom.
-- **A five-whys chain with one level**, or one that never states why it stopped where
-  it did.
-- **A hypothesis presented as fact**, with no falsifying evidence ever sought — the
-  first plausible story, unchecked against alternatives.
-- **An empty contributing-factors section**, implying a single clean cause when the
-  timeline usually shows several conditions compounding.
-- **An RCA that never checks whether an existing decision's assumption was the
-  actual cause** — flagged as a warning by `rca.py lint`, because whether one exists
-  to check is not always knowable mechanically, but its absence is visible in the
-  index.
-- **No regression test reference** — the incident can recur and nothing will fail.
-- **Blame language substituting for a process finding** — caught by review, not by
-  any script; see Honest limitations.
+- **`"severity": "high"`**: undefined across teams; one team's high is another's SEV3.
+- **`"at": "2026-09-28 14:02"`**: no timezone, so TTD and TTM are unmeasurable.
+- **`{"what": "improve monitoring"}`** with no owner, date or type: the vague,
+  unowned item the workbook warns against.
+- **No impact block**: "some users were affected" cannot be prioritised against
+  anything.
+- **A root cause identical to the symptom**, or a stop at the trigger.
+- **One five-whys chain for an incident that needed three conditions at once.**
+- **An empty contributing-factors list**, implying a single clean cause.
+- **"The on-call engineer should have noticed"**: blame instead of the missing alert.
 
 **Honest limitations:**
-- `rca.py lint` checks structure and non-placeholder content, not truth. A hypothesis
-  can claim `falsify_with: "reproduced locally"` without that reproduction having
-  actually happened — same honest limitation `decide.py verify` states about its own
-  assumption commands.
-- The five-whys stop condition is required to be *stated*, not judged. A chain that
-  stops one level too early, with a plausible-sounding stop condition, passes lint.
-  That is rule 8's neighbor: review, not a script, catches a stop condition that is
-  really just "ran out of patience."
-- Blamelessness is enforced by review only. Nothing mechanically distinguishes "the
-  reviewer missed the SSO interaction" (blame) from "no check exists for
-  cookie-attribute changes against the SSO flow" (process finding) — the second is
-  what this skill is for, and only a human or a review pass can tell them apart.
+- Lint checks structure and non-placeholder content, not truth. A `falsify_with` can
+  claim a reproduction that never happened.
+- Severity is checked against the enum, not against the impact numbers. A SEV4 with
+  10,000 affected users passes; review catches it.
+- The blame check is a phrase list and only warns. "Alice skipped review" contains no
+  listed phrase and passes. Only a reader can tell a process finding from blame.
 
 ## Next
 
-Once `rca.py lint` passes and the record names a regression test: `bug-fix` for the
-actual patch, using that regression test as the failing test it commits first. If
-the fix is broader than a patch (the root cause needs a redesign, not a correction),
-`feature-planning` or `solution-architecture` instead.
+Once `rca.py lint` passes: `bug-fix` for the patch, with the RCA's regression test as
+the failing test it commits first. If the root cause needs a redesign, go to
+`feature-planning` or `solution-architecture`. Stable gotchas found along the way go to
+`project-learning`.
 
 ## Scale
 
-`small-team (2-10)` and up is where this pays for itself over `bug-fix` alone — a
-solo maintainer often does hold the whole timeline in their head, in which case the
-lighter `bug-fix` loop is enough. It becomes essential at `high-blast-radius`
-(production outages, security incidents, payment paths), where the decision-link
-check (rule 7) is frequently the actual finding: a documented assumption quietly
-stopped holding, and nothing before this record connected the two.
+`small-team (2-10)` and up. A solo maintainer often holds the timeline in their head and
+`bug-fix` is enough. Essential at `high-blast-radius` (outages, security incidents,
+payments), where impact, durations and owned action items are what leadership and
+customers ask for, and the decision-link check is often the real finding.
 
 ## Sources
-- The regression-test-as-deliverable framing, and the fuzz-finding-to-regression-test
-  loop it generalizes: `google/oss-fuzz@2cc3fa4:docs/advanced-topics/ideal_integration.md`,
-  `sqlite/sqlite@86876d2:test/fuzzcheck.c` — both cited in full in
+- Postmortem triggers, the blameless definition ("assumes that everyone involved in an
+  incident had good intentions and did the right thing with the information they had"),
+  and preventive action plans: Google SRE book, ch. 15 "Postmortem Culture: Learning
+  from Failure", https://sre.google/sre-book/postmortem-culture/
+- Impact, trigger and root causes, detection and resolution, lessons learned including
+  "where we got lucky", action items with a single owner, priority and a tracked bug,
+  and the rule against vague verbs like "improve": Google SRE workbook, "Postmortem
+  Culture: Learning from Failure", https://sre.google/workbook/postmortem-culture/
+- Severity levels, adapted from SEV-1..SEV-5 to four by folding SEV-5 into SEV4:
+  `PagerDuty/incident-response-docs` (https://response.pagerduty.com/before/severity_levels/).
+- A required blameless retrospective after a security release, citing the SRE
+  postmortem chapter: `envoyproxy/envoy@72e8b00:SECURITY.md`, described in
   `research/35-findings-security-reliability.md`.
-- Required blameless retrospective within 1-3 days of a security release, citing
-  Google's SRE postmortem-culture doc: `envoyproxy/envoy@72e8b00:SECURITY.md`,
-  described in `research/35-findings-security-reliability.md`.
-- The symptom/trigger/mechanism/root-cause split, falsifiable-hypothesis discipline,
-  the five-whys single-chain failure mode, and the decide.py-drift integration as the
-  mechanism for catching a silently-violated assumption: `SOURCE: original` — no
-  single repo in the corpus encodes this taxonomy as a checked artifact; it is this
-  plugin's synthesis of the blameless-postmortem and fuzz-corpus practices above,
-  made mechanically checkable via `rca.py lint`.
+- The regression test as the deliverable:
+  `google/oss-fuzz@2cc3fa4:docs/advanced-topics/ideal_integration.md`,
+  `sqlite/sqlite@86876d2:test/fuzzcheck.c`, in `research/35-findings-security-reliability.md`.
+- The symptom/trigger/mechanism/root-cause split, the decide.py-drift link, the typed
+  event enum, the fault-tree shape and the mechanical lint: `SOURCE: original`.

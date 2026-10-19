@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 02-reuse-helper
+description: Reuse of an existing helper. Deterministic part is bench/checks.py check_02.
+tags: [code, reuse]
+context:
+  scaffold_script: scaffold.sh

@@ -1,21 +1,13 @@
 ---
 name: web-vitals
 description: >
-  Use when building or reviewing any component that renders above the fold, adds
-  a web font, ships client JS, adds an image, or wires up a new route — to keep
-  Core Web Vitals a per-component decision instead of a Lighthouse run at the
-  end of a quarter. Covers LCP/INP/CLS thresholds and what causes each at the
-  component level, image and font loading rules, JS/hydration cost and
-  `'use client'` boundaries, and lab-vs-field measurement. Owns BROWSER-side
-  rendering metrics; does not own back-end latency budgets (see
-  performance-budgets) or bundle-byte budgets (see typescript-verification rule
-  6) — cross-references both rather than repeating them. Use PROACTIVELY before
-  adding a hero image, a web font, or client-side data fetching above the fold.
+  Core Web Vitals — LCP, INP, CLS: hero images, web fonts, client JS and hydration, use client
+  boundaries, lab vs field data. Not for backend latency (→ performance-budgets).
 ---
 
 # Web Vitals (Core Web Vitals)
 
-Bundle-byte budgets are owned by `typescript-verification` (rule 6) and
+Bundle-byte budgets are owned by `language-verification` (rule 6) and
 back-end latency budgets by `performance-budgets` — this skill does not repeat
 either. What's missing for a frontend-heavy stack is the browser-rendering
 half: **LCP, INP, and CLS are decided component by component**, at the moment
@@ -58,21 +50,22 @@ the 76th-99th percentile on a slow phone and a congested network.
 
 ## Rules
 
-1. Set a budget per route before building it — target LCP/INP/CLS numbers,
-   written down, same discipline as `performance-budgets` rule 1 for latency.
-   A route with no stated budget silently inherits whatever the build produces.
+1. Set a budget per route before building it, same discipline as
+   `performance-budgets` rule 1. Default, unless the spec overrides it: the Core
+   Web Vitals "good" thresholds at p75 of real users — LCP ≤ 2.5s, INP ≤ 200ms,
+   CLS ≤ 0.1 (`web.dev/articles/vitals`). Silence means the default, never "none".
    *Enforced by:* review
 
 2. Every image ships `width`/`height`, `fill` (with a sized container), or
    `aspect-ratio` — no exceptions. Reserve the space before the image arrives,
    or CLS is guaranteed once it loads.
-   *Enforced by:* `python3 scripts/a11y_check.py --only img-no-dimensions`
+   *Enforced by:* `100x a11y_check --only img-no-dimensions`
 
-3. Use `priority`/eager loading (Next.js: `priority`, or `fetchPriority="high"`
-   as of Next.js 16 — see Sources) on the one element that is actually the
-   LCP candidate, and lazy-load everything else. Marking every image
-   `priority` defeats the point: it competes with the real LCP element for
-   bandwidth.
+3. Load eagerly only the one element that is actually the LCP candidate, and
+   lazy-load everything else. Next.js 16 deprecated `priority` in favour of
+   `preload`, and its docs say "in most cases" use `loading="eager"` or
+   `fetchPriority="high"` instead of `preload` (see Sources). Marking every
+   image eager defeats the point: it competes with the real LCP element.
    *Enforced by:* review
 
 4. Serve modern image formats (AVIF/WebP) where the pipeline supports it —
@@ -105,7 +98,7 @@ the 76th-99th percentile on a slow phone and a congested network.
 
 9. Budget and measure client JS per route, not just per bundle — the bytes
    that ship gate hydration time, which gates INP on first interaction.
-   *Enforced by:* `npx size-limit` (owned by `typescript-verification` rule 6;
+   *Enforced by:* `npx size-limit` (owned by `language-verification` rule 6;
    cross-referenced, not duplicated here) or `npx next build` route-size table
 
 10. Never trust a single Lighthouse run as ground truth. Measure field data
@@ -121,12 +114,12 @@ script can fully replace.
 
 ```bash
 # mechanical: CLS risk from undimensioned images (shared with the a11y checker)
-python3 scripts/a11y_check.py --only img-no-dimensions --base origin/main
+100x a11y_check --only img-no-dimensions --base origin/main
 
 # client-JS-per-route -- the number that shows a 'use client' boundary crept up
 npx next build 2>&1 | grep -A 20 "Route (app)"
 
-# bundle budget, if configured (typescript-verification owns this)
+# bundle budget, if configured (language-verification owns this)
 npx size-limit
 
 # lab proxy -- run against a PRODUCTION build, never `next dev`
@@ -147,7 +140,7 @@ This skill rejects:
 
 - **A hero `<img>`/`Image` with no `width`/`height`/`fill`/`aspect-ratio`** —
   the layout jumps once it loads; guaranteed CLS.
-- **Every image on a page marked `priority`** — defeats the purpose; the real
+- **Every image on a page marked eager/`priority`/`preload`** — the real
   LCP element now competes for the same bandwidth budget.
 - **A client-side `useEffect` fetch for data needed on first paint** — LCP pays
   for the JS parse + hydrate + fetch waterfall that a server fetch skips.
@@ -174,7 +167,7 @@ text alone.
 
 ## Scale
 
-`solo`: rule 2 (mechanical, free) and rule 3 (name the one `priority` image) —
+`solo`: rule 2 (mechanical, free) and rule 3 (name the one eager image) —
 minutes to adopt, catches the most common AI-generated defect (every image
 marked eager/priority, or none dimensioned).
 `small-team (2-10)`: add 5, 6, 7, 8 — font and `'use client'` discipline start
@@ -197,15 +190,16 @@ of users is invisible without it.
   a Core Web Vital metric."); the library-level change is
   `GoogleChrome/web-vitals@main:CHANGELOG.md` v4.0.0 (2024-05-13), "Deprecate
   `onFID()`".
-- `next/image` `priority`/loading defaults and the Next.js 16 `priority` →
-  `preload` rename: `vercel/next.js@canary:docs/01-app/03-api-reference/02-
-  components/image.mdx`.
+- `next/image` loading defaults; `priority` deprecated for `preload` in v16.0.0;
+  "In most cases, you should use `loading="eager"` or `fetchPriority="high"`
+  instead of `preload`": `vercel/next.js@canary:docs/01-app/03-api-reference/02-
+  components/image.mdx` (rendered at `nextjs.org/docs/app/api-reference/components/image`).
 - `next/font` defaults (`display: 'swap'`, `preload: true`, `subsets`):
   `vercel/next.js@canary:docs/01-app/03-api-reference/02-components/font.mdx`.
 - `'use client'` boundary and client-fetch failure modes: `reviewers/nextjs-
   react.md` failure modes #1 and #2 (cited, not repeated) — including the
   `vercel/commerce` leaf-only `'use client'` measurement (15/65 files).
-- Bundle-byte budgets, owned elsewhere: `skills/typescript-verification/SKILL.md`
+- Bundle-byte budgets, owned elsewhere: `skills/language-verification/SKILL.md`
   rule 6 (`TanStack/table` 30KB `size-limit` — 2 of 72 JS repos have any bundle
   budget at all).
 - Back-end latency budgets, owned elsewhere: `skills/performance-budgets/SKILL.md`

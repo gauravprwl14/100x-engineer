@@ -1,0 +1,89 @@
+{
+  "_doc": "HELD-OUT trigger prompts, written after the v0.2 description rewrite was frozen and never used to tune a description. Score with `skill_triggers.py --fixture evals/triggers-holdout.json --all-modes`. A large gap between this and evals/triggers.json is overfitting to the main fixture. Reported, not gated; a case may move to triggers.json only together with a fresh held-out replacement.",
+  "cases": [
+    {
+      "prompt": "add a dark mode toggle to the profile screen",
+      "expect": "ui-baseline"
+    },
+    {
+      "prompt": "the signup form needs better error messages",
+      "expect": "ui-baseline"
+    },
+    {
+      "prompt": "we store passwords, check the login endpoint for vulnerabilities",
+      "expect": "app-security"
+    },
+    {
+      "prompt": "set up a canary release for the payments service",
+      "expect": "release-rollout"
+    },
+    {
+      "prompt": "how long should we keep user logs and how do we purge them",
+      "expect": "data-lifecycle"
+    },
+    {
+      "prompt": "make sure every acceptance criterion has a test",
+      "expect": "qa-strategy"
+    },
+    {
+      "prompt": "our golang service has data races",
+      "expect": "language-verification"
+    },
+    {
+      "prompt": "document why we picked postgres over mongo",
+      "expect": "decision-records"
+    },
+    {
+      "prompt": "can you review the changes in this branch",
+      "expect": "diff-review"
+    },
+    {
+      "prompt": "write a postmortem for last night's outage",
+      "expect": "root-cause-analysis"
+    },
+    {
+      "prompt": "a teammate opened a PR touching billing, give feedback",
+      "expect": "diff-review"
+    },
+    {
+      "prompt": "break this epic into tasks for three agents working in parallel",
+      "expect": "orchestrate"
+    },
+    {
+      "prompt": "which fields should the orders table have",
+      "expect": "data-modeling"
+    },
+    {
+      "prompt": "add an index to speed up the slow search query",
+      "expect": "performance-budgets"
+    },
+    {
+      "prompt": "our CLAUDE.md is 900 lines and agents ignore it",
+      "expect": "agent-instructions"
+    },
+    {
+      "prompt": "should we use a queue or call the service directly",
+      "expect": "approach-selection"
+    },
+    {
+      "prompt": "turn this slack message from the CEO into a spec",
+      "expect": "requirements-intake"
+    },
+    {
+      "prompt": "the app crashes when the list is empty",
+      "expect": "bug-fix"
+    },
+    {
+      "prompt": "lint our python code and enforce types in CI",
+      "expect": "language-verification"
+    },
+    {
+      "prompt": "is our button contrast accessible",
+      "expect": "accessibility"
+    },
+    {
+      "prompt": "leave review comments on PR 88 for the author",
+      "expect": "pr-review"
+    }
+  ]
+}

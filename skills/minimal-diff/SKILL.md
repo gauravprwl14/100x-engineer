@@ -1,15 +1,9 @@
 ---
 name: minimal-diff
 description: >
-  Use when writing or changing code, and especially before committing, to keep the
-  change as small as the problem requires. Catches AI-generated bloat: new files
-  that should have been edits, dead and commented-out code, tests that assert
-  nothing, speculative single-use abstractions, unrequested documentation,
-  dependency creep, focused or silently-skipped tests, and cosmetic reformatting
-  that inflates a diff. Not a merge-policy or CODEOWNERS skill (see review-gates)
-  and not about proving a check passed (see verification-gate) — this is about the
-  shape and size of the diff itself, before it is ever submitted. Use PROACTIVELY
-  when asked to add a feature, refactor, fix a bug, or clean up a codebase.
+  Bloated diff — too many new files, dead or commented-out code, tests that assert nothing,
+  speculative abstractions, unrequested docs, agent bloat, reformatting: keep the change small.
+  Not for merge policy (→ review-gates).
 ---
 
 # Minimal diff
@@ -31,40 +25,40 @@ document, or dependency.
 
 1. Prefer editing an existing file over creating a new one. A new file needs a
    reason you can state in one sentence.
-   *Enforced by:* `python3 scripts/bloat_check.py --only file-creation-ratio` (advisory)
+   *Enforced by:* `100x bloat_check --only file-creation-ratio` (advisory)
 
 2. Never add a dependency without first checking the stdlib and the existing
    dependency list. State what you checked, and if you add one anyway, log why:
-   `python3 scripts/decide.py new "Add <package>" --affects "package.json"`.
+   `100x decide new "Add <package>" --affects "package.json"`.
    *Enforced by:* `git diff HEAD -- package.json pyproject.toml go.mod` reviewed in the
    diff; `depcheck` / `deptry .` / `go mod tidy && git diff --exit-code` in CI
 
 3. Do not add an abstraction until the second caller exists. An interface with one
    implementation is a guess about the future.
-   *Enforced by:* `python3 scripts/bloat_check.py --only single-use-abstraction` (advisory —
+   *Enforced by:* `100x bloat_check --only single-use-abstraction` (advisory —
    the tool flags it, a human decides load-bearing vs speculative)
 
 4. Delete dead code rather than commenting it out. Version control is the archive.
-   *Enforced by:* `python3 scripts/bloat_check.py --only commented-code`
+   *Enforced by:* `100x bloat_check --only commented-code`
 
 5. Every test must be able to fail. A test that calls code without asserting is a
    coverage lie. Two independent research passes found **no production repo** with a
    mechanical check for this, so the check here has no prior art to imitate.
-   *Enforced by:* `python3 scripts/bloat_check.py --only assertionless`
+   *Enforced by:* `100x bloat_check --only assertionless`
 
 5b. Never commit a focused or silently-skipped test. `it.only` disables every other
    test in its file; a skip with no stated reason is a permanent hole.
-   *Enforced by:* `python3 scripts/bloat_check.py --only focused-tests`
+   *Enforced by:* `100x bloat_check --only focused-tests`
    (`jest/no-focused-tests` and equivalents are the one near-universal real gate in
    production)
 
 6. Do not create documentation that was not requested. No `ARCHITECTURE.md`, no
    `NOTES.md`, no summary of what you just did.
-   *Enforced by:* `python3 scripts/bloat_check.py --only new-docs`
+   *Enforced by:* `100x bloat_check --only new-docs`
 
 7. A `TODO` without an issue reference is a note to nobody. Reference an issue or
    fix it now.
-   *Enforced by:* `python3 scripts/bloat_check.py --only bare-todo`
+   *Enforced by:* `100x bloat_check --only bare-todo`
 
 8. Never reformat lines you did not otherwise change. Format only changed files, so
    a reviewer sees logic and not whitespace.
@@ -85,9 +79,9 @@ document, or dependency.
 
 ```bash
 # diff-scoped: safe to run on a large existing codebase (~1-3s)
-python3 scripts/bloat_check.py                       # all checks vs HEAD
-python3 scripts/bloat_check.py --base origin/main    # whole-branch view
-python3 scripts/bloat_check.py --strict              # advisory findings also fail
+100x bloat_check                       # all checks vs HEAD
+100x bloat_check --base origin/main    # whole-branch view
+100x bloat_check --strict              # advisory findings also fail
 
 # language-specific dead code / dependency creep — pick what the repo has
 npx knip                                             # unused files, exports, deps
@@ -149,8 +143,7 @@ questions — not asked to re-derive what the mechanical checks already settled.
 ## Next
 
 Once the diff is small, run `verification-gate` to bind a real check to it, then
-the matching language skill (`typescript-verification`, `python-verification`,
-`go-verification`) for what "real" means on this stack. If the diff touches a
+the matching language skill (`language-verification`) for what "real" means on this stack. If the diff touches a
 framework with known LLM failure shapes, `stack-reviewer` catches what bloat
 checking cannot.
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 A="$ROOT/scripts/audit_ci_gates.py"
 PASS=0; FAIL=0
-t() { python3 "$A" "$2" >/tmp/cg.out 2>&1; local got=$?
+t() { python3 "$A" "$2" >$OUT/cg.out 2>&1; local got=$?
   if [ "$got" -eq "$1" ]; then PASS=$((PASS+1)); printf '  ok   %-46s\n' "$3"
-  else FAIL=$((FAIL+1)); printf '  FAIL %-46s exp=%s got=%s\n' "$3" "$1" "$got"; sed 's/^/       /' /tmp/cg.out; fi; }
-has() { grep -q "$1" /tmp/cg.out && { PASS=$((PASS+1)); printf '  ok   reported: %-34s\n' "$1"; } \
+  else FAIL=$((FAIL+1)); printf '  FAIL %-46s exp=%s got=%s\n' "$3" "$1" "$got"; sed 's/^/       /' $OUT/cg.out; fi; }
+has() { grep -q "$1" $OUT/cg.out && { PASS=$((PASS+1)); printf '  ok   reported: %-34s\n' "$1"; } \
       || { FAIL=$((FAIL+1)); printf '  FAIL NOT reported: %-30s\n' "$1"; }; }
 
 mkdir -p "$TMP/none"; t 0 "$TMP/none" "repo with no CI config"

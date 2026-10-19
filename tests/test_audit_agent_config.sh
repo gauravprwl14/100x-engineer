@@ -2,17 +2,17 @@
 # Regression suite for audit_agent_config.py: detection AND no false positives.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 A="$ROOT/scripts/audit_agent_config.py"
 PASS=0; FAIL=0
 t() { # t <expected_exit> <label> <dir>
-  python3 "$A" "$3" --quiet >/tmp/aac.out 2>&1; local got=$?
+  python3 "$A" "$3" --quiet >$OUT/aac.out 2>&1; local got=$?
   if [ "$got" -eq "$1" ]; then PASS=$((PASS+1)); printf '  ok   %-48s\n' "$2"
-  else FAIL=$((FAIL+1)); printf '  FAIL %-48s exit exp=%s got=%s\n' "$2" "$1" "$got"; sed 's/^/       /' /tmp/aac.out; fi
+  else FAIL=$((FAIL+1)); printf '  FAIL %-48s exit exp=%s got=%s\n' "$2" "$1" "$got"; sed 's/^/       /' $OUT/aac.out; fi
 }
-has() { grep -q "$1" /tmp/aac.out && { PASS=$((PASS+1)); printf '  ok   %-48s\n' "reported: $1"; } \
+has() { grep -q "$1" $OUT/aac.out && { PASS=$((PASS+1)); printf '  ok   %-48s\n' "reported: $1"; } \
       || { FAIL=$((FAIL+1)); printf '  FAIL %-48s\n' "NOT reported: $1"; }; }
-no() { grep -q "$1" /tmp/aac.out && { FAIL=$((FAIL+1)); printf '  FAIL %-48s\n' "false positive: $1"; } \
+no() { grep -q "$1" $OUT/aac.out && { FAIL=$((FAIL+1)); printf '  FAIL %-48s\n' "false positive: $1"; } \
       || { PASS=$((PASS+1)); printf '  ok   %-48s\n' "no false positive: $1"; }; }
 
 mkdir -p "$TMP/empty"

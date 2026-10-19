@@ -1,0 +1,4 @@
+fix(export): keep the last CSV row when the file has no trailing newline
+
+The reader stopped at the last newline, so a 3-row file exported 2 rows.
+Closes #77.

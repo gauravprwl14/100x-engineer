@@ -8,6 +8,19 @@ plugin already has a project-level store for decisions (`decisions/`), specs
 (`specs/`) and root causes (`rca/`); nothing accumulated lessons into it, and Claude
 Code's own memory is a separate mechanism this plugin does not write to.
 
+Where a lesson belongs -- three stores, split by who needs it:
+
+  personal preference    ("I like terse commit messages")  -> the agent's own
+                         auto-memory. Per user, never committed; this tool does
+                         not write there.
+  project fact / gotcha  ("the integration suite needs `docker compose up db`")
+                         -> a lesson here, under lessons/, git-tracked and reviewed,
+                         so every teammate and every agent session gets it.
+  stable team rule       a lesson that has held long enough to be a standing
+                         instruction -> promoted into AGENTS.md with
+                         `learn.py promote <id>`, which prints the exact snippet and
+                         target section and writes only with --yes.
+
 A lesson is a short, falsifiable fact -- a gotcha, a convention, a failure mode, or a
 scoped preference -- filed the same way a decision is: a markdown file with a
 ```json meta``` block, so `ledger.py` discovers it alongside ADRs and RCAs. The part
@@ -19,53 +32,163 @@ than the lesson sitting unread in `lessons/` until someone remembers to grep it.
     learn.py list [--kind K] [--affects PATH]
     learn.py index                    # regenerate lessons/INDEX.md
     learn.py relevant src/auth/x.ts   # lessons that apply before editing this file
-    learn.py lint                     # rejects an unattached or unfalsifiable lesson
+    learn.py promote LESSON-0003      # show the AGENTS.md snippet; --yes to write it
+    learn.py lint                     # rejects an unattached, unsourced or stale lesson
 
 Python stdlib only.
 """
-import argparse, datetime, fnmatch, json, pathlib, re, sys
+import argparse, datetime, json, pathlib, re, subprocess, sys, unicodedata
+import _paths
 
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent
 
-def project_root():
-    """Where the USER's lessons/ live: the git root of the current directory, not
-    the plugin's own directory. Copied from decide.py -- see its docstring for why
-    resolving against the plugin root is the wrong default.
-    """
-    import subprocess
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return pathlib.Path(r.stdout.strip())
-    return pathlib.Path.cwd()
-
-
-
 def rel(p):
-    """Display path, resilient to a target outside ROOT.
-
-    `Path.relative_to` raises rather than degrading, and symlinked temp dirs
-    (/tmp vs /private/tmp on macOS) make that a real crash, not a corner case.
-    """
-    try:
-        return pathlib.Path(p).resolve().relative_to(ROOT.resolve())
-    except Exception:
-        return pathlib.Path(p)
+    """Display path relative to the git root, resilient to a target outside it."""
+    return _paths.show(p, ROOT)
 
 
-ROOT = project_root()
-DIR = ROOT / "lessons"
+# ROOT is the user's git root, not the plugin's directory (records written into the
+# installed plugin are invisible to the project and lost on upgrade); lessons live under
+# the records root (_paths.py). Outside a repo ROOT falls back to cwd for reads only.
+ROOT, _ = _paths.git_root()
+DIR = _paths.resolve(ROOT)[0] / "lessons"
 META_RX = re.compile(r"```json meta\s*\n(.*?)\n```", re.S)
 KINDS = ("gotcha", "convention", "failure", "preference")
 TRIGGER_RX = re.compile(r"\b(when|if|before|after|during|until)\b", re.I)
 MIN_LESSON_CHARS = 15
+SECTION_BY_KIND = {"gotcha": "## Gotchas", "failure": "## Gotchas",
+                   "convention": "## Conventions", "preference": "## Conventions"}
+PATH_SOURCE_RX = re.compile(r"^([\w./-]+\.\w+|[\w.-]+/[\w./-]+)(:\d+(-\d+)?)?$")
+# Control, format (bidi overrides, zero-width) and line/paragraph separators. promote
+# writes these fields into AGENTS.md, which every later agent session reads as
+# instructions: an embedded newline in a "one-line" lesson would start a line of its own.
+UNSAFE_CATEGORIES = ("Cc", "Cf", "Cs", "Zl", "Zp")
+
+
+def unsafe_field(name, value):
+    """An error message if a single-line field is not a plain one-line string."""
+    if not isinstance(value, str):
+        return f"`{name}` must be a string, got {type(value).__name__}"
+    bad = sorted({c for c in value if unicodedata.category(c) in UNSAFE_CATEGORIES})
+    if bad:
+        return (f"`{name}` contains control or line-separator characters "
+                f"({', '.join(repr(c) for c in bad)}) -- a lesson is one line of text")
+    return None
+
+
+def single_line_problems(fields):
+    """Errors for every (name, value) whose value is not one plain line of text."""
+    errs = []
+    for name, value in fields:
+        if isinstance(value, list):
+            errs += [e for v in value if (e := unsafe_field(name, v))]
+        elif value is not None and (e := unsafe_field(name, value)):
+            errs.append(e)
+    return errs
+
+
+def write(path, text, origin):
+    """Every write goes through the containment check: a committed symlink (the
+    records root, lessons/, AGENTS.md) must not carry it outside the repository."""
+    return _paths.safe_write_text(path, text, ROOT, origin)
+
+
+_DIR, _ANY, _SEG, _ONE = "**/", "**", "*", "?"  # tokens; a literal is one char
+
+
+def glob_tokens(pattern):
+    """Glob where `**` spans directories, `*` stays inside one segment, and a bare
+    directory (`src/auth`, `src/auth/`) means everything under it. A run of `**/`
+    is one token: each extra one only multiplies the ways to match the same path."""
+    p = pattern.strip()
+    p = p[2:] if p.startswith("./") else p
+    if not any(c in p for c in "*?["):
+        p = p.rstrip("/") + "/**" if not re.search(r"\.\w+$", p) else p
+    toks, i = [], 0
+    while i < len(p):
+        if p.startswith("**/", i):
+            if not toks or toks[-1] is not _DIR:
+                toks.append(_DIR)
+            i += 3
+        elif p.startswith("**", i):
+            toks.append(_ANY); i += 2
+        elif p[i] == "*":
+            toks.append(_SEG); i += 1
+        elif p[i] == "?":
+            toks.append(_ONE); i += 1
+        else:
+            toks.append(p[i]); i += 1
+    return tuple(toks)
+
+
+def glob_match(toks, path):
+    """Whole-path match of glob_tokens() output. A set of positions is advanced one
+    character at a time, so the cost is len(path) * len(toks) and a pattern cannot
+    backtrack: the regex translation went exponential on repeated `**/`.
+    Semantics are the regex's: `**/` is `(?:.*/)?`, `**` is `.*`, `*` is `[^/]*`,
+    `?` is `[^/]`, anything else literal."""
+    n = len(toks)
+
+    def close(states):
+        stack, seen = list(states), set(states)
+        while stack:
+            i, inner = stack.pop()
+            if not inner and i < n and toks[i] in (_DIR, _ANY, _SEG):
+                nxt = (i + 1, False)
+                if nxt not in seen:
+                    seen.add(nxt); stack.append(nxt)
+        return seen
+
+    cur = close({(0, False)})
+    for c in path:
+        nxt = set()
+        for i, inner in cur:
+            if i == n:
+                continue
+            t = toks[i]
+            if inner or t is _DIR:  # inside `.*/`: any char stays, a `/` may also end it
+                if c != "\n":
+                    nxt.add((i, True))
+                if c == "/":
+                    nxt.add((i + 1, False))
+            elif t is _ANY:
+                if c != "\n":
+                    nxt.add((i, False))
+            elif t is _SEG:
+                if c != "/":
+                    nxt.add((i, False))
+            elif t is _ONE:
+                if c != "/":
+                    nxt.add((i + 1, False))
+            elif t == c:
+                nxt.add((i + 1, False))
+        cur = close(nxt)
+        if not cur:
+            return False
+    return (n, False) in cur
+
+
+def norm_path(path):
+    p = pathlib.Path(path)
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(ROOT.resolve())
+        except ValueError:  # fail-open: a path outside the repo is kept as given and matched literally
+            pass
+    s = str(p).replace("\\", "/")
+    return s[2:] if s.startswith("./") else s
+
+
+def matches(path, patterns):
+    path = norm_path(path)
+    return any(glob_match(glob_tokens(pat), path) for pat in patterns or [])
 
 
 def load_all():
     out = []
     if not DIR.exists():
         return out
-    for p in sorted(DIR.glob("LESSON-*.md")):
+    for p in sorted(DIR.rglob("LESSON-*.md")):
         text = p.read_text(errors="replace")
         m = META_RX.search(text)
         if not m:
@@ -83,7 +206,9 @@ def load_all():
 
 
 def next_id():
-    ids = [int(m.group(1)) for p in DIR.glob("LESSON-*.md")
+    # rglob, not glob: `ledger.py shard` moves lessons into YYYY/QN/, and a top-level
+    # scan would hand out an id that already exists in a shard.
+    ids = [int(m.group(1)) for p in DIR.rglob("LESSON-*.md")
            if (m := re.match(r"LESSON-(\d+)", p.name))]
     return f"LESSON-{max(ids, default=0) + 1:04d}"
 
@@ -107,7 +232,13 @@ TEMPLATE = '''# {id}: {title}
 
 
 def cmd_add(a):
-    DIR.mkdir(parents=True, exist_ok=True)
+    errs = single_line_problems([("lesson", a.lesson), ("affects", a.affects or []),
+                                 ("source", a.source), ("by", a.by)])
+    if errs:
+        for e in errs:
+            print(f"learn.py add: {e}", file=sys.stderr)
+        return 2
+    _paths.contained(DIR, ROOT, "learn.py add")
     lid = next_id()
     title = a.lesson.strip()
     if len(title) > 72:
@@ -124,8 +255,8 @@ def cmd_add(a):
     }
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:50] or "lesson"
     path = DIR / f"{lid}-{slug}.md"
-    path.write_text(TEMPLATE.format(id=lid, title=title, lesson=a.lesson.strip(),
-                                    meta=json.dumps(meta, indent=2)))
+    write(path, TEMPLATE.format(id=lid, title=title, lesson=a.lesson.strip(),
+                                meta=json.dumps(meta, indent=2)), "learn.py add")
     print(f"created {rel(path)}")
     if not meta["affects"] and not meta["source"]:
         print("  WARN no --affects and no --source -- this lesson will not surface "
@@ -136,8 +267,8 @@ def cmd_add(a):
 
 
 def cmd_index(a):
+    _paths.contained(DIR, ROOT, "learn.py index")
     recs = load_all()
-    DIR.mkdir(parents=True, exist_ok=True)
     rows, bad = [], []
     for r in recs:
         if r.get("_error"):
@@ -145,7 +276,8 @@ def cmd_index(a):
             continue
         rows.append((r.get("id", "?"), r.get("kind", "?"), r.get("title", "?"),
                      ", ".join(r.get("affects") or []) or "—",
-                     r.get("source") or "—", r.get("date", "?"), r["_path"].name))
+                     r.get("source") or "—", r.get("date", "?"),
+                     r["_path"].relative_to(DIR).as_posix()))
     rows.sort(key=lambda x: x[0])
     out = ["# Lesson index", "",
            f"{len(rows)} lesson(s). Regenerate with `python3 scripts/learn.py index`.",
@@ -155,14 +287,14 @@ def cmd_index(a):
         out.append(f"| [{i}]({fn}) | {k} | {t} | `{af}` | {src} | {d} |")
     if bad:
         out += ["", "## Malformed records", ""]
-        out += [f"- `{r['_path'].name}` — {r['_error']}" for r in bad]
+        out += [f"- `{r['_path'].relative_to(DIR).as_posix()}` — {r['_error']}" for r in bad]
     out += ["", "## How to use this", "",
             "- `learn.py relevant <path>` — lessons that apply before editing a file.",
             "- `learn.py list --kind gotcha` — browse by kind.",
             "- `learn.py lint` — every lesson is attached (affects or source) and, "
             "if a preference, states an observable trigger.", ""]
-    (DIR / "INDEX.md").write_text("\n".join(out))
-    print(f"wrote lessons/INDEX.md ({len(rows)} lesson(s)"
+    write(DIR / "INDEX.md", "\n".join(out), "learn.py index")
+    print(f"wrote {rel(DIR / 'INDEX.md')} ({len(rows)} lesson(s)"
           + (f", {len(bad)} malformed)" if bad else ")"))
     return 1 if bad else 0
 
@@ -172,9 +304,7 @@ def cmd_list(a):
     if a.kind:
         recs = [r for r in recs if r.get("kind") == a.kind]
     if a.affects:
-        recs = [r for r in recs
-                if any(fnmatch.fnmatch(a.affects, pat) or a.affects.startswith(pat.rstrip("*/"))
-                       for pat in (r.get("affects") or []))]
+        recs = [r for r in recs if matches(a.affects, r.get("affects"))]
     if not recs:
         print("no lessons match")
         return 0
@@ -189,12 +319,7 @@ def cmd_relevant(a):
     """The one command that turns a filed lesson back into a recall: what should an
     agent know before it edits THIS file."""
     recs = [r for r in load_all() if not r.get("_error")]
-    hits = []
-    for r in recs:
-        for pat in r.get("affects") or []:
-            if fnmatch.fnmatch(a.path, pat) or a.path.startswith(pat.rstrip("*/")):
-                hits.append(r)
-                break
+    hits = [r for r in recs if matches(a.path, r.get("affects"))]
     if not hits:
         print(f"no recorded lesson affects {a.path}")
         return 0
@@ -206,36 +331,161 @@ def cmd_relevant(a):
     return 0
 
 
-def cmd_lint(a):
-    """Reject a lesson that will never be recalled or never be falsified.
+def tracked_files():
+    r = subprocess.run(["git", "-C", str(ROOT), "ls-files", "--cached", "--others",
+                        "--exclude-standard"], capture_output=True, text=True)
+    return r.stdout.splitlines() if r.returncode == 0 else None
 
-    Two failure modes: a lesson with no `affects` and no `source` is unattached --
-    `relevant` will never surface it and nothing points at where it came from, so it
-    is functionally a lesson nobody will ever read again. A `preference` with no
-    observable trigger (no when/if/before/after) is an opinion, not a lesson -- it
-    gives an agent nothing to notice at the moment it would matter.
+
+def record_problems(r, files):
+    """(errors, warnings) for one lesson record."""
+    errs, warns = [], []
+    if r.get("kind") not in KINDS:
+        errs.append(f"kind {r.get('kind')!r} not in {KINDS}")
+    lesson = (r.get("lesson") or "").strip()
+    if len(lesson) < MIN_LESSON_CHARS or lesson.startswith("<"):
+        errs.append("lesson text is empty or a placeholder")
+    affects = r.get("affects") or []
+    source = (r.get("source") or "").strip()
+    if not affects:
+        errs.append("no `affects` glob — `learn.py relevant` will never surface this lesson "
+                    "from the file it concerns")
+    if not source:
+        errs.append("no `source` (ADR id, RCA id, or file:line) — it cannot be re-checked "
+                    "when the code moves")
+    elif PATH_SOURCE_RX.match(source) and not re.match(r"^(ADR|RCA|LESSON|SPEC|PRD)-", source):
+        path = source.split(":")[0]
+        if not (ROOT / path).exists():
+            errs.append(f"source path {path!r} no longer exists — the lesson is probably "
+                        f"stale; re-verify it or delete it")
+    if r.get("kind") == "preference" and not TRIGGER_RX.search(lesson):
+        errs.append("preference has no observable trigger (when/if/before/after/...) — "
+                    "this reads as an opinion, not a lesson an agent can act on")
+    if files is not None:
+        for pat in affects:
+            toks = glob_tokens(pat)
+            if not any(glob_match(toks, f) for f in files):
+                warns.append(f"affects glob {pat!r} matches no tracked file")
+    return errs, warns
+
+
+def cmd_lint(a):
+    """Reject a lesson that will never be recalled, cannot be re-checked, or is stale.
+
+    No `affects`: `relevant` never surfaces it. No `source`: nothing to re-verify it
+    against. A `source` path that no longer exists: the lesson outlived its code and is
+    now trusted and wrong. A `preference` with no observable trigger is an opinion.
     """
     recs = load_all()
+    files = tracked_files()
     errs = 0
     for r in recs:
         p_ = r.get("_path")
         name = p_.name if p_ else "?"
         if r.get("_error"):
             print(f"  ERROR {name}: {r['_error']}"); errs += 1; continue
-        if r.get("kind") not in KINDS:
-            print(f"  ERROR {name}: kind {r.get('kind')!r} not in {KINDS}"); errs += 1
-        lesson = (r.get("lesson") or "").strip()
-        if len(lesson) < MIN_LESSON_CHARS or lesson.startswith("<"):
-            print(f"  ERROR {name}: lesson text is empty or a placeholder"); errs += 1
-        if not (r.get("affects") or []) and not (r.get("source") or "").strip():
-            print(f"  ERROR {name}: no `affects` glob and no `source` — this lesson "
-                  f"is unattached, `learn.py relevant` will never surface it"); errs += 1
-        if r.get("kind") == "preference" and not TRIGGER_RX.search(lesson):
-            print(f"  ERROR {name}: preference has no observable trigger "
-                  f"(when/if/before/after/...) — this reads as an opinion, not a "
-                  f"lesson an agent can act on at the moment it matters"); errs += 1
+        e, w = record_problems(r, files)
+        for m in e:
+            print(f"  ERROR {name}: {m}")
+        for m in w:
+            print(f"  WARN  {name}: {m}")
+        errs += len(e)
     print(f"\nlearn lint: {len(recs)} record(s), {errs} error(s)")
     return 1 if errs else 0
+
+
+def insertion_point(lines, heading):
+    """Index to insert at the end of `heading`'s section, or None if absent."""
+    fence, start = False, None
+    for i, l in enumerate(lines):
+        if l.lstrip().startswith("```"):
+            fence = not fence
+        if fence:
+            continue
+        if start is None and l.strip().lower() == heading.lower():
+            start = i
+        elif start is not None and re.match(r"^#{1,2}\s", l):
+            end = i
+            while end > start + 1 and not lines[end - 1].strip():
+                end -= 1
+            return end
+    if start is None:
+        return None
+    end = len(lines)
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def cmd_promote(a):
+    """Print the AGENTS.md snippet for a stable lesson; write it only with --yes."""
+    recs = {r.get("id"): r for r in load_all() if not r.get("_error")}
+    r = recs.get(a.id)
+    if not r:
+        print(f"no such lesson: {a.id}")
+        return 2
+    unsafe = single_line_problems([("id", r.get("id")), ("lesson", r.get("lesson")),
+                                   ("affects", r.get("affects") or []),
+                                   ("source", r.get("source")), ("section", a.section)])
+    if not isinstance(r.get("affects") or [], list):
+        unsafe.append("`affects` must be a list of globs")
+    if unsafe:
+        print(f"{a.id} cannot be promoted — it would write more than one line into the "
+              f"instructions file:")
+        for m in unsafe:
+            print(f"  - {m}")
+        return 1
+    e, _ = record_problems(r, None)
+    if e:
+        print(f"{a.id} is not stable enough to promote — fix `learn.py lint` first:")
+        for m in e:
+            print(f"  - {m}")
+        return 1
+    if a.file:
+        target = ROOT / a.file
+    else:
+        target = next((ROOT / n for n in ("AGENTS.md", "CLAUDE.md") if (ROOT / n).exists()),
+                      ROOT / "AGENTS.md")
+    # Checked before anything is read or printed, so a symlinked AGENTS.md or a --file
+    # outside the repository is refused even without --yes.
+    _paths.contained(target, ROOT, "learn.py promote")
+    _paths.contained(r["_path"], ROOT, "learn.py promote")
+    heading = a.section or SECTION_BY_KIND.get(r.get("kind"), "## Gotchas")
+    if not heading.startswith("#"):
+        heading = "## " + heading
+    snippet = (f"- {r['lesson'].strip()} Applies to "
+               f"{', '.join('`' + x + '`' for x in r.get('affects') or [])}. "
+               f"Source: {r.get('source')}. ({r['id']})")
+    text = target.read_text() if target.exists() else ""
+    if f"({r['id']})" in text:
+        print(f"{a.id} is already promoted into {rel(target)}; nothing to do")
+        return 0
+    lines = text.splitlines()
+    at = insertion_point(lines, heading)
+    if at is None:
+        new_lines = lines + ([""] if lines and lines[-1].strip() else []) + [heading, "", snippet]
+        where = f"new section {heading!r} appended at the end"
+    else:
+        new_lines = lines[:at] + [snippet] + lines[at:]
+        where = f"end of section {heading!r}, line {at + 1}"
+    print(f"target : {rel(target)}{'' if target.exists() else ' (will be created)'}")
+    print(f"section: {where}")
+    print(f"snippet:\n{snippet}")
+    if not a.yes:
+        print("\nNothing has changed. Re-run with --yes to write the snippet and mark the "
+              "lesson as promoted.")
+        return 0
+    write(target, "\n".join(new_lines) + "\n", "learn.py promote")
+    path = r["_path"]
+    body = path.read_text()
+    m = META_RX.search(body)
+    meta = json.loads(m.group(1))
+    meta["promoted_to"] = f"{rel(target)}#{re.sub(r'[^a-z0-9 -]', '', heading.lstrip('#').strip().lower()).replace(' ', '-')}"
+    meta["promoted_on"] = datetime.date.today().isoformat()
+    write(path, body[:m.start(1)] + json.dumps(meta, indent=2) + body[m.end(1):],
+          "learn.py promote")
+    print(f"\nwrote {rel(target)} and marked {a.id} promoted")
+    return 0
 
 
 def main():
@@ -254,6 +504,15 @@ def main():
     li.set_defaults(fn=cmd_list)
     rl = sub.add_parser("relevant"); rl.add_argument("path"); rl.set_defaults(fn=cmd_relevant)
     lt = sub.add_parser("lint"); lt.set_defaults(fn=cmd_lint)
+    pr = sub.add_parser("promote", help="promote a stable lesson into AGENTS.md")
+    pr.add_argument("id")
+    pr.add_argument("--file", default=None,
+                    help="target instructions file (default AGENTS.md, else CLAUDE.md)")
+    pr.add_argument("--section", default=None,
+                    help="target heading (default: '## Gotchas' for gotcha/failure, "
+                         "'## Conventions' for convention/preference)")
+    pr.add_argument("--yes", action="store_true", help="write; without it nothing changes")
+    pr.set_defaults(fn=cmd_promote)
     a = ap.parse_args()
     return a.fn(a)
 

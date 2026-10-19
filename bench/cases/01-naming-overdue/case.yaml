@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 01-naming-overdue
+description: Names in new code. Deterministic part is bench/checks.py check_01.
+tags: [code, naming]
+context:
+  scaffold_script: scaffold.sh

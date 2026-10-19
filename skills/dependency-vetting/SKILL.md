@@ -1,14 +1,9 @@
 ---
 name: dependency-vetting
 description: >
-  Use before running npm install, pnpm add, pip install, uv add, or poetry add for any
-  new package, and when reviewing a diff that touches package.json, pyproject.toml,
-  requirements.txt, or a lockfile. Validates a package against the npm and PyPI
-  registries before it is adopted — deprecation, licence, maintainer count, install
-  scripts, typosquatting, transitive tree size — so "trendy" means actively maintained
-  and safe to depend on, not merely popular. Not for scanning dependencies already
-  installed (see security-baseline) and not for deciding whether you need a dependency
-  at all before checking the stdlib (see minimal-diff rule 2, which comes first).
+  Before npm install, pnpm add, pip install or uv add of a new package: is it safe —
+  maintainers, licence, install scripts, typosquatting, deprecation, transitive size. Not for
+  installed-dep scanning (→ security-baseline).
 ---
 
 # Dependency vetting
@@ -50,7 +45,7 @@ says "we do need something new" does the rest of this skill apply.
    *Enforced by:* review
 
 2. Vet a new package before installing it; do not install on an `AVOID` verdict.
-   *Enforced by:* `python3 scripts/vet_dep.py <pkg> && <install command>` — chained,
+   *Enforced by:* `100x vet_dep <pkg> && <install command>` — chained,
    so the install genuinely cannot run past a non-zero exit
 
 3. Never install on a registry that could not be reached. A vetting tool that fails
@@ -67,7 +62,7 @@ says "we do need something new" does the rest of this skill apply.
 5. Read the install-scripts and typosquat-distance lines in the report before
    installing — `postinstall` is arbitrary code execution at install time, not a
    detail to skim past.
-   *Enforced by:* `python3 scripts/vet_dep.py <pkg>` reports both for every package
+   *Enforced by:* `100x vet_dep <pkg>` reports both for every package
 
 6. Weigh vendoring or hand-writing against the dependency honestly: a 12-line date
    formatter is cheaper to vendor than to depend on; a JSON schema validator or a TLS
@@ -81,7 +76,7 @@ says "we do need something new" does the rest of this skill apply.
 
 8. In CI, vet the whole manifest, not just the package someone remembered to check by
    hand.
-   *Enforced by:* `python3 scripts/vet_dep.py --check-manifest` — exits 1 if any
+   *Enforced by:* `100x vet_dep --check-manifest` — exits 1 if any
    direct dependency is `AVOID`
 
 ## What "trendy" should mean here
@@ -143,12 +138,12 @@ sits between "we need a package" and "it's in the lockfile."
 
 ```bash
 # vet one package (~1-2s, two network calls)
-python3 scripts/vet_dep.py react
-python3 scripts/vet_dep.py --registry pypi pydantic
-python3 scripts/vet_dep.py left-pad --json
+100x vet_dep react
+100x vet_dep --registry pypi pydantic
+100x vet_dep left-pad --json
 
 # vet everything currently in package.json / pyproject.toml (network, one call/dep)
-python3 scripts/vet_dep.py --check-manifest
+100x vet_dep --check-manifest
 
 # prove the tool itself still works, no network required (~2s, fixture-backed)
 bash tests/test_vet_dep.sh
@@ -186,7 +181,7 @@ labelled as such in the output rather than presented as npm's real count.
 process cost.
 `small-team (2-10)`: add rule 8 as a required CI check on manifest changes, and rule
 4's lockfile discipline.
-`org (10+)`: `--check-manifest` output feeds an intake record (`decisions/`) rather
+`org (10+)`: `--check-manifest` output feeds an intake record (`<root>/decisions/`, under the records root — `docs/engineering/` by default) rather
 than living only in a terminal; add an SBOM cross-reference.
 `high-blast-radius`: vendor small, security-sensitive utilities rather than
 depending on them at all (rule 6), and consider a private registry mirror with its

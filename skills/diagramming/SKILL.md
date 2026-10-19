@@ -1,14 +1,9 @@
 ---
 name: diagramming
 description: >
-  Use BEFORE drawing any architecture picture, and BEFORE trusting one already in a
-  spec, PR, or design doc: which diagram type (sequence, flowchart, state, ER/class,
-  C4 context/container, deployment) at which of three detail levels (L1 orientation,
-  L2 implementer, L3 debugging/spec), for a request/response flow, branching logic,
-  an entity's lifecycle, data shape, a system boundary, or infrastructure topology.
-  Also fire WHEN reviewing a design doc, spec, or PR that includes a diagram, a
-  screenshot of one, or claims a flow works with no diagram at all. Validated by
-  `scripts/check_diagrams.py`.
+  Diagram, architecture picture, sequence diagram, flowchart, mermaid, C4: draw the right type
+  at the right detail level, from high level to debugging, and check a spec's or PR's diagram
+  before trusting it.
 ---
 
 # Diagramming
@@ -86,6 +81,9 @@ The same login flow drawn at all three is `reviewers/_diagram-levels.md` — rea
 that before drawing your first L3 diagram; the difference is visible there, not
 just described.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. A diagram used in a spec or design doc is fenced `mermaid` text, not a
@@ -97,46 +95,47 @@ just described.
    before it appears in a message. `scripts/design_drift.py` only reads explicit
    declarations — an alias mermaid auto-creates from its first message is invisible
    to drift-checking.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 3. Sequence arrows use one of `-> --> ->> -->> -x --x` — the exact set
    `design_drift.py`'s message regex recognizes. An async `-)` arrow renders fine in
    Mermaid and disappears from drift-checking.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 4. External participants (UI, browser, third-party API) are marked `actor` or
    listed in `%% external:` — otherwise `design_drift.py` reports them as
    unimplemented code that was never meant to exist.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>` + `design_drift.py`
+   *Enforced by:* `100x check_diagrams <file>` + `design_drift.py`
 
 5. A declared or forced level's node budget is a hard gate; an undeclared diagram
    is inferred and reported instead of blocked.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 6. L3 diagrams — declared or inferred by size — carry a numbered step table
    immediately below and show ≥ 1 branch/error path in the diagram itself. A wall
    of 40 happy-path arrows numbered in sequence is not a spec.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 7. No placeholder text (`TODO`, `<!-- action -->`, `<...>`) survives in a diagram
    or its step table.
-   *Enforced by:* `python3 scripts/check_diagrams.py <file>`
+   *Enforced by:* `100x check_diagrams <file>`
 
 8. A sequence diagram in a feature spec stays current against the implementation —
    this skill supplies the diagram discipline `feature-planning` rule 5 depends on.
-   *Enforced by:* `python3 scripts/design_drift.py specs/<name>/spec.md <code-dir>`
+   *Enforced by:* `100x design_drift <root>/specs/<name>/spec.md <code-dir>`
 
 ## Verify
 
 ```bash
-# single spec, ~1s
-python3 scripts/check_diagrams.py specs/login/spec.md
+# single spec, ~1s -- specs/login is this repo's own example (its <root> is "."); in a
+# project the path is <root>/specs/<name>/spec.md
+100x check_diagrams specs/login/spec.md
 # force-check against a stricter level than declared/inferred, ~1s
-python3 scripts/check_diagrams.py specs/login/spec.md --level 3
+100x check_diagrams specs/login/spec.md --level 3
 # every mermaid block under a directory, ~1s for this repo
-python3 scripts/check_diagrams.py specs/
+100x check_diagrams specs/            # in a project: <root>/specs/
 # the worked example — all three levels must pass clean
-python3 scripts/check_diagrams.py reviewers/_diagram-levels.md
+100x check_diagrams reviewers/_diagram-levels.md
 # regression suite against the real fixture + deliberately broken blocks, ~2s
 bash tests/test_check_diagrams.sh
 ```

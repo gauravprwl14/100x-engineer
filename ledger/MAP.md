@@ -6,4 +6,4 @@ A blank cell is not automatically wrong — a small change needs no PRD. It is a
 
 | feature | PRD | spec | decisions | RCA | reviews |
 |---|---|---|---|---|---|
-| **login** | — | [login](specs/login/spec.md) | [ADR-0001](decisions/ADR-0001-session-strategy-for-login.md) | — | — |
+| **login** | — | [login](../specs/login/spec.md) | [ADR-0001](../decisions/ADR-0001-session-strategy-for-login.md) | — | — |

@@ -1,31 +1,26 @@
 {
-  "top1": 0.64,
-  "top3": 0.72,
-  "reject_violations": 3,
-  "never_wins": [
-    "agent-instructions",
-    "approach-selection",
-    "bug-fix",
-    "decision-log",
-    "scoped-review"
-  ],
+  "top1": 0.7121212121212122,
+  "top3": 0.9242424242424242,
+  "reject_violations": 1,
+  "never_wins": [],
+  "distractor_top1": 0,
   "cases": [
     {
       "prompt": "build a login feature with email and password",
       "expect": "feature-planning",
       "top3": [
+        "requirements-intake",
         "feature-planning",
-        "scoped-review",
-        "minimal-diff"
+        "100x"
       ],
-      "rank": 1,
-      "top1": true,
+      "rank": 2,
+      "top1": false,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "feature-planning": 7.88,
-        "scoped-review": 1.79,
-        "minimal-diff": 1.79
+        "requirements-intake": 4.36,
+        "feature-planning": 4.36,
+        "100x": 2.75
       }
     },
     {
@@ -33,97 +28,61 @@
       "expect": "feature-planning",
       "top3": [
         "feature-planning",
-        "codebase-comprehension",
-        "untrusted-agent-config"
+        "accessibility",
+        "diagramming"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "feature-planning": 4.43,
-        "codebase-comprehension": 2.4,
-        "untrusted-agent-config": 2.04
+        "feature-planning": 5.24,
+        "accessibility": 3.81,
+        "diagramming": 2.75
       }
     },
     {
       "prompt": "I need to decide between Prisma and TypeORM",
       "expect": "approach-selection",
       "top3": [
-        "verification-gate",
-        "untrusted-agent-config",
-        "typescript-verification"
+        "data-modeling",
+        "decision-records",
+        "web-vitals"
       ],
-      "rank": 19,
+      "rank": 34,
       "top1": false,
       "top3_hit": false,
       "reject_violation": [],
       "scores": {
-        "verification-gate": 0,
-        "untrusted-agent-config": 0,
-        "typescript-verification": 0
+        "data-modeling": 7.61,
+        "decision-records": 3.81,
+        "web-vitals": 0
       }
     },
     {
       "prompt": "why did we choose redis for sessions six months ago",
-      "expect": "decision-log",
+      "expect": "decision-records",
       "top3": [
+        "web-vitals",
         "verification-gate",
-        "untrusted-agent-config",
-        "typescript-verification"
+        "untrusted-agent-config"
       ],
-      "rank": 16,
+      "rank": 26,
       "top1": false,
       "top3_hit": false,
       "reject_violation": [],
       "scores": {
+        "web-vitals": 0,
         "verification-gate": 0,
-        "untrusted-agent-config": 0,
-        "typescript-verification": 0
+        "untrusted-agent-config": 0
       }
     },
     {
       "prompt": "record that we assumed sessions fit in one redis instance",
-      "expect": "decision-log",
+      "expect": "decision-records",
       "top3": [
-        "codebase-comprehension",
+        "decision-records",
         "approach-selection",
-        "verification-gate"
-      ],
-      "rank": 18,
-      "top1": false,
-      "top3_hit": false,
-      "reject_violation": [],
-      "scores": {
-        "codebase-comprehension": 2.4,
-        "approach-selection": 2.4,
-        "verification-gate": 0
-      }
-    },
-    {
-      "prompt": "our decisions folder has 300 files and nobody can find anything",
-      "expect": "engineering-ledger",
-      "top3": [
-        "feature-planning",
-        "engineering-ledger",
-        "minimal-diff"
-      ],
-      "rank": 2,
-      "top1": false,
-      "top3_hit": true,
-      "reject_violation": [],
-      "scores": {
-        "feature-planning": 4.07,
-        "engineering-ledger": 4.07,
-        "minimal-diff": 3.04
-      }
-    },
-    {
-      "prompt": "is there a decision record behind this spec",
-      "expect": "engineering-ledger",
-      "top3": [
-        "engineering-ledger",
-        "feature-planning",
         "root-cause-analysis"
       ],
       "rank": 1,
@@ -131,65 +90,98 @@
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "engineering-ledger": 7.48,
-        "feature-planning": 2.4,
-        "root-cause-analysis": 2.04
+        "decision-records": 4.03,
+        "approach-selection": 4.03,
+        "root-cause-analysis": 2.48
       }
     },
     {
-      "prompt": "review my diff before I open a pull request",
-      "expect": "scoped-review",
+      "prompt": "our decisions folder has 300 files and nobody can find anything",
+      "expect": "decision-records",
       "top3": [
-        "reviewing-others-code",
-        "review-gates",
-        "verification-gate"
+        "scale-appropriateness",
+        "feature-planning",
+        "decision-records"
       ],
-      "rank": 5,
+      "rank": 3,
       "top1": false,
-      "top3_hit": false,
-      "reject_violation": [
-        "reviewing-others-code"
-      ],
+      "top3_hit": true,
+      "reject_violation": [],
       "scores": {
-        "reviewing-others-code": 9.88,
-        "review-gates": 4.8,
-        "verification-gate": 3.04
+        "scale-appropriateness": 5.89,
+        "feature-planning": 5.42,
+        "decision-records": 5.42
       }
     },
     {
-      "prompt": "review this pull request a contractor sent us",
-      "expect": "reviewing-others-code",
+      "prompt": "is there a decision record behind this spec",
+      "expect": "decision-records",
       "top3": [
-        "reviewing-others-code",
-        "review-gates",
-        "verification-gate"
+        "decision-records",
+        "scale-appropriateness",
+        "release-rollout"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "reviewing-others-code": 7.84,
-        "review-gates": 4.8,
-        "verification-gate": 0
+        "decision-records": 4.77,
+        "scale-appropriateness": 4.06
+      }
+    },
+    {
+      "prompt": "review my diff before I open a pull request",
+      "expect": "diff-review",
+      "top3": [
+        "diff-review",
+        "review-gates",
+        "orchestrate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "diff-review": 8.25,
+        "review-gates": 6.48,
+        "orchestrate": 5.26
+      }
+    },
+    {
+      "prompt": "review this pull request a contractor sent us",
+      "expect": "diff-review",
+      "top3": [
+        "diff-review",
+        "review-gates",
+        "requirements-intake"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "diff-review": 6.64,
+        "review-gates": 4.87,
+        "requirements-intake": 4.52
       }
     },
     {
       "prompt": "explain how the payment retry logic works in this repo",
       "expect": "codebase-comprehension",
       "top3": [
-        "codebase-comprehension",
-        "scoped-review",
-        "feature-planning"
+        "diagramming",
+        "ui-baseline",
+        "codebase-comprehension"
       ],
-      "rank": 1,
-      "top1": true,
+      "rank": 3,
+      "top1": false,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "codebase-comprehension": 5.08,
-        "scoped-review": 3.04,
-        "feature-planning": 3.04
+        "diagramming": 6.56,
+        "ui-baseline": 5.42,
+        "codebase-comprehension": 5.42
       }
     },
     {
@@ -197,55 +189,53 @@
       "expect": "root-cause-analysis",
       "top3": [
         "root-cause-analysis",
-        "bug-fix",
-        "verification-gate"
+        "release-rollout",
+        "decision-records"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "root-cause-analysis": 3.04,
-        "bug-fix": 3.04,
-        "verification-gate": 0
+        "root-cause-analysis": 3.81,
+        "release-rollout": 3.81,
+        "decision-records": 3.81
       }
     },
     {
       "prompt": "fix this bug where the total is off by one cent",
       "expect": "bug-fix",
       "top3": [
-        "codebase-comprehension",
+        "frontend-architecture",
         "minimal-diff",
-        "feature-planning"
+        "bug-fix"
       ],
-      "rank": 4,
+      "rank": 3,
       "top1": false,
-      "top3_hit": false,
+      "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "codebase-comprehension": 3.75,
-        "minimal-diff": 3.39,
-        "feature-planning": 3.39
+        "frontend-architecture": 5.35,
+        "minimal-diff": 5.03,
+        "bug-fix": 5.03
       }
     },
     {
       "prompt": "write a PRD and compare three implementation approaches",
       "expect": "solution-architecture",
       "top3": [
-        "feature-planning",
-        "bug-fix",
-        "untrusted-agent-config"
+        "solution-architecture",
+        "diagramming",
+        "bug-fix"
       ],
-      "rank": null,
-      "top1": false,
-      "top3_hit": false,
-      "reject_violation": [
-        "feature-planning"
-      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
       "scores": {
-        "feature-planning": 2.4,
-        "bug-fix": 2.4,
-        "untrusted-agent-config": 1.79
+        "solution-architecture": 7.36,
+        "diagramming": 3.81,
+        "bug-fix": 2.75
       }
     },
     {
@@ -253,79 +243,79 @@
       "expect": "verification-gate",
       "top3": [
         "verification-gate",
-        "bug-fix",
-        "reviewing-others-code"
+        "legacy-change",
+        "bug-fix"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "verification-gate": 4.01,
-        "bug-fix": 4.01,
-        "reviewing-others-code": 1.61
+        "verification-gate": 4.87,
+        "legacy-change": 4.87,
+        "bug-fix": 4.87
       }
     },
     {
       "prompt": "this agent created eight files when one would do",
       "expect": "minimal-diff",
       "top3": [
-        "minimal-diff",
-        "codebase-comprehension",
-        "approach-selection"
+        "frontend-architecture",
+        "orchestrate",
+        "minimal-diff"
       ],
-      "rank": 1,
-      "top1": true,
+      "rank": 3,
+      "top1": false,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "minimal-diff": 3.04,
-        "codebase-comprehension": 2.4,
-        "approach-selection": 2.4
+        "frontend-architecture": 4.68,
+        "orchestrate": 4.03,
+        "minimal-diff": 3.14
       }
     },
     {
       "prompt": "set up strict tsconfig and a coverage gate for our Next app",
-      "expect": "typescript-verification",
+      "expect": "language-verification",
       "top3": [
-        "typescript-verification",
-        "python-verification",
-        "verification-gate"
+        "language-verification",
+        "verification-gate",
+        "app-security"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "typescript-verification": 5.44,
-        "python-verification": 2.4,
-        "verification-gate": 0
+        "language-verification": 6.56,
+        "verification-gate": 3.81,
+        "app-security": 3.81
       }
     },
     {
       "prompt": "configure ruff and mypy for this django project",
-      "expect": "python-verification",
+      "expect": "language-verification",
       "top3": [
-        "python-verification",
+        "language-verification",
         "verification-gate",
-        "security-baseline"
+        "data-modeling"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "python-verification": 6.09,
-        "verification-gate": 5.44,
-        "security-baseline": 2.4
+        "language-verification": 7.61,
+        "verification-gate": 3.81,
+        "data-modeling": 3.81
       }
     },
     {
       "prompt": "add golangci-lint and a codegen drift check",
-      "expect": "go-verification",
+      "expect": "language-verification",
       "top3": [
-        "go-verification",
-        "root-cause-analysis",
+        "language-verification",
+        "minimal-diff",
         "untrusted-agent-config"
       ],
       "rank": 1,
@@ -333,45 +323,45 @@
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "go-verification": 6.09,
-        "root-cause-analysis": 3.04,
-        "untrusted-agent-config": 2.04
+        "language-verification": 7.61,
+        "minimal-diff": 4.47,
+        "untrusted-agent-config": 2.48
       }
     },
     {
       "prompt": "we are shipping an Expo app to the app store next week",
       "expect": "mobile-release-safety",
       "top3": [
+        "release-rollout",
         "mobile-release-safety",
-        "stack-reviewer",
-        "verification-gate"
+        "app-security"
       ],
-      "rank": 1,
-      "top1": true,
+      "rank": 2,
+      "top1": false,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "mobile-release-safety": 5.44,
-        "stack-reviewer": 2.4,
-        "verification-gate": 0
+        "release-rollout": 6.29,
+        "mobile-release-safety": 5.62,
+        "app-security": 3.81
       }
     },
     {
       "prompt": "what should our SECURITY.md and dependabot setup look like",
       "expect": "security-baseline",
       "top3": [
-        "security-baseline",
-        "review-gates",
-        "engineering-ledger"
+        "ui-baseline",
+        "solution-architecture",
+        "security-baseline"
       ],
-      "rank": 1,
-      "top1": true,
+      "rank": 3,
+      "top1": false,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "security-baseline": 3.04,
-        "review-gates": 2.4,
-        "engineering-ledger": 2.4
+        "ui-baseline": 3.81,
+        "solution-architecture": 3.14,
+        "security-baseline": 3.14
       }
     },
     {
@@ -379,17 +369,17 @@
       "expect": "review-gates",
       "top3": [
         "review-gates",
-        "untrusted-agent-config",
-        "reviewing-others-code"
+        "project-learning",
+        "minimal-diff"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "review-gates": 6.09,
-        "untrusted-agent-config": 1.79,
-        "reviewing-others-code": 1.79
+        "review-gates": 6.94,
+        "project-learning": 3.81,
+        "minimal-diff": 3.14
       }
     },
     {
@@ -407,9 +397,9 @@
         "untrusted-agent-config"
       ],
       "scores": {
-        "untrusted-agent-config": 6.23,
-        "agent-instructions": 6.23,
-        "security-baseline": 2.04
+        "untrusted-agent-config": 7.62,
+        "agent-instructions": 7.62,
+        "security-baseline": 2.75
       }
     },
     {
@@ -417,17 +407,17 @@
       "expect": "untrusted-agent-config",
       "top3": [
         "untrusted-agent-config",
-        "codebase-comprehension",
-        "agent-instructions"
+        "dependency-vetting",
+        "web-vitals"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "untrusted-agent-config": 5.08,
-        "codebase-comprehension": 2.04,
-        "agent-instructions": 2.04
+        "untrusted-agent-config": 7.9,
+        "dependency-vetting": 3.81,
+        "web-vitals": 2.75
       }
     },
     {
@@ -435,17 +425,17 @@
       "expect": "stack-reviewer",
       "top3": [
         "stack-reviewer",
-        "verification-gate",
-        "untrusted-agent-config"
+        "web-vitals",
+        "verification-gate"
       ],
       "rank": 1,
       "top1": true,
       "top3_hit": true,
       "reject_violation": [],
       "scores": {
-        "stack-reviewer": 6.09,
-        "verification-gate": 0,
-        "untrusted-agent-config": 0
+        "stack-reviewer": 7.61,
+        "web-vitals": 0,
+        "verification-gate": 0
       }
     },
     {
@@ -453,17 +443,755 @@
       "expect": "stack-reviewer",
       "top3": [
         "codebase-comprehension",
-        "root-cause-analysis",
-        "verification-gate"
+        "release-rollout",
+        "web-vitals"
+      ],
+      "rank": 16,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "codebase-comprehension": 7.87,
+        "release-rollout": 3.81,
+        "web-vitals": 3.14
+      }
+    },
+    {
+      "prompt": "draw a sequence diagram for the payment flow",
+      "expect": "diagramming",
+      "top3": [
+        "diagramming",
+        "feature-planning",
+        "solution-architecture"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "diagramming": 9.69,
+        "feature-planning": 6.56,
+        "solution-architecture": 3.14
+      }
+    },
+    {
+      "prompt": "I need a high level architecture picture for the exec review",
+      "expect": "diagramming",
+      "top3": [
+        "diagramming",
+        "solution-architecture",
+        "decision-records"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "diagramming": 6.29,
+        "solution-architecture": 5.24,
+        "decision-records": 3.81
+      }
+    },
+    {
+      "prompt": "this mermaid diagram has too many boxes to read",
+      "expect": "diagramming",
+      "top3": [
+        "decision-records",
+        "solution-architecture",
+        "diagramming"
+      ],
+      "rank": 3,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "decision-records": 3.81,
+        "solution-architecture": 3.14,
+        "diagramming": 3.14
+      }
+    },
+    {
+      "prompt": "should we rewrite this service or extend it",
+      "expect": "solution-architecture",
+      "top3": [
+        "observability-design",
+        "distributed-correctness",
+        "codebase-comprehension"
+      ],
+      "rank": 11,
+      "top1": false,
+      "top3_hit": false,
+      "reject_violation": [],
+      "scores": {
+        "observability-design": 2.75,
+        "distributed-correctness": 2.75,
+        "codebase-comprehension": 2.75
+      }
+    },
+    {
+      "prompt": "where do I even start? we need SSO, a fix for the flaky login test, and a release next week",
+      "expect": "100x",
+      "top3": [
+        "100x",
+        "bug-fix",
+        "decision-records"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "100x": 5.5,
+        "bug-fix": 5.03,
+        "decision-records": 3.81
+      }
+    },
+    {
+      "prompt": "I have a big engineering task and don't know which workflow to follow",
+      "expect": "100x",
+      "top3": [
+        "decision-records",
+        "100x",
+        "stack-reviewer"
+      ],
+      "rank": 2,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "decision-records": 8.64,
+        "100x": 8.64,
+        "stack-reviewer": 5.89
+      }
+    },
+    {
+      "prompt": "the PM sent a one-line ticket: users should be able to export reports. turn it into requirements",
+      "expect": "requirements-intake",
+      "top3": [
+        "requirements-intake",
+        "review-gates",
+        "100x"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "requirements-intake": 6.56,
+        "review-gates": 2.75,
+        "100x": 2.75
+      }
+    },
+    {
+      "prompt": "what questions should I ask before building this vague request",
+      "expect": "requirements-intake",
+      "top3": [
+        "requirements-intake",
+        "100x",
+        "orchestrate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "requirements-intake": 12.14,
+        "100x": 4.52,
+        "orchestrate": 2.75
+      }
+    },
+    {
+      "prompt": "plan this feature and split work across engineers",
+      "expect": "orchestrate",
+      "top3": [
+        "requirements-intake",
+        "performance-budgets",
+        "qa-strategy"
       ],
       "rank": 6,
       "top1": false,
       "top3_hit": false,
       "reject_violation": [],
       "scores": {
-        "codebase-comprehension": 6.09,
-        "root-cause-analysis": 3.04,
+        "requirements-intake": 6.21,
+        "performance-budgets": 5.93,
+        "qa-strategy": 4.09
+      }
+    },
+    {
+      "prompt": "run the backend and frontend tasks in parallel with separate agents",
+      "expect": "orchestrate",
+      "top3": [
+        "orchestrate",
+        "frontend-architecture",
+        "release-rollout"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "orchestrate": 13.12,
+        "frontend-architecture": 6.94,
+        "release-rollout": 3.81
+      }
+    },
+    {
+      "prompt": "build me a settings page",
+      "expect": "ui-baseline/accessibility",
+      "top3": [
+        "ui-baseline",
+        "frontend-architecture",
+        "requirements-intake"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "ui-baseline": 3.14,
+        "frontend-architecture": 3.14,
+        "requirements-intake": 2.75
+      }
+    },
+    {
+      "prompt": "make this page responsive",
+      "expect": "ui-baseline",
+      "top3": [
+        "ui-baseline",
+        "qa-strategy",
+        "frontend-architecture"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "ui-baseline": 10.08,
+        "qa-strategy": 3.14,
+        "frontend-architecture": 3.14
+      }
+    },
+    {
+      "prompt": "make the dashboard look good on mobile",
+      "expect": "ui-baseline",
+      "top3": [
+        "ui-baseline",
+        "frontend-architecture",
+        "release-rollout"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "ui-baseline": 17.31,
+        "frontend-architecture": 3.14,
+        "release-rollout": 2.75
+      }
+    },
+    {
+      "prompt": "add loading, empty and error states to the orders table",
+      "expect": "ui-baseline",
+      "top3": [
+        "ui-baseline",
+        "web-vitals",
+        "requirements-intake"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "ui-baseline": 13.23,
+        "web-vitals": 3.14,
+        "requirements-intake": 3.14
+      }
+    },
+    {
+      "prompt": "is this endpoint secure",
+      "expect": "app-security",
+      "top3": [
+        "app-security",
+        "performance-budgets",
+        "observability-design"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "app-security": 6.09,
+        "performance-budgets": 2.28,
+        "observability-design": 2.28
+      }
+    },
+    {
+      "prompt": "can a user read another tenant's invoices through this API",
+      "expect": "app-security",
+      "top3": [
+        "app-security",
+        "diff-review",
+        "distributed-correctness"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "app-security": 9.31,
+        "diff-review": 3.14,
+        "distributed-correctness": 3.14
+      }
+    },
+    {
+      "prompt": "how do we roll this out safely behind a feature flag with a rollback plan",
+      "expect": "release-rollout",
+      "top3": [
+        "release-rollout",
+        "app-security",
+        "decision-records"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "release-rollout": 11.69,
+        "app-security": 5.42,
+        "decision-records": 4.74
+      }
+    },
+    {
+      "prompt": "deploy the new pricing change to production gradually",
+      "expect": "release-rollout",
+      "top3": [
+        "release-rollout",
+        "minimal-diff",
+        "frontend-architecture"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "release-rollout": 7.78,
+        "minimal-diff": 3.06,
+        "frontend-architecture": 3.06
+      }
+    },
+    {
+      "prompt": "a user asked us to delete their account and all their personal data",
+      "expect": "data-lifecycle",
+      "top3": [
+        "data-lifecycle",
+        "scale-appropriateness",
+        "data-modeling"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "data-lifecycle": 13.6,
+        "scale-appropriateness": 6.28,
+        "data-modeling": 5.12
+      }
+    },
+    {
+      "prompt": "do we actually test restoring our database backups",
+      "expect": "data-lifecycle",
+      "top3": [
+        "data-lifecycle",
+        "language-verification",
+        "agent-instructions"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "data-lifecycle": 5.79,
+        "language-verification": 3.14,
+        "agent-instructions": 3.14
+      }
+    },
+    {
+      "prompt": "write a test plan from this PRD",
+      "expect": "qa-strategy",
+      "top3": [
+        "requirements-intake",
+        "100x",
+        "qa-strategy"
+      ],
+      "rank": 3,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "requirements-intake": 4.97,
+        "100x": 4.97,
+        "qa-strategy": 4.77
+      }
+    },
+    {
+      "prompt": "is this feature tested enough before release",
+      "expect": "qa-strategy",
+      "top3": [
+        "qa-strategy",
+        "release-rollout",
+        "performance-budgets"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "qa-strategy": 7.88,
+        "release-rollout": 4.09,
+        "performance-budgets": 3.14
+      }
+    },
+    {
+      "prompt": "our eslint passes but CI never fails on type errors",
+      "expect": "language-verification",
+      "top3": [
+        "ui-baseline",
+        "language-verification",
+        "solution-architecture"
+      ],
+      "rank": 2,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "ui-baseline": 3.81,
+        "language-verification": 3.81,
+        "solution-architecture": 3.14
+      }
+    },
+    {
+      "prompt": "pytest runs in CI but mypy never blocks the build",
+      "expect": "language-verification",
+      "top3": [
+        "language-verification",
+        "feature-planning",
+        "accessibility"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "language-verification": 7.61,
+        "feature-planning": 6.56,
+        "accessibility": 3.81
+      }
+    },
+    {
+      "prompt": "which ADR governs the auth module before I change it",
+      "expect": "decision-records",
+      "top3": [
+        "decision-records",
+        "legacy-change",
+        "app-security"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "decision-records": 6.94,
+        "legacy-change": 4.44,
+        "app-security": 3.81
+      }
+    },
+    {
+      "prompt": "look over my changes before I push",
+      "expect": "diff-review",
+      "top3": [
+        "verification-gate",
+        "ui-baseline",
+        "diff-review"
+      ],
+      "rank": 3,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "verification-gate": 3.81,
+        "ui-baseline": 3.81,
+        "diff-review": 3.14
+      }
+    },
+    {
+      "prompt": "an agent wrote this PR, review it before I approve",
+      "expect": "diff-review",
+      "top3": [
+        "diff-review",
+        "orchestrate",
+        "untrusted-agent-config"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "diff-review": 8.41,
+        "orchestrate": 4.61,
+        "untrusted-agent-config": 2.48
+      }
+    },
+    {
+      "prompt": "the modal can't be closed with the keyboard and screen readers skip the icon buttons",
+      "expect": "accessibility",
+      "top3": [
+        "accessibility",
+        "ui-baseline",
+        "feature-planning"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "accessibility": 7.61,
+        "ui-baseline": 3.14,
+        "feature-planning": 3.14
+      }
+    },
+    {
+      "prompt": "we need to rename a field in our public REST API without breaking clients",
+      "expect": "api-contract",
+      "top3": [
+        "api-contract",
+        "ui-baseline",
+        "decision-records"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "api-contract": 12.45,
+        "ui-baseline": 5.89,
+        "decision-records": 3.81
+      }
+    },
+    {
+      "prompt": "this function takes nine parameters and is 300 lines long, clean it up",
+      "expect": "code-craft",
+      "top3": [
+        "code-craft",
+        "agent-instructions",
+        "minimal-diff"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "code-craft": 5.89,
+        "agent-instructions": 3.81,
+        "minimal-diff": 3.14
+      }
+    },
+    {
+      "prompt": "design the database tables for subscriptions and invoices",
+      "expect": "data-modeling",
+      "top3": [
+        "data-modeling",
+        "ui-baseline",
+        "test-design"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "data-modeling": 5.79,
+        "ui-baseline": 2.28,
+        "test-design": 2.28
+      }
+    },
+    {
+      "prompt": "is it safe to npm install this package I found",
+      "expect": "dependency-vetting",
+      "top3": [
+        "dependency-vetting",
+        "untrusted-agent-config",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "dependency-vetting": 13.5,
+        "untrusted-agent-config": 3.14,
+        "verification-gate": 2.75
+      }
+    },
+    {
+      "prompt": "the webhook sometimes fires twice and we charge the customer twice",
+      "expect": "distributed-correctness",
+      "top3": [
+        "frontend-architecture",
+        "distributed-correctness",
+        "app-security"
+      ],
+      "rank": 2,
+      "top1": false,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "frontend-architecture": 3.81,
+        "distributed-correctness": 3.14,
+        "app-security": 3.14
+      }
+    },
+    {
+      "prompt": "our React component does the fetch, the tax math and the rendering all in one file",
+      "expect": "frontend-architecture",
+      "top3": [
+        "frontend-architecture",
+        "web-vitals",
+        "stack-reviewer"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "frontend-architecture": 16.43,
+        "web-vitals": 6.56,
+        "stack-reviewer": 6.07
+      }
+    },
+    {
+      "prompt": "I need to change this old module that has no tests at all",
+      "expect": "legacy-change",
+      "top3": [
+        "legacy-change",
+        "decision-records",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "legacy-change": 8.59,
+        "decision-records": 6.09,
+        "verification-gate": 3.56
+      }
+    },
+    {
+      "prompt": "what metrics and alerts should this new service emit",
+      "expect": "observability-design",
+      "top3": [
+        "observability-design",
+        "web-vitals",
+        "release-rollout"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "observability-design": 10.68,
+        "web-vitals": 4.12,
+        "release-rollout": 2.75
+      }
+    },
+    {
+      "prompt": "this endpoint takes 2 seconds, will it handle 10x traffic",
+      "expect": "performance-budgets",
+      "top3": [
+        "performance-budgets",
+        "observability-design",
+        "feature-planning"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "performance-budgets": 2.28,
+        "observability-design": 2.28,
+        "feature-planning": 2.28
+      }
+    },
+    {
+      "prompt": "remember this gotcha so the team doesn't hit it again",
+      "expect": "project-learning",
+      "top3": [
+        "project-learning",
+        "web-vitals",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "project-learning": 7.61,
+        "web-vitals": 0,
         "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "are we over-engineering this for 50 users",
+      "expect": "scale-appropriateness",
+      "top3": [
+        "scale-appropriateness",
+        "web-vitals",
+        "verification-gate"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "scale-appropriateness": 3.81,
+        "web-vitals": 0,
+        "verification-gate": 0
+      }
+    },
+    {
+      "prompt": "which test cases should I write for this date parsing function",
+      "expect": "test-design",
+      "top3": [
+        "test-design",
+        "legacy-change",
+        "solution-architecture"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "test-design": 6.89,
+        "legacy-change": 5.03,
+        "solution-architecture": 4.61
+      }
+    },
+    {
+      "prompt": "our LCP is bad because of the hero image and web fonts",
+      "expect": "web-vitals",
+      "top3": [
+        "web-vitals",
+        "diff-review",
+        "mobile-release-safety"
+      ],
+      "rank": 1,
+      "top1": true,
+      "top3_hit": true,
+      "reject_violation": [],
+      "scores": {
+        "web-vitals": 13.5,
+        "diff-review": 3.14,
+        "mobile-release-safety": 3.14
       }
     }
   ]

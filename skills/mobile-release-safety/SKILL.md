@@ -1,15 +1,9 @@
 ---
 name: mobile-release-safety
 description: >
-  Use when shipping a mobile release — native Android/iOS, React Native, Expo, or
-  Flutter. Covers staged rollout percentages and kill switches, local database
-  migration testing per schema version, OTA/CodePush/EAS update safety across the
-  JS-native boundary, and binary size budgets — the release-pipeline failure modes
-  that only exist because mobile cannot be hotfixed. Not for React Native/Flutter
-  code-shape bugs during development, like a `BuildContext` used after an async gap
-  (see stack-reviewer's flutter or react-native-expo reviewer). Use PROACTIVELY
-  before any mobile release, when changing a local DB schema, when adding an
-  OTA/CodePush/EAS update, or when a change touches the JS-to-native boundary.
+  Mobile app release — iOS, Android, React Native, Expo, Flutter, app store: staged rollout,
+  kill switch, local DB migrations, OTA/EAS update safety, binary size. Not for web deploys (→
+  release-rollout).
 ---
 
 # Mobile release safety
@@ -39,7 +33,7 @@ editing docs/config with no shipped binary impact.
 
 2. Never ship to 100% at once. Use a staged rollout and let store vitals halt it.
    Whatever percentage ladder you pick is a real decision, not a default — log it:
-   `python3 scripts/decide.py new "Rollout ladder for <app>" --affects "fastlane/**"`.
+   `100x decide new "Rollout ladder for <app>" --affects "fastlane/**"`.
    *Enforced by:* `phased_release: true` in fastlane deliver (iOS — one line, free);
    a staged `rollout:` fraction in Play publishing (Android)
 
@@ -51,7 +45,7 @@ editing docs/config with no shipped binary impact.
    changed, an OTA is invalid — ship a full build instead. A JS bundle against
    mismatched native modules crashes on launch. If the OTA/rollback control flow
    itself is not obvious from the code, draw it first:
-   `python3 scripts/diagram_from_code.py <dir> --kind flow --level 2` (implementer
+   `100x diagram_from_code <dir> --kind flow --level 2` (implementer
    detail, ≤30 nodes) — cheaper than re-deriving the branches from prose each time.
    *Enforced by:*
    `find android ios -type f \( -name '*.gradle' -o -name '*.gradle.kts' -o -name 'Podfile.lock' -o -name '*.podspec' -o -name 'AndroidManifest.xml' \) 2>/dev/null | sort | xargs shasum | shasum`
@@ -103,14 +97,14 @@ find android ios -type f \( -name '*.gradle' -o -name '*.gradle.kts' \
 # differs from the deployed bundle's recorded value => full build, NOT an OTA
 
 # --- orient on the OTA/rollout control flow before touching it (rule 4) ---
-python3 scripts/diagram_from_code.py <dir> --kind flow --level 2
+100x diagram_from_code <dir> --kind flow --level 2
 
 # --- what this project is missing vs the corpus ---
-python3 scripts/stack_audit.py .
-python3 scripts/audit_ci_gates.py .       # mobile CI is where advisory gates hide
+100x stack_audit .
+100x audit_ci_gates .       # mobile CI is where advisory gates hide
 
 # --- bind the release checks to the exact code being shipped ---
-python3 scripts/verified.py --name mobile-test -- ./gradlew test
+100x verified --name mobile-test -- ./gradlew test
 ```
 
 ## Failure modes

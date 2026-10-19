@@ -1,15 +1,9 @@
 ---
 name: verification-gate
 description: >
-  Use when about to claim work is done, commit, push, open a PR, tag a release, or
-  publish a package — or when setting up the mechanism that proves a change is
-  correct before it ships. Covers binding a check's result to the exact code
-  content via a receipt, so "tests pass" is evidence, not an assertion, and cannot
-  survive a post-verify edit. Not for choosing which language-specific commands to
-  run (see typescript-verification, python-verification, go-verification) — this is
-  the wrapper and policy file around whichever commands you already chose. Use
-  PROACTIVELY before any completion-shaped action, and whenever asked to configure
-  required checks, pre-commit gates, or CI blocking.
+  Done, finished, commit, push, PR or release: bind each check's pass to the exact code with a
+  receipt so tests-pass is evidence; set up required checks and pre-commit gates. Not for which
+  commands (→ language-verification).
 ---
 
 # Verification gate
@@ -36,95 +30,152 @@ The specific failure this catches: **run tests → edit a file → commit.** The
 passed, the statement "tests pass" is technically true, and the committed code was
 never tested. Nothing in a normal setup notices.
 
+What the gate is: an **integrity aid** against a confused agent and casual evasion, not
+a security boundary against an agent set on defeating it. Every natural phrasing of a
+commit, push, PR or publish is meant to be caught; the classes it does not close are
+listed under Failure modes.
+
 ## Rules
 
 1. Never state that work is complete without naming the command you ran and its
    exit code. "Should work", "looks correct", "tests should pass" are not results.
-   *Enforced by:* `python3 hooks/require_verification.py` (blocks the commit)
+   *Enforced by:* the plugin's `PreToolUse` hook (denies commit, push, PR, tag and
+   publish without a fresh receipt) and its `Stop` hook (blocks ending a turn on
+   unverified changes, once)
 
 2. Run checks through the receipt wrapper so the result is bound to file content,
-   not to time. A receipt is invalidated by any edit, staged or unstaged, tracked
-   or untracked.
-   *Enforced by:* `python3 scripts/verified.py --name <label> -- <command>`
+   not to time, and signed. A receipt is invalidated by any content change, staged
+   or unstaged, tracked or a new untracked file. Staging and committing do not
+   invalidate it, because they move no content, so commit-then-push needs no rerun.
+   *Enforced by:* `100x verified --name <label> -- <command>`
 
-3. Verify the code you are about to ship, not the code you had. If you edit after
-   verifying, re-verify. There is no partial credit.
-   *Enforced by:* fingerprint comparison in `hooks/verify_fingerprint.py`
+3. Never write or edit the receipt by hand. It lives in the per-worktree git directory,
+   at `git rev-parse --git-path 100x/verification-receipt.json`, so it is never a change
+   `git add -A` could commit and needs no `.gitignore` line; a leftover
+   `.claude/verification-receipt.json` from 0.1 is ignored with a note. Entries are
+   HMAC-SHA256 signed with `~/.config/100x/receipt.key`; a hand-written, edited or
+   foreign-key entry is denied as forged.
+   *Enforced by:* signature check in the `PreToolUse` hook
 
-4. Declare which checks are mandatory for the repo, so "I ran something" cannot
-   substitute for "I ran what matters". This file is also the opt-in switch: without
-   it the gate is inactive, which is why installing the plugin does not disrupt
-   unrelated repositories. If the list departs from the relevant language skill's
-   baseline (`typescript-verification`, `python-verification`, `go-verification`),
-   record why: `python3 scripts/decide.py new "Required checks for <repo>" --affects ".claude/**"`.
-   *Enforced by:* `.claude/verification-policy.json` `required_checks`
+4. Bind every required label to its exact command in
+   `.claude/verification-policy.json`, so `--name test -- true` cannot stand in for
+   the real suite: `100x verified` refuses it, and the hook denies a receipt whose
+   command differs. The old list form still works but checks labels only, and warns.
+   If the list departs from the language skill's baseline, record why:
+   `100x decide new "Required checks for <repo>" --affects ".claude/**"`.
+   *Enforced by:* `100x verified --name <label>` (runs the bound command)
 
 5. A check that cannot fail is not a check. Before trusting a suite, confirm it
    fails when the code is wrong — break something on purpose once and watch it go
    red.
    *Enforced by:* review
 
-6. Bypass explicitly and visibly, never silently. `[skip-verify]` in the commit
-   message or `VERIFY_SKIP=1` is acceptable when you mean it; disabling the hook
-   is not.
-   *Enforced by:* `hooks/require_verification.py` logs every bypass to the transcript
+6. Bypass explicitly and visibly, never silently. `[skip-verify]` in the message
+   asks a human to approve (permission decision `ask`); the agent cannot approve it.
+   `--no-verify`, `-n` and `-c core.hooksPath=...` on a commit are denied, because
+   they skip git's own hooks without a trace. `VERIFY_SKIP=1` in the environment
+   Claude Code starts from is the human-only off switch.
+   *Enforced by:* `bash tests/test_verification_gate.sh`
 
-7. Prefer diff-scoped checks over whole-repo checks on an existing codebase. A gate
+7. Never chain an edit, the checks, or a commit before a push into one command line:
+   the gate judges before the line runs, so `echo x >> f && git commit -am x` would
+   ship content it never saw. Edit and verify, commit, then push, each separately.
+   *Enforced by:* the `PreToolUse` hook (denies a gated action after any earlier segment
+   that is not read-only)
+
+8. Prefer diff-scoped checks over whole-repo checks on an existing codebase. A gate
    that takes 40 minutes gets turned off, and a turned-off gate is worse than none.
    *Enforced by:* convention
 
+## Modes
+
+| policy file | commit / push / PR / publish | Stop |
+|---|---|---|
+| none | allowed, with a "not configured" warning saying how to enable | never blocks |
+| `{"mode": "off"}` | silent | never blocks |
+| present (`mode` defaults to `block`) | denied unless a fresh, signed, policy-matching receipt exists | blocks once if uncommitted changes are unverified |
+| unparseable or unknown `mode` | denied: the gate will not guess | never blocks |
+
+The committed copy of the policy is enforced whenever the worktree copy differs, so
+weakening it (`"off"`, fewer checks, deleting it) only takes effect after a commit
+that passed the old policy.
+
+**Fails open, needs `python3`.** Every hook exits 0 with no decision on an internal
+error, and a missing `python3` makes the hook command fail, which Claude Code treats
+as a non-blocking error. Either way the gate goes quiet rather than stranding the
+shell, so a quiet gate is not proof that a commit was verified: check the receipt.
+
 ## Verify
 
-The gate is **opt-in per project**: with no `.claude/verification-policy.json` the
-hook passes everything through. Creating that file is what turns it on.
-
 ```bash
-# 1. one-time: opt this repo in and declare what it requires
-cat > .claude/verification-policy.json <<'JSON'
-{ "required_checks": ["test", "typecheck", "lint"], "max_age_minutes": 120 }
+# 1. one-time: turn the gate on and bind each label to its exact command
+mkdir -p .claude && cat > .claude/verification-policy.json <<'JSON'
+{ "required_checks": { "test": "npm test", "typecheck": "npx tsc --noEmit" },
+  "max_age_minutes": 120 }
 JSON
-echo ".claude/verification-receipt.json" >> .gitignore
 
-# 2. every change: run the real checks through the wrapper (exit non-zero on failure)
-python3 scripts/verified.py --name lint      -- <your lint command>
-python3 scripts/verified.py --name typecheck -- <your typecheck command>
-python3 scripts/verified.py --name test      -- <your test command>
+# 2. every change: run the bound commands through the wrapper (exits non-zero on failure)
+100x verified --name typecheck
+100x verified --name test
 
-# 3. confirm the gate agrees before you claim anything
-python3 hooks/verify_fingerprint.py                     # current content hash
-cat .claude/verification-receipt.json                   # what was actually proven
+# 3. confirm what was proven matches the current content
+100x verify_fingerprint                                 # current content hash
+cat "$(git rev-parse --git-path 100x/verification-receipt.json)"   # fingerprint, command, exit code
 
-# 4. prove the gate itself still works (25 assertions, ~5s)
-bash tests/test_verification_gate.sh
+# 4. prove the gate itself still works (~10s)
+bash tests/test_verification_gate.sh && bash tests/test_hooks_stop_session.sh
 ```
 
-Runtime: steps 2-3 cost whatever your checks cost, plus <1s. Step 4 is ~5s.
+Runtime: steps 2-3 cost whatever your checks cost, plus <1s. Step 4 is ~10s.
 
 ## Failure modes
 
 This skill rejects:
 
-- **"I ran the tests and they pass"** with no receipt → blocked, no evidence.
-- **Verify, then edit, then commit** → blocked as stale. This is the central case
+- **"I ran the tests and they pass"** with no receipt → denied, no evidence.
+- **Verify, then edit, then commit** → denied as stale. This is the central case
   and the one no prose instruction reliably prevents.
-- **A passing suite where the required check never ran** — e.g. `test` passed but
-  policy also demands `typecheck` → blocked, names the missing check.
-- **An agent creating an untracked file after verifying** (a stray `NOTES.md`, a
-  scratch script) → blocked; the new file is part of what would be committed.
-- **Staged-only changes** — `git add` after verifying → blocked.
+- **Edit, then say "done"** without trying to commit → the `Stop` hook blocks once
+  and names the commands to run.
+- **A hand-written or edited receipt** → denied; the signature does not verify.
+- **`100x verified --name test -- true`** when policy binds `test` to the real suite
+  → refused at record time, and denied at the gate if it got in another way.
+- **A required check that never ran** → denied, naming the missing label.
+- **An untracked file created after verifying** (a stray `NOTES.md`) → denied.
+- **`git -C ../repo commit`, `cd repo && git commit`, `git -c k=v commit`, an alias
+  for `commit -n`** → parsed as the commit it is, against the repository it targets.
+  So are wrappers (`timeout`, `nice -n`, `sudo -u`, `env -u`, `xargs`, `eval`), shell
+  keywords (`{ git push; }`, `if …; then`), `find -exec git commit`, `G=git; $G commit`,
+  `-c alias.ci=commit` and `GIT_CONFIG_*` aliases, an exported `GIT_DIR`, and plumbing
+  (`commit-tree`, `update-ref`, `send-pack`, `merge`, `gh pr merge`, `gh api …/merge`).
+- **`git push origin other-branch`**, or a push with verified edits still uncommitted →
+  denied: a push is bound to what it sends, so each ref must be HEAD and HEAD's tree
+  must equal the verified content. A `remote.<name>.push` refspec makes a plain push
+  send refs the gate cannot tell, so it is denied too.
+- **`git commit -m x && git push`** → the push is denied: that commit has not happened
+  when the gate judges, so the tree it would send is unknown. Commit, then push.
+- **`poetry publish`, `hatch publish`, `cargo publish`, `gem push`, any `<program>
+  publish`** → gated like `npm publish`.
+- **A commit that weakens `.claude/verification-policy.json`** on a receipt taken before
+  the edit → denied until `100x verified` runs with the new policy in place.
+- **`PYTEST_ADDOPTS`, `NODE_OPTIONS`, `GOFLAGS` (and kin) set, or a `pytest` shadowing
+  the real one from the repo or a temp dir** → `100x verified` refuses to record.
 - **A green suite that cannot fail** — rule 5. The gate cannot catch this; it
-  confirms a command exited 0, not that the command was meaningful. Mutation
-  testing or a deliberate break is the only real answer.
+  confirms a command exited 0, not that the command was meaningful.
 
-Known gap, stated plainly: the gate proves *a command exited zero against this
-exact content*. It does not prove the command was worth running. Pair it with
-`test-that-can-fail` for that half of the problem.
+Known gaps, stated plainly: the gate proves *a command exited zero against this
+exact content*, not that the command was worth running (pair it with `minimal-diff`).
+Residual bypass classes: **deliberate key-read forgery** (the key is readable by
+anything running as you; add a deny rule for `~/.config/100x/**` on Read, Edit and
+Bash, or run sandboxed); **code run from a script file, `npm run`, `python -c`, or
+`eval` of a variable set elsewhere**; and **anything the parser does not model** (rc-file
+aliases and functions, a fake `HOME`, `source file`, a push target chosen through
+`include.path` config). See `docs/SAFETY.md`, "Residual bypass classes".
 
 ## Next
 
-Pick the commands to run *before* this gate: `typescript-verification`,
-`python-verification`, or `go-verification` for the language's real baseline.
-Wrap them with `verified.py` here, then hand off to `review-gates` for how the
+Pick the commands to run *before* this gate: `language-verification` for the language's real baseline.
+Wrap them with `100x verified` here, then hand off to `review-gates` for how the
 result gets merged. A diagram is ceremony for this skill — there is no flow to
 orient on, only a pass/fail receipt — so none is included.
 
@@ -148,5 +199,8 @@ largest at the smallest scale — the inverse of most process.
 - Human-attestation canary, an independent route to the same goal:
   `zed-industries/zed:.rules` line 16 — a README marker only a human may remove.
   See `research/21-findings-agent-instruction-corpus.md`.
-- Content-fingerprint design, bypass semantics, and the 19-assertion regression
-  suite: `SOURCE: original`.
+- Hook decision semantics (`deny`/`ask`, `allow` skipping ask rules, Stop's
+  `stop_hook_active`, SessionStart `additionalContext`, per-subcommand `if` matching):
+  https://code.claude.com/docs/en/hooks.md
+- Content-fingerprint design, signed receipts, policy command binding, bypass
+  semantics, and the regression suites: `SOURCE: original`.

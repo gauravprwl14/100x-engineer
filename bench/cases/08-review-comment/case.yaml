@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 08-review-comment
+description: Review a diff that lets refunds exceed the paid amount. Deterministic part is bench/checks.py check_08.
+tags: [writing, review]
+context:
+  scaffold_script: scaffold.sh

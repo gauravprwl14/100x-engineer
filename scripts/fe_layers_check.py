@@ -5,8 +5,8 @@ React + TypeScript code (skills/frontend-architecture/SKILL.md).
 TypeScript/TSX has no `ast` module available here, so every check is regex +
 a hand-rolled brace scanner -- heuristic, no real parser, same caveat as
 craft_check.py's JS/TS engine (which this file's brace scanner is copied
-from, kept self-contained rather than imported so this script has no
-in-repo dependency). A missed violation is cheap; a false positive is what
+from, kept self-contained rather than imported so the two checkers can
+evolve independently). A missed violation is cheap; a false positive is what
 gets a layering gate turned off, so every check below is biased to require
 tight, low-noise textual context before firing -- see each function's
 docstring for the specific false-positive it was built to avoid.
@@ -28,7 +28,9 @@ Dependency direction: presentation -> logic -> business, never backwards.
 
 Exit 1 if any BLOCKING check finds a violation (or any check, under --strict).
 """
-import argparse, os, re, subprocess, sys, pathlib
+import argparse, json, os, re, subprocess, sys, pathlib
+
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
 
 TSX_EXT = (".tsx", ".jsx")
 TS_EXT = (".ts", ".js")
@@ -52,25 +54,15 @@ def sh(args):
 
 
 def changed(base):
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "fe_layers_check")
 
 
 def touched_lines(path, base):
     """Line numbers (new-file numbering) this diff added. None means 'treat the
     whole file as touched' -- true for a brand-new/untracked file."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         return None
     lines = set()
@@ -144,6 +136,70 @@ def scan_matching_brace(text, open_idx):
     return n - 1
 
 
+USE_CLIENT_RX = re.compile(r"""^\s*(['"])use client\1\s*;?\s*$""")
+ASYNC_COMPONENT_RX = re.compile(
+    r"^\s*export\s+(?:default\s+)?async\s+function\s+[A-Z]"
+    r"|^\s*(?:export\s+)?const\s+[A-Z]\w*\s*(?::[^=]+)?=\s*async\b", re.M)
+APP_ROUTER_RX = re.compile(r"(?:^|/)app/")
+
+
+def has_use_client(text):
+    """'use client' as a directive: before any statement, after blanks/comments."""
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or is_comment_line(line):
+            continue
+        return bool(USE_CLIENT_RX.match(line))
+    return False
+
+
+CLIENT_ONLY_RX = re.compile(r"\buse(?:State|Effect|Reducer|Ref|LayoutEffect)\s*\(|\bon[A-Z]\w*\s*=")
+NEXT_CONFIG_NAMES = ("next.config.js", "next.config.mjs", "next.config.cjs", "next.config.ts")
+_NEXT_DIR = {}
+
+
+def _dir_is_next(d):
+    """A next.config.* or a `next` dependency in this directory's package.json."""
+    if d not in _NEXT_DIR:
+        found = any((d / n).is_file() for n in NEXT_CONFIG_NAMES)
+        if not found and (d / "package.json").is_file():
+            try:
+                pkg = json.loads((d / "package.json").read_text())
+                found = any("next" in (pkg.get(k) or {})
+                            for k in ("dependencies", "devDependencies", "peerDependencies"))
+            except (ValueError, OSError, AttributeError):
+                found = False
+        _NEXT_DIR[d] = found
+    return _NEXT_DIR[d]
+
+
+def in_next_project(path):
+    """Whether a Next.js project owns path: its own directory or any ancestor up to
+    the repo root (cwd, see enter_git_root) -- so a monorepo's apps/web counts."""
+    d = pathlib.Path(path).parent
+    while True:
+        if _dir_is_next(d):
+            return True
+        if d == d.parent:
+            return False
+        d = d.parent
+
+
+def is_server_component(path, text):
+    """React Server Component: no 'use client' directive, and either an async
+    function component (a client component cannot be async) or a file under a
+    Next.js App Router app/ tree that uses no client-only hook or handler.
+    `app/` alone is not enough: Vite and CRA projects have src/app/ folders of
+    ordinary client components, and exempting those hid their fetches. Fetching
+    in a real server component is the documented data-loading pattern."""
+    if has_use_client(text):
+        return False
+    if ASYNC_COMPONENT_RX.search(text):
+        return True
+    return bool(APP_ROUTER_RX.search(path) and not CLIENT_ONLY_RX.search(text)
+                and in_next_project(path))
+
+
 def is_comment_line(line):
     s = line.strip()
     return s.startswith("//") or s.startswith("*") or s.startswith("/*") or s.startswith("{/*")
@@ -198,7 +254,7 @@ def check_presentation_io(added, mod, base):
         if not is_tsx(p) or TEST_RX.search(p):
             continue
         text = read(p)
-        if text is None:
+        if text is None or is_server_component(p, text):
             continue
         touched = touched_lines(p, base)
         for ln, line in enumerate(text.splitlines(), 1):
@@ -473,7 +529,11 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("fe_layers_check", args.base) is None:
+        return 2
     added, mod = changed(args.base)
+    if unreadable(added + mod, "fe_layers_check"):
+        return 2
     if not added and not mod:
         print("fe_layers_check: no changes to inspect")
         return 0
@@ -484,6 +544,7 @@ def main():
             res = checks[n](added, mod, args.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue

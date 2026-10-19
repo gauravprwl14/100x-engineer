@@ -1,0 +1,75 @@
+<!--
+  Technique: Concept map (metro style)  (id: concept-map-metro-style, group: 1 · Structure)
+  What it is: A map of the whole topic drawn like a subway map: each coloured line is a category, each station is a topic.
+  Best for: Home page overview of 3–9 categories · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-concept-map-metro-style-">
+<h2 style="margin-top:0">Concept map (metro style)</h2>
+<p class="what">
+<b>What it is:</b> A map of the whole topic drawn like a subway map: each coloured line is a category, each station is a topic.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows everything the guide covers on one screen.</li>
+<li>Shows the reading order inside each category.</li>
+<li>Doubles as navigation — click a station to open it.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Home page overview of 3–9 categories</div>
+<div>
+<b class="bad">Avoid when</b>Fewer than ~5 topics — a list is enough</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Three categories of the URL shortener (requirements, design, operations) and their topics.</p>
+<div class="svgwrap">
+<svg id="g1" viewBox="0 0 900 240" style="min-width:720px" role="img" aria-label="Metro-style concept map: three coloured lines (Requirements, Design, Operations), each with its topics as stations in reading order">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Pick a line (category), read its stations left to right.</li>
+<li>Stations further right build on earlier ones.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Each line is a category; stations are topics in reading order.</li>
+<li>Clicking a station opens that page in a real guide.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG built from a list of categories and topics; one horizontal line per category, a circle per topic. Markdown: Mermaid flowchart with subgraphs.</p>
+</div>
+<script>
+W["g1"] = {"kind": "metro", "lines": [{"name": "Requirements", "ci": 1, "stops": [["x", "Scale"], ["x", "Latency"]]}, {"name": "Design", "ci": 3, "stops": [["x", "Keys"], ["x", "Redirect"], ["x", "Storage"]]}, {"name": "Operations", "ci": 6, "stops": [["x", "Cache"], ["x", "Analytics"]]}]};
+function drawMetro(k, s){
+  const svg = document.getElementById(k); svg.innerHTML = "";
+  const maxStops = Math.max(...s.lines.map(l => l.stops.length));
+  const dx = Math.min(190, 760 / Math.max(1, maxStops - 1 || 1)), x0 = 190, y0 = 50, dy = 64;
+  svg.setAttribute("viewBox", `0 0 ${Math.max(720, x0 + (maxStops - 1) * dx + 120)} ${y0 + s.lines.length * dy}`);
+  s.lines.forEach((L, li) => {
+    const col = cv("--l" + L.ci), y = y0 + li * dy;
+    txt(svg, 16, y + 5, L.name.length > 22 ? L.name.slice(0, 21) + "…" : L.name, {"font-size":13, "font-weight":600, fill:col});
+    el("line", {x1:x0 - 25, y1:y, x2:x0 + (L.stops.length - 1) * dx + 25, y2:y, stroke:col, "stroke-width":7, "stroke-linecap":"round"}, svg);
+    L.stops.forEach(([id, label], si) => {
+      const x = x0 + si * dx, live = id !== "x" && !!document.getElementById(id), g = el("g", live ? {class:"station"} : {}, svg);
+      el("circle", {cx:x, cy:y, r:9, fill:cv("--panel"), stroke:col, "stroke-width":4}, g);
+      txt(g, x, y - 16, label.length > 26 ? label.slice(0, 25) + "…" : label, {"text-anchor":"middle", "font-size":12.5});
+      /* a station is a link only when its page exists; this gallery has no topic pages, so none are */
+      if (live) clickable(g, () => { location.hash = id; }, label, "link");
+    });
+  });
+}
+DRAWERS.push(() => drawMetro("g1", W["g1"]));
+</script>

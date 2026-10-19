@@ -1,13 +1,9 @@
 ---
 name: bug-fix
 description: >
-  Use when something is broken and the change is a fix, not new work — a crash, a
-  wrong return value, a regression, a user-reported defect, a test that started
-  failing. Enforces repro-first: reproduce before reading code, commit the
-  reproduction as a failing test before touching the implementation, fix only the
-  narrowest thing that makes it pass, and grep for sibling instances of the same
-  bug class elsewhere in the codebase. Use PROACTIVELY before editing code in
-  response to a bug report, a crash, or a failing test.
+  Fix a bug, crash, regression, wrong output or failing test: reproduce first, commit the
+  failing test, fix the narrowest thing, grep for sibling bugs. Not for an unexplained outage (→
+  root-cause-analysis).
 ---
 
 # Bug fix
@@ -39,18 +35,20 @@ you are just doing step 2 onward, with the mechanism already known.
 2. Commit the reproduction as a **failing** test before writing any fix, and see it
    fail for the right reason — assert on the specific wrong output, not just "it
    throws".
-   *Enforced by:* `git stash && <single-test-runner> <new-test-path>` must exit
-   non-zero with the fix stashed away; `git stash pop` restores it. See Verify.
+   *Enforced by:* commit the test first, then `git stash push -- <src-paths>`
+   and `<single-test-runner> <new-test-path>` must exit non-zero; `git stash pop`
+   restores the fix. A bare `git stash` also hides a test added to an existing
+   tracked file, so its non-zero exit proves nothing. See Verify.
 
 3. Before theorizing about a new cause, check whether the bug is a violated
    assumption — one of the most common root causes there is, and the cheapest to
    check: something already on record said "this holds until X" and X happened.
-   *Enforced by:* `python3 scripts/decide.py trace <file>` then
-   `python3 scripts/decide.py verify`
+   *Enforced by:* `100x decide trace <file>` then
+   `100x decide verify`
 
 4. Only then find the cause. Fix the narrowest change that makes the failing test
    pass — one root cause, one diff.
-   *Enforced by:* `python3 scripts/bloat_check.py` — flags a diff that grew past the
+   *Enforced by:* `100x bloat_check` — flags a diff that grew past the
    fix (new files, new abstractions, unrelated hunks)
 
 5. Do not fix adjacent things you noticed while in there. A second defect gets its
@@ -65,7 +63,7 @@ you are just doing step 2 onward, with the mechanism already known.
 
 7. The test stays forever. Never delete it, skip it, or mark it `.only`/`.skip` —
    it is the actual deliverable of the fix, not scratch work that outlived its use.
-   *Enforced by:* `python3 scripts/bloat_check.py --only focused-tests`
+   *Enforced by:* `100x bloat_check --only focused-tests`
 
 ## Verify
 
@@ -75,20 +73,21 @@ curl -s localhost:3000/orders/999           # or the failing test's node id, or 
 #   ~seconds
 
 # 2. commit the reproduction as a FAILING test, and watch it fail for the right reason
-git stash                                    # hide any fix already in progress
+git add tests/test_bug.py && git commit -m "test: reproduce <bug>"   # the test is now safe from stash
+git stash push -- src/                       # hide ONLY the source fix in progress, never the test
+#   (no fix written yet? skip push/pop: a pop would restore an unrelated older stash)
 pytest tests/test_bug.py::test_repro -x      # or: npx jest test_bug -t "..." / go test ./... -run TestBug
-echo "expect non-zero: $?"
-git stash pop
+rc=$?; git stash pop; [ "$rc" -ne 0 ]        # must fail without the fix
 #   ~seconds to a minute, one test only — never the whole suite here
 
 # 3. is this a violated assumption? cheapest thing to check before theorizing
-python3 scripts/decide.py trace <file>       # which decision, if any, governs this
-python3 scripts/decide.py verify             # does its assumption still hold?
+100x decide trace <file>       # which decision, if any, governs this
+100x decide verify             # does its assumption still hold?
 #   ~1s each
 
 # 4. after the fix: the same test now passes, and the diff stayed narrow
 pytest tests/test_bug.py::test_repro -x      # now exits 0
-python3 scripts/bloat_check.py               # diff-scoped: scope creep, focused/skipped tests
+100x bloat_check               # diff-scoped: scope creep, focused/skipped tests
 #   ~1-3s, diff-scoped
 
 # 5. sibling check — same class of bug elsewhere in the codebase
@@ -142,7 +141,7 @@ takes to understand it, the "narrowest fix" premise no longer holds and
 
 ## Next
 
-Test passing, diff narrow, sibling grep clear: `scoped-review` before opening the
+Test passing, diff narrow, sibling grep clear: `diff-review` before opening the
 PR, then `verification-gate` before commit. If rule 3 found a violated assumption,
 supersede that decision record — do not edit it in place.
 
@@ -171,4 +170,4 @@ has looked at yet.
 - Rule ordering (reproduce, commit a failing test, narrowest fix, sibling grep,
   permanent test) is this skill's own synthesis of the above sources: `SOURCE: original`.
 - The violated-assumption check (rule 3) reuses `decide.py trace`/`verify` from
-  `skills/decision-log/SKILL.md` rather than reimplementing assumption tracking here.
+  `skills/decision-records/SKILL.md` rather than reimplementing assumption tracking here.

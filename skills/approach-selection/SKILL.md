@@ -1,15 +1,9 @@
 ---
 name: approach-selection
 description: >
-  Use when a problem has several defensible solutions and one must be chosen — which
-  database, session strategy, state manager, queue, deployment model, sync vs async,
-  library vs hand-rolled, monolith vs service. Gives a weighted scoring method (not
-  a record format), a default bias toward reversible choices, and a rule for the
-  rare case worth escalating to a human. Use PROACTIVELY whenever you notice you
-  are picking between options rather than implementing a known one. Not for writing
-  up a choice already made (that's decision-log, which this skill hands off to) and
-  not for a feature-kind decision already pre-answered in
-  `scripts/data/decisions_required.json` — check there first.
+  Decide between options — which database, ORM (Prisma vs TypeORM), queue, state manager,
+  monolith vs service, library vs hand-rolled: weighted scoring that favours reversible choices.
+  Not for the record (→ decision-records).
 ---
 
 # Approach selection
@@ -32,7 +26,12 @@ end up with three HTTP clients.
 
 ## The method
 
-Score each option 1-5 on these, in this order of weight:
+**Step 1 — fit filter (pass/fail).** Does the option actually solve the stated problem,
+not a bigger one, within the stated constraints? A failing option is out, whatever it
+would score: a cheap, reversible option that does not solve the problem must not win on
+points. Do-nothing is usually `fail` unless the status quo is now acceptable.
+
+**Step 2 — score the survivors 1-5**, in this order of weight:
 
 | weight | criterion | the question |
 |--:|---|---|
@@ -41,9 +40,13 @@ Score each option 1-5 on these, in this order of weight:
 | ×2 | **moving parts** | how many new things can now break or need operating? |
 | ×2 | **already in use** | does this repo/team already run it in production? |
 | ×1 | **exit cost** | how much of the design leaks into the rest of the system? |
-| ×1 | **fit** | does it actually solve the stated problem, not a bigger one? |
 
-Highest weighted score wins. On a tie, apply the tie-breaks in order:
+Highest weighted score among fit-passing options wins; choosing another needs a
+recorded override reason. Fit is a filter, never a weight. In an ADR (`decide new`)
+every option carries `"fit": "pass"` or `"fail"`, and may carry `"scores"` (1-5 per
+criterion above); `decide lint` rejects a record where no option passes, a chosen
+option that fails fit, or a chosen option below the top fit-passing score with no
+`override_reason`. On a tie, apply the tie-breaks in order:
 
 1. The **reversible** option.
 2. The option with **fewer moving parts**.
@@ -57,18 +60,21 @@ with the fewest new moving parts.** State the reason when you depart from it. Th
 bias exists because the failure mode of agent-chosen architecture is uniformly
 *over*-selection — a queue where a function call works, a service where a module works.
 
+`<root>` below is the records root: `docs/engineering/` by default, or `.100x.json`
+`{"root": "..."}` at the git root, or `HUNDREDX_ROOT_DIR` (`docs/OPERATING-MODEL.md` §8).
+
 ## Rules
 
 1. Record every choice with at least two options, and a concrete reason each rejected
    option lost. An option listed with no downside was not considered.
-   *Enforced by:* `python3 scripts/decide.py lint`
+   *Enforced by:* `100x decide lint`
 
 2. Name the single deciding factor for the winner. If you cannot name one, the options
    were equivalent — take the default bias and say so.
-   *Enforced by:* `python3 scripts/decide.py lint` (chosen option requires `why`)
+   *Enforced by:* `100x decide lint` (chosen option requires `why`)
 
 3. Record the assumption the choice rests on, with what would falsify it.
-   *Enforced by:* `python3 scripts/decide.py lint` (requires `revisit_when`)
+   *Enforced by:* `100x decide lint` (requires `revisit_when`)
 
 4. Do not choose for a requirement nobody stated. Scale, multi-region and
    extensibility are requirements only if written down.
@@ -80,24 +86,29 @@ bias exists because the failure mode of agent-chosen architecture is uniformly
 
 6. When the repo already made this choice, follow it. Departing needs an ADR that
    supersedes the earlier one.
-   *Enforced by:* `python3 scripts/decide.py trace <path>` before choosing
+   *Enforced by:* `100x decide trace <path>` before choosing
 
 7. Prefer the option you can verify. An approach you cannot test is worse than a
    slightly weaker one you can.
    *Enforced by:* the spec's verification plan must name a command for the chosen path
 
+8. Apply fit as a pass/fail filter before scoring, and choose the top fit-passing score
+   or record why not. In a PRD the audit recomputes every weighted score.
+   *Enforced by:* `100x prd audit <root>/prds/<name>`
+
 ## Verify
 
 ```bash
 # has this already been decided here?
-python3 scripts/decide.py trace src/<area>/<file>
+100x decide trace src/<area>/<file>
 grep -rniE "redis|kafka|rabbit|postgres|mysql|mongo" --include="*.json" --include="*.toml" . | head
 
 # record the decision with its options and scores
-python3 scripts/decide.py new "Cache layer for product reads" --affects "src/catalog/**" --tag backend
+100x decide new "Cache layer for product reads" --affects "src/catalog/**" --tag backend
 
-# the record must survive lint: >=2 options, why_not on every reject, falsifiable assumption
-python3 scripts/decide.py lint
+# the record must survive lint: >=2 options, fit on each, why_not on every reject,
+# falsifiable assumption, chosen = top fit-passing score or override_reason
+100x decide lint
 
 # recurring stack-level choices already have defaults — check before deriving one
 ls reviewers/                       # per-stack "Approach selection" tables
@@ -117,6 +128,10 @@ This skill rejects:
 - **A rejected option with no `why_not`** — it was listed, not considered.
 - **A winner with no deciding factor.**
 - **An assumption with no `revisit_when`**, so nothing will ever prompt a re-check.
+- **A winner that fails fit** — high reversibility and few moving parts, but it does not
+  solve the problem. Points cannot buy back a failed filter.
+- **A chosen option below the top score with no override reason**, or a weighted score
+  that does not add up.
 - **Choosing for unstated scale.** A queue introduced for throughput nobody specified
   is three new failure modes bought with imaginary money.
 - **Silently re-deciding a settled question**, producing a second way to do the same
@@ -137,9 +152,9 @@ a non-obvious flow worth drawing, that happens downstream in `feature-planning`
 
 ## Next
 
-Record the winner with `decision-log` (`decide.py new` already opened the record —
+Record the winner with `decision-records` (`decide.py new` already opened the record —
 fill it in). If the choice was made mid-feature-plan, return to `feature-planning`'s
-edge-case table. Implementation then follows the normal path to `scoped-review` and
+edge-case table. Implementation then follows the normal path to `diff-review` and
 `verification-gate`.
 
 ## Scale
@@ -154,4 +169,5 @@ the people, which is when rule 3 becomes the important one.
 - Per-feature-kind decision defaults: `scripts/data/decisions_required.json`.
 - Precedent for recording rejected proposals rather than only accepted ones:
   `research/37-findings-review-governance.md` (ADR/RFC practice).
-- The reversibility-first weighting and the default bias: `SOURCE: original`.
+- The reversibility-first weighting, the default bias, and fit as a pass/fail filter
+  (owner-approved decision e): `SOURCE: original`.

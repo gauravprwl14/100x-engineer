@@ -1,22 +1,15 @@
 ---
 name: test-design
 description: >
-  Use when choosing WHICH test cases to write, for new code or a diff that adds
-  tests — equivalence partitioning and boundary values, pairwise coverage for
-  combinatorial booleans, illegal state transitions, test-double choice (stub vs
-  spy vs mock vs fake, and not mocking what you do not own), test naming as
-  specification, one logical assertion per test, determinism, and where
-  property-based testing beats hand-written examples. Not for whether a test CAN
-  fail at all (assertionless/focused-test detection lives in minimal-diff) and
-  not for which commands a language's suite should run (python-verification,
-  typescript-verification, go-verification). Use PROACTIVELY before writing any
-  test, and when reviewing a diff that adds them.
+  Writing unit or integration tests for new or changed code — which cases: boundary values,
+  equivalence classes, pairwise inputs, state transitions, negative paths, mocks vs fakes,
+  property-based tests, test names as spec. Not for a whole test plan (→ qa-strategy).
 ---
 
 # Test design
 
-`minimal-diff` catches whether a test can fail. `python-verification` and its
-siblings catch whether the suite runs and gates CI. Neither says anything about
+`minimal-diff` catches whether a test can fail. `language-verification`
+catches whether the suite runs and gates CI. Neither says anything about
 whether the cases chosen would catch a real bug — and across 72 JS/TS and 50
 Python production repos, a patch-coverage gate exists in exactly 1 of 72
 (`TriliumNext/Trilium`), mutation testing exists in 0 of 72 and 0 of 50, and
@@ -26,7 +19,8 @@ they would catch anything. This skill is the missing layer: how to pick cases.
 
 ## Trigger
 
-**Fire when:** writing tests for new behavior; reviewing a diff that adds tests;
+**Fire when:** writing tests for new code or behaviour, including the tests
+that ship with a feature or fix; reviewing a diff that adds tests;
 deciding how many cases a function needs; a test suite passes but a bug still
 shipped.
 
@@ -43,7 +37,7 @@ come back here once a characterization test exists to extend from.
    missing more often than any others: **max+1** (the off-by-one nobody wrote)
    and **empty** (the case that isn't "small", it's zero elements). A boundary
    bug lives at the boundary, never in the middle of a partition.
-   *Enforced by:* `python3 scripts/test_design_check.py --only single-value`
+   *Enforced by:* `100x test_design_check --only single-value`
    (advisory, heuristic — flags a lone test exercising one numeric value with no
    table/parametrize sibling in the file; see Failure modes)
 
@@ -86,7 +80,7 @@ come back here once a characterization test exists to extend from.
    library's implementation, not its contract — a minor version bump can pass
    every mocked test and break production. Put a narrow interface (a port) of
    your own in front of the dependency, and fake *that* instead.
-   *Enforced by:* `python3 scripts/test_design_check.py --only mock-thirdparty`
+   *Enforced by:* `100x test_design_check --only mock-thirdparty`
    (advisory — heuristic on module path/specifier, see Failure modes)
 
 7. **Name the test as a sentence describing the behaviour, not the function.**
@@ -94,7 +88,7 @@ come back here once a characterization test exists to extend from.
    `Test_UnitParseHeader` (k3s's own generated-test convention). A reader should
    learn the contract from `grep -o 'def test_.*' tests/*.py` alone, without
    opening a single file. `test_1`, `testFoo`, `it('works')` describe nothing.
-   *Enforced by:* `python3 scripts/test_design_check.py --only test-name`
+   *Enforced by:* `100x test_design_check --only test-name`
    (blocking — see Failure modes for what it deliberately does not flag)
 
 8. **One logical assertion per test, arranged as Arrange/Act/Assert.** A test
@@ -102,7 +96,7 @@ come back here once a characterization test exists to extend from.
    first failure means the other three never ran — a fix to assertion 1 can
    still be wrong in assertions 2-4, and nothing says so until the next run.
    Split by behaviour, not by convenience.
-   *Enforced by:* `python3 scripts/test_design_check.py --only assert-count`
+   *Enforced by:* `100x test_design_check --only assert-count`
    (advisory, default threshold 4 — `--max-asserts N` to change it)
 
 9. **Determinism: no sleeps, no real clock, no shared mutable fixture, no order
@@ -113,7 +107,7 @@ come back here once a characterization test exists to extend from.
    after another one ran first is *order-dependence*. `apache/airflow`'s own
    contributor guide states the sleep rule directly: "you should mock sleep
    calls in tests or set the sleep time to 0."
-   *Enforced by:* `python3 scripts/test_design_check.py --only sleep` (blocking)
+   *Enforced by:* `100x test_design_check --only sleep` (blocking)
    and `--only realtime` (advisory — clock use with no freeze/injection)
 
 10. **Do not test generated code, framework behaviour, a private method via
@@ -150,14 +144,17 @@ come back here once a characterization test exists to extend from.
 
 ```bash
 # case-selection checks, diff-scoped (~1-2s on a normal diff)
-python3 scripts/test_design_check.py                      # all 8 checks vs HEAD
-python3 scripts/test_design_check.py --base origin/main
-python3 scripts/test_design_check.py --only sleep,test-name,assert-count
-python3 scripts/test_design_check.py --strict              # advisory also fails
-python3 scripts/test_design_check.py --max-asserts 6 --max-files 25
+100x test_design_check                      # all 8 checks vs HEAD
+100x test_design_check --base origin/main
+100x test_design_check --only sleep,test-name,assert-count
+100x test_design_check --strict              # advisory also fails
+100x test_design_check --max-asserts 6 --max-files 25
 
 # whether the test can fail at all -- owned by minimal-diff, run alongside this
-python3 scripts/bloat_check.py --only assertionless,focused-tests
+100x bloat_check --only assertionless,focused-tests
+
+# whether the new tests fail with the fix reverted (throwaway worktree, warn-only)
+100x fails_without_fix --base origin/main --test-cmd "<test command>"
 
 # prove the checker itself still works, false positives included (39 assertions)
 bash tests/test_test_design_check.sh

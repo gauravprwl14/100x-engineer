@@ -1,0 +1,126 @@
+# TypeScript / JavaScript verification — detail
+
+Reference for `language-verification` (loaded on demand). The numbered rules live in `../SKILL.md`; rule numbers below refer to that file.
+
+What 72 production JS/TS repos actually run, counted rather than recommended.
+
+## The measured baseline
+
+Modal stack: **pnpm** (53%) + **vitest** (56%) + **ESLint** (74%) + **Prettier**
+(61%), with root `test` / `lint` / `typecheck` scripts. Turborepo beats Nx and Lerna
+**2.3:1** among monorepos.
+
+Minimum viable, and genuinely what most of the corpus runs:
+
+```bash
+pnpm lint && pnpm typecheck && pnpm test
+```
+
+**The absences are the story.** Across 72 production repos:
+
+| practice | adoption |
+|---|---|
+| coverage gate of any kind | 14% (86% have none) |
+| bundle-size budget | 3% (97% have none) |
+| knip (dead code / unused exports) | 10/72 |
+| merge queue (`merge_group`) | 8/72 — all tier-1/tier-2 |
+| `api-extractor` + committed `.api.md` | 1/72 |
+| **patch-scoped blocking coverage gate** | **1/72** |
+| mutation testing | **0/72** |
+| property-based testing | **0/72** |
+| `isolatedDeclarations` | **0/72** |
+| no root `test` script at all | 5/72 |
+
+So if you add patch-scoped coverage or property tests, you are ahead of nearly the
+entire 20k-star JS ecosystem — not catching up to it.
+
+## Verify
+
+```bash
+# minimum viable -- the modal corpus stack
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck          # or: npx tsc --noEmit
+pnpm test
+
+# strongest justified (tier-1 shape)
+npx tsc --noEmit
+npx eslint . --max-warnings=0
+npx vitest run --coverage
+npx knip                                        # unused files, exports, deps
+npx dependency-cruiser --config .dependency-cruiser.cjs --output-type err src
+npx size-limit                                  # if you ship a bundle
+npx madge --circular --extensions ts,tsx src    # import cycles
+turbo run test --filter=...[origin/main]        # monorepo: affected only
+
+# patch-scoped coverage (rule 3) -- the practice only 1 of 72 repos has
+npx vitest run --coverage --coverage.reporter=cobertura
+diff-cover coverage/cobertura-coverage.xml \
+  --compare-branch=$(git merge-base HEAD origin/main) --fail-under=80
+
+# project state vs the measured corpus
+100x stack_audit .
+100x audit_ci_gates .
+
+# bind the checks to the code being shipped
+100x verified --name typecheck -- npx tsc --noEmit
+100x verified --name test      -- pnpm test
+```
+
+`--max-warnings=0` matters: eslint exits 0 with warnings by default, so a
+warnings-only config is not a gate.
+
+## Failure modes
+
+This skill rejects:
+
+- **A repo with no root `test` script.** Five corpus repos have none — including
+  `supabase/supabase`, `ToolJet/ToolJet`, `mozilla/pdf.js`, `immich-app/immich` and
+  `sveltejs/kit`. Popularity does not imply a runnable prove-it command.
+- **A whole-repo coverage threshold on a large existing codebase.** It fails on day
+  one, so it gets set to 0 or deleted. Patch-scoped gating is the version that
+  survives.
+- **`informational: true`** on a codecov status — it looks like a gate and cannot
+  fail.
+- **`eslint .` without `--max-warnings=0`** presented as a lint gate.
+- **`@ts-ignore` added to make CI green.**
+- **Layer rules that live only in a README.** `reactive-resume` is the only corpus
+  repo with a machine-enforced cross-package import boundary (Turborepo `boundaries`
+  plus Grit) — everyone else documents the intent and lets it erode.
+- **Unbounded bundle growth** — measured by 3% of the corpus, budgeted by almost
+  none.
+
+**Honest limitations:** mutation and property-based testing are absent from all 72
+repos (and from all 50 Python repos measured separately). So the ecosystem has no
+standard answer to "can these tests actually fail?", and neither does this skill
+beyond `bloat_check.py --only assertionless`.
+
+## Next
+
+Bind whichever commands you chose to the code being shipped with
+`verification-gate`. If a rule here (patch-coverage threshold, a banned `any`
+exception, a bundle-size number) departs from the corpus baseline, log it:
+`100x decide new "<the choice>" --affects "<glob>"`. If the diff is
+inside NestJS, Next.js, React Native, or another tracked framework, apply
+`stack-reviewer` too — this skill covers the toolchain, not the code shape.
+
+## Scale
+
+`solo`: rules 1, 2, 8 — strict mode and a separate typecheck job, minutes to adopt.
+`small-team (2-10)`: add 3, 4, 9 — patch coverage and knip.
+`org`: add 5, 6, 7, and a merge queue (8/72 corpus adoption, exclusively tier-1/2).
+`react/react` caches per-shard timing to rebalance CI as the suite grows; that is an
+org-scale answer to an org-scale problem, not a starting point.
+
+## Sources
+
+- All counts, the modal stack, tier-1 differentiators and both command sequences:
+  `research/30-findings-js-verification.md` (72 repos, per-repo citations).
+- `TriliumNext/Trilium` — the single corpus repo with a patch-scoped blocking
+  coverage gate (rule 3).
+- `TanStack/table` — a 30KB `size-limit` budget on `table-core` (rule 6).
+- `reactive-resume` — Turborepo `boundaries` + Grit as a build gate (rule 5).
+- `facebook/react` — shard-timing cache for CI rebalancing (Scale).
+- `vercel/next.js:AGENTS.md` — "~10s type-error check, faster than build" (rule 2).
+- `elastic/kibana:AGENTS.md` — "Never suppress type errors with @ts-ignore… fix the
+  root cause" (rule 8).

@@ -1,0 +1,82 @@
+<!--
+  Technique: Ladder table (+ slider)  (id: ladder-table-slider, group: 4 · Numbers)
+  What it is: A table where each row is one value of a setting and shows what that value causes; the slider lets readers try values in between.
+  Best for: A parameter with a range of values · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-ladder-table-slider-">
+<h2 style="margin-top:0">Ladder table (+ slider)</h2>
+<p class="what">
+<b>What it is:</b> A table where each row is one value of a setting and shows what that value causes; the slider lets readers try values in between.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows how a setting&#x27;s effect changes across its range.</li>
+<li>Helps pick a sensible value instead of guessing.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>A parameter with a range of values</div>
+<div>
+<b class="bad">Avoid when</b>A single value</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> How many keys each short-code length gives, and how long that lasts at 100M links a month.</p>
+<div class="tbl">
+<table>
+<tr>
+<th>Code length (base62)</th>
+<th>Keys available</th>
+<th>Enough for 100M/month for…</th>
+</tr>
+<tr>
+<td>5</td>
+<td>≈ 916 million</td>
+<td>≈ 9 months</td>
+</tr>
+<tr>
+<td>6</td>
+<td>≈ 56.8 billion</td>
+<td>≈ 47 years</td>
+</tr>
+<tr>
+<td>7</td>
+<td>≈ 3.5 trillion</td>
+<td>≈ 2,900 years</td>
+</tr>
+</table>
+</div>
+<label class="sl">Code length: <b id="lv">7</b>
+<input id="ladder" type="range" min="4" max="8" value="7">
+</label>
+<p id="lout" class="note">
+</p>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Each row = one setting value → its consequence.</li>
+<li>Move the slider to recompute the result live.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Each row is one setting with its consequence.</li>
+<li>The slider recomputes 62^n live.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> A table plus a range input that recomputes the formula. Markdown: the table only.</p>
+</div>
+<script>
+(function(){
+const lad=document.getElementById("ladder"),lo=document.getElementById("lout");const upd=()=>{const n=+lad.value,keys=Math.pow(62,n),yrs=keys/1.2e9;document.getElementById("lv").textContent=n;lo.textContent=`62^${n} ≈ ${keys.toExponential(2)} keys → about ${yrs>=1?Math.round(yrs).toLocaleString()+" years":Math.round(yrs*12)+" months"} at 100M/month`;};lad.oninput=upd;upd();
+})();
+</script>

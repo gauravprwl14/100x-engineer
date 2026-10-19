@@ -1,0 +1,46 @@
+<!--
+  Technique: Annotated code  (id: annotated-code, group: 5 · Explain)
+  What it is: A short code snippet with comments on the lines that matter.
+  Best for: Implementation details · Formats: All formats
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-annotated-code">
+<h2 style="margin-top:0">Annotated code</h2>
+<p class="what">
+<b>What it is:</b> A short code snippet with comments on the lines that matter.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows exactly how an idea is implemented.</li>
+<li>Comments explain why, not just what.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Implementation details</div>
+<div>
+<b class="bad">Avoid when</b>Pseudocode pretending to be real — mark it</div>
+<div>
+<b>Formats</b>All formats</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Encoding a number in base62 to make a short code.</p><pre><span class="c"># Illustrative: base62 encode a counter value</span>
+ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+def base62(n: int) -&gt; str:
+    s = ""
+    while n:
+        n, r = divmod(n, 62)      <span class="c"># take one base-62 digit</span>
+        s = ALPHABET[r] + s
+    return s or "0"</pre><div class="read">
+<b>How to read it</b>
+<ul>
+<li>Read the comments first, then the code they point at.</li>
+<li>&#x27;Illustrative&#x27; means written for the guide, not taken from the source.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> A pre block with comment spans. Markdown: a fenced code block.</p>
+</div>

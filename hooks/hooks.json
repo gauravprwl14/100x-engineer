@@ -1,34 +1,116 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command",
-            "if": "Bash(git commit*)",
+          {
+            "type": "command",
+            "if": "Bash(*git*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(git push*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*gh*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(gh pr*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*commit*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(git tag*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*push*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." },
-          { "type": "command",
-            "if": "Bash(npm publish*)",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*merge*)",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
-            "timeout": 20,
-            "statusMessage": "Checking verification receipt..." }
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*publish*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*twine*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(*upload*)",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking verification receipt..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/index_check.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/recheck_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_gate.py\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/recheck_gate.py\"",
+            "timeout": 10
+          }
         ]
       }
     ]

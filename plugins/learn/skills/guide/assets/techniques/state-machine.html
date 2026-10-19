@@ -1,0 +1,62 @@
+<!--
+  Technique: State machine  (id: state-machine, group: 2 · Process & time)
+  What it is: A diagram of the states something can be in and the events that move it from one state to another.
+  Best for: Lifecycles with named states · Formats: HTML/SVG · Mermaid stateDiagram-v2
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-state-machine">
+<h2 style="margin-top:0">State machine</h2>
+<p class="what">
+<b>What it is:</b> A diagram of the states something can be in and the events that move it from one state to another.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows every allowed status and every allowed change.</li>
+<li>Makes missing or illegal transitions easy to spot.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Lifecycles with named states</div>
+<div>
+<b class="bad">Avoid when</b>Continuous values — use a chart</div>
+<div>
+<b>Formats</b>HTML/SVG · Mermaid stateDiagram-v2</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> The life of a short code: reserved → assigned → active, disabled after abuse, re-activated after appeal.</p>
+<div class="svgwrap">
+<svg id="g5" viewBox="0 0 900 220" style="min-width:720px" role="img" aria-label="State machine: a short code moves Reserved, Assigned, Active, Disabled, and back to Active on appeal">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Each rounded box is a state (a status the thing can have).</li>
+<li>Each arrow is a transition, labelled with the event that triggers it.</li>
+<li>No arrow between two states means that change is not allowed.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Boxes are states; arrows are transitions labelled with their trigger.</li>
+<li>Illustrative lifecycle for a short code.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG boxes and labelled arrows. Markdown: Mermaid stateDiagram-v2.</p>
+</div>
+<script>
+W["g5"] = {"kind": "state", "states": ["Reserved", "Assigned", "Active", "Disabled"], "edges": [[0, 1, "handed to API server"], [1, 2, "mapping saved"], [2, 3, "abuse report"], [3, 2, "appeal accepted"]]};
+function drawState(k){const S=W[k],svg=document.getElementById(k);svg.innerHTML="";const defs=el("defs",{},svg);mk(defs,k+"m",cv("--muted"));const xs=S.states.map((_,i)=>110+i*225);
+ S.edges.forEach(([a,b,l])=>{const back=b<a,y=back?165:85,x1=xs[a]+(back?-10:70),x2=xs[b]+(back?70:-72);
+  el("path",{d:back?`M${xs[a]},135 C${xs[a]},190 ${xs[b]},190 ${xs[b]},135`:`M${x1},110 L${x2},110`,fill:"none",stroke:cv("--muted"),"stroke-width":2,"marker-end":`url(#${k}m)`},svg);
+  txt(svg,(xs[a]+xs[b])/2,back?205:95,l,{"text-anchor":"middle","font-size":12,fill:cv("--muted")});});
+ S.states.forEach((s,i)=>{el("rect",{x:xs[i]-70,y:88,width:140,height:44,rx:22,fill:cv("--panel"),stroke:cv("--l3"),"stroke-width":2.5},svg);txt(svg,xs[i],115,s,{"text-anchor":"middle","font-size":14,"font-weight":600});});}
+DRAWERS.push(() => drawState("g5"));
+</script>

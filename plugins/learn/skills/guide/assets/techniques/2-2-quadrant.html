@@ -1,0 +1,66 @@
+<!--
+  Technique: 2×2 quadrant  (id: 2-2-quadrant, group: 3 · Compare & decide)
+  What it is: A square split into four boxes by two axes, with options placed as dots according to how they score on each axis.
+  Best for: Two dimensions that matter at once · Formats: HTML/SVG · Mermaid quadrantChart
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-2-2-quadrant">
+<h2 style="margin-top:0">2×2 quadrant</h2>
+<p class="what">
+<b>What it is:</b> A square split into four boxes by two axes, with options placed as dots according to how they score on each axis.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Compares options on two criteria at once.</li>
+<li>Names the four situations (e.g. cheap and safe vs costly and risky).</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Two dimensions that matter at once</div>
+<div>
+<b class="bad">Avoid when</b>More than two criteria — use a matrix</div>
+<div>
+<b>Formats</b>HTML/SVG · Mermaid quadrantChart</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Code-generation options placed by collision risk and operating cost; bottom-left is best.</p>
+<div class="svgwrap">
+<svg id="g7" viewBox="0 0 720 440" style="min-width:720px" role="img" aria-label="2 by 2 quadrant: four key-generation options placed by collision risk and operational cost">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Find each dot: left–right is the first criterion, bottom–top the second.</li>
+<li>The quadrant labels tell you what that corner means.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Bottom-left is the ideal corner here (cheap and safe).</li>
+<li>Illustrative placement; the axes are the argument.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG square with two dividing lines and labelled dots. Markdown: Mermaid quadrantChart.</p>
+</div>
+<script>
+W["g7"] = {"kind": "quad", "x": "Collision risk", "y": "Operational cost", "q": ["Costly and risky: avoid", "Costly but safe", "Cheap and safe: ideal", "Cheap but risky"], "items": [["Hash + 7 chars", 0.8, 0.2], ["Counter + base62", 0.1, 0.6], ["Key service", 0.1, 0.7], ["DB sequence", 0.1, 0.3]]};
+function drawQuad(k){
+  const S = W[k], svg = document.getElementById(k); svg.innerHTML = "";
+  const X = 80, Y = 20, w = 600, h = 360;
+  el("rect", {x:X, y:Y, width:w, height:h, fill:cv("--panel"), stroke:cv("--line")}, svg);
+  el("line", {x1:X + w / 2, y1:Y, x2:X + w / 2, y2:Y + h, stroke:cv("--line")}, svg); el("line", {x1:X, y1:Y + h / 2, x2:X + w, y2:Y + h / 2, stroke:cv("--line")}, svg);
+  [[X + 10, Y + 22, S.q[0], "start"], [X + w - 10, Y + 22, S.q[1], "end"], [X + 10, Y + h - 12, S.q[2], "start"], [X + w - 10, Y + h - 12, S.q[3], "end"]].forEach(([x, y, t, a]) => txt(svg, x, y, t, {"font-size":12.5, fill:cv("--muted"), "text-anchor":a}));
+  txt(svg, X + w / 2, Y + h + 34, S.x + " →", {"text-anchor":"middle", "font-size":13, "font-weight":600});
+  const yl = txt(svg, 30, Y + h / 2, S.y + " →", {"text-anchor":"middle", "font-size":13, "font-weight":600}); yl.setAttribute("transform", `rotate(-90 30 ${Y + h / 2})`);
+  S.items.forEach(([n, x, y]) => { const cx = X + x * w, cy = Y + (1 - y) * h; el("circle", {cx, cy, r:8, fill:cv("--l3")}, svg); txt(svg, cx + 12, cy + 4, n, {"font-size":13}); });
+}
+DRAWERS.push(() => drawQuad("g7"));
+</script>

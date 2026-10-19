@@ -1,8 +1,26 @@
 {
-  "name": "100x-engineer",
-  "version": "0.1.0",
-  "description": "Verification-enforced engineering skills for backend, frontend, and mobile across TypeScript, Python, and Go. Every rule ships a runnable check. Derived from the measured practices of production repositories with 20k+ stars.",
-  "author": { "name": "gauravprwl14" },
-  "keywords": ["verification", "anti-bloat", "testing", "security", "typescript", "python", "go", "mobile", "code-review"],
+  "name": "100x",
+  "version": "0.3.0",
+  "description": "Plain English in, verified work out: a /100x router that asks at most five questions, eleven specialist agents run in parallel with replayed evidence, built-in defaults by work type, tier and risk, PRD to spec to test traceability through AC ids, QA test plans, verification gates with signed receipts, and codebase comprehension and root-cause analysis. Python stdlib and git only.",
+  "author": {
+    "name": "gauravprwl14"
+  },
+  "keywords": [
+    "verification",
+    "orchestration",
+    "agents",
+    "requirements",
+    "traceability",
+    "qa",
+    "anti-bloat",
+    "testing",
+    "security",
+    "code-review",
+    "rca",
+    "typescript",
+    "python",
+    "go",
+    "mobile"
+  ],
   "license": "MIT"
 }

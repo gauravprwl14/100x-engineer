@@ -1,0 +1,59 @@
+<!--
+  Technique: Tree / hierarchy  (id: tree-hierarchy, group: 1 · Structure)
+  What it is: A top-down diagram where each item splits into its parts.
+  Best for: Taxonomies, component breakdowns · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-tree-hierarchy">
+<h2 style="margin-top:0">Tree / hierarchy</h2>
+<p class="what">
+<b>What it is:</b> A top-down diagram where each item splits into its parts.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Shows what contains what.</li>
+<li>Makes the size of each branch visible at a glance.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Taxonomies, component breakdowns</div>
+<div>
+<b class="bad">Avoid when</b>Relations that cross branches — use a concept map</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> The system split into write path, read path and async work, each with its components.</p>
+<div class="svgwrap">
+<svg id="g3" viewBox="0 0 900 300" style="min-width:720px" role="img" aria-label="Tree: URL shortener splits into write path, read path and async, each with two components">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Read top to bottom: a box&#x27;s children are the parts it is made of.</li>
+<li>Siblings on the same level are alternatives or parallel parts.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Read top-down: parent contains children.</li>
+<li>Keep to 3 levels; collapse deeper ones.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG boxes with connecting lines, max 3 levels. Markdown: nested bullet list or Mermaid flowchart TD.</p>
+</div>
+<script>
+W["g3"] = {"kind": "tree", "root": "URL shortener", "kids": [["Write path", ["Key service", "KV store"]], ["Read path", ["Redis cache", "302 redirect"]], ["Async", ["Click queue", "Aggregation"]]]};
+function drawTree(k){const S=W[k],svg=document.getElementById(k);svg.innerHTML="";const box=(x,y,t,w)=>{el("rect",{x:x-w/2,y:y-16,width:w,height:32,rx:8,fill:cv("--panel"),stroke:cv("--ink"),"stroke-width":1.5},svg);txt(svg,x,y+5,t,{"text-anchor":"middle","font-size":13.5});};
+ box(450,30,S.root,160);S.kids.forEach(([t,g],i)=>{const x=150+i*300;el("line",{x1:450,y1:46,x2:x,y2:114,stroke:cv("--muted")},svg);box(x,130,t,150);
+  g.forEach((gg,j)=>{const gx=x-70+j*140;el("line",{x1:x,y1:146,x2:gx,y2:224,stroke:cv("--muted")},svg);box(gx,240,gg,125);});});}
+DRAWERS.push(() => drawTree("g3"));
+</script>

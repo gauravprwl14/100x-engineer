@@ -1,0 +1,60 @@
+<!--
+  Technique: Calculator (formula shown)  (id: calculator-formula-shown, group: 4 · Numbers)
+  What it is: Input boxes with the key assumptions, plus a block that shows the formula and the result step by step.
+  Best for: Sizing, cost, capacity · Formats: HTML · React (Markdown: worked arithmetic)
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-calculator-formula-shown-">
+<h2 style="margin-top:0">Calculator (formula shown)</h2>
+<p class="what">
+<b>What it is:</b> Input boxes with the key assumptions, plus a block that shows the formula and the result step by step.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Lets readers test their own numbers.</li>
+<li>Builds trust: every step of the arithmetic is visible.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Sizing, cost, capacity</div>
+<div>
+<b class="bad">Avoid when</b>The numbers aren&#x27;t in the source — never invent inputs</div>
+<div>
+<b>Formats</b>HTML · React (Markdown: worked arithmetic)</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Storage and write-rate estimates from URLs per month, record size and years.</p>
+<div class="grid3">
+<label class="sl">URLs / month (millions)<input type="number" id="cu" value="100">
+</label>
+<label class="sl">Bytes per record<input type="number" id="cb" value="500">
+</label>
+<label class="sl">Years<input type="number" id="cy" value="5">
+</label>
+</div><pre id="cf"></pre><div class="read">
+<b>How to read it</b>
+<ul>
+<li>Change an input; the formula block updates.</li>
+<li>Defaults are the numbers from the source.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Inputs default to the source&#x27;s numbers.</li>
+<li>The formula block shows every step so readers can re-check.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> Number inputs + a pre block rebuilt on input. Markdown: worked arithmetic in a code block.</p>
+</div>
+<script>
+(function(){
+const cf=()=>{const u=+document.getElementById("cu").value,b=+document.getElementById("cb").value,y=+document.getElementById("cy").value;const tb=u*1e6*12*y*b/1e12;document.getElementById("cf").textContent=`storage = ${b} B × ${u}M × 12 months × ${y} years\n        = ${(u*1e6*12*y*b).toExponential(2)} bytes ≈ ${tb.toFixed(2)} TB\nwrites/s = ${u}M ÷ (30 × 86,400 s) ≈ ${Math.round(u*1e6/2592000)}`;};["cu","cb","cy"].forEach(i=>document.getElementById(i).oninput=cf);cf();
+})();
+</script>

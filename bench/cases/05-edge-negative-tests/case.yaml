@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 05-edge-negative-tests
+description: Input validation with negative-case tests. Deterministic part is bench/checks.py check_05.
+tags: [code, tests, validation]
+context:
+  scaffold_script: scaffold.sh

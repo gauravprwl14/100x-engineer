@@ -44,7 +44,7 @@ def prepare(case, tmp):
     if case.get("generated_repo"):
         # plan_feature.py resolves to the cwd's git root, so this lands inside `repo`
         subprocess.run([sys.executable, str(ROOT / "scripts" / "plan_feature.py"),
-                        "new", "gen", "--kind", "crud", "--force"],
+                        "new", "gen", "--kind", "crud", "--tier", "small", "--force"],
                        cwd=repo, capture_output=True)
     else:
         src = CASES / case["id"] / "repo"

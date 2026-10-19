@@ -4,24 +4,24 @@
 # broken blocks. Run: bash tests/test_check_diagrams.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 CD="$ROOT/scripts/check_diagrams.py"
 
 PASS=0; FAIL=0
 expect() { # expect <0|1> <label> [args...]
   local exp="$1" label="$2"; shift 2
-  python3 "$CD" "$@" >/tmp/cd.out 2>&1; local got=$?
+  python3 "$CD" "$@" >$OUT/cd.out 2>&1; local got=$?
   if [ "$got" -eq "$exp" ]; then PASS=$((PASS+1)); printf '  ok   %-55s\n' "$label"
   else FAIL=$((FAIL+1)); printf '  FAIL %-55s exit exp=%s got=%s\n' "$label" "$exp" "$got"
-       sed 's/^/       /' /tmp/cd.out; fi
+       sed 's/^/       /' $OUT/cd.out; fi
 }
-has() { grep -qi "$1" /tmp/cd.out && { PASS=$((PASS+1)); printf '  ok   %-55s\n' "reported: $1"; } \
-        || { FAIL=$((FAIL+1)); printf '  FAIL %-55s\n' "NOT reported: $1"; sed 's/^/       /' /tmp/cd.out; }; }
+has() { grep -qi "$1" $OUT/cd.out && { PASS=$((PASS+1)); printf '  ok   %-55s\n' "reported: $1"; } \
+        || { FAIL=$((FAIL+1)); printf '  FAIL %-55s\n' "NOT reported: $1"; sed 's/^/       /' $OUT/cd.out; }; }
 
 # --- real fixture: specs/login/spec.md has no `%% level:` directive, must still
 #     pass clean (inference is reported, not a violation) ---
 expect 0 "real fixture specs/login/spec.md passes" "$ROOT/specs/login/spec.md"
-python3 "$CD" "$ROOT/specs/login/spec.md" >/tmp/cd.out 2>&1
+python3 "$CD" "$ROOT/specs/login/spec.md" >$OUT/cd.out 2>&1
 has "inferred level 1"
 
 # --- same fixture, forced to level 3: it has no alt/opt block and no step table,

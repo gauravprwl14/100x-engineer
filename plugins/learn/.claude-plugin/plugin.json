@@ -1,0 +1,10 @@
+{
+  "name": "learn",
+  "version": "0.1.0",
+  "description": "Visual learning guides, walkthroughs and cheat sheets from RFCs, design docs, postmortems, architecture notes and talk transcripts: scannable HTML or Markdown pages, an accuracy log, and a stdlib coverage check that computes which key points the guide covers.",
+  "author": {
+    "name": "gauravprwl14"
+  },
+  "keywords": ["learning", "study-guide", "onboarding", "cheat-sheet", "visualization", "transcripts"],
+  "license": "MIT"
+}

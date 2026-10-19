@@ -3,13 +3,13 @@
 # Asserts detection AND absence of false positives.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; trap 'rm -rf "$TMP" "$OUT"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ok   %-54s\n' "$1"; }
-bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s /tmp/pt.out ] && sed 's/^/       /' /tmp/pt.out | head -6; }
+bad()  { FAIL=$((FAIL+1)); printf '  FAIL %-54s\n' "$1"; [ -s $OUT/pt.out ] && sed 's/^/       /' $OUT/pt.out | head -6; }
 rc_is(){ [ "$2" -eq "$1" ] && ok "$3" || bad "$3 (exit exp=$1 got=$2)"; }
-has()  { grep -q "$1" /tmp/pt.out && ok "reports: $1" || bad "does NOT report: $1"; }
-no()   { grep -q "$1" /tmp/pt.out && bad "false positive: $1" || ok "no false positive: $1"; }
+has()  { grep -q "$1" $OUT/pt.out && ok "reports: $1" || bad "does NOT report: $1"; }
+no()   { grep -q "$1" $OUT/pt.out && bad "false positive: $1" || ok "no false positive: $1"; }
 
 # ---------- design_drift ----------
 mkdir -p "$TMP/specs/f" "$TMP/src"
@@ -35,7 +35,7 @@ TS
 cat > "$TMP/src/order.service.ts" <<'TS'
 export class OrderService { async placeOrder(dto) { return 1; } }
 TS
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 1 $? "drift: missing participant detected"
 has "PaymentGateway"
 no "OrderService"
@@ -44,13 +44,13 @@ no "(Client)"
 cat > "$TMP/src/payment.gateway.ts" <<'TS'
 export class PaymentGateway { async charge(amount: number) { return true; } }
 TS
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 0 $? "drift: clears once implemented"
 
 # a comment naming a symbol must NOT count as implementation
 rm "$TMP/src/payment.gateway.ts"
 printf '// TODO wire PaymentGateway and charge the amount\nexport const x = 1;\n' > "$TMP/src/note.ts"
-python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/design_drift.py" "$TMP/specs/f/spec.md" "$TMP/src" >$OUT/pt.out 2>&1
 rc_is 1 $? "drift: a comment does not count as implementation"
 has "PaymentGateway"
 rm "$TMP/src/note.ts"
@@ -61,49 +61,262 @@ CONS="$TMP/consumer"; mkdir -p "$CONS"; cd "$CONS"
 git init -q; git config user.email e@e; git config user.name e
 echo x > f.txt; git add -A; git commit -qm init
 
-python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud >/tmp/pt.out 2>&1
-[ -f "$CONS/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
+python3 "$ROOT/scripts/plan_feature.py" new notier --kind crud --work api >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: new without --tier is refused"
+has "tier is required: one of"
+[ ! -d "$CONS/docs/engineering/specs/notier" ] && ok "plan: nothing written without a tier" || bad "plan: wrote a spec with no tier"
+
+python3 "$ROOT/scripts/plan_feature.py" new thing --kind crud --tier small --work api >$OUT/pt.out 2>&1
+[ -f "$CONS/docs/engineering/specs/thing/spec.md" ] && ok "plan: spec created in the consumer repo" \
   || bad "plan: spec not created in the consumer repo"
 [ ! -d "$ROOT/specs/thing" ] && ok "plan: did NOT write into the plugin dir" \
   || bad "plan: leaked a spec into the plugin dir"
 
-python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/specs/thing" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$CONS/docs/engineering/specs/thing" >$OUT/pt.out 2>&1
 rc_is 1 $? "plan: fresh spec fails audit"
 has "still TODO"
 has "no recommendation"
 
-python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind >/tmp/pt.out 2>&1
+has "still contain a template placeholder"
+has "§0b implicit requirement(s) still TODO"
+grep -q "^## 2b. Acceptance criteria" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && grep -q "^AC-1: <!-- observable outcome --> (R1, S1)" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && ok "plan: new spec scaffolds the acceptance-criteria section" || bad "plan: no AC section scaffolded"
+grep -q "^| # | check | command | gate | covers |" "$CONS/docs/engineering/specs/thing/spec.md" \
+  && ok "plan: verification plan has a covers column" || bad "plan: no covers column"
+[ ! -e "$CONS/specs" ] && ok "plan: nothing written at the repo top level" || bad "plan: wrote specs/ at the top level"
+
+python3 "$ROOT/scripts/plan_feature.py" new unknownkind --kind nosuchkind --tier small >$OUT/pt.out 2>&1
 rc_is 2 $? "plan: unknown kind rejected"
+python3 "$ROOT/scripts/plan_feature.py" new badwork --kind crud --tier small --work desktop >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: unknown work type rejected"
+
+# risk floor: auth implies elevated even when --risk none is passed
+python3 "$ROOT/scripts/plan_feature.py" new authy --kind auth --tier small --work api --risk none >$OUT/pt.out 2>&1
+has "risk: elevated (raised from none"
+grep -q "^| risk | elevated |" "$CONS/docs/engineering/specs/authy/spec.md" && ok "plan: raised risk written to §0" \
+  || bad "plan: raised risk not written to §0"
+grep -q "^| all.pii-out-of-logs |" "$CONS/docs/engineering/specs/authy/spec.md" && ok "plan: elevated risk seeds PII row" \
+  || bad "plan: elevated risk did not seed PII row"
+
+# regulated small app: compliance rows yes, capacity rows no
+python3 "$ROOT/scripts/plan_feature.py" new reg --kind crud --tier small --work api,iac --risk regulated >$OUT/pt.out 2>&1
+grep -q "^| all.audit-trail |" "$CONS/docs/engineering/specs/reg/spec.md" && ok "plan: regulated seeds audit trail" \
+  || bad "plan: regulated did not seed audit trail"
+grep -qE "^\| iac\.multi-(region|az) \|" "$CONS/docs/engineering/specs/reg/spec.md" \
+  && bad "plan: regulated small app forced into multi-AZ/region" || ok "plan: regulated small app has no multi-AZ/region"
+
+# public-api alias pre-answers the audience question
+python3 "$ROOT/scripts/plan_feature.py" new pub --kind crud --tier prototype --work public-api >$OUT/pt.out 2>&1
+grep -q "^| ask.api-audience | .* | ASK(public" "$CONS/docs/engineering/specs/pub/spec.md" && ok "plan: public-api answers ask.api-audience" \
+  || bad "plan: public-api did not answer ask.api-audience"
+
+# ---------- audit rules, one defect at a time from the passing worked spec ----------
+swap() {
+  python3 - "$1" "$2" "$3" <<'PY2'
+import sys, pathlib
+f, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+p = pathlib.Path(f); t = p.read_text()
+if old not in t:
+    print(f"TEST BUG: pattern not found: {old!r}", file=sys.stderr); sys.exit(1)
+p.write_text(t.replace(old, new, 1))
+PY2
+}
+W="$CONS/docs/engineering/specs/w"; mkdir -p "$W"
+# the worked spec's header links its PRD at examples/login (relative to the git root)
+mkdir -p "$CONS/examples/login"; cp "$ROOT/examples/login/prd.md" "$CONS/examples/login/prd.md"
+fresh() { cp "$ROOT/specs/login/spec.md" "$W/spec.md"; }
+audit_w() { python3 "$ROOT/scripts/plan_feature.py" audit "$W" >$OUT/pt.out 2>&1; }
+
+fresh; audit_w; rc_is 0 $? "audit: copy of the worked spec passes"
+
+fresh; swap "$W/spec.md" "| n/a(no new process — the existing service keeps its probes and shutdown hook) |" "| n/a |"
+audit_w; rc_is 1 $? "audit: bare n/a without a reason rejected"
+has "outside the allowlist"
+
+fresh; swap "$W/spec.md" "| n/a(no new process — the existing service keeps its probes and shutdown hook) |" "| done-ish |"
+audit_w; rc_is 1 $? "audit: status outside the allowlist rejected"
+has "api.health-graceful-shutdown"
+
+fresh; swap "$W/spec.md" "A returning user signs in" "<!-- outcome --> A returning user signs in"
+audit_w; rc_is 1 $? "audit: placeholder in prose (not a table) rejected"
+has "template placeholder"
+
+fresh; swap "$W/spec.md" "| scale tier | small |" "| scale tier | |"
+audit_w; rc_is 1 $? "audit: missing tier rejected"
+has "scale tier"
+
+fresh; swap "$W/spec.md" "## 0. Non-functional requirements" "## Zero"
+audit_w; rc_is 1 $? "audit: missing §0 section rejected"
+has "load tier must be"
+
+fresh; swap "$W/spec.md" "| risk | elevated |" "| risk | none |"
+audit_w; rc_is 1 $? "audit: risk below the auth floor rejected"
+has "below the floor"
+
+fresh; swap "$W/spec.md" "| ASK(single region: the existing Postgres and Redis region — PRD §4, source user) |" "| ASK |"
+audit_w; rc_is 1 $? "audit: unanswered residency rejected"
+has "unanswered"
+
+fresh; swap "$W/spec.md" "| ASK(single region: the existing Postgres and Redis region — PRD §4, source user) |" "| ASSUMED(single region) |"
+audit_w; rc_is 1 $? "audit: ASSUMED residency blocks ready"
+has "ask.data-residency"
+
+fresh; swap "$W/spec.md" "| ASK(none — PRD §4, source user) |" "| ASSUMED(none) |"
+audit_w; rc_is 1 $? "audit: ASSUMED compliance regime blocks ready"
+has "ask.compliance-regime"
+
+fresh; grep -q "| ASSUMED(sessions are disposable" "$W/spec.md" && audit_w
+rc_is 0 $? "audit: ASSUMED accepted for a non-blocking C item (rpo-rto)"
+
+fresh; swap "$W/spec.md" "| ASSUMED(sessions are disposable — losing them signs users out; users table follows the existing Postgres backup policy) |" "| accepted |"
+audit_w; rc_is 1 $? "audit: a C item cannot be silently accepted"
+has "is class C"
+
+fresh; swap "$W/spec.md" "| covered | E6 \`session.guard.spec.ts\`" "| waived(no time) | E6 \`session.guard.spec.ts\`"
+audit_w; rc_is 1 $? "audit: waiving a non-waivable item rejected"
+has "non-waivable"
+
+fresh; swap "$W/spec.md" "| covered | E24 \`log-redaction.spec.ts\` |" "| covered | — |"
+audit_w; rc_is 1 $? "audit: covered baseline row with no evidence rejected"
+has "no evidence"
+
+fresh; grep -v "^| api.ssrf-guard |" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; rc_is 1 $? "audit: missing applicable baseline row rejected"
+has "missing from §0b"
+
+fresh; swap "$W/spec.md" "| Q1 | default |" "| Q1 | maybe |"
+audit_w; rc_is 1 $? "audit: untyped question rejected"
+has "not tagged must-ask|default"
+
+fresh; swap "$W/spec.md" "None of these block implementation" \
+"| Q4 | default | a | b | c | no |
+| Q5 | default | a | b | c | no |
+| Q6 | default | a | b | c | no |
+
+None of these block implementation"
+python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=t.replace("| no |\n\n| Q4","| no |\n| Q4")
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: more than five questions rejected"
+has "at most 5"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"(## 14\. Cost\n).*", r"\1\n", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: blank design-doc section rejected"
+has "'## 14. Cost' is blank"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"(## 14\. Cost\n).*", r"\1\nN/A\n", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: bare N/A section rejected"
+has "'## 14. Cost' is blank"
+
+fresh; swap "$W/spec.md" "## 11. Privacy" "## 11. Notes"
+audit_w; rc_is 1 $? "audit: missing design-doc section rejected"
+has "missing section '## 11. Privacy'"
+
+# ---------- acceptance criteria: the join key PRD -> AC -> plan.json -> test ----------
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"## 2b\. Acceptance criteria\n.*?(?=\n## 3\.)", "", t, flags=re.S)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: missing acceptance-criteria section rejected"
+has "no '## 2b. Acceptance criteria' section"
+
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys,pathlib,re
+p=pathlib.Path(sys.argv[1]); t=p.read_text()
+t=re.sub(r"^AC-\d+: .*\n", "", t, flags=re.M)
+p.write_text(t)
+PY2
+audit_w; rc_is 1 $? "audit: section with zero ACs rejected"
+has "§2b has no acceptance criteria"
+
+fresh; swap "$W/spec.md" "AC-2: A wrong password" "AC-1: A wrong password"
+audit_w; rc_is 1 $? "audit: duplicate AC id rejected"
+has "defined more than once: AC-1"
+
+fresh; swap "$W/spec.md" "AC-6: A user can sign in with Google through OAuth, and a callback with a replayed \`state\` or a missing PKCE verifier is rejected. (R5, S5)" "AC-6: OAuth works. (R5, S5)"
+audit_w; rc_is 1 $? "audit: AC with no observable outcome rejected"
+has "no observable outcome (first: AC-6)"
+
+fresh; swap "$W/spec.md" "is rejected. (R5, S5)" "is rejected. (R5)"
+audit_w; rc_is 1 $? "audit: in-scope item with no AC rejected"
+has "in-scope item(s) with no acceptance criterion: S5"
+
+fresh; swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 1 $? "audit: AC without a requirement link rejected when a PRD exists"
+has "no PRD requirement link (first: AC-5)"
+
+fresh; swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (R9, S4)"
+audit_w; rc_is 1 $? "audit: AC linking a requirement the PRD lacks rejected"
+has "link requirement(s) not in examples/login/prd.md: R9"
+
+fresh; swap "$W/spec.md" "| prd | examples/login |" "| prd | none |"
+swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 0 $? "audit: no PRD -> requirement links are not required (no false positive)"
+grep -q "no PRD was found" $OUT/pt.out && ok "audit: warns that R links are unchecked without a PRD" \
+  || bad "audit: silent about unchecked R links"
+
+fresh; swap "$W/spec.md" "| pre-PR | AC-1, AC-2, AC-3, AC-4, AC-5 |" "| pre-PR | AC-1, AC-2, AC-3, AC-4 |"
+swap "$W/spec.md" "| AC-1, AC-2, AC-3, AC-4, AC-5, AC-6 |" "| AC-1, AC-2, AC-3, AC-4, AC-6 |"
+audit_w; rc_is 1 $? "audit: AC no verification row covers rejected"
+has "no verification row covers: AC-5"
+
+fresh; swap "$W/spec.md" "| pre-commit | AC-2, AC-6 |" "| pre-commit | AC-2, AC-6, AC-9 |"
+audit_w; rc_is 1 $? "audit: verification row covering an undefined AC rejected"
+has "covers undefined criteria: AC-9"
+
+fresh; swap "$W/spec.md" "AC-3: Logout" "- **AC-3** Logout"
+audit_w; rc_is 1 $? "audit: non-canonical AC shape in §2b rejected"
+has "write it as \`AC-3: <observable outcome>"
 
 # ---------- the plugin's own worked example ----------
 cd "$ROOT"
-python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/login" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/plan_feature.py" audit "$ROOT/specs/login" >$OUT/pt.out 2>&1
 rc_is 0 $? "plan: the completed worked spec passes audit"
-grep -q "7 accepted as default" /tmp/pt.out && ok "plan: counts defaults correctly (pipe-escaping)" \
+grep -q "7 accepted as default" $OUT/pt.out && ok "plan: counts defaults correctly (pipe-escaping)" \
   || bad "plan: default count wrong"
 
 # ---------- decide ----------
-python3 "$ROOT/scripts/decide.py" index >/tmp/pt.out 2>&1
-rc_is 0 $? "decide: index regenerates"
-[ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
+  rc_is 0 $? "decide: index regenerates"
+  [ -f "$ROOT/decisions/INDEX.md" ] && ok "decide: INDEX.md exists" || bad "decide: no INDEX.md"
+else
+  echo "  skip decide index on the plugin's own records: $ROOT is not a git work tree"
+fi
 grep -qE "^\| \[ADR-0001\]" "$ROOT/decisions/INDEX.md" 2>/dev/null \
   && ok "decide: index table contains the ADR row" || bad "decide: ADR row missing"
 
-python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
 rc_is 0 $? "decide: the real ADR passes lint"
 
-python3 "$ROOT/scripts/decide.py" verify >/tmp/pt.out 2>&1
-grep -q "unverifiable" /tmp/pt.out && ok "decide: reports unverifiable assumptions" \
+python3 "$ROOT/scripts/decide.py" verify >$OUT/pt.out 2>&1
+grep -q "unverifiable" $OUT/pt.out && ok "decide: reports unverifiable assumptions" \
   || bad "decide: hides unverifiable assumptions"
 
-python3 "$ROOT/scripts/decide.py" trace examples/login/src/auth.service.ts >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" trace examples/login/src/auth.service.ts >$OUT/pt.out 2>&1
 has "ADR-0001"
-python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" trace src/nowhere/else.ts >$OUT/pt.out 2>&1
 has "no recorded decision"
 
 # a decision record that names a winner and nothing else must be rejected
-mkdir -p "$CONS/decisions"
-cat > "$CONS/decisions/ADR-0009-thin.md" <<'MD'
+mkdir -p "$CONS/docs/engineering/decisions"
+cat > "$CONS/docs/engineering/decisions/ADR-0009-thin.md" <<'MD'
 # ADR-0009: Use Postgres
 ```json meta
 {"id":"ADR-0009","title":"Use Postgres","status":"accepted",
@@ -111,10 +324,65 @@ cat > "$CONS/decisions/ADR-0009-thin.md" <<'MD'
 ```
 MD
 cd "$CONS"
-python3 "$ROOT/scripts/decide.py" lint >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
 rc_is 1 $? "decide: lint rejects a single-option record"
 has "not a decision"
 has "no assumptions recorded"
+rm -f "$CONS/docs/engineering/decisions/ADR-0009-thin.md"
+
+# fit is a pass/fail filter applied before any weighted comparison (same rule as prd.py)
+adr() { # adr <options-json> [extra top-level json]
+  printf '# ADR-0010: Queue\n```json meta\n{"id":"ADR-0010","title":"Queue","status":"accepted","options":%s,"assumptions":[{"id":"A1","claim":"c","verify":"true","revisit_when":"w"}]%s}\n```\n' \
+    "$1" "${2:-}" > "$CONS/docs/engineering/decisions/ADR-0010-queue.md"
+  python3 "$ROOT/scripts/decide.py" lint >$OUT/pt.out 2>&1
+}
+SC='"scores":{"reversibility":%s,"blast radius":%s,"moving parts":%s,"already-in-use":%s,"exit cost":%s}'
+sc() { printf "$SC" "$@"; }
+adr '[{"name":"SQS","fit":"pass","chosen":true,"why":"managed"},{"name":"cron","fit":"fail","chosen":false,"why_not":"misses the 1s latency need"}]'
+rc_is 0 $? "decide: fit-passing chosen option passes lint (no false positive)"
+adr '[{"name":"SQS","chosen":true,"why":"managed"},{"name":"cron","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: options without fit rejected"
+has "set \"fit\": \"pass\" or \"fail\""
+adr '[{"name":"SQS","fit":"fail","chosen":true,"why":"managed"},{"name":"cron","fit":"pass","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: a chosen option that fails fit rejected"
+has "fails the fit filter"
+adr '[{"name":"SQS","fit":"fail","chosen":true,"why":"managed"},{"name":"cron","fit":"fail","chosen":false,"why_not":"slow"}]'
+rc_is 1 $? "decide: no fit-passing option rejected"
+has "no option passes the fit filter"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 1 $? "decide: chosen below the top fit-passing score without override rejected"
+has "is not the top fit-passing score"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]" ',"override_reason":"team already runs SQS"'
+rc_is 0 $? "decide: an override_reason allows a lower score"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Kafka\",\"fit\":\"fail\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 0 $? "decide: a higher score that FAILS fit does not outrank the chosen option"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 9 2 2)},{\"name\":\"cron\",\"fit\":\"fail\",\"chosen\":false,\"why_not\":\"slow\"}]"
+rc_is 1 $? "decide: a score outside 1-5 rejected"
+has "integer 1-5"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\"},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)},{\"name\":\"NATS\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"new\",$(sc 4 4 4 4 4)}]"
+rc_is 1 $? "decide: an unscored chosen option among scored alternatives rejected"
+has "has no scores while 2 fit-passing options are scored"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 5 5 5 5 5)},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 2 2 2 2 2)},{\"name\":\"NATS\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"new\",$(sc 4 4 4 4 4)}]"
+rc_is 0 $? "decide: a scored top choice among scored alternatives passes"
+no "has no scores"
+adr "[{\"name\":\"SQS\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\"},{\"name\":\"Kafka\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 0 $? "decide: one scored alternative does not force a score on the choice"
+adr "[{\"name\":\"Queue\",\"fit\":\"pass\",\"chosen\":true,\"why\":\"managed\",$(sc 2 2 2 2 2)},{\"name\":\"Queue\",\"fit\":\"pass\",\"chosen\":false,\"why_not\":\"ops\",$(sc 5 5 5 5 5)}]"
+rc_is 1 $? "decide: duplicate option names do not hide a higher score"
+has "is not the top fit-passing score"
+adr '["SQS",{"name":"cron","fit":"pass","chosen":true,"why":"simple"}]'
+rc_is 1 $? "decide: a non-object option is a lint error"
+has "option #1 is str"
+no "Traceback"
+python3 "$ROOT/scripts/decide.py" index >$OUT/pt.out 2>&1
+no "Traceback"
+adr '"SQS"'
+rc_is 1 $? "decide: options that are not a list are a lint error"
+has "options must be a list"
+no "Traceback"
+rm -f "$CONS/docs/engineering/decisions/ADR-0010-queue.md"
+python3 -c "import sys; sys.path.insert(0, '$ROOT/scripts'); import decide, prd; sys.exit(0 if prd.WEIGHTS is decide.WEIGHTS else 1)" >/dev/null 2>&1
+rc_is 0 $? "decide and prd score with one shared weight table"
 cd "$ROOT"
 
 # ---------- review_scope ----------
@@ -130,26 +398,221 @@ export async function register(email: string) {
   return db.users.insert(email);
 }
 TS
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
 rc_is 0 $? "review_scope: runs on a diff"
 has "R1"
 has "R6"
 has "R7"
-grep -q "src/orders.ts" /tmp/pt.out && ok "review_scope: attributes the question to the file" \
+grep -q "src/orders.ts" $OUT/pt.out && ok "review_scope: attributes the question to the file" \
   || bad "review_scope: file attribution missing"
 
 # non-code and fixture files must not be attributed to code questions
 printf '# notes\n' > README_EXTRA.md
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
-grep -q "README_EXTRA.md" /tmp/pt.out && bad "review_scope: attributed a markdown file to a code question" \
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
+grep -q "README_EXTRA.md" $OUT/pt.out && bad "review_scope: attributed a markdown file to a code question" \
   || ok "review_scope: excludes non-code files"
 rm -f README_EXTRA.md
 
 # a clean repo with no changes must say so
 git add -A >/dev/null 2>&1; git commit -qm x >/dev/null 2>&1
-python3 "$ROOT/scripts/review_scope.py" >/tmp/pt.out 2>&1
-grep -q "no changes to review" /tmp/pt.out && ok "review_scope: quiet with no changes" \
+python3 "$ROOT/scripts/review_scope.py" >$OUT/pt.out 2>&1
+grep -q "no changes to review" $OUT/pt.out && ok "review_scope: quiet with no changes" \
   || bad "review_scope: noisy with no changes"
+cd "$ROOT"
+
+# ---------- plan_feature: record arguments, seeded rows, pinned baseline ----------
+cd "$CONS"
+grep -q "^| feature | thing |" docs/engineering/specs/thing/spec.md && grep -q "^| baseline | 1 |" docs/engineering/specs/thing/spec.md \
+  && ok "plan: new spec pins feature and baseline version in the header" || bad "plan: header lacks feature/baseline"
+for arg in docs/engineering/specs/thing specs/thing thing docs/engineering/specs/thing/spec.md; do
+  python3 "$ROOT/scripts/plan_feature.py" audit "$arg" >$OUT/pt.out 2>&1
+  rc_is 1 $? "plan: audit $arg resolves (exit 1 = audited, not 2)"
+done
+(cd "$CONS/docs" && python3 "$ROOT/scripts/plan_feature.py" audit specs/thing >$OUT/pt.out 2>&1)
+rc_is 1 $? "plan: audit specs/thing resolves from a subdirectory"
+python3 "$ROOT/scripts/plan_feature.py" audit nosuch >$OUT/pt.out 2>&1
+rc_is 2 $? "plan: audit of an unknown spec is exit 2"
+has "no spec.md for 'nosuch'"
+
+fresh; grep -v "| Clock skew, DST boundary" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; rc_is 1 $? "audit: a deleted seeded edge case is rejected"
+has "seeded edge case(s) deleted from §7"
+fresh; python3 - "$W/spec.md" <<'PY2'
+import sys, pathlib, re
+p = pathlib.Path(sys.argv[1]); t = p.read_text()
+rows = [l for l in t.splitlines() if re.match(r"^\| D\d+ \|", l)]
+p.write_text(t.replace(rows[0] + "\n", "", 1))
+PY2
+audit_w; rc_is 1 $? "audit: a deleted seeded decision is rejected"
+has "seeded decision(s) deleted from §5"
+fresh; audit_w; no "deleted from"
+
+python3 - "$ROOT" "$W/spec.md" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, copy
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import plan_feature as pf
+text = open(sys.argv[2]).read()
+new = copy.deepcopy(pf.BASE_BY_ID["api.ssrf-guard"]); new["id"] = "api.new-rule"; new["since"] = 2
+pf.BASELINE["version"] = 2; pf.BASELINE["items"].append(new); pf.BASE_BY_ID[new["id"]] = new
+e, w = [], []; pf.audit_baseline(text, ["api"], "small", "elevated", e, w)
+assert not e and any("added after the pinned v1: api.new-rule" in x for x in w), (e, w)
+e, w = [], []; pf.audit_baseline(text.replace("| baseline | 1 |", "| baseline | 2 |"), ["api"], "small", "elevated", e, w)
+assert any("missing from §0b (first: api.new-rule)" in x for x in e), e
+pf.BASE_BY_ID["api.ssrf-guard"]["deprecated"] = True
+e, w = [], []; pf.audit_baseline(text, ["api"], "small", "elevated", e, w)
+assert any("deprecated baseline item(s): api.ssrf-guard" in x for x in w), w
+lines = [l for l in text.splitlines() if not l.startswith("| api.ssrf-guard |")]
+e, w = [], []; pf.audit_baseline("\n".join(lines), ["api"], "small", "elevated", e, w)
+assert not any("missing" in x for x in e), e
+e, w = [], []; pf.audit_baseline(text.replace("| baseline | 1 |", "| baseline | 9 |"), ["api"], "small", "elevated", e, w)
+assert any("is not a baseline version" in x for x in e), e
+PY2
+rc_is 0 $? "audit: pinned baseline — newer items warn, pinned items required, deprecated optional"
+cd "$ROOT"
+
+# ---------- --kind is optional; §6 seeds at most five asks; deferred beyond five ----------
+cd "$CONS"
+SP="$CONS/docs/engineering/specs"
+python3 "$ROOT/scripts/plan_feature.py" new tagging --tier small --work api,web-ui >$OUT/pt.out 2>&1
+rc_is 0 $? "plan: new without --kind succeeds (default universal)"
+grep -q "^| kinds | universal |" "$SP/tagging/spec.md" && ok "plan: kinds default to universal" \
+  || bad "plan: kinds not defaulted to universal"
+NQ=$(grep -cE "^\| Q[0-9]+ \| must-ask \|" "$SP/tagging/spec.md")
+[ "$NQ" -ge 1 ] && [ "$NQ" -le 5 ] && ok "plan: api+web-ui small tagging seeds $NQ asks (<= 5)" \
+  || bad "plan: api+web-ui small tagging seeds $NQ asks"
+NA=$(grep -c "^| ask\.[a-z-]* | ASK: " "$SP/tagging/spec.md")
+[ "$NA" -le 5 ] && ok "plan: api+web-ui small tagging has $NA class C rows in §0b (<= 5)" \
+  || bad "plan: $NA class C rows in §0b"
+grep -qE "^\| ask\.(rpo-rto|supported-locales) \|" "$SP/tagging/spec.md" \
+  && bad "plan: RPO/RTO or launch locales asked of a small, risk-none feature" \
+  || ok "plan: no RPO/RTO or launch-locale ask at small, risk none"
+grep -q "Deferred to next batch" "$SP/tagging/spec.md" && bad "plan: deferred list with <= 5 asks" \
+  || ok "plan: no deferred list when the batch fits"
+grep -q "^| Q1 | must-ask | What recurring spend" "$SP/tagging/spec.md" \
+  && ok "plan: the blocking ask (cost) is Q1" || bad "plan: blocking ask not first"
+grep -q "^| ask.rpo-rto |" "$SP/authy/spec.md" && ok "plan: RPO/RTO still asked at small + elevated risk" \
+  || bad "plan: RPO/RTO lost at elevated risk"
+
+python3 "$ROOT/scripts/plan_feature.py" new big --tier growth --risk regulated \
+  --work api,web-ui,mobile,data-pipeline,iac >$OUT/pt.out 2>&1
+has "deferred to next batch"
+NQ=$(grep -cE "^\| Q[0-9]+ \| must-ask \|" "$SP/big/spec.md")
+[ "$NQ" -eq 5 ] && ok "plan: more than five asks -> exactly five in §6" || bad "plan: $NQ asks in §6"
+grep -E "^\| Q[1-4] \| must-ask \|" "$SP/big/spec.md" | grep -c "blocks \`ready\`" | grep -qx 4 \
+  && ok "plan: the four blocking asks come first" || bad "plan: blocking asks not first"
+grep -q "^Deferred to next batch (.*\`ask.rpo-rto\`" "$SP/big/spec.md" \
+  && ok "plan: the rest are listed as deferred to next batch" || bad "plan: no deferred list"
+python3 "$ROOT/scripts/plan_feature.py" audit big >$OUT/pt.out 2>&1
+no "open questions; at most"
+
+# a fresh generated spec is a fixed-structure record: check_index does not ask for Contents
+python3 "$ROOT/scripts/check_index.py" docs/engineering/specs/big >$OUT/pt.out 2>&1
+rc_is 0 $? "check_index: a fresh plan_feature new spec passes"
+no "MISSING"
+mkdir -p docs/notes; cp "$SP/big/spec.md" docs/notes/copied.md
+python3 "$ROOT/scripts/check_index.py" docs/notes >$OUT/pt.out 2>&1
+rc_is 1 $? "check_index: the same text outside specs/<name>/spec.md still needs Contents"
+rm -r docs/notes
+
+# ---------- evidence must look like proof ----------
+ev() {  # ev <row id> <new evidence cell>: rewrite one §0b or §7 row's last cell in $W
+  python3 - "$W/spec.md" "$1" "$2" <<'PY2'
+import sys, pathlib
+p, rid, new = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+out, hit = [], False
+for l in p.read_text().splitlines():
+    if l.startswith(f"| {rid} |"):
+        cells = l.split(" | "); cells[-1] = new + " |"; l = " | ".join(cells); hit = True
+    out.append(l)
+if not hit:
+    print(f"TEST BUG: no row {rid}", file=sys.stderr); sys.exit(1)
+p.write_text("\n".join(out) + "\n")
+PY2
+}
+fresh; ev all.no-secrets-in-code "gitleaks detect --redact"
+audit_w; rc_is 1 $? "evidence: the seeded hint with the marker deleted is rejected"
+has "evidence is the seeded suggestion (first: all.no-secrets-in-code)"
+fresh; ev all.no-secrets-in-code "\`gitleaks detect --redact\`"
+audit_w; rc_is 1 $? "evidence: the seeded hint in backticks is still the hint"
+fresh; ev all.pii-out-of-logs "logs were looked at"
+audit_w; rc_is 1 $? "evidence: prose that cites nothing is rejected"
+has "evidence is not proof (first: all.pii-out-of-logs"
+fresh; ev all.pii-out-of-logs "review"
+audit_w; rc_is 0 $? "evidence: review alone is accepted"
+has "3 covered/applied row(s) rest on review alone (unverified)"
+for good in "login/AC-3 tagged test" "ADR-0001" "\`100x bloat_check --base origin/main\`" "V9" \
+            "tests/redaction_test.py" "\`log-redaction.spec.ts\` → grep for the session id"; do
+  fresh; ev all.pii-out-of-logs "$good"; audit_w; rc_is 0 $? "evidence accepted: $good"
+done
+for badev in "billing/AC-3 tagged test" "100x nosuch_tool" "V99" "see Node.js docs"; do
+  fresh; ev all.pii-out-of-logs "$badev"; audit_w; rc_is 1 $? "evidence rejected: $badev"
+done
+fresh; ev E1 "two parallel requests with the same idempotency key produce one effect"
+audit_w; rc_is 1 $? "evidence: a covered edge case citing the seeded test text is rejected"
+has "covered edge case(s) whose reference is the seeded suggestion (first: E1)"
+fresh; ev E1 "tested by hand"
+audit_w; rc_is 1 $? "evidence: a covered edge case citing no test is rejected"
+has "covered edge case(s) whose reference is not proof (first: E1"
+
+# ---------- the linked PRD is audited too ----------
+fresh; mkdir -p "$CONS/prdbad"; cp "$ROOT/examples/login/prd.md" "$CONS/prdbad/prd.md"
+swap "$CONS/prdbad/prd.md" "## 22. Approvers" "## 22. Signoff"
+swap "$W/spec.md" "| prd | examples/login |" "| prd | prdbad |"
+audit_w; rc_is 0 $? "prd: a failing PRD below growth does not block the spec"
+has "WARN  linked PRD prdbad/prd.md fails its audit"
+has "a PRD is optional below growth"
+swap "$W/spec.md" "| scale tier | small |" "| scale tier | growth |"
+audit_w; rc_is 1 $? "prd: a failing PRD at growth blocks the spec"
+has "ERROR linked PRD prdbad/prd.md fails its audit"
+has "a PRD is required from the growth tier"
+fresh; audit_w; no "linked PRD"
+PR="$CONS/docs/engineering/prds"
+mkdir -p "$PR/login" "$PR/w"
+cp "$CONS/prdbad/prd.md" "$PR/login/prd.md"; cp "$CONS/prdbad/prd.md" "$PR/w/prd.md"
+fresh; swap "$W/spec.md" "| prd | examples/login |" "| prd | none |"
+swap "$W/spec.md" "lifts after 15 minutes. (R4, S4)" "lifts after 15 minutes. (S4)"
+audit_w; rc_is 0 $? "prd: | prd | none | is honoured over prds/<feature>/"
+no "linked PRD"
+fresh; grep -v "^| prd |" "$W/spec.md" > "$W/s2" && mv "$W/s2" "$W/spec.md"
+audit_w; has "linked PRD docs/engineering/prds/login/prd.md"
+no "prds/w/prd.md"
+rm -r "$PR/login" "$PR/w" "$CONS/prdbad"
+
+# ---------- audit_spec: importable, silent, returns the header status ----------
+fresh; python3 - "$ROOT" "$W" "$SP/thing" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, io, contextlib
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import plan_feature as pf
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+    e, w, s = pf.audit_spec(sys.argv[2])
+    e2, w2, s2 = pf.audit_spec(sys.argv[3] + "/spec.md")
+    e3, w3, s3 = pf.audit_spec("no-such-spec")
+assert buf.getvalue() == "", buf.getvalue()
+assert (e, s) == ([], "ready"), (e, s)
+assert e2 and s2 == "draft", (e2, s2)
+assert len(e3) == 1 and "no spec.md" in e3[0] and s3 == "", (e3, s3)
+PY2
+rc_is 0 $? "audit_spec: (errors, warnings, status) with no output"
+
+# ---------- _md: fences and the acceptance-criteria section scope ----------
+python3 - "$ROOT" >$OUT/pt.out 2>&1 <<'PY2'
+import sys, time
+sys.path.insert(0, sys.argv[1] + "/scripts")
+import _md
+bt = "## 2b. Acceptance criteria\n\nAC-1: one two three\n\n```bash\n# create a tag\nAC-7: in a fence\n```\n\nAC-2: four five six\n\n## 3. Interfaces\n\nAC-9: a well-formed line outside the section\n"
+assert list(_md.parse_acs(bt)) == ["AC-1", "AC-2"], _md.parse_acs(bt)
+tl = "# s\n\n~~~markdown\n## Acceptance criteria\nAC-1: example only\n~~~\n\n## 2b. Acceptance criteria\n\nAC-1: the real criterion here\n~~~\n# a comment\n~~~\nAC-2: also real here\n"
+assert _md.parse_acs(tl) == {"AC-1": "the real criterion here", "AC-2": "also real here"}, _md.parse_acs(tl)
+mixed = "~~~~\n```\n## Acceptance criteria\nAC-1: x y z\n```\n~~~~\n## Acceptance criteria\nAC-3: real real real\n"
+assert list(_md.parse_acs(mixed)) == ["AC-3"], _md.parse_acs(mixed)
+for line in ["AC-1: x" + " " * 200000 + "y", "AC-1: a" + " |" * 100000,
+             "AC-1: x (" + "R1, " * 50000, "AC-1: x" + " " * 200000 + "(R1)"]:
+    t = time.time(); _md.parse_criteria(line); dt = time.time() - t
+    assert dt < 1, f"{dt:.2f}s on a {len(line)}-char line"
+assert _md.parse_criteria("AC-1: tag ten people. (R1, S2)")[0]["links"] == ["R1", "S2"]
+PY2
+rc_is 0 $? "_md: fences never end or open the AC section; AC-9 outside it not counted; 200KB line < 1s"
 cd "$ROOT"
 
 echo

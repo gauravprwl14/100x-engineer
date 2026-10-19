@@ -1,0 +1,68 @@
+<!--
+  Technique: Comparison matrix  (id: comparison-matrix, group: 3 · Compare & decide)
+  What it is: A table with the options as columns and the comparison criteria as rows.
+  Best for: 2–5 options against the same criteria · Formats: All formats
+  Use: copy the card's example block into a guide <section> (static markup, no script).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-comparison-matrix">
+<h2 style="margin-top:0">Comparison matrix</h2>
+<p class="what">
+<b>What it is:</b> A table with the options as columns and the comparison criteria as rows.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Puts options side by side on exactly the same questions.</li>
+<li>Makes the deciding difference jump out.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>2–5 options against the same criteria</div>
+<div>
+<b class="bad">Avoid when</b>One option — use pros/cons</div>
+<div>
+<b>Formats</b>All formats</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Three ways to generate short codes compared on collisions, coordination and predictability.</p>
+<div class="tbl">
+<table>
+<tr>
+<th>
+</th>
+<th>Hash + 7 chars</th>
+<th>Counter + base62</th>
+<th>Key service</th>
+</tr>
+<tr>
+<td>Collisions</td>
+<td>Possible — check</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td>Coordination</td>
+<td>None</td>
+<td>Distributed counter</td>
+<td>Extra service</td>
+</tr>
+<tr>
+<td>Predictable IDs</td>
+<td>No</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+</table>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Pick the criterion you care about most (a row) and read across.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> A plain table. Keep to 2–5 options.</p>
+</div>

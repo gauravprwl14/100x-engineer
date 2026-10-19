@@ -1,9 +1,9 @@
 # The three detail levels
 
 One page, one flow, three drawings, so the difference is visible instead of
-described. The flow is the same one used in `specs/login/spec.md` — email+password
+described. The flow is the same one used in this repo's own `specs/login/spec.md` — email+password
 login — carried from orientation through to a debugging-grade spec. Validate any of
-these with `python3 scripts/check_diagrams.py reviewers/_diagram-levels.md`.
+these with `100x check_diagrams reviewers/_diagram-levels.md`.
 
 | level | audience | node budget | what's collapsed | step table |
 |---|---|---|---|---|

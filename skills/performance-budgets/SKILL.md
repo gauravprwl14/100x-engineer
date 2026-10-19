@@ -1,22 +1,15 @@
 ---
 name: performance-budgets
 description: >
-  Use before designing or reviewing anything with a request/response shape, a
-  loop that touches a database or network, a new cache, a connection pool, or a
-  capacity question — an endpoint, a query, a batch job, a fan-out call, a cache
-  layer. Covers latency budgets split across a call chain, p95/p99 over
-  averages, back-of-envelope estimation, the N+1 family, query cost and
-  EXPLAIN, pagination as correctness, cache invalidation cost, capacity
-  headroom, connection pools, and load/soak/spike testing. Not for bundle-byte
-  or binary-byte budgets (see typescript-verification, mobile-release-safety)
-  and not for choosing an implementation approach (see approach-selection).
-  Use PROACTIVELY whenever asked "is this fast enough" or "will this scale."
+  Slow endpoint, will it scale, can it handle the traffic: latency budgets, p95/p99, N+1
+  queries, EXPLAIN, pagination, caching, connection pools, load tests. Not for bundle size (→
+  language-verification).
 ---
 
 # Performance and capacity
 
 Bundle-byte and binary-byte budgets are owned elsewhere in this plugin
-(`typescript-verification` rule 6, `mobile-release-safety` rule 7) and this skill
+(`language-verification` rule 6, `mobile-release-safety` rule 7) and this skill
 does not repeat them. What's missing across the corpus this plugin studied is the
 other half of "will this survive production": **latency budgets, query cost, and
 capacity arithmetic**. `research/30-findings-js-verification.md` found a bundle-size
@@ -59,7 +52,7 @@ UI-only change with no data fetching; doc/config edits with no runtime path.
    of a loop with no batching, prefetching, or gathering. This is the N+1 family:
    an ORM's lazy relation and a hand-written `for x in items: call_service(x)`
    are the same bug.
-   *Enforced by:* `python3 scripts/perf_check.py --only n-plus-one`
+   *Enforced by:* `100x perf_check --only n-plus-one`
 
 5. Run `EXPLAIN` on any new query against a table that isn't trivially small,
    before merge. A sequential scan is free at 10k rows (fits in cache) and an
@@ -68,27 +61,27 @@ UI-only change with no data fetching; doc/config edits with no runtime path.
 
 6. Bound every list query — `LIMIT`/`take`/`first` — and remember an index has a
    write cost, so don't add one to speed up a query nothing calls.
-   *Enforced by:* `python3 scripts/perf_check.py --only unbounded-query`
+   *Enforced by:* `100x perf_check --only unbounded-query`
 
 7. Treat an endpoint with no pagination limit as a correctness bug, not a
    performance nit. It is a latent outage waiting for the table to grow, and
    "sort in application code after an unbounded fetch" is the same bug wearing
    a different hat.
-   *Enforced by:* `python3 scripts/perf_check.py --only unbounded-query,hot-path-sort`
+   *Enforced by:* `100x perf_check --only unbounded-query,hot-path-sort`
 
 8. Never `SELECT *` in application code or a migration. It fetches columns
    nobody asked for and breaks silently when a column is added or renamed.
-   *Enforced by:* `python3 scripts/perf_check.py --only select-star`
+   *Enforced by:* `100x perf_check --only select-star`
 
 9. Give every outbound HTTP/RPC call an explicit timeout. An unstated timeout is
    a contract the client library invents for you — Envoy's own default is 5s;
    yours might not be.
-   *Enforced by:* `python3 scripts/perf_check.py --only no-timeout`
+   *Enforced by:* `100x perf_check --only no-timeout`
 
 10. Cap concurrency on any fan-out (`Promise.all`/`asyncio.gather`) and cap any
     in-memory accumulation over a query-result loop. Unbounded either one turns
     one large input into an outage, not a slow response.
-    *Enforced by:* `python3 scripts/perf_check.py --only unbounded-concurrency,unbounded-accumulation`
+    *Enforced by:* `100x perf_check --only unbounded-concurrency,unbounded-accumulation`
 
 11. Treat caching as a decision with an invalidation cost, not a default. State
     the hit-rate assumption, and state what happens at 0% hit rate — cold start,
@@ -132,12 +125,12 @@ Diff-scoped; runs in well under a second on a typical PR.
 
 ```bash
 # the mechanical half -- structural shapes only a script can reliably catch
-python3 scripts/perf_check.py --list
-python3 scripts/perf_check.py --base origin/main
-python3 scripts/perf_check.py --base origin/main --strict   # treat advisories as failures too
+100x perf_check --list
+100x perf_check --base origin/main
+100x perf_check --base origin/main --strict   # treat advisories as failures too
 
 # just the blocking checks (N+1, missing timeouts)
-python3 scripts/perf_check.py --only n-plus-one,no-timeout
+100x perf_check --only n-plus-one,no-timeout
 
 # the reasoning half -- no command exists for this by design; the numbers below
 # are what "is this ok" gets checked against
@@ -184,11 +177,12 @@ most others in this plugin.
 
 ## Scale
 
-`solo`: rules 1, 2, 4, 6, 8, 9 — free or near-free, and rules 4/6/8/9 are fully
-mechanical via `perf_check.py`.
+`solo`: rules 1, 2, 4, 6, 7, 8, 9 — free or near-free, and rules 4/6/7/8/9 are
+fully mechanical via `perf_check.py`. Rule 7 is here because rule 7 itself calls
+an unbounded endpoint a correctness bug, and those apply at every size.
 `small-team (2-10)`: add 3, 5, 10, 13 — back-of-envelope math and `EXPLAIN` start
 paying for themselves once more than one person touches the query layer.
-`org` / `high-blast-radius`: add 7, 11, 12, 14, 15, 16 and a numeric capacity/soak
+`org` / `high-blast-radius`: add 11, 12, 14, 15, 16 and a numeric capacity/soak
 regime. DuckDuckGo Android's canary is 0.0001% before a wider rollout
 (`mobile-release-safety` Sources) — that's the shape of org-scale caution, applied
 here to capacity headroom instead of a mobile rollout ladder.
@@ -210,7 +204,7 @@ here to capacity headroom instead of a mobile rollout ladder.
   `brettwooldridge/HikariCP.wiki:About-Pool-Sizing.md`.
 - Capacity/storage-growth arithmetic: `prometheus/prometheus@main:docs/storage.md`.
 - Bundle-byte and binary-byte budgets, owned elsewhere and not duplicated here:
-  `skills/typescript-verification/SKILL.md` rule 6 (`TanStack/table` 30KB
+  `skills/language-verification/SKILL.md` rule 6 (`TanStack/table` 30KB
   `size-limit` on `table-core` — 2 of 72 JS repos have any budget at all) and
   `skills/mobile-release-safety/SKILL.md` rule 7 (0 of 31 mobile repos have a hard
   byte gate).

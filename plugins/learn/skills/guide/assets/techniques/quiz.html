@@ -1,0 +1,50 @@
+<!--
+  Technique: Quiz  (id: quiz, group: 6 · Remember)
+  What it is: Multiple-choice questions that show the right answer and a short explanation after you pick.
+  Best for: Checking understanding · Formats: HTML · React (Markdown: answers in <details>)
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-quiz">
+<h2 style="margin-top:0">Quiz</h2>
+<p class="what">
+<b>What it is:</b> Multiple-choice questions that show the right answer and a short explanation after you pick.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Lets readers check understanding.</li>
+<li>Explanations teach even when the answer is wrong.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Checking understanding</div>
+<div>
+<b class="bad">Avoid when</b>Trivia not in the content</div>
+<div>
+<b>Formats</b>HTML · React (Markdown: answers in &lt;details&gt;)</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> One question on redirect types.</p>
+<div class="quiz-q box" data-a="1">
+<b>Which redirect keeps analytics?</b>
+<button data-o="0">301</button>
+<button data-o="1">302</button>
+<div class="explain">Browsers cache 301, so repeat clicks never reach you.</div>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>Pick an answer; green is correct, red is your wrong pick; read the explanation.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> Buttons per option with the correct index stored. Markdown: options plus answer in &lt;details&gt;.</p>
+</div>
+<script>
+document.addEventListener("click", e => { const b = e.target.closest(".quiz-q button[data-o]"); if (!b) return; const box = b.closest(".quiz-q"); if (box.dataset.done) return; box.dataset.done = 1;
+  const a = +box.dataset.a; $$("button", box).forEach((x, j) => { if (j === a) x.classList.add("right"); else if (x === b) x.classList.add("wrong"); }); $(".explain", box).style.display = "block"; });
+</script>

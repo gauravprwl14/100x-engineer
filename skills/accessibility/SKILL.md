@@ -1,18 +1,9 @@
 ---
 name: accessibility
 description: >
-  Use when building or reviewing any interactive UI component — a button, a form
-  field, a modal, a card with a click handler, a custom dropdown, an icon-only
-  control, an image, a toast/async update — not as an end-of-project audit but
-  as a check that runs on every component-touching diff. Covers semantic HTML
-  vs div-soup, keyboard operability and focus indicators, accessible names,
-  label/error association, alt text, WCAG 2.2 AA contrast and target-size
-  numbers, focus management in modals and on route change, live regions, and
-  prefers-reduced-motion. Extends the a11y failure modes already listed in
-  reviewers/nextjs-react.md (row 16) with the per-component rules and a
-  runnable checker; does not repeat that file's Next.js-specific rows. Use
-  PROACTIVELY whenever a `.tsx`/`.jsx`/`.html` file adds or changes a clickable
-  element, a form field, an image, or an animation.
+  Accessibility (a11y) for buttons, modals, forms, icon buttons, images: keyboard and focus,
+  screen reader names, labels, alt text, WCAG 2.2 AA contrast, reduced motion. Not for page
+  layout (→ ui-baseline).
 ---
 
 # Accessibility
@@ -37,9 +28,14 @@ or a copy/config-only change with no new element or interaction.
 
 ## Rules
 
-1. Reach for the semantic element first. A `div`/`span`/`li` with `onClick` and
-   no `role`/`tabIndex` is not a button — it's invisible to assistive tech.
-   *Enforced by:* `python3 scripts/a11y_check.py --only onclick-non-interactive`
+1. Reach for the semantic element first. Any non-interactive element (`div`,
+   `span`, `p`, `section`, `li`, `td`, `img`, a heading…) with `onClick` and no
+   `role`/`tabIndex` is not a button — it's invisible to assistive tech.
+   `<label>` is exempt: clicking it activates its control. Adding a widget role
+   is not enough on its own: `role="button"` (or `link`, `checkbox`, `tab`,
+   `menuitem`…) also needs `tabIndex` *and* a key handler (`onKeyDown`), or the
+   element still cannot be reached or activated from the keyboard.
+   *Enforced by:* `100x a11y_check --only onclick-non-interactive`
 
 2. Every interactive element must be reachable and operable by keyboard alone
    (Tab to reach it, Enter/Space to activate it) — this is broader than any
@@ -47,22 +43,24 @@ or a copy/config-only change with no new element or interaction.
    *Enforced by:* review
 
 3. Never remove the default focus outline without a compliant replacement. A
-   `:focus-visible` rule in the same file is the minimum bar.
-   *Enforced by:* `python3 scripts/a11y_check.py --only outline-none-no-focus-visible`
+   `:focus-visible` rule in the same file is the minimum bar; for Tailwind,
+   `outline-none`/`outline-0` needs a `focus-visible:` (or `focus:` ring/border)
+   utility in the same class list.
+   *Enforced by:* `100x a11y_check --only outline-none-no-focus-visible`
 
 4. Don't use a positive `tabIndex`. It reorders focus away from DOM order and
    breaks the mental model every screen-reader and keyboard user relies on.
-   *Enforced by:* `python3 scripts/a11y_check.py --only positive-tabindex`
+   *Enforced by:* `100x a11y_check --only positive-tabindex`
 
 5. Every control needs an accessible name: visible text, `aria-label`, or
    `aria-labelledby`. An icon-only button with none of the three is unusable —
    a screen reader announces "button" with nothing else.
-   *Enforced by:* `python3 scripts/a11y_check.py --only control-no-accessible-name`
+   *Enforced by:* `100x a11y_check --only control-no-accessible-name`
 
 6. Every form field needs a programmatic label: `id` paired with a `label
    htmlFor`, or `aria-label`/`aria-labelledby`. A placeholder is not a label —
    it disappears the moment the user types.
-   *Enforced by:* `python3 scripts/a11y_check.py --only form-field-no-label`
+   *Enforced by:* `100x a11y_check --only form-field-no-label`
 
 7. Associate a field's error with the field via `aria-describedby`, and make
    sure it's actually announced (a `role="alert"`/live region, or the field
@@ -73,11 +71,11 @@ or a copy/config-only change with no new element or interaction.
 8. Every `<img>`/`next/image` needs a meaningful `alt`, or an explicit `alt=""`
    for a purely decorative image. Missing `alt` is a defect; empty `alt` is a
    decision — the checker treats them differently.
-   *Enforced by:* `python3 scripts/a11y_check.py --only img-no-alt`
+   *Enforced by:* `100x a11y_check --only img-no-alt`
 
 9. Never invent an `aria-*` attribute name. A typo (`aria-lable`) is silently
    ignored by assistive tech — no warning, no fallback, just missing metadata.
-   *Enforced by:* `python3 scripts/a11y_check.py --only unknown-aria-attribute`
+   *Enforced by:* `100x a11y_check --only unknown-aria-attribute`
 
 10. Meet WCAG 2.2 AA contrast: **4.5:1** for body text, **3:1** for large-scale
     text (≥18pt, or ≥14pt bold) and for UI-component/graphical boundaries. And
@@ -98,8 +96,9 @@ or a copy/config-only change with no new element or interaction.
 
 13. Respect `prefers-reduced-motion`. A parallax hero or a spinning loader
     with no reduced-motion guard can trigger vestibular symptoms, not just
-    annoy.
-    *Enforced by:* `python3 scripts/a11y_check.py --only animation-no-reduced-motion`
+    annoy. For Tailwind, write `motion-safe:animate-spin`, or pair a bare
+    `animate-*` with a `motion-reduce:` override in the same class list.
+    *Enforced by:* `100x a11y_check --only animation-no-reduced-motion`
 
 14. Meet the WCAG 2.2 target-size minimum: pointer targets at least **24×24
     CSS pixels**, or 24px of clear space around a smaller one (SC 2.5.8).
@@ -117,12 +116,12 @@ or a copy/config-only change with no new element or interaction.
 Diff-scoped; runs in well under a second on a typical component PR.
 
 ```bash
-python3 scripts/a11y_check.py --list
-python3 scripts/a11y_check.py --base origin/main
-python3 scripts/a11y_check.py --base origin/main --strict   # advisories also fail
+100x a11y_check --list
+100x a11y_check --base origin/main
+100x a11y_check --base origin/main --strict   # advisories also fail
 
 # just the four blocking checks
-python3 scripts/a11y_check.py --only onclick-non-interactive,img-no-alt,form-field-no-label,control-no-accessible-name
+100x a11y_check --only onclick-non-interactive,img-no-alt,form-field-no-label,control-no-accessible-name
 
 # what no script can do -- run manually before merging a real interactive component
 #   1. unplug the mouse: Tab through the component, Enter/Space to activate
@@ -132,7 +131,9 @@ python3 scripts/a11y_check.py --only onclick-non-interactive,img-no-alt,form-fie
 `a11y_check.py` is heuristic — regex plus a hand-rolled tag scanner, not a real
 JSX/HTML parser (its own docstring says so). It cannot see runtime state: a
 conditionally-applied `role`, whether an "icon" component secretly renders
-text, whether a CSS class actually strips the focus ring in the browser. It
+text, whether a CSS class actually strips the focus ring in the browser. The
+Tailwind checks (rules 3 and 13) read literal `class`/`className` strings only;
+a class list built by `cn()`/`clsx()` is skipped, not guessed at. It
 under-fires on ambiguous input by design — a missed violation is cheap, a false
 positive is what gets a checker like this disabled. It complements, and does
 not replace, `eslint-plugin-jsx-a11y` if your stack already runs one (Next.js
@@ -146,7 +147,9 @@ ARIA tree correctness).
 This skill rejects:
 
 - **`<div onClick={...}>` instead of `<button>`** — the canonical defect: not
-  focusable, not keyboard-operable, not announced as a control.
+  focusable, not keyboard-operable, not announced as a control. Same for
+  `<li>`, `<td>`, `<img>` or a heading with `onClick`, and for
+  `<div role="button" onClick={...}>` with no `tabIndex` or key handler.
 - **An icon-only `<button><TrashIcon /></button>` with no `aria-label`** — a
   screen reader announces "button", nothing else.
 - **A form `<input>` with a placeholder and no `<label>`/`aria-label`** — the
@@ -172,14 +175,17 @@ gap is real and is why rule 15 exists: 57% automated coverage means the other
 
 ## Scale
 
-`solo`: rules 1, 4, 5, 6, 8, 9 — fully mechanical, near-zero cost, catches the
-defects a solo builder repeats across every new component.
-`small-team (2-10)`: add 3, 13, and a keyboard-only pass before merging any new
-interactive component (rule 15).
-`org` / `high-blast-radius`: add 10, 11, 12, 14 and a scheduled screen-reader
-pass; a public-facing org is also a legal-exposure surface (ADA/EN 301 549) —
-that isn't this skill's claim to make, but the WCAG 2.2 AA numbers above are
-the bar those regulations point to.
+**Every tier, `solo` included: rules 1–14.** WCAG 2.2 AA (contrast, focus
+management, live regions, target size) is a correctness floor, not a scale
+feature: a solo-built checkout a screen-reader user cannot complete is broken
+at any team size. Rules 1, 4–6, 8, 9 and 13 are mechanical and near-free; 10,
+11, 12 and 14 are a review question per new component.
+What scales is rule 15's manual cadence: `small-team (2-10)` adds a keyboard-
+only pass before merging any new interactive component; `org` /
+`high-blast-radius` adds a scheduled screen-reader pass (VoiceOver/NVDA) and a
+periodic audit. A public-facing org is also a legal-exposure surface (ADA/EN
+301 549) — not this skill's claim to make, but WCAG 2.2 AA is the bar those
+regulations point to.
 
 ## Sources
 

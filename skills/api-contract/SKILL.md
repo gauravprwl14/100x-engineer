@@ -1,13 +1,9 @@
 ---
 name: api-contract
 description: >
-  Use when designing or reviewing a public or internal API — REST, GraphQL, or
-  gRPC — its versioning scheme, error responses, idempotency, pagination, PATCH
-  semantics, or deprecation of a field or endpoint. Use PROACTIVELY before
-  shipping a new endpoint, changing a response shape, or removing/renaming a
-  field. Not for the database schema underneath it — that is data-modeling,
-  though a schema decision (an exposed internal id, a nullable-as-state field)
-  routinely becomes an API contract problem.
+  REST, GraphQL or gRPC API contract: versioning, error shape, pagination, idempotency, PATCH,
+  renaming or removing a field without breaking clients, deprecation. Not for the DB schema (→
+  data-modeling).
 ---
 
 # API contract design
@@ -50,12 +46,11 @@ function call with no external or cross-service consumer.
    renaming a field or an enum value, changing a previously-stable error code,
    tightening validation on a field that used to accept more. Detect them on
    the schema diff, not by reading the PR.
-   *Enforced by:* `python3 scripts/schema_check.py --base <ref>` for the
-   DB/ORM layer the response is built from; for the wire format itself use
-   whatever your stack actually emits — `oasdiff breaking base.yaml
-   head.yaml` (OpenAPI), `buf breaking --against '.git#branch=main'`
-   (protobuf/gRPC), `npx graphql-inspector diff old.graphql new.graphql`
-   (GraphQL)
+   *Enforced by:* an external wire-format diff, not vendored here — `oasdiff
+   breaking base.yaml head.yaml` (OpenAPI), `buf breaking --against
+   '.git#branch=main'` (protobuf/gRPC), `npx graphql-inspector diff old.graphql
+   new.graphql` (GraphQL). No tool in this repo detects a wire-format break;
+   without one of these in CI the rule is `review`
 
 4. Evolve additively. New fields are optional with a sane default meaning when
    absent; clients are written as tolerant readers that ignore fields they
@@ -76,7 +71,8 @@ function call with no external or cross-service consumer.
    side-effect-bearing resource — a charge, a transfer, a notification send.
    State the key's lifetime (Stripe: effectively the life of the resource) and
    what a replay within that window returns: the original response, unchanged,
-   never a second execution.
+   never a second execution. The client supplies the key per logical operation;
+   the same key with a different body is a `422`, not a replay.
    *Enforced by:* review
 
 7. Pagination is a contract, not an implementation detail. Prefer a cursor for
@@ -124,8 +120,9 @@ function call with no external or cross-service consumer.
 ## Verify
 
 ```bash
-# ~1s: DB/ORM layer breaking-change patterns underneath the API response
-python3 scripts/schema_check.py --base origin/main --strict
+# ~1s: unsafe DB migrations underneath the response (destructive+additive in one
+# migration, nullable without default) -- NOT a wire-format check
+100x schema_check --base origin/main --strict
 
 # wire-format contract diff -- use whichever this repo actually emits
 git diff --stat origin/main -- '*.proto' 'openapi*.yaml' 'openapi*.json' '*.graphql'
@@ -181,7 +178,7 @@ This skill rejects:
 If the field or shape in question is a schema decision more than an API one —
 an exposed internal id, a nullable field standing in for a status enum — read
 `data-modeling` next; rule 12 here is the seam between the two skills. Log a
-versioning or deprecation decision with `python3 scripts/decide.py new`. Run
+versioning or deprecation decision with `100x decide new`. Run
 `bloat_check.py` and `design_drift.py` as usual while implementing (see
 `feature-planning`).
 
@@ -233,5 +230,8 @@ deliberately; both are real, and "no model" is not a third option.
 - A public API description split into a stable artifact and one explicitly
   "subject to breaking changes on the `main` branch" — i.e., which parts of
   the contract are and aren't promises yet: `github/rest-api-description@main:README.md`.
-- Idempotency-key/backoff/pagination/timeout enforcement implementation:
-  `scripts/schema_check.py` (shared with `data-modeling`), `SOURCE: original`.
+- Wire-format breaking-change detection: `oasdiff`, `buf breaking`,
+  `graphql-inspector` (external; none vendored). Rules 6, 7, 9 (idempotency,
+  pagination, timeout/retry) have no mechanical check here, hence `review`.
+- Same key + different payload → `422`:
+  `datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/`.

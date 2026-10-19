@@ -1,0 +1,4 @@
+# This function loops over the notes and adds up the word counts.
+// Here we set the counter to zero.
+# This method returns the cached row.
+// Now we iterate over the pending jobs.

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 07-pr-description
+description: PR body for a small diff. Deterministic part is bench/checks.py check_07 (prose_check --kind pr).
+tags: [writing, pr]
+context:
+  scaffold_script: scaffold.sh

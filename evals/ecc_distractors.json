@@ -1,0 +1,22 @@
+{
+  "_doc": "SYNTHETIC competitor skills for skill_triggers.py --distractors. Names follow the ECC plugin this one is installed beside; every description was WRITTEN FOR THIS EVAL, not copied from ECC, to be a plausible, keyword-rich neighbour for the same prompts. They model the condition seen in a live session (~400 skills listed together), so a 100x description that only beats its own siblings shows up as a miss. Do not tune these to make 100x win: weakening a distractor is loosening the grader (evals/GRADER-CHANGELOG.md).",
+  "skills": [
+    {"name": "ecc:code-review", "description": "Use when reviewing code changes, a pull request, or local uncommitted changes for quality, security, maintainability and correctness. Checks naming, error handling, test coverage, duplication and best practices, and posts review comments."},
+    {"name": "ecc:plan", "description": "Use when planning a feature, refactor or project before writing code: break work into phases and tasks, identify files to change, risks and dependencies, and produce an implementation plan for the team."},
+    {"name": "ecc:tdd-workflow", "description": "Use when writing new features or fixing bugs with test-driven development: write a failing test first, implement the minimal code to pass, refactor, and keep coverage above 80% with unit, integration and e2e tests."},
+    {"name": "ecc:verification-loop", "description": "Use before marking work complete: run build, type check, lint, tests and a security scan in a loop, fix failures, and only report done when every check passes."},
+    {"name": "ecc:quality-gate", "description": "Use to run a quality gate on a change before commit or merge: lint, format, type check, test coverage thresholds and static analysis, with a pass/fail summary."},
+    {"name": "ecc:security-review", "description": "Use when code handles user input, authentication, authorization, API endpoints, secrets, payments or file uploads. Reviews for OWASP Top 10 vulnerabilities, injection, XSS, CSRF, SSRF and insecure configuration."},
+    {"name": "ecc:codebase-onboarding", "description": "Use when joining a new project or exploring an unfamiliar codebase: map the architecture, key modules, entry points, data flow and conventions, and produce an onboarding guide."},
+    {"name": "ecc:e2e-testing", "description": "Use when writing or running end-to-end tests with Playwright for critical user journeys, flaky test handling, screenshots, traces and CI integration."},
+    {"name": "ecc:frontend-patterns", "description": "Use when building React or Next.js frontends: component composition, state management, data fetching, forms, responsive layouts, styling and performance patterns for modern web apps."},
+    {"name": "ecc:accessibility", "description": "Use when building or auditing UI for WCAG compliance: semantic HTML, ARIA, keyboard navigation, focus management, colour contrast and screen reader support."},
+    {"name": "ecc:api-design", "description": "Use when designing REST or GraphQL APIs: resource naming, status codes, pagination, filtering, versioning, error formats and rate limiting for production APIs."},
+    {"name": "ecc:database-migrations", "description": "Use when creating or reviewing database schema changes and migrations: zero-downtime migrations, rollbacks, indexes, data backfills and ORM migration tooling."},
+    {"name": "ecc:deployment-patterns", "description": "Use when deploying applications to production: CI/CD pipelines, Docker, blue-green and canary deployments, health checks, rollback strategies and environment configuration."},
+    {"name": "ecc:architecture-decision-records", "description": "Use when making a significant architectural decision: write an ADR capturing context, options considered, the decision and consequences, and keep the decision log in the repo."},
+    {"name": "ecc:python-testing", "description": "Use when writing Python tests with pytest: fixtures, parametrize, mocking, coverage, async tests and test organisation for Python projects."},
+    {"name": "ecc:golang-testing", "description": "Use when writing Go tests: table-driven tests, subtests, benchmarks, fuzzing, race detection and coverage with go test."},
+    {"name": "ecc:design-system", "description": "Use when building or applying a design system: design tokens, typography, colour palettes, spacing scales and reusable UI components for a consistent, good-looking interface."}
+  ]
+}

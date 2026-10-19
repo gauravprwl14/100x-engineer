@@ -1,16 +1,9 @@
 ---
 name: observability-design
 description: >
-  Use when adding a metric, a log line, a trace span, an alert rule, or an SLO —
-  or when designing a new service/endpoint/job and deciding what it should emit
-  before it ships. Covers choosing metrics vs traces vs logs, cardinality
-  budgets for labels, structured-logging field conventions, what to log at a
-  service boundary, SLI/SLO/error-budget mechanics, symptom-based alert design,
-  and observability cost/sampling as a design decision. Not for debugging a
-  live incident with existing telemetry — this is about what gets instrumented
-  before the incident, not how to read a dashboard during one. Use PROACTIVELY
-  before merging a new endpoint, job, or service, and when writing an alert
-  rule.
+  Metrics, logs, traces, alerts and SLOs for a new service, endpoint or job: what to emit, label
+  cardinality, structured logs, symptom-based alerts, sampling cost. Not for live incidents (→
+  root-cause-analysis).
 ---
 
 # Observability by design
@@ -123,7 +116,7 @@ Grafana vs...) — this is about what to emit, not where it's stored.
    rate (and whether errors/slow requests are always kept regardless of the
    base rate) and the retention window explicitly, and record it like any
    other decision that departs from "just turn everything on".
-   *Enforced by:* `python3 scripts/decide.py new "Sampling/retention policy" --affects "<glob>" --tag observability`
+   *Enforced by:* `100x decide new "Sampling/retention policy" --affects "<glob>" --tag observability`
 
 ## Verify
 
@@ -139,11 +132,12 @@ grep -rnE "console\.log\(|print\(" src/ 2>/dev/null
 grep -rniE "(email|phone|ssn|password|token)\s*[:=]" src/ 2>/dev/null
 
 # 4. an SLI defined as an average instead of a percentile
-grep -rniE "\bavg\(|average" src/ docs/ specs/ 2>/dev/null | grep -i "sli\|latency\|slo"
+#    (docs/ holds the default records root, docs/engineering/)
+grep -rniE "\bavg\(|average" src/ docs/ 2>/dev/null | grep -i "sli\|latency\|slo"
 
 # 5. record the sampling/retention decision once it's made
-python3 scripts/decide.py new "Sampling/retention policy" --affects "src/telemetry/**" --tag observability
-python3 scripts/decide.py verify   # confirms the assumption still holds later
+100x decide new "Sampling/retention policy" --affects "src/telemetry/**" --tag observability
+100x decide verify   # confirms the assumption still holds later
 ```
 Each grep is diff-scoped in practice (point at `git diff --name-only`) and runs
 in under a second; step 5 is a few seconds and is what makes the sampling

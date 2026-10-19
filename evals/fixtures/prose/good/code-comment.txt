@@ -1,0 +1,2 @@
+# Retries stop at 3: the payment provider bans keys after 5 failures a minute (#412).
+// Keep the sort stable; the export diff tool relies on row order.

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 09-reply-to-review
+description: Fix what a review comment asks, commit, and reply. Deterministic part is bench/checks.py check_09 (prose_check --kind reply).
+tags: [writing, reply, code]
+context:
+  scaffold_script: scaffold.sh

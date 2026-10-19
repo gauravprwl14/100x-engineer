@@ -1,0 +1,60 @@
+<!--
+  Technique: Fishbone / 5 whys  (id: fishbone-5-whys, group: 5 · Explain)
+  What it is: A root-cause diagram shaped like a fish skeleton: the problem is the head, and each bone is a category of possible causes.
+  Best for: Root causes · Formats: HTML/SVG · React · Mermaid
+  Use: copy the card's example block into a guide <section>; paste the script body into the WIDGETS block of html-shell.html
+  (needs the shell helpers el, txt, mk, cv, esc, clickable and the W / ST / DRAWERS stores).
+  The URL-shortener content is a demo: replace it with source content, escaped per html-shell.html §6,
+  and tag each element that states a key point with data-kp="kp-N".
+  Generated from technique-gallery.html; edit both together.
+-->
+<div class="box tcard" id="t-fishbone-5-whys">
+<h2 style="margin-top:0">Fishbone / 5 whys</h2>
+<p class="what">
+<b>What it is:</b> A root-cause diagram shaped like a fish skeleton: the problem is the head, and each bone is a category of possible causes.</p>
+<p style="margin:10px 0 2px">
+<b>What it does for the reader</b>
+</p>
+<ul>
+<li>Organises many possible causes so none are forgotten.</li>
+<li>Separates symptoms from root causes.</li>
+</ul>
+<div class="pc" style="margin:10px 0 12px">
+<div>
+<b class="good">Best for</b>Root causes</div>
+<div>
+<b class="bad">Avoid when</b>Only one cause — just say it</div>
+<div>
+<b>Formats</b>HTML/SVG · React · Mermaid</div>
+</div>
+<p style="margin:10px 0 4px">
+<b>Example:</b> Possible causes of slow redirects at peak.</p>
+<div class="svgwrap">
+<svg id="g10" viewBox="0 0 900 300" style="min-width:720px" role="img" aria-label="Fishbone: four cause categories (cache, database, network, code) leading to slow redirects at peak">
+</svg>
+</div>
+<div class="read">
+<b>How to read it</b>
+<ul>
+<li>The box on the right is the problem.</li>
+<li>Each bone is a cause category (e.g. cache, database); the small text is a specific cause.</li>
+</ul>
+</div>
+<div class="read">
+<b>Notes on this example</b>
+<ul>
+<li>Spine points to the effect; each bone is a cause category.</li>
+<li>Illustrative causes for slow redirects.</li>
+</ul>
+</div>
+<p class="note" style="margin-top:8px">
+<b>How to build it:</b> SVG spine with angled bones. Markdown: a table (category · cause) or a 5-whys chain in Mermaid flowchart TD.</p>
+</div>
+<script>
+W["g10"] = {"kind": "fish", "effect": "Redirects slow at peak", "bones": [["Cache", "Hot key evicted"], ["Database", "Hot partition"], ["Network", "Cross-region calls"], ["Code", "Synchronous analytics write"]]};
+function drawFish(k){const S=W[k],svg=document.getElementById(k);svg.innerHTML="";el("line",{x1:40,y1:150,x2:700,y2:150,stroke:cv("--ink"),"stroke-width":3},svg);
+ el("rect",{x:700,y:120,width:190,height:60,rx:10,fill:cv("--bad-bg"),stroke:cv("--bad")},svg);txt(svg,795,155,S.effect,{"text-anchor":"middle","font-size":13,"font-weight":600});
+ S.bones.forEach(([c,d],i)=>{const x=160+(i%2)*0+Math.floor(i/2)*260+(i%2?80:0),up=i%2===0,y2=up?40:260;el("line",{x1:x,y1:y2,x2:x+80,y2:150,stroke:cv("--muted"),"stroke-width":2},svg);
+  txt(svg,x,up?30:280,c,{"text-anchor":"middle","font-size":13,"font-weight":600});txt(svg,x+40,up?95:215,d,{"text-anchor":"middle","font-size":12,fill:cv("--muted")});});}
+DRAWERS.push(() => drawFish("g10"));
+</script>

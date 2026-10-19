@@ -1,0 +1,13 @@
+{
+  "_illustrative": "ILLUSTRATIVE ONLY: what the Security agent writes to <scratchpad>/sec-<PR>/fragment.json. Merged with `100x pr_review merge <pr-dir> <fragment>`.",
+  "agents": [{"role": "Security", "model": "claude-opus"}],
+  "items": [
+    {"id": "9999-SEC-101", "same_as": "9999-BUG-01", "kind": "issue", "blocks": "merge", "severity": "major", "status": "open",
+     "title": "Two IPs double the cap", "why": "Same root cause as the IP-keyed limiter.", "where": {"path": "src/reset/limiter.ts", "line": 10, "start_line": null, "in_diff": true},
+     "ask": {"who": "author", "where": "line comment"}, "comment": "Keyed on IP: 2 IPs → 6 mails in 60 s.",
+     "change": {"type": "none", "body": "", "checked": "n/a"}, "evidence": {"type": "ran", "detail": "`node scripts/try-reset.js --ips 2` → 6"},
+     "confirm_by": null, "unknown": null, "dup_of_existing_comment": null}
+  ],
+  "not_to_raise": [],
+  "coverage": [{"dimension": "Security (adversarial)", "checked": "4 attacks, see 5-security.md", "result": "1 new = same as 9999-BUG-01"}]
+}

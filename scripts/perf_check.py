@@ -2,7 +2,7 @@
 """Diff-scoped checks for the performance shapes an LLM reliably produces.
 
 Per skills/performance-budgets/SKILL.md, the plugin already gates bundle bytes
-(typescript-verification) and binary bytes (mobile-release-safety). Neither catches
+(language-verification) and binary bytes (mobile-release-safety). Neither catches
 runtime cost: N+1 loops, unbounded queries, missing timeouts, unbounded
 concurrency, or a heavy dependency slipped into a diff. This fills that gap,
 scoped to the current diff so it is runnable on a large existing codebase.
@@ -23,6 +23,8 @@ Exit 1 if any blocking (non-advisory) check finds a violation.
 """
 import argparse, ast, os, re, subprocess, sys, pathlib
 
+from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, unreadable
+
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs"}
 DEP_FILES = {"package.json", "requirements.txt", "pyproject.toml", "Pipfile"}
 
@@ -36,25 +38,14 @@ def sh(args):
 
 
 def changed(base):
-    """(added, modified) paths in the diff."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--name-status", "--diff-filter=AM"] + rng)
-    added, mod = [], []
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        (added if parts[0].startswith("A") else mod).append(parts[-1])
-    for p in sh(["git", "ls-files", "--others", "--exclude-standard"]).splitlines():
-        if p and p not in added:
-            added.append(p)
-    return added, mod
+    """(added, modified) paths in the diff; see _mutation_guard.changed_files."""
+    return changed_files(base, "perf_check")
 
 
 def added_lines(path, base):
     """Content of '+' lines only, in diff order (may skip unchanged context)."""
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         try:
             return pathlib.Path(path).read_text(errors="replace").splitlines()
@@ -70,8 +61,8 @@ def added_line_numbers(path, base):
     a loop or call body correctly -- while still only reporting a match whose line
     was actually added or modified. A brand-new/untracked file counts every line.
     """
-    rng = [base] if base else ["HEAD"]
-    out = sh(["git", "diff", "--unified=0"] + rng + ["--", path])
+    rng = [diff_rev(base)]
+    out = sh(["git", "diff", "--unified=0"] + rng + path_args(path))
     if not out:
         try:
             n = len(pathlib.Path(path).read_text(errors="replace").splitlines())
@@ -197,11 +188,17 @@ def find_js_loop_bodies(src):
         yield m.start(), args, body
 
 
+# A test that awaits inside a loop is usually stepping one page or fixture at a time on
+# purpose; the N+1 cost this rule targets is in request-serving code.
+TEST_FILE_RX = re.compile(r"(^|/)(tests?|__tests__|e2e)/|\.(spec|test)\.[cm]?[jt]sx?$"
+                          r"|(^|/)test_[^/]+\.py$|_test\.(py|go)$")
+
+
 def check_n_plus_one(added, mod, base):
     out = []
     for p in added + mod:
         ext = pathlib.Path(p).suffix
-        if ext not in CODE_EXT:
+        if ext not in CODE_EXT or TEST_FILE_RX.search(p):
             continue
         src = read(p)
         if src is None:
@@ -220,7 +217,9 @@ def check_n_plus_one(added, mod, base):
                 if not span_touched(node.lineno, node.end_lineno, touched):
                     continue
                 seg = ast.get_source_segment(src, node) or ""
-                if re.search(r"\bawait\b", seg):
+                # An Await node, not the word: a loop whose body merely contains the
+                # string "await" (a regex, a message) does no I/O per iteration.
+                if any(isinstance(n, ast.Await) for n in ast.walk(node)):
                     out.append((f"{p}:{node.lineno}",
                                 "await inside a loop -- sequential per-iteration "
                                 "I/O (N+1 shape); batch, prefetch, or gather instead"))
@@ -555,7 +554,11 @@ def main():
         print(f"unknown check(s): {', '.join(bad)}", file=sys.stderr)
         return 2
 
+    if enter_git_root("perf_check", a.base) is None:
+        return 2
     added, mod = changed(a.base)
+    if unreadable(added + mod, "perf_check"):
+        return 2
     if not added and not mod:
         print("perf_check: no changes to inspect")
         return 0
@@ -566,6 +569,7 @@ def main():
             res = CHECKS[n](added, mod, a.base)
         except Exception as e:
             print(f"  ! {n} errored: {type(e).__name__}: {e}", file=sys.stderr)
+            hard += 1
             continue
         if not res:
             continue
