@@ -48,6 +48,30 @@ human can answer yes/no. No adjectives. No "follow best practices".
 | 7 | An autoscaling misconfiguration (no `max_size` ceiling on an ASG/MIG, or a scaling policy driven by a metric that spikes under retry storms) scales far past any reviewed cost budget before a human notices | `max_size` is set once at initial capacity planning and rarely revisited as a cost-control boundary, the same gap as the Kubernetes HPA failure mode in `reviewers/kubernetes.md` | review question: "is `max_size × largest instance type's hourly cost` a number someone explicitly approved, and does a budget alert exist independent of whether any single ASG respects its own ceiling?"; `infracost breakdown` against the plan surfaces the cost delta of a proposed `max_size` change before it's applied |
 | 8 | A DNS record (Route53/Cloud DNS) change during a migration/cutover is applied, but the old record's TTL was left high, so traffic keeps hitting the old endpoint for the TTL duration after cutover, and the "rollback" of lowering TTL happens too late to help | Works fine in a test that doesn't wait out a real TTL window; the propagation delay only shows up in a real cutover under time pressure | lower TTL well in advance (hours to a day) of any planned cutover, confirm via `dig`/`terraform plan` that the low-TTL record is live before the actual cutover, not applied simultaneously with it |
 
+## Insecure defaults: flag as a decision, never leave silent
+An insecure setting is allowed only as a recorded decision: the explicit value in HCL, an
+inline scanner skip that names the reason, and a decision record. A default left unset, or an
+insecure value with no skip comment, is a finding. Decision form:
+`100x decide new "<resource>: <setting> left <value>" --affects "<file>.tf"`, plus
+`#checkov:skip=<ID>:<reason, decision id>` (`bridgecrewio/checkov@main:README.md`) or
+`#trivy:ignore:AVD-<ID>` (`aquasecurity/trivy@main:docs/guide/scanner/misconfiguration/config/config.md`).
+
+| # | insecure default | resources | rule ids | when no rule covers it |
+|---|------------------|-----------|------------------------------------------------------|------------------------|
+| 1 | cache with auth disabled | `google_memorystore_instance` (`authorization_mode = "AUTH_DISABLED"`), `google_redis_cluster` (`authorization_mode` defaults to `AUTH_MODE_DISABLED`), `google_redis_instance` (`auth_enabled` defaults to `false`), `aws_elasticache_replication_group` (no `auth_token`; `at_rest_encryption_enabled` defaults to `false` for redis) | `CKV_GCP_95`, `CKV_GCP_97` (redis_instance only); `CKV_AWS_29`, `CKV_AWS_30`, `CKV_AWS_31`; trivy `AWS-0045`, `AWS-0051` | **neither checkov nor trivy fired** on `google_memorystore_instance` with `AUTH_DISABLED` or on a `google_redis_cluster` with no `authorization_mode` (synthetic fixture, run live): use the grep in Verify |
+| 2 | public bucket | `aws_s3_bucket` without `aws_s3_bucket_public_access_block`; `google_storage_bucket` without `public_access_prevention = "enforced"`; `allUsers`/`allAuthenticatedUsers` members | `CKV_AWS_53`–`56`, `CKV_GCP_28`, `CKV_GCP_114`; trivy `AWS-0086`/`0087`/`0091`/`0093`, `GCP-0001` | — |
+| 3 | `0.0.0.0/0` ingress | `aws_security_group`, `aws_security_group_rule`, `google_compute_firewall` | `CKV_AWS_24` (22), `CKV_AWS_25` (3389), `CKV_AWS_260` (80), `CKV_GCP_2`, `CKV_GCP_3`, `CKV_GCP_106`; trivy `AWS-0107`, `GCP-0027` | other ports: `grep -rnE '"0\.0\.0\.0/0"\|"::/0"' --include=*.tf .` and justify each hit |
+| 4 | unencrypted storage | `aws_ebs_volume`, `aws_db_instance`, `aws_s3_bucket`, `aws_elasticache_replication_group` | `CKV_AWS_3`, `CKV_AWS_16`, `CKV_AWS_19`, `CKV_AWS_29`; trivy `AWS-0026`, `AWS-0080`, `AWS-0045` | — |
+| 5 | wildcard IAM | `aws_iam_policy_document` / `aws_iam_policy` with `"*"` actions or resources; GCP basic roles (`roles/editor`, `roles/owner`) at project level | `CKV_AWS_1`, `CKV_AWS_49`, `CKV_AWS_63`, `CKV_AWS_355`/`356`, `CKV_GCP_117`; trivy `AWS-0057` (did **not** fire on a data-source policy document, see failure mode #1) | — |
+
+Fired live on synthetic fixtures this session (checkov 3.3.20, trivy 0.74.0): `CKV_AWS_1/3/24/29/30/31/49/356`,
+`CKV_GCP_2/28/29/95/97/114/117`, `AWS-0026/0045/0051/0107`, `GCP-0001/0027`. The other ids are
+confirmed present in `bridgecrewio/checkov@main:docs/5.Policy Index/terraform.md` and the
+`# id:` metadata in `aquasecurity/trivy-checks@main:checks/cloud/`; cache defaults are from
+`hashicorp/terraform-provider-google@main:website/docs/r/redis_cluster.html.markdown`,
+`.../r/redis_instance.html.markdown`, `.../r/memorystore_instance.html.markdown` and
+`hashicorp/terraform-provider-aws@main:website/docs/r/elasticache_replication_group.html.markdown`.
+
 ## Approach selection
 | decision | options | deciding factor | default recommendation |
 |----------|---------|-----------------|------------------------|
@@ -73,6 +97,13 @@ trivy config --severity MEDIUM,HIGH,CRITICAL --exit-code 1 .
 # mode #1). Scope to the highest-value checks for a fast pre-merge gate; run the full ruleset on
 # a schedule, not every PR. ---
 checkov -d . --compact --quiet --check CKV_AWS_1,CKV_AWS_49,CKV_AWS_63,CKV_AWS_24,CKV_AWS_23,CKV_AWS_17,CKV_AWS_16,CKV_GCP_28,CKV_GCP_29,CKV_GCP_60,CKV_GCP_117,CKV_TF_1
+
+# --- insecure defaults no scanner covers (see "Insecure defaults"): cache auth off, explicitly
+# or by omission. Every hit needs a #checkov:skip / #trivy:ignore reason and a decision record ---
+grep -rn 'AUTH_DISABLED\|AUTH_MODE_DISABLED' --include=*.tf .
+for f in $(grep -rl 'resource "google_redis_cluster"' --include=*.tf .); do
+  grep -q 'authorization_mode' "$f" || echo "FAIL: $f google_redis_cluster without authorization_mode (auth off by default)"
+done
 
 # --- module/provider pinning + naming/docs hygiene, via the real pre-commit-terraform config
 # terraform-aws-modules itself runs (rule names confirmed live in terraform-aws-modules/
