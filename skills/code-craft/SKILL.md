@@ -1,9 +1,9 @@
 ---
 name: code-craft
 description: >
-  Function, class or module shape: naming, long functions, too many parameters, deep nesting,
-  error handling, coupling, primitive obsession (raw money, ids, durations). Not for diff size
-  (→ minimal-diff).
+  Writing or changing any function, class, module or endpoint handler — names, long functions,
+  too many parameters, deep nesting, error handling, magic numbers, coupling, primitive
+  obsession (raw money, ids, durations). Not for diff size (→ minimal-diff).
 ---
 
 # Code craft
@@ -16,7 +16,8 @@ primary lever, and it was entirely process-and-verification until this skill.
 
 ## Trigger
 
-**Fire when:** writing or changing a function/class/module; reviewing a diff
+**Fire when:** writing or changing a function/class/module, including new code
+for an endpoint, handler, job or helper; reviewing a diff
 for shape rather than correctness; a PR touches financial amounts, ids, or
 durations (primitive obsession matters most there).
 
@@ -26,12 +27,17 @@ hand-written logic — there is no shape to review.
 ## Rules
 
 1. Names reveal intent. No `data`/`info`/`manager`/`helper`/`util`/`temp`/
-   `obj`/`val`/`thing`/`stuff`/`handle`/`process` as the primary noun;
-   booleans read as predicates (`is_active`, not `active`); abbreviate only
-   established domain terms; match the surrounding codebase over personal
-   preference.
-   *Enforced by:* `100x craft_check --only vague-names` (advisory,
-   stoplist only) + review for predicates/abbreviations/consistency.
+   `obj`/`val`/`thing`/`stuff`/`handle`/`process` as the primary noun, for
+   functions, variables and class methods; booleans read as predicates
+   (`is_active`, not `active`); a function name starts with a verb
+   (`build_invoice`, not `invoice_builder`); abbreviate only established
+   domain terms, which a repo lists under `"craft_allow_names"` in
+   `.100x.json`; match the surrounding codebase over personal preference.
+   Source: `google/styleguide@gh-pages:pyguide.md` §3.16 ("avoid
+   abbreviation"); verb and abbreviation lists `SOURCE: original`.
+   *Enforced by:* `100x craft_check --only
+   vague-names,method-names,abbreviations,boolean-predicate,function-verb`
+   (advisory) + review for consistency with the codebase.
 
 2. One level of abstraction per function — extract until each function reads
    at one altitude, not a mix of "validate," "parse," and `i = i + 1`.
@@ -81,10 +87,11 @@ hand-written logic — there is no shape to review.
    `throw`/`panic`, don't catch-and-continue).
    *Enforced by:* review.
 
-10. Comments explain why, not what — the mechanical half of this (a comment
-    restating the code) is `minimal-diff` rule 10; this skill adds the shape
-    argument that a function needing such a comment usually needs renaming
-    or splitting instead.
+10. Comments explain why, not what. How to write one (and every other piece
+    of prose an engineer ships) is `docs/WRITING.md`; the mechanical half (a
+    comment restating the code) is `minimal-diff` rule 10. This skill adds
+    the shape argument: a function needing a *what* comment usually needs
+    renaming or splitting instead.
     *Enforced by:* review (cross-referenced, not duplicated).
 
 11. Prefer immutable data at a module's boundary; name and detect hidden
@@ -103,6 +110,28 @@ hand-written logic — there is no shape to review.
     smell independent of which order is "correct."
     *Enforced by:* convention.
 
+14. Name length grows with scope. `i` in a three-line loop is fine; `rs`
+    carried across a 40-line function is not. One or two characters are
+    allowed for loop indexes, `e`/`err` in a handler, `id`, `db`, `ctx`,
+    `fn` as a callback parameter and `t` in tests; anything else that lives
+    more than 5 lines gets a word. Source:
+    `google/styleguide@gh-pages:pyguide.md` §3.16.1 ("descriptiveness should
+    be proportional to the name's scope of visibility");
+    `airbnb/javascript@master:README.md` §23.1 ("avoid single letter
+    names"); the 5-line span is `SOURCE: original`.
+    *Enforced by:* `100x craft_check --only short-names` (advisory).
+
+15. No magic numbers and no hard-coded configuration. A literal in a
+    comparison or a timeout (`retries > 3`, `sleep(30)`, `timeout: 30000`)
+    becomes a named constant (`MAX_RETRIES`) or a setting; URLs, hostnames
+    and feature flags come from config, read the way the repo already
+    reads it. `-1`, `0`, `1`, `2`, `100`, `1000`, array indexes and tests are
+    exempt. Source: `SOURCE: original (private-repo PR survey: 105 human PRs, ~180 review comments)`;
+    ESLint's `no-magic-numbers` ships `off` in
+    `airbnb/javascript@master:packages/eslint-config-airbnb-base/rules/best-practices.js`.
+    *Enforced by:* `100x craft_check --only magic-number` (advisory) +
+    review for hard-coded URLs and flags.
+
 ## Verify
 
 ```bash
@@ -111,13 +140,15 @@ hand-written logic — there is no shape to review.
 100x craft_check --base origin/main
 100x craft_check --strict                # advisory findings also fail
 100x craft_check --only vague-names,money-as-float,bare-except
+100x craft_check --only short-names,abbreviations,function-verb,magic-number
+# .rb .go .kt .swift .dart .java files are named as "not checked", never passed
 100x craft_check --func-len 80 --params 6 --depth 5
 
 # the reference doc for every rule above, with a before/after example
 sed -n '1,40p' reviewers/_code-craft.md
 
-# prove the checker itself still works (65 assertions incl. 32 clean-file
-# false-positive checks, ~2s)
+# prove the checker itself still works (120 assertions; every check has a
+# clean-file false-positive fixture, ~8s)
 bash tests/test_craft_check.sh
 ```
 
@@ -135,6 +166,8 @@ This skill rejects:
 - **`order.customer.address.city.upper()`** — a Demeter violation that
   couples a shipping-label formatter to `Customer`'s and `Address`'s
   internal shape.
+- **`cfg = load(); if rs_cnt > 3: ...`** — an abbreviation, a two-letter name
+  carried across a function, and a bare threshold nobody can tune or grep.
 - **`def charge(amount: float)`** — a money amount typed as a binary float,
   which cannot represent `19.99` exactly; the correct-money-type argument
   from `reviewers/_code-craft.md` is what a fintech reviewer checks first.
@@ -176,7 +209,7 @@ Full citations with `owner/repo@ref:path` for every threshold are in
 - Demeter-chain depth, vague-name stoplist, money-as-float, boolean-flag-arg:
   `SOURCE: original` — no surveyed repo enforces any of these mechanically;
   stated as an explicit absence finding, not papered over.
-- `scripts/craft_check.py`'s 8 diff-scoped checks and
-  `tests/test_craft_check.sh`'s 65 assertions: `SOURCE: original`, built
+- `scripts/craft_check.py`'s 14 diff-scoped checks and
+  `tests/test_craft_check.sh`'s 120 assertions: `SOURCE: original`, built
   because the survey found no tool covering code *shape* the way
   `bloat_check.py` covers diff *volume*.
