@@ -993,6 +993,16 @@ def noun_name_ok(length):
     return length <= NOUN_NAME_MAX_LINES
 
 
+def py_code_lines(fn):
+    """Lines in fn, not counting its docstring, so documenting a function never flags it."""
+    length = (fn.end_lineno or fn.lineno) - fn.lineno + 1
+    first = fn.body[0] if fn.body else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+            and isinstance(first.value.value, str):
+        length -= (first.end_lineno or first.lineno) - first.lineno + 1
+    return length
+
+
 def py_decorator_names(fn):
     names = set()
     for d in fn.decorator_list:
@@ -1019,7 +1029,7 @@ def check_function_verb(added, mod, base):
                 if (name.startswith("__") and name.endswith("__")) or name.startswith("test") \
                         or name in PY_EXEMPT_FUNCS or py_decorator_names(fn) & PY_GETTER_DECORATORS \
                         or is_allowed(name) or starts_with_verb(name) \
-                        or noun_name_ok((fn.end_lineno or fn.lineno) - fn.lineno + 1):
+                        or noun_name_ok(py_code_lines(fn)):
                     continue
                 if overlaps(touched, fn.lineno, fn.lineno):
                     out.append((f"{p}:{fn.lineno}", f"function `{name}` does not start with a verb -- "
