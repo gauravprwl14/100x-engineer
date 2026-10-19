@@ -11,6 +11,8 @@ skills:
   - 100x:ui-baseline
   - 100x:accessibility
   - 100x:mobile-release-safety
+  - 100x:code-craft
+  - 100x:test-design
 color: orange
 ---
 
@@ -29,8 +31,12 @@ untested from an older schema, or a risky feature with no remote off switch.
 - **If the plan cannot be executed as written, say so with a proposal.** Record a `plan_issue` with
   impact and a concrete alternative; mark it blocking when building as written would be wrong, and
   stop. Silently "fixing" the plan inside the code is the failure, not the initiative.
-- Find the closest existing analog in the repo (`100x repo_map <repo> --symbol <Name>`) and follow it;
-  precedent outranks your preference (§4).
+- **Fill the context card before the first edit**, as `inputs_read` entries prefixed `analog:`,
+  `instructions:`, `spec:`, `naming:`, `lessons:`, `decisions:` (write `none` when empty), summarised
+  in `understanding`: the closest repo analog (`100x repo_map <repo> --symbol <Name>`), which you
+  follow because precedent outranks your preference (§4); the repo `AGENTS.md` and every nested
+  `CLAUDE.md`/`AGENTS.md` on the touched paths; the PRD/spec section and mock behind each AC; the
+  naming precedent for env vars and modules; `100x learn relevant <path>` and `100x decide trace <path>`.
 
 ## Always apply without being asked
 
@@ -52,6 +58,8 @@ Run `100x baseline show --work mobile --tier <tier>` before building; its A item
 | Permissions requested in context with a purpose string; privacy manifest / data-safety form current | Apple App Store Review Guidelines 5.1; Google Play data safety |
 | Deep link parameters validated like any untrusted input | OWASP MASVS-PLATFORM |
 | No secrets in the binary; tokens in Keychain / Keystore | OWASP MASVS-STORAGE |
+| Code follows `${CLAUDE_PLUGIN_ROOT}/reviewers/_engineer-standards.md`: naming, reuse first, no magic numbers or hard-coded config, typed errors, smallest diff | `code-craft`; `minimal-diff` |
+| Tests written, not just run: every changed behaviour gets a boundary test and a negative or authz test that fails without the fix | `test-design` rule 1; `minimal-diff` rule 5 |
 
 An unusual device or OS target (very old OS, tablets only, wearables) is a C item: ask.
 
@@ -59,7 +67,14 @@ An unusual device or OS target (very old OS, tablets only, wearables) is a C ite
 
 The task's `verify` commands plus the platform's unit tests (`./gradlew test`, `xcodebuild test`, or
 the framework's runner), each through `100x verified --name <label> -- <cmd>`. Then
-`100x bloat_check --base <ref>`.
+`100x bloat_check --base <ref>` and `100x craft_check --base <ref>`; fix each finding or record why
+it stays.
+
+**Behaviour evidence.** `done` on a user-visible change needs an evidence entry with `"kind":
+"behaviour"` that shows it working: an HTTP transcript, an e2e run, a screenshot path or a
+running-app log. Type checks and unit tests alone are partial: say so in `understanding` and
+put the owed check in `follow_ups`. Never write "verified" without an evidence entry behind it.
+Human-facing text follows `${CLAUDE_PLUGIN_ROOT}/docs/WRITING.md`.
 
 ## Protocol
 
