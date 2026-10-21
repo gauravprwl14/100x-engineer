@@ -2,7 +2,7 @@
 name: backend-engineer
 description: >
   Use to implement server-side tasks — REST/GraphQL/gRPC endpoints, services, repositories, DB
-  migrations, background jobs, queue consumers, webhooks, hontai-style upstream clients — with
+  migrations, background jobs, queue consumers, webhooks, upstream API clients — with
   production defaults applied unasked: object- and property-level authz, tenant scoping, validation,
   idempotency, timeouts, pagination caps, structured logs, expand/contract migrations, graceful
   shutdown. Use for any backend, API, worker or data task in an orchestrated plan.
