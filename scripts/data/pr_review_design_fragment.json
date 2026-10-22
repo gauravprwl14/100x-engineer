@@ -1,0 +1,26 @@
+{
+  "_illustrative": "ILLUSTRATIVE ONLY: what the Design lens writes to <scratchpad>/des-<PR>/fragment.json (ids <PR>-DES-2NN, at most 5). `decisions` is not merged: the orchestrator pastes each row into 1-context.md's Author's decisions table (Risk if wrong, Cost to undo). Merged with `100x pr_review merge <pr-dir> <fragment>`.",
+  "agents": [{"role": "Design", "model": "claude-opus"}],
+  "items": [
+    {"id": "9999-DES-201", "kind": "question", "blocks": "rollout", "severity": "major", "status": "needs_decision",
+     "title": "The in-memory counter never forgets an address", "why": "Every address ever asked for stays in the Map: nothing deletes old keys, so memory grows with each new address until the process restarts.",
+     "where": {"path": "src/reset/limiter.ts", "line": 6, "start_line": null, "in_diff": true},
+     "ask": {"who": "author", "where": "line comment"}, "comment": "`hits` only gains keys: after 60 s an address's entry is filtered to `[]` but never deleted, so 1 000 000 distinct addresses keep 1 000 000 keys. Was a TTL sweep (or deleting empty keys) considered, or is a restart per deploy the plan?",
+     "change": {"type": "none", "body": "", "checked": "n/a"}, "evidence": {"type": "read", "detail": "`private readonly hits = new Map<string, number[]>()` — no `hits.delete(` anywhere in src/reset/"},
+     "confirm_by": "`grep -rn \"hits.delete\" src/reset/` returns nothing; heap snapshot after `node scripts/try-reset.js --distinct 100000`",
+     "unknown": "Whether the author relies on deploy restarts to clear the Map", "dup_of_existing_comment": null},
+    {"id": "9999-DES-202", "kind": "question", "blocks": "none", "severity": "minor", "status": "question",
+     "title": "A bare 429 may make clients retry at once", "why": "With no wait time in the answer, a client that retries on 429 retries right away and hits the cap again.",
+     "where": {"path": null, "line": null, "start_line": null, "in_diff": false},
+     "ask": {"who": "author", "where": "PR comment"}, "comment": "The cap answers `429` with no `Retry-After`. If the web client retries on 429, a user who taps 4 times waits a full 60 s with no hint. Is the header planned for slice 2, or should this slice send `Retry-After: 60`?",
+     "change": {"type": "none", "body": "", "checked": "n/a"}, "evidence": {"type": "inferred", "detail": "the client code is not in this repo; retry-on-429 behaviour is a guess"},
+     "confirm_by": "`grep -rn \"429\" web/src/api/` in the client repo shows whether it retries", "unknown": "Whether any client retries automatically on 429",
+     "dup_of_existing_comment": null}
+  ],
+  "not_to_raise": [],
+  "coverage": [{"dimension": "Design (decisions)", "checked": "2 author decisions in 1-context.md challenged", "result": "2 questions, none blocks the merge"}],
+  "decisions": [
+    {"decision": "In-memory counter", "risk_if_wrong": "cap × instances; memory grows per address", "cost_to_undo": "low — swap the Map for a shared store"},
+    {"decision": "`429` with no wait time", "risk_if_wrong": "clients retry at once and stay capped", "cost_to_undo": "low — add `Retry-After`"}
+  ]
+}

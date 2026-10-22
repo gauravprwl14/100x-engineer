@@ -22,6 +22,7 @@ review. Every new check warns and never blocks.
 | Engineer standards card read at write time | `reviewers/_engineer-standards.md` |
 | Rails, Django/FastAPI, Express/Node and Go reviewers; insecure IaC defaults; Ruby, Kotlin and Swift in `language-verification` | `reviewers/`, `skills/language-verification/` |
 | Output benchmark: 12 scenarios run through `claude plugin eval` against no plugin, the previous version and this one | `bench/` |
+| `pr-review` Design and Scenario lenses: conditional agents that challenge the PR's 1–3 decisions (one-way door, no alternative, recurring cost) and list inputs neither code nor tests handle; ≤ 5 items each, unproved ones become questions; `--design`, `--scenarios`; gate G15-lens | `skills/pr-review/`, `scripts/data/pr_review_{design,scenario}_fragment.json` |
 
 ### Changed
 

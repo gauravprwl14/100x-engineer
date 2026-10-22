@@ -279,6 +279,28 @@ def check_snapshot(r, snap, f):
                     fail(w, "G10-snapshot", f"diff removes a line that is not in the file: '{x[1:].strip()[:60]}'")
 
 
+# ---------------------------------------------------------------- G15 reviewer lenses (Design DES, Scenario SCN)
+UNVERIFIED = ("inferred", "assumption")
+LENS_QUESTION = ("question", "needs_decision")
+LENS_COLUMNS = ("Risk if wrong", "Cost to undo")
+
+def check_lens(r, f):
+    for i in r["items"]:
+        if not rr.lens_of(i["id"]) or i["evidence"]["type"] not in UNVERIFIED: continue
+        if i["status"] not in LENS_QUESTION or i["blocks"] == "merge":
+            fail(f"{f} item {i['id']}", "G15-lens", f"unverified lens claim → make it a question for the author: evidence '{i['evidence']['type']}' "
+                 f"needs status {' or '.join(LENS_QUESTION)} and blocks other than merge (has status '{i['status']}', blocks '{i['blocks']}')")
+    for p, n in sorted(rr.lens_counts(r["items"]).items()):
+        if n > rr.LENS_MAX: fail(f, "G15-lens", f"{n} new {p} lens items — cap is {rr.LENS_MAX}; keep the ones with the biggest blast radius")
+
+def check_decision_columns(t, c):
+    """When the Design lens ran, 1-context.md must weigh each of the author's decisions."""
+    m = re.search(r"^## Author's decisions[ \t]*\r?\n(.*?)(?=^## |\Z)", t, re.S | re.M)
+    rows = [l for l in (m.group(1) if m else "").split("\n") if l.startswith("|")]
+    if not any(all(k in l for k in LENS_COLUMNS) for l in rows):
+        fail(str(c), "G15-lens", f"the Design lens ran, so the '## Author's decisions' table needs '{LENS_COLUMNS[0]}' and '{LENS_COLUMNS[1]}' columns")
+
+
 # ---------------------------------------------------------------- G11 rendered files · G12 README · G13 hand-written files
 def check_rendered(r, d):
     expect = rr.render_pr(r, (d / "5-security.md").is_file())
@@ -318,10 +340,12 @@ def check_readme(r, d):
     body = t.split("## Your action items", 1)[0]
     for m in LEAK_ID.finditer(body): fail(str(p), "G3-clean", f"internal ID '{m.group(0)}' above the action table")
 
-def check_handwritten(d):
+def check_handwritten(d, r):
     c = d / "1-context.md"
     if c.is_file():
         t = c.read_text(encoding="utf-8")
+        design_ran = any(a.get("role") == "Design" for a in r["run"]["agents"]) or any(rr.lens_of(i["id"]) == "DES" for i in r["items"])
+        if design_ran: check_decision_columns(t, c)
         for h in CONTEXT_HEADINGS:
             if not re.search(rf"^{re.escape(h)}", t, re.M): fail(str(c), "G13-handwritten", f"missing section '{h}'")
         if "```mermaid" not in t: fail(str(c), "G13-handwritten", "needs one before → after diagram")
@@ -352,9 +376,9 @@ def check_pr(d, snap):
     before = len(fails)
     check_schema(r, f)
     if len(fails) > before: return            # later rules assume the shape
-    check_pr_meta(r, f); check_items(r, f); check_checked(r, d, f); check_recommendation(r, f)
+    check_pr_meta(r, f); check_items(r, f); check_lens(r, f); check_checked(r, d, f); check_recommendation(r, f)
     if snap: check_snapshot(r, snap, f)
-    check_rendered(r, d); check_readme(r, d); check_handwritten(d)
+    check_rendered(r, d); check_readme(r, d); check_handwritten(d, r)
 
 def check_root(root, snap):
     root = pathlib.Path(root)
