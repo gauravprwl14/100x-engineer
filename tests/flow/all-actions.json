@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "tier": "light",
+  "title": "Every v1 action once, for reducer parity between Python and JS",
+  "subject": {"kind": "concept", "lede": "A job queue, two worker slots, a cache and a store; ids such as C3 and R3 are not numbers."},
+  "evidence": {"e-fill-if-fresh": {"at": "fix/fill-if-fresh.lua:5", "anchor": "if cached > tonumber(ARGV[2]) then return 0"}},
+  "nodes": [
+    {"id": "client", "role": "client", "label": "Client"},
+    {"id": "api", "role": "service", "label": "API"},
+    {"id": "jobs", "role": "queue", "label": "Job queue"},
+    {"id": "pool", "role": "worker", "label": "Worker pool", "slots": 2},
+    {"id": "kv", "role": "cache", "label": "Cache"},
+    {"id": "db", "role": "store", "label": "Store"},
+    {"id": "mailer", "role": "external", "label": "Mailer"}
+  ],
+  "numbers": {"tick": {"v": 1.5, "unit": "s", "tag": "estimated", "basis": "Illustrative pause."},
+              "half_ms": {"v": 1.5, "unit": "ms", "tag": "estimated", "basis": "A fractional millisecond: pins the rounding both reducers share."}},
+  "initial": {"stores": {"db": {"seed": "s0"}}, "caches": {"kv": {"warm": "w0"}}},
+  "scenarios": [
+    {
+      "id": "all",
+      "kind": "load",
+      "title": "Queue, workers, cache, store, failure",
+      "steps": [
+        {"t": "Client posts two jobs", "do": [["send", "client", "api", "POST /jobs"], ["enqueue", "jobs", "job-a"], ["enqueue", "jobs", "job-b"], ["counter", "enqueued", 2]], "expect": {"queues": {"jobs": 2}, "counters": {"enqueued": 2}}, "tag": "inferred"},
+        {"t": "Both slots pick up a job", "do": [["pickup", "jobs", "pool"], ["pickup", "jobs", "pool"]], "expect": {"queues": {"jobs": 0}}, "tag": "inferred"},
+        {"t": "Slots free in either order", "do": [["free", "pool", "job-b"], ["free", "pool"], ["counter", "enqueued", -2]], "expect": {"counters": {"enqueued": 0}}, "tag": "inferred"},
+        {"t": "Write, read back, cache, then overwrite", "do": [["db.write", "db", "k", "x"], ["db.read", "db", "k", "got"], ["cache.set", "kv", "k", "$got"], ["db.write", "db", "k", "y"], ["db.write", "db", "copy", "$got"], ["cache.set", "kv", "lit", true], ["mark-stale", "kv", "lit"]], "expect": {"vars": {"got": "x"}, "stale": {"kv": {"k": true, "lit": true, "warm": false}}, "store": {"db": {"copy": "x"}}}, "tag": "inferred"},
+        {"t": "Fill only if fresh: the unchanged seed is written, the overwritten k is skipped", "do": [["db.read", "db", "seed", "s"], ["cache.set-if-fresh", "kv", "fresh", "$s"], ["cache.set-if-fresh", "kv", "late", "$got"]], "expect": {"cache": {"kv": {"fresh": "s0", "late": null}}, "stale": {"kv": {"fresh": false}}}, "ev": ["e-fill-if-fresh"], "tag": "inferred"},
+        {"t": "Expire, miss, pause", "do": [["cache.expire", "kv", "k"], ["cache.get", "kv", "k"], ["wait", "{{tick}}"], ["wait", "{{half_ms}}"], ["db.read", "db", "missing"]], "expect": {"hit": "miss", "vars": {"read": null}}, "tag": "inferred"},
+        {"t": "Mailer fails, API replies with an error", "do": [["fail", "mailer", "timeout"], ["reply", "api", "client", "503 Service Unavailable"], ["note", "Upstream down after {{tick}}"], ["cache.del", "kv", "warm"]], "tag": "inferred"}
+      ]
+    }
+  ]
+}
