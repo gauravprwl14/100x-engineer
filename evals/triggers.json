@@ -461,6 +461,186 @@
       "reject": [
         "pr-review"
       ]
+    },
+    {
+      "prompt": "give me a visual walkthrough of PR 482",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "step through this PR and show me what can go wrong",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "explain this cache change visually, before and after the fix",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "walk me through the retry flow step by step as a visual page",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "show the race condition and replay the fix before and after",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "walk me through PR 91 step by step with animation, heavy mode",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "make an interactive HTML page that steps through the checkout flow",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "compare plan A vs plan B step by step and show the trade-off",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "visual step-through of how the webhook handler fails and what fixes it",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "explain the token refresh concept visually so a new hire can step through it",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "show me what happens step by step when two writers hit the cache at once",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "explain this PR with a walkthrough and evidence for each claim",
+      "expect": "explain",
+      "reject": [
+        "codebase-comprehension",
+        "diagramming"
+      ]
+    },
+    {
+      "prompt": "draw a sequence diagram of the login flow for the spec",
+      "expect": "diagramming",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "add a mermaid flowchart to this design doc",
+      "expect": "diagramming",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "check the diagram in this PR before I trust it",
+      "expect": "diagramming",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "review PR 482 and draft comments I can post on GitHub",
+      "expect": "pr-review",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "post my review comments on this pull request as a draft",
+      "expect": "pr-review",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "write an architecture note for the billing module with verified claims",
+      "expect": "codebase-comprehension",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "onboard me to this repo: entry points, data flow, boundaries",
+      "expect": "codebase-comprehension",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "how does the payment module work, map the entry points",
+      "expect": "codebase-comprehension",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "review my diff before I push",
+      "expect": "diff-review",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "write the commit message and PR body for this change",
+      "expect": "pr-description",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "production cache is serving stale data since the deploy, find the cause",
+      "expect": "root-cause-analysis",
+      "reject": [
+        "explain"
+      ]
+    },
+    {
+      "prompt": "fix the stale cache bug in the user profile endpoint",
+      "expect": "bug-fix",
+      "reject": [
+        "explain"
+      ]
     }
   ]
 }
