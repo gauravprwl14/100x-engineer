@@ -28,17 +28,19 @@ action-table numbers. Edit `review.json` only, never the rendered files.
 
 ## `post <pr-url> [draft|submit]`
 
-Default `draft` (a pending review only the user sees until they submit it in the UI). `submit` =
+Default `draft` (a pending review only the user sees until they submit it in the UI), or
+`post_mode` from `<CR>/_meta/settings.json` when no mode is given — still one explicit yes. `submit` =
 `event: COMMENT`. Never `APPROVE` / `REQUEST_CHANGES` unless the user asks for that event by name.
 This is the only place the skill writes to GitHub.
 
 | Step | Action |
 |---|---|
 | 0 Sync earlier drafts | for each `run.posts` entry with `mode: draft`: `gh api --hostname HOST repos/OWNER/REPO/pulls/<n>/reviews/<id>` (id = the number after `#pullrequestreview-`). Still `PENDING` → stop: "you have an unsubmitted draft — submit or delete it on GitHub first" (GitHub allows one per user). Submitted with an empty `body` while the entry has `summary_items` → GitHub dropped the summary (the Finish-review box replaces it): show `100x pr_review followup-text <pr-dir> <url>`, ask, and on yes `gh pr comment <n> -R … -F <file>`; record it (a second `run.posts` entry with the comment URL, those items' `posted.url`/`mode: submit`) |
+| 0b Own comments | `gh api --hostname HOST --paginate repos/OWNER/REPO/pulls/<n>/comments` and `.../issues/<n>/comments`, keep the user's own (`gh api --hostname HOST user -q .login`). One already says what an unposted item says → show both and ask whether to skip the item |
 | 1 Find | see above |
 | 2 Gate | `100x pr_review_gate <run-root> --snap <snap>` (re-run `100x pr_snapshot` if the scratchpad is gone) |
 | 3 SHA guard | `gh pr view <n> -R HOST/OWNER/REPO --json headRefOid -q .headRefOid` must equal `review.json` `pr.head_sha`, else stop: "head moved — run `/pr-review <pr-url>` again to re-review" |
-| 4 Build | `100x pr_review emit <pr-dir> <draft\|submit> > <scratch>/review-<n>.json` (preview on stderr). Exit 3 = nothing new to post (all skipped / already posted / by hand) → tell the user and stop. Skipped and already-posted items are never included |
+| 4 Build | `100x pr_review emit <pr-dir> <draft\|submit> [--body-max N] > <scratch>/review-<n>.json` (preview on stderr; `body_max` from `settings.json`). A `WARN body is over` line → offer to post the general comments as separate PR comments instead. Exit 3 = nothing new to post (all skipped / already posted / by hand) → tell the user and stop. Skipped and already-posted items are never included |
 | 5 Show | mode, every inline `path:line` + first line, the general comments, and what is NOT posted (file 2 sections C and D — the user does those by hand) |
 | 6 Ask | AskUserQuestion once per PR naming `OWNER/REPO#n` and the mode. Anything but an explicit yes = post nothing |
 | 7 Post | `gh api --hostname HOST -X POST repos/OWNER/REPO/pulls/<n>/reviews --input <scratch>/review-<n>.json` |
