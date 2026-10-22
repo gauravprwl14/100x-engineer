@@ -53,7 +53,8 @@ older than ~30 days, or the default branch moved a lot since it was written; the
 `100x pr_review context --refresh <CR>` rewrites only its `<!-- auto:start/end -->` section.
 
 Plus `references/focus-generic.md` and the `reviewers/<stack>.md` that `stack-reviewer` routes to.
-`<CR>/_meta/settings.json` may name `typecheck`, `links` and `lang` for step 9.
+`<CR>/_meta/settings.json` may name `typecheck`, `links` and `lang` for step 9, and `post_mode`
+(`draft`/`submit`) and `body_max` for `post`.
 
 ```mermaid
 flowchart LR

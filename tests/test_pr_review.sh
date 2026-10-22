@@ -133,6 +133,24 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["commit_id
 run 0 "mark-posted" pr_review mark-posted "$TMP/emit" https://git.example.com/acme/widgets/pull/9999#pullrequestreview-1 draft
 run 3 "emit after everything is posted: nothing new (exit 3)" pr_review emit "$TMP/emit" draft
 run 1 "mark-posted refuses a URL off this PR" pr_review mark-posted "$TMP/emit" https://git.example.com/acme/other/pull/1 draft
+cp -R "$FIX/$PRD" "$TMP/emit2"
+run 0 "emit --body-max 10 warns on a long summary" pr_review emit "$TMP/emit2" draft --body-max 10; has "WARN    body is over 10 chars"
+run 0 "emit default body-max" pr_review emit "$TMP/emit2" draft; hasnt "WARN    body is over"
+
+echo "== adjust notes and edits"
+# A skip note naming another item renders that item's title, not its internal ID (G3 scans file 2).
+NOTE="$TMP/note"; cp -R "$FIX" "$NOTE"
+python3 - "$NOTE/$PRD/review.json" <<'PY'
+import json, sys
+p = sys.argv[1]; r = json.load(open(p)); a, b = r["items"][0], r["items"][1]
+b["user"] = {"decision": "skip", "edited": [], "original": {}, "note": f"same point as {a['id']}", "by": "u", "at": "2026-01-01"}
+a["user"] = {"decision": "post", "edited": ["status"], "original": {"status": a["status"]}, "by": "u", "at": "2026-01-01"}
+json.dump(r, open(p, "w"), indent=2)
+PY
+run 0 "render with a skip note naming an item" pr_review render "$NOTE/$PRD"
+run 0 "re-render the feature README" pr_review feature "$NOTE"
+grep -q "same point as \"" "$NOTE/$PRD/2-comments-to-post.md" && ok "  note shows the item's title" || bad "  note does not show the title"
+run 0 "gate passes: no ID leak, status is an editable field" pr_review_gate "$NOTE" --no-render-mermaid
 
 echo "== gate"
 run 0 "golden run passes" pr_review_gate "$FIX" --no-render-mermaid

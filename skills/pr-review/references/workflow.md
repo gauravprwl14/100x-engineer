@@ -61,3 +61,5 @@ paragraph. What the hand-filled slots should capture:
 | Fork PR | the head is not on any branch of the clone's remotes | `pr_snapshot` fetches `pull/<n>/head`; nothing to do |
 | `npx` missing | mermaid cannot be rendered | the gate warns and runs a syntax check instead; not a failure |
 | Scratchpad gone between turns | `<snap>` no longer exists | re-run step 2 before any `--snap` gate |
+| `100x …` runs `cd` or something else | a shell alias or function named `100x` shadows the plugin tool | run `command 100x <tool>` |
+| zsh runs backticked names or fails on `*`/`?`/`=` | an unquoted heredoc, an unquoted glob, or a word starting with `=` | write JSON with `<<'EOF'` or a Python file, quote globs and `=`-words |
