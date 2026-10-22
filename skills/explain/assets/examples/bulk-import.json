@@ -1,0 +1,1424 @@
+{
+ "schema": 1,
+ "tier": "heavy",
+ "title": "Bulk import: one request per row, or one file for the batch",
+ "subject": {
+  "kind": "plan",
+  "lede": "Two ways to load {{rows}} into a web app that hands follow-up work to background queues. Plan A sends one create per row through a rate-limited edge; Plan B uploads one CSV and lets workers validate and import it. Both trigger the same mail, chat and search work; the queues and worker pools decide when it is done."
+ },
+ "nodes": [
+  {
+   "id": "connector",
+   "role": "client",
+   "label": "Connector"
+  },
+  {
+   "id": "edge",
+   "role": "edge",
+   "label": "Edge",
+   "ref": "per-tenant rate limit"
+  },
+  {
+   "id": "web",
+   "role": "service",
+   "label": "Web app"
+  },
+  {
+   "id": "q-default",
+   "role": "queue",
+   "label": "default queue"
+  },
+  {
+   "id": "q-import",
+   "role": "queue",
+   "label": "import queue"
+  },
+  {
+   "id": "q-chat",
+   "role": "queue",
+   "label": "chat queue"
+  },
+  {
+   "id": "pool",
+   "role": "worker",
+   "label": "Default pool",
+   "slots": 4
+  },
+  {
+   "id": "import-pool",
+   "role": "worker",
+   "label": "Import pool",
+   "slots": 2
+  },
+  {
+   "id": "chat-pool",
+   "role": "worker",
+   "label": "Chat pool",
+   "slots": 1
+  },
+  {
+   "id": "db",
+   "role": "store",
+   "label": "Database"
+  },
+  {
+   "id": "search",
+   "role": "external",
+   "label": "Search index"
+  },
+  {
+   "id": "chat",
+   "role": "external",
+   "label": "Chat service"
+  }
+ ],
+ "numbers": {
+  "rows": {
+   "v": 3000,
+   "unit": "rows",
+   "tag": "estimated",
+   "basis": "The batch size this comparison is sized for."
+  },
+  "rate_limit": {
+   "v": 2,
+   "unit": "requests/s",
+   "tag": "estimated",
+   "basis": "A planned per-tenant limit of 120 requests a minute at the edge."
+  },
+  "create_time": {
+   "v": 300,
+   "unit": "ms",
+   "tag": "estimated",
+   "basis": "Server time for one create, about 200 ms, plus the edge and the network."
+  },
+  "plan_a_send": {
+   "v": 25,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "3,000 creates at 2 a second = 1,500 s."
+  },
+  "reindex_time": {
+   "v": 7.5,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "6,000 search requests, one at a time at about 13 a second = about 450 s."
+  },
+  "search_per_user": {
+   "v": 2,
+   "unit": "requests",
+   "tag": "estimated",
+   "basis": "One profile index and one feed update per user."
+  },
+  "plan_a_total": {
+   "v": 32.5,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "25 min of creates + 7.5 min of reindex."
+  },
+  "validate_jobs": {
+   "v": 30,
+   "unit": "jobs",
+   "tag": "estimated",
+   "basis": "3,000 rows / 100 rows per job."
+  },
+  "rows_per_job": {
+   "v": 100,
+   "unit": "rows",
+   "tag": "estimated",
+   "basis": "The validation batch size."
+  },
+  "validate_time": {
+   "v": 3.6,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "30 jobs on 2 import threads, about 14 s each = 15 rounds x 14 s = 210 s."
+  },
+  "import_time": {
+   "v": 12.5,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "About 4 rows a second on one import thread: 3,000 / 4 = 750 s."
+  },
+  "plan_b_created": {
+   "v": 16.1,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "3.6 min of validation + 12.5 min of import."
+  },
+  "plan_b_total": {
+   "v": 23.6,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "16.1 min to the last user + 7.5 min of index."
+  },
+  "chat_arrive": {
+   "v": 4,
+   "unit": "jobs/s",
+   "tag": "estimated",
+   "basis": "One chat job per imported row at about 4 rows a second."
+  },
+  "chat_clear": {
+   "v": 3.3,
+   "unit": "jobs/s",
+   "tag": "estimated",
+   "basis": "One chat thread at about 300 ms per account."
+  },
+  "chat_backlog": {
+   "v": 525,
+   "unit": "jobs",
+   "tag": "estimated",
+   "basis": "(4 - 3.3) jobs/s x 750 s of import = 525 jobs behind."
+  },
+  "chat_lag": {
+   "v": 2.6,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "525 jobs / 3.3 a second = about 160 s after the import ends."
+  },
+  "throttle_extra": {
+   "v": 2.6,
+   "unit": "min",
+   "tag": "estimated",
+   "basis": "Importing at 3.3 rows a second instead of 4: 3,000 / 3.3 - 750 s = about 160 s longer."
+  }
+ },
+ "initial": {
+  "stores": {
+   "db": {
+    "users": 0
+   }
+  }
+ },
+ "scenarios": [
+  {
+   "id": "plan-a",
+   "kind": "load",
+   "title": "Plan A: one JSON create per row",
+   "steps": [
+    {
+     "t": "Connector sends one create",
+     "do": [
+      [
+       "send",
+       "connector",
+       "edge",
+       "POST /users"
+      ],
+      [
+       "send",
+       "edge",
+       "web",
+       "POST /users"
+      ],
+      [
+       "counter",
+       "requests",
+       1
+      ],
+      [
+       "note",
+       "The edge lets {{rate_limit}} through per tenant; above that the connector waits and resends."
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "Save the user",
+     "do": [
+      [
+       "db.write",
+       "db",
+       "users",
+       1
+      ],
+      [
+       "counter",
+       "users_created",
+       1
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "Two jobs go to two queues; search indexing is skipped",
+     "do": [
+      [
+       "enqueue",
+       "q-default",
+       "mail-1"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-1"
+      ],
+      [
+       "note",
+       "The create asks to skip search indexing; one reindex at the end covers every user."
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-default": 1,
+       "q-chat": 1
+      }
+     },
+     "tag": "inferred"
+    },
+    {
+     "t": "Reply straight away",
+     "do": [
+      [
+       "reply",
+       "web",
+       "edge",
+       "201 Created"
+      ],
+      [
+       "reply",
+       "edge",
+       "connector",
+       "201 Created"
+      ]
+     ],
+     "time": "~{{create_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "Each queue is emptied by its own pool",
+     "do": [
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "The chat job creates the account; both jobs finish",
+     "do": [
+      [
+       "send",
+       "chat-pool",
+       "chat",
+       "create account"
+      ],
+      [
+       "reply",
+       "chat",
+       "chat-pool",
+       "200 OK"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       1
+      ],
+      [
+       "free",
+       "pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "The rest of the batch arrives at {{rate_limit}}",
+     "do": [
+      [
+       "send",
+       "connector",
+       "edge",
+       "POST /users"
+      ],
+      [
+       "send",
+       "edge",
+       "web",
+       "POST /users"
+      ],
+      [
+       "wait",
+       "{{plan_a_send}}"
+      ],
+      [
+       "counter",
+       "requests",
+       2999
+      ],
+      [
+       "counter",
+       "users_created",
+       2999
+      ],
+      [
+       "db.write",
+       "db",
+       "users",
+       3000
+      ],
+      [
+       "enqueue",
+       "q-default",
+       "mail-2"
+      ],
+      [
+       "enqueue",
+       "q-default",
+       "mail-3"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-2"
+      ]
+     ],
+     "time": "~{{plan_a_send}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "The pools keep up: queues drain as fast as creates arrive",
+     "do": [
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "send",
+       "chat-pool",
+       "chat",
+       "create account"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       2999
+      ],
+      [
+       "free",
+       "pool"
+      ],
+      [
+       "free",
+       "pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-default": 0,
+       "q-chat": 0
+      }
+     },
+     "tag": "inferred"
+    },
+    {
+     "t": "Connector calls reindex once",
+     "do": [
+      [
+       "send",
+       "connector",
+       "edge",
+       "POST /reindex"
+      ],
+      [
+       "send",
+       "edge",
+       "web",
+       "POST /reindex"
+      ],
+      [
+       "enqueue",
+       "q-default",
+       "reindex"
+      ],
+      [
+       "reply",
+       "web",
+       "edge",
+       "202 Accepted"
+      ],
+      [
+       "reply",
+       "edge",
+       "connector",
+       "202 Accepted"
+      ],
+      [
+       "counter",
+       "requests",
+       1
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "One thread indexes every user, {{search_per_user}} each",
+     "do": [
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "send",
+       "pool",
+       "search",
+       "index user"
+      ],
+      [
+       "reply",
+       "search",
+       "pool",
+       "200 OK"
+      ],
+      [
+       "wait",
+       "{{reindex_time}}"
+      ],
+      [
+       "counter",
+       "search_requests",
+       6000
+      ],
+      [
+       "counter",
+       "searchable",
+       3000
+      ],
+      [
+       "free",
+       "pool"
+      ]
+     ],
+     "time": "~{{reindex_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "All users are searchable",
+     "do": [
+      [
+       "note",
+       "Last user created at ~{{plan_a_send}}; all searchable at ~{{plan_a_total}}."
+      ]
+     ],
+     "expect": {
+      "counters": {
+       "users_created": 3000,
+       "searchable": 3000
+      }
+     },
+     "tag": "inferred"
+    }
+   ]
+  },
+  {
+   "id": "plan-b",
+   "kind": "load",
+   "title": "Plan B: one CSV for the batch",
+   "steps": [
+    {
+     "t": "Connector uploads one CSV of {{rows}}",
+     "do": [
+      [
+       "send",
+       "connector",
+       "edge",
+       "POST /imports"
+      ],
+      [
+       "send",
+       "edge",
+       "web",
+       "POST /imports"
+      ],
+      [
+       "counter",
+       "requests",
+       1
+      ],
+      [
+       "db.write",
+       "db",
+       "import",
+       "uploaded"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "Save the file, queue one initialize job, reply",
+     "do": [
+      [
+       "enqueue",
+       "q-import",
+       "init"
+      ],
+      [
+       "reply",
+       "web",
+       "edge",
+       "202 Accepted"
+      ],
+      [
+       "reply",
+       "edge",
+       "connector",
+       "202 Accepted"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "Initialize splits the file into validation jobs",
+     "do": [
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-1"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-2"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-3"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-4"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-5"
+      ],
+      [
+       "enqueue",
+       "q-import",
+       "val-6"
+      ],
+      [
+       "free",
+       "import-pool",
+       "init"
+      ],
+      [
+       "note",
+       "{{rows}} become {{validate_jobs}} of {{rows_per_job}} each; the queue draws a few of them."
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-import": 6
+      }
+     },
+     "tag": "inferred"
+    },
+    {
+     "t": "Two import threads validate, two jobs at a time",
+     "do": [
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "send",
+       "connector",
+       "edge",
+       "GET /imports/:id"
+      ],
+      [
+       "reply",
+       "edge",
+       "connector",
+       "200 OK"
+      ],
+      [
+       "wait",
+       "{{validate_time}}"
+      ],
+      [
+       "counter",
+       "requests",
+       72
+      ],
+      [
+       "db.write",
+       "db",
+       "import",
+       "validated"
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-import": 0
+      }
+     },
+     "time": "~{{validate_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "Import starts on one thread",
+     "do": [
+      [
+       "enqueue",
+       "q-import",
+       "import"
+      ],
+      [
+       "pickup",
+       "q-import",
+       "import-pool"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "Each imported row creates the user and queues its jobs",
+     "do": [
+      [
+       "db.write",
+       "db",
+       "users",
+       3000
+      ],
+      [
+       "counter",
+       "users_created",
+       3000
+      ],
+      [
+       "enqueue",
+       "q-default",
+       "mail-1"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-1"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-2"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-3"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-4"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-5"
+      ],
+      [
+       "wait",
+       "{{import_time}}"
+      ],
+      [
+       "counter",
+       "requests",
+       250
+      ]
+     ],
+     "time": "~{{import_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "Mail keeps up; chat falls behind",
+     "do": [
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "free",
+       "pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "send",
+       "chat-pool",
+       "chat",
+       "create account"
+      ],
+      [
+       "reply",
+       "chat",
+       "chat-pool",
+       "200 OK"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       2475
+      ],
+      [
+       "note",
+       "Chat jobs arrive at ~{{chat_arrive}} and clear at ~{{chat_clear}}; the rest wait in the chat queue."
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-chat": 4
+      }
+     },
+     "tag": "inferred"
+    },
+    {
+     "t": "Import ends; one index job runs while chat catches up",
+     "do": [
+      [
+       "free",
+       "import-pool"
+      ],
+      [
+       "enqueue",
+       "q-default",
+       "reindex"
+      ],
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "send",
+       "pool",
+       "search",
+       "index user"
+      ],
+      [
+       "reply",
+       "search",
+       "pool",
+       "200 OK"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       525
+      ],
+      [
+       "wait",
+       "{{reindex_time}}"
+      ],
+      [
+       "counter",
+       "search_requests",
+       6000
+      ],
+      [
+       "counter",
+       "searchable",
+       3000
+      ],
+      [
+       "free",
+       "pool"
+      ]
+     ],
+     "time": "~{{reindex_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "Connector reads the result once",
+     "do": [
+      [
+       "send",
+       "connector",
+       "edge",
+       "GET /imports/:id"
+      ],
+      [
+       "send",
+       "edge",
+       "web",
+       "GET /imports/:id"
+      ],
+      [
+       "reply",
+       "web",
+       "edge",
+       "200 OK"
+      ],
+      [
+       "reply",
+       "edge",
+       "connector",
+       "200 OK"
+      ],
+      [
+       "counter",
+       "requests",
+       1
+      ],
+      [
+       "db.write",
+       "db",
+       "import",
+       "done"
+      ],
+      [
+       "note",
+       "Last user created at ~{{plan_b_created}}; all searchable at ~{{plan_b_total}}."
+      ]
+     ],
+     "expect": {
+      "counters": {
+       "users_created": 3000,
+       "searchable": 3000
+      }
+     },
+     "tag": "inferred"
+    }
+   ]
+  },
+  {
+   "id": "chat-backlog",
+   "kind": "load",
+   "severity": "medium",
+   "fixed_by": [
+    "fix-throttle"
+   ],
+   "branch": {
+    "from": "plan-b",
+    "at": 5
+   },
+   "title": "Plan B under load: chat accounts pile up behind one chat thread",
+   "steps": [
+    {
+     "t": "Import queues a chat job per row, faster than one thread clears them",
+     "do": [
+      [
+       "db.write",
+       "db",
+       "users",
+       3000
+      ],
+      [
+       "counter",
+       "users_created",
+       3000
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-1"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-2"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-3"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-4"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-5"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-6"
+      ],
+      [
+       "wait",
+       "{{import_time}}"
+      ],
+      [
+       "counter",
+       "requests",
+       250
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-chat": 6
+      }
+     },
+     "time": "~{{import_time}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "One chat thread clears ~{{chat_clear}}: the queue keeps growing",
+     "do": [
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "send",
+       "chat-pool",
+       "chat",
+       "create account"
+      ],
+      [
+       "reply",
+       "chat",
+       "chat-pool",
+       "200 OK"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       2475
+      ],
+      [
+       "note",
+       "The backlog peaks at about {{chat_backlog}} when the import ends."
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-chat": 5
+      }
+     },
+     "tag": "inferred"
+    },
+    {
+     "t": "The last chat account lands {{chat_lag}} after the import ends",
+     "do": [
+      [
+       "wait",
+       "{{chat_lag}}"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       525
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-chat": 0
+      },
+      "counters": {
+       "chat_accounts": 3000
+      }
+     },
+     "time": "~{{chat_lag}}",
+     "tag": "inferred"
+    }
+   ]
+  },
+  {
+   "id": "fix-throttle",
+   "kind": "fix",
+   "branch": {
+    "from": "chat-backlog",
+    "at": 5
+   },
+   "title": "Throttle the import to the chat pool's pace",
+   "steps": [
+    {
+     "t": "Import runs at ~{{chat_clear}}, the pace one chat thread keeps",
+     "do": [
+      [
+       "db.write",
+       "db",
+       "users",
+       3000
+      ],
+      [
+       "counter",
+       "users_created",
+       3000
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-1"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "send",
+       "chat-pool",
+       "chat",
+       "create account"
+      ],
+      [
+       "reply",
+       "chat",
+       "chat-pool",
+       "200 OK"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "enqueue",
+       "q-chat",
+       "chat-2"
+      ],
+      [
+       "pickup",
+       "q-chat",
+       "chat-pool"
+      ],
+      [
+       "free",
+       "chat-pool"
+      ],
+      [
+       "wait",
+       "{{import_time}}"
+      ],
+      [
+       "wait",
+       "{{throttle_extra}}"
+      ],
+      [
+       "counter",
+       "chat_accounts",
+       3000
+      ],
+      [
+       "counter",
+       "requests",
+       300
+      ]
+     ],
+     "expect": {
+      "queues": {
+       "q-chat": 0
+      }
+     },
+     "time": "~{{import_time}} + {{throttle_extra}}",
+     "tag": "inferred"
+    },
+    {
+     "t": "Chat accounts finish with the import; nothing waits",
+     "do": [
+      [
+       "note",
+       "The import takes {{throttle_extra}} longer; no account waits behind the queue."
+      ]
+     ],
+     "expect": {
+      "counters": {
+       "chat_accounts": 3000
+      }
+     },
+     "tag": "inferred"
+    }
+   ]
+  },
+  {
+   "id": "search-throttled",
+   "kind": "failure",
+   "severity": "low",
+   "open": true,
+   "branch": {
+    "from": "plan-a",
+    "at": 9
+   },
+   "title": "Plan A: the search index throttles the reindex",
+   "steps": [
+    {
+     "t": "The search index rejects the reindex partway through",
+     "do": [
+      [
+       "pickup",
+       "q-default",
+       "pool"
+      ],
+      [
+       "send",
+       "pool",
+       "search",
+       "index user"
+      ],
+      [
+       "fail",
+       "search",
+       "throttled"
+      ],
+      [
+       "reply",
+       "search",
+       "pool",
+       "429 Too Many Requests"
+      ],
+      [
+       "counter",
+       "search_requests",
+       1200
+      ],
+      [
+       "counter",
+       "searchable",
+       600
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "The reindex job stops; most users stay unsearchable",
+     "do": [
+      [
+       "free",
+       "pool"
+      ],
+      [
+       "note",
+       "Nothing retries the reindex in this plan; the connector has to call it again."
+      ]
+     ],
+     "expect": {
+      "counters": {
+       "searchable": 600
+      }
+     },
+     "tag": "inferred"
+    }
+   ]
+  }
+ ],
+ "decision": {
+  "options": [
+   {
+    "id": "plan-b",
+    "label": "One CSV for the batch",
+    "fit": "pass",
+    "scenario": "plan-b",
+    "pros": [
+     "All users searchable at ~{{plan_b_total}}",
+     "A few hundred requests instead of thousands"
+    ],
+    "cons": [
+     "Results arrive only after the import",
+     "Chat accounts lag unless the import is throttled"
+    ]
+   },
+   {
+    "id": "plan-a",
+    "label": "One JSON create per row",
+    "fit": "pass",
+    "scenario": "plan-a",
+    "pros": [
+     "The connector sees each row's result straight away",
+     "No new upload endpoint"
+    ],
+    "cons": [
+     "Paced by the rate limit: the last user lands at ~{{plan_a_send}}",
+     "Thousands of requests through the edge"
+    ]
+   }
+  ],
+  "chosen": "plan-b",
+  "deciding_factor": "It finishes sooner with far fewer requests, and the connector does not need each row's result in real time.",
+  "revisit_when": "The connector needs each row's result while the batch is still running.",
+  "source": "SOURCE: original (illustrative example)"
+ },
+ "checks": [
+  {
+   "scenario": "chat-backlog",
+   "step": 6,
+   "q": "Chat jobs arrive at ~{{chat_arrive}} and one chat thread clears ~{{chat_clear}}. What happens to the chat queue while the import runs?",
+   "answer": "It grows for the whole import and peaks near {{chat_backlog}}; the last account lands {{chat_lag}} after the import ends."
+  }
+ ],
+ "compare": [
+  "plan-a",
+  "plan-b"
+ ]
+}
