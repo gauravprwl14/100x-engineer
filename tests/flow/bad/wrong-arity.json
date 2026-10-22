@@ -1,0 +1,72 @@
+{
+ "schema": 1,
+ "tier": "light",
+ "title": "Seeded bad case",
+ "subject": {
+  "kind": "concept",
+  "lede": "One defect away from a valid scenario."
+ },
+ "nodes": [
+  {
+   "id": "client",
+   "role": "client",
+   "label": "Client"
+  },
+  {
+   "id": "api",
+   "role": "service",
+   "label": "API"
+  },
+  {
+   "id": "cache",
+   "role": "cache",
+   "label": "Cache"
+  },
+  {
+   "id": "db",
+   "role": "store",
+   "label": "Database"
+  }
+ ],
+ "evidence": {
+  "e-get": {
+   "at": "src/notes.js:7",
+   "anchor": "cache.get(cacheKey(id))"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "Read",
+   "steps": [
+    {
+     "t": "Client asks, cache misses",
+     "do": [
+      [
+       "send",
+       "client",
+       "api",
+       "GET /notes/:id"
+      ],
+      [
+       "cache.get",
+       "cache",
+       "note:a"
+      ],
+      [
+       "send",
+       "client"
+      ]
+     ],
+     "expect": {
+      "hit": "miss"
+     },
+     "ev": [
+      "e-get"
+     ]
+    }
+   ]
+  }
+ ]
+}
