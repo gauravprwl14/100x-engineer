@@ -48,6 +48,10 @@ directly under `CR` (`<CR>/<feature>/PR-<n>__…/`).
 3. `<CR>/_meta/focus.md` and `<CR>/_meta/decisions.md`, if present (per repo, user-owned);
 4. `~/.config/pr-review/profile.md`, if present (per user: how comments should read).
 
+Step 2 includes every file `CONTEXT.md` lists under Conventions sources (memory, `.claude/rules`,
+`.github/instructions`) and `@path` imports; `paths --json` `parent_rules` adds instruction files
+from the folders above the clone, below the repo's own files.
+
 `CONTEXT.md` is filled by the orchestrator when it still has `<!-- fill: … -->` placeholders, is
 older than ~30 days, or the default branch moved a lot since it was written; then
 `100x pr_review context --refresh <CR>` rewrites only its `<!-- auto:start/end -->` section.
