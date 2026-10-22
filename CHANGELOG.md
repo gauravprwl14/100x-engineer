@@ -22,6 +22,9 @@ review. Every new check warns and never blocks.
 | Engineer standards card read at write time | `reviewers/_engineer-standards.md` |
 | Rails, Django/FastAPI, Express/Node and Go reviewers; insecure IaC defaults; Ruby, Kotlin and Swift in `language-verification` | `reviewers/`, `skills/language-verification/` |
 | Output benchmark: 12 scenarios run through `claude plugin eval` against no plugin, the previous version and this one | `bench/` |
+| `explain` skill: on-demand visual step-through of a PR, file or concept — map, flow, what can go wrong, each fix replayed as its own scenario, the decision, an evidence tag per claim; light (static step cards + `.md` export) or `--heavy` (animated, compare tab, en + ja); project settings read from the target's `CLAUDE.md`/`AGENTS.md` | `skills/explain/` |
+| `flow`: checks a walkthrough's `scenario.json` against the code (anchors at the pinned SHA, `git grep` absence counts, tagged numbers, a fix or `open` per issue, tier budgets, reducer expectations) and builds it into one offline HTML page | `scripts/flow.py`, `tests/test_flow.sh` |
+| `comprehension-mapper` preloads `explain`; the router's understand row names it for walkthroughs | `agents/comprehension-mapper.md`, `skills/100x/SKILL.md` |
 | `pr-review` Design and Scenario lenses: conditional agents that challenge the PR's 1–3 decisions (one-way door, no alternative, recurring cost) and list inputs neither code nor tests handle; ≤ 5 items each, unproved ones become questions; `--design`, `--scenarios`; gate G15-lens | `skills/pr-review/`, `scripts/data/pr_review_{design,scenario}_fragment.json` |
 
 ### Changed

@@ -52,7 +52,7 @@ sequenceDiagram
 | build | "add", "build", "implement", "support X", a new screen/endpoint/job |
 | fix | a defect whose expected behaviour is known: "X returns Y, should be Z" |
 | incident | production broken or was broken, outage, intermittent/CI-only failure, cause unknown |
-| understand | "how does X work", "explain", "onboard me", "where is", before touching unfamiliar code |
+| understand | "how does X work", "explain", "onboard me", "where is", "walk me through this PR", before touching unfamiliar code |
 | review-own | "review my changes", before your own commit/PR |
 | review-other | a PR number, a teammate's or another agent's diff; a PR URL whose review should be posted as comments |
 | plan-PRD | "PRD", "spec", "design doc", "approach", "should we", build-vs-buy, anything bigger than one feature |
@@ -72,7 +72,7 @@ Skills run in the order listed. Agents are this plugin's subagents (`100x:<name>
 | build | requirements-intake → scale-appropriateness → feature-planning → approach-selection / decision-records for real choices → orchestrate → per area: api-contract, data-modeling, ui-baseline, accessibility, web-vitals, mobile-release-safety → code-craft → diff-review → verification-gate | requirements-analyst, solution-architect, backend / frontend / mobile-engineer, qa-engineer, code-reviewer, security-reviewer, independent-verifier | `100x plan_feature audit`, `100x plan_dag stamp` + `lint`, `100x agent_report lint` + `replay`, `100x bloat_check`, `100x craft_check`, `100x review_scope`, `100x verified` |
 | fix | bug-fix → test-design (regression test first) → minimal-diff → code-craft → diff-review → verification-gate | the engineer for the area, code-reviewer, independent-verifier; security-reviewer if routes, auth, input, tenancy, uploads or infra changed | failing test before the fix, `100x bloat_check`, `100x craft_check`, `100x verified` |
 | incident | root-cause-analysis → bug-fix → release-rollout (rollback or flag-off first if users are hurting) → project-learning | rca-investigator, then the engineer for the area, independent-verifier | `100x rca lint`, `100x rca link`, `100x decide drift` |
-| understand | codebase-comprehension → diagramming → project-learning | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index` |
+| understand | codebase-comprehension → diagramming → project-learning; explain only when asked for a visual step-through of a PR or concept | comprehension-mapper | `100x repo_map`, `100x check_diagrams`, `100x check_index`; for explain `100x flow check` |
 | review-own | diff-review → minimal-diff → code-craft → verification-gate → pr-description when it opens a PR | code-reviewer; security-reviewer if auth, input, tenancy or uploads changed | `100x review_scope`, `100x bloat_check`, `100x craft_check` |
 | review-other | diff-review → stack-reviewer → app-security → untrusted-agent-config before running their code; pr-review when the findings go to GitHub as comments | code-reviewer, security-reviewer, solution-architect for design fit | `100x review_scope`, `100x bloat_check`; for pr-review `100x pr_review_gate` |
 | plan-PRD | requirements-intake → scale-appropriateness → solution-architecture → approach-selection → decision-records → feature-planning → orchestrate | requirements-analyst, solution-architect | `100x prd audit`, `100x prd align`, `100x plan_feature audit`, `100x decide lint`, `100x plan_dag stamp` + `lint` |

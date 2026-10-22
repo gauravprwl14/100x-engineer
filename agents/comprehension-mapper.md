@@ -10,6 +10,7 @@ tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 skills:
   - 100x:codebase-comprehension
   - 100x:diagramming
+  - 100x:explain
 color: cyan
 ---
 

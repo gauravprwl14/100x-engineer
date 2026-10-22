@@ -11,13 +11,13 @@ block "done" without evidence.
 | 1 | [How a request flows](#how-a-request-flows) | what happens between typing a request and "done" |
 | 2 | [Start here](#start-here) | install from GitHub, update, and the one command to type |
 | 3 | [Agents](#agents) | the 11 specialists, and which of them write code |
-| 4 | [Skills by phase](#skills-by-phase) | the 44 skills, grouped by when they fire |
+| 4 | [Skills by phase](#skills-by-phase) | the 45 skills, grouped by when they fire |
 | 5 | [Gates by phase](#gates-by-phase) | the check that blocks each phase, and how |
 | 6 | [Built-in defaults](#built-in-defaults) | what is applied without asking, what is asked, with three examples |
 | 7 | [Where records go](#where-records-go) | the records root and its layout |
 | 8 | [The commit gate](#the-commit-gate) | modes, signed receipts and their limit, the hooks |
 | 9 | [Does it actually work?](#does-it-actually-work) | the measured numbers, and the claim it does **not** make |
-| 10 | [Tools](#tools) | the 46 command-line tools, grouped |
+| 10 | [Tools](#tools) | the 47 command-line tools, grouped |
 | 11 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
 | 12 | [Research](#research) | the evidence every skill cites |
 | 13 | [Migrating from 0.1](#migrating-from-01) | the new install id, renamed skills and changed commands |
@@ -80,12 +80,12 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | code-reviewer | independent review of someone else's diff | no |
 | security-reviewer | application security review of a diff or design | no |
 | independent-verifier | re-runs each task's declared verify commands itself; trusts no report | no |
-| comprehension-mapper | maps an unfamiliar codebase into a durable architecture note | docs only |
+| comprehension-mapper | maps an unfamiliar codebase into a durable architecture note; on request, a visual walkthrough | docs only |
 | rca-investigator | incident timeline, hypotheses, root cause, action items | docs only |
 
 ## Skills by phase
 
-**44 skills**. The phase map and every trigger are generated into
+**45 skills**. The phase map and every trigger are generated into
 [`skills/INDEX.md`](skills/INDEX.md) by `100x check_index --gen-collections`.
 
 | phase | count | skills |
@@ -95,7 +95,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | 2 while writing | 19 | accessibility, app-security, code-craft, data-lifecycle, dependency-vetting, diagramming, distributed-correctness, frontend-architecture, language-verification, legacy-change, minimal-diff, mobile-release-safety, observability-design, performance-budgets, qa-strategy, stack-reviewer, test-design, ui-baseline, web-vitals |
 | 3 before shipping | 8 | diff-review, pr-description, pr-review, recheck, release-rollout, review-gates, security-baseline, verification-gate |
 | 4 when broken | 2 | bug-fix, root-cause-analysis |
-| 5 understanding | 1 | codebase-comprehension |
+| 5 understanding | 2 | codebase-comprehension, explain |
 | 6 meta | 4 | agent-instructions, project-learning, prompt-bench, untrusted-agent-config |
 
 Plus 11 stack reviewers in [`reviewers/`](reviewers/INDEX.md): NestJS, Next.js/React,
@@ -238,7 +238,7 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**46 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
+**47 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
 skill's own steps also call `gh` (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`).
 `100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
 which check this plugin itself rather than your code. Every tool runs by name either way.
@@ -250,7 +250,7 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | verify | `verified`, `verify_fingerprint`, `audit_ci_gates` |
 | diff checks | `bloat_check`, `craft_check`, `fails_without_fix`, `pr_scope`, `schema_check`, `perf_check`, `test_design_check`, `a11y_check`, `ui_baseline_check`, `appsec_check`, `fe_layers_check`, `vet_dep`, `review_scope` |
 | design and diagrams | `design_drift`, `diagram_from_code`, `check_diagrams` |
-| understand and learn | `repo_map`, `stack_audit`, `rca`, `learn`, `check_claims` |
+| understand and learn | `repo_map`, `flow`, `stack_audit`, `rca`, `learn`, `check_claims` |
 | writing (`docs/WRITING.md`, the `pr-description` skill) | `prose_check` |
 | PR review (the `pr-review` skill) | `pr_review`, `pr_review_gate`, `pr_snapshot`, `pr_suggest` |
 | prompt evaluation (the `prompt-bench` skill) | `prompt_bench` |
@@ -258,7 +258,7 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
-bash tests/run_all.sh    # 48 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 49 test suites, the seeded-defect evals and the lints
 ```
 
 How the diff checkers behave, whichever one runs:

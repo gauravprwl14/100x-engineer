@@ -1,0 +1,4289 @@
+{
+ "schema": 1,
+ "cases": [
+  {
+   "file": "skills/explain/assets/examples/stale-writeback.json",
+   "scenarios": {
+    "happy": [
+     {
+      "step": 0,
+      "origin": "happy",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {},
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "happy",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "cache"
+      ],
+      "messages": [],
+      "hit": "miss",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {},
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "happy",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "db"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "happy",
+      "origin_step": 3,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "cache"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": false,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "happy",
+      "origin_step": 4,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "api",
+       "reader"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "reader",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": false,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "happy",
+      "origin_step": 5,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api",
+       "cache"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "reader",
+        "label": "200 OK"
+       }
+      ],
+      "hit": "hit",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": false,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "race": [
+     {
+      "step": 0,
+      "origin": "race",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api",
+       "cache"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       }
+      ],
+      "hit": "miss",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {},
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "race",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "db"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "race",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "editor",
+       "api",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "editor",
+        "to": "api",
+        "label": "PATCH /notes/:id"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "race",
+      "origin_step": 3,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "cache",
+       "api",
+       "editor"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "editor",
+        "label": "204 No Content"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "race",
+      "origin_step": 4,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "cache"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": true,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [
+       {
+        "kind": "stale-writeback",
+        "cache": "cache",
+        "key": "note:a",
+        "store": "db",
+        "store_key": "notes/a"
+       }
+      ],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "race",
+      "origin_step": 5,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "api",
+       "reader"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "reader",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": true,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "race",
+      "origin_step": 6,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api",
+       "cache"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       }
+      ],
+      "hit": "hit",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v1",
+         "stale": true,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "Stale for up to {{cache_ttl}} after the fill."
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "fix-set-if-fresh": [
+     {
+      "step": 0,
+      "origin": "race",
+      "origin_step": 0,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api",
+       "cache"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       }
+      ],
+      "hit": "miss",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {},
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "race",
+      "origin_step": 1,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "db"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v1"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "race",
+      "origin_step": 2,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "editor",
+       "api",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "editor",
+        "to": "api",
+        "label": "PATCH /notes/:id"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "race",
+      "origin_step": 3,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "cache",
+       "api",
+       "editor"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "editor",
+        "label": "204 No Content"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "fix-set-if-fresh",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "cache"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": [
+       {
+        "cache": "cache",
+        "key": "note:a",
+        "store": "db",
+        "store_key": "notes/a",
+        "read": "v1",
+        "current": "v2"
+       }
+      ]
+     },
+     {
+      "step": 5,
+      "origin": "fix-set-if-fresh",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "api",
+       "reader"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "reader",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {}
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v1",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "fix-set-if-fresh",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "reader",
+       "api",
+       "cache",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "reader",
+        "to": "api",
+        "label": "GET /notes/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "reader",
+        "label": "200 OK"
+       }
+      ],
+      "hit": "miss",
+      "queues": {},
+      "workers": {},
+      "caches": {
+       "cache": {
+        "note:a": {
+         "v": "v2",
+         "stale": false,
+         "src": [
+          "db",
+          "notes/a"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "notes/a": "v2"
+       }
+      },
+      "vars": {
+       "read": {
+        "v": "v2",
+        "src": [
+         "db",
+         "notes/a"
+        ]
+       }
+      },
+      "counters": {},
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     }
+    ]
+   }
+  },
+  {
+   "file": "tests/flow/all-actions.json",
+   "scenarios": {
+    "all": [
+     {
+      "step": 0,
+      "origin": "all",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "client",
+       "api",
+       "jobs"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "client",
+        "to": "api",
+        "label": "POST /jobs"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "jobs": [
+        "job-a",
+        "job-b"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "enqueued": 2
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "all",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "jobs",
+       "pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        "job-a",
+        "job-b"
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "enqueued": 2
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "all",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "enqueued": 0
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "all",
+      "origin_step": 3,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "db",
+       "kv"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        },
+        "k": {
+         "v": "x",
+         "stale": true,
+         "src": [
+          "db",
+          "k"
+         ]
+        },
+        "lit": {
+         "v": true,
+         "stale": true,
+         "src": null
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0",
+        "k": "y",
+        "copy": "x"
+       }
+      },
+      "vars": {
+       "got": {
+        "v": "x",
+        "src": [
+         "db",
+         "k"
+        ]
+       }
+      },
+      "counters": {
+       "enqueued": 0
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "all",
+      "origin_step": 4,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "db",
+       "kv"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        },
+        "k": {
+         "v": "x",
+         "stale": true,
+         "src": [
+          "db",
+          "k"
+         ]
+        },
+        "lit": {
+         "v": true,
+         "stale": true,
+         "src": null
+        },
+        "fresh": {
+         "v": "s0",
+         "stale": false,
+         "src": [
+          "db",
+          "seed"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0",
+        "k": "y",
+        "copy": "x"
+       }
+      },
+      "vars": {
+       "got": {
+        "v": "x",
+        "src": [
+         "db",
+         "k"
+        ]
+       },
+       "s": {
+        "v": "s0",
+        "src": [
+         "db",
+         "seed"
+        ]
+       }
+      },
+      "counters": {
+       "enqueued": 0
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": [
+       {
+        "cache": "kv",
+        "key": "late",
+        "store": "db",
+        "store_key": "k",
+        "read": "x",
+        "current": "y"
+       }
+      ]
+     },
+     {
+      "step": 5,
+      "origin": "all",
+      "origin_step": 5,
+      "inherited": false,
+      "clock_ms": 1502,
+      "active": [
+       "kv",
+       "db"
+      ],
+      "messages": [],
+      "hit": "miss",
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "warm": {
+         "v": "w0",
+         "stale": false,
+         "src": null
+        },
+        "lit": {
+         "v": true,
+         "stale": true,
+         "src": null
+        },
+        "fresh": {
+         "v": "s0",
+         "stale": false,
+         "src": [
+          "db",
+          "seed"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0",
+        "k": "y",
+        "copy": "x"
+       }
+      },
+      "vars": {
+       "got": {
+        "v": "x",
+        "src": [
+         "db",
+         "k"
+        ]
+       },
+       "s": {
+        "v": "s0",
+        "src": [
+         "db",
+         "seed"
+        ]
+       },
+       "read": {
+        "v": null,
+        "src": [
+         "db",
+         "missing"
+        ]
+       }
+      },
+      "counters": {
+       "enqueued": 0
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "all",
+      "origin_step": 6,
+      "inherited": false,
+      "clock_ms": 1502,
+      "active": [
+       "mailer",
+       "api",
+       "client",
+       "kv"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "api",
+        "to": "client",
+        "label": "503 Service Unavailable"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "jobs": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null
+       ]
+      },
+      "caches": {
+       "kv": {
+        "lit": {
+         "v": true,
+         "stale": true,
+         "src": null
+        },
+        "fresh": {
+         "v": "s0",
+         "stale": false,
+         "src": [
+          "db",
+          "seed"
+         ]
+        }
+       }
+      },
+      "stores": {
+       "db": {
+        "seed": "s0",
+        "k": "y",
+        "copy": "x"
+       }
+      },
+      "vars": {
+       "got": {
+        "v": "x",
+        "src": [
+         "db",
+         "k"
+        ]
+       },
+       "s": {
+        "v": "s0",
+        "src": [
+         "db",
+         "seed"
+        ]
+       },
+       "read": {
+        "v": null,
+        "src": [
+         "db",
+         "missing"
+        ]
+       }
+      },
+      "counters": {
+       "enqueued": 0
+      },
+      "failed": [
+       "mailer"
+      ],
+      "failures": [
+       {
+        "node": "mailer",
+        "label": "timeout"
+       }
+      ],
+      "notes": [
+       "Upstream down after {{tick}}"
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ]
+   }
+  },
+  {
+   "file": "skills/explain/assets/examples/bulk-import.json",
+   "scenarios": {
+    "plan-a": [
+     {
+      "step": 0,
+      "origin": "plan-a",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "connector",
+       "edge",
+       "web"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /users"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /users"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The edge lets {{rate_limit}} through per tenant; above that the connector waits and resends."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "plan-a",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "db"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "plan-a",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "q-default",
+       "q-chat"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-1"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-1"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The create asks to skip search indexing; one reindex at the end covers every user."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "plan-a",
+      "origin_step": 3,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "web",
+       "edge",
+       "connector"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "201 Created"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "201 Created"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-1"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-1"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "plan-a",
+      "origin_step": 4,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "q-default",
+       "pool",
+       "q-chat",
+       "chat-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        "mail-1",
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        "chat-1"
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "plan-a",
+      "origin_step": 5,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "chat-pool",
+       "chat",
+       "pool"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       },
+       {
+        "kind": "reply",
+        "from": "chat",
+        "to": "chat-pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1,
+       "chat_accounts": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "plan-a",
+      "origin_step": 6,
+      "inherited": false,
+      "clock_ms": 1500000,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db",
+       "q-default",
+       "q-chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /users"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /users"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-2",
+        "mail-3"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-2"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3000,
+       "users_created": 3000,
+       "chat_accounts": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 7,
+      "origin": "plan-a",
+      "origin_step": 7,
+      "inherited": false,
+      "clock_ms": 1500000,
+      "active": [
+       "q-default",
+       "pool",
+       "q-chat",
+       "chat-pool",
+       "chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3000,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 8,
+      "origin": "plan-a",
+      "origin_step": 8,
+      "inherited": false,
+      "clock_ms": 1500000,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "q-default"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /reindex"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /reindex"
+       },
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "202 Accepted"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "202 Accepted"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "reindex"
+       ],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 9,
+      "origin": "plan-a",
+      "origin_step": 9,
+      "inherited": false,
+      "clock_ms": 1950000,
+      "active": [
+       "q-default",
+       "pool",
+       "search"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "pool",
+        "to": "search",
+        "label": "index user"
+       },
+       {
+        "kind": "reply",
+        "from": "search",
+        "to": "pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 6000,
+       "searchable": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 10,
+      "origin": "plan-a",
+      "origin_step": 10,
+      "inherited": false,
+      "clock_ms": 1950000,
+      "active": [],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 6000,
+       "searchable": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "Last user created at ~{{plan_a_send}}; all searchable at ~{{plan_a_total}}."
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "plan-b": [
+     {
+      "step": 0,
+      "origin": "plan-b",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /imports"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /imports"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "plan-b",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "web",
+       "edge",
+       "connector"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "202 Accepted"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "202 Accepted"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "init"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "plan-b",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "val-1",
+        "val-2",
+        "val-3",
+        "val-4",
+        "val-5",
+        "val-6"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "{{rows}} become {{validate_jobs}} of {{rows_per_job}} each; the queue draws a few of them."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "plan-b",
+      "origin_step": 3,
+      "inherited": false,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool",
+       "connector",
+       "edge",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "GET /imports/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "plan-b",
+      "origin_step": 4,
+      "inherited": false,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "plan-b",
+      "origin_step": 5,
+      "inherited": false,
+      "clock_ms": 966000,
+      "active": [
+       "db",
+       "q-default",
+       "q-chat"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-1"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-1",
+        "chat-2",
+        "chat-3",
+        "chat-4",
+        "chat-5"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "plan-b",
+      "origin_step": 6,
+      "inherited": false,
+      "clock_ms": 966000,
+      "active": [
+       "q-default",
+       "pool",
+       "q-chat",
+       "chat-pool",
+       "chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       },
+       {
+        "kind": "reply",
+        "from": "chat",
+        "to": "chat-pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": [
+        "chat-2",
+        "chat-3",
+        "chat-4",
+        "chat-5"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000,
+       "chat_accounts": 2475
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "Chat jobs arrive at ~{{chat_arrive}} and clear at ~{{chat_clear}}; the rest wait in the chat queue."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 7,
+      "origin": "plan-b",
+      "origin_step": 7,
+      "inherited": false,
+      "clock_ms": 1416000,
+      "active": [
+       "import-pool",
+       "q-default",
+       "pool",
+       "search",
+       "q-chat",
+       "chat-pool"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "pool",
+        "to": "search",
+        "label": "index user"
+       },
+       {
+        "kind": "reply",
+        "from": "search",
+        "to": "pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 6000,
+       "searchable": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 8,
+      "origin": "plan-b",
+      "origin_step": 8,
+      "inherited": false,
+      "clock_ms": 1416000,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "GET /imports/:id"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "GET /imports/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "200 OK"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "done"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 324,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 6000,
+       "searchable": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "Last user created at ~{{plan_b_created}}; all searchable at ~{{plan_b_total}}."
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "chat-backlog": [
+     {
+      "step": 0,
+      "origin": "plan-b",
+      "origin_step": 0,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /imports"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /imports"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "plan-b",
+      "origin_step": 1,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "web",
+       "edge",
+       "connector"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "202 Accepted"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "202 Accepted"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "init"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "plan-b",
+      "origin_step": 2,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "val-1",
+        "val-2",
+        "val-3",
+        "val-4",
+        "val-5",
+        "val-6"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "{{rows}} become {{validate_jobs}} of {{rows_per_job}} each; the queue draws a few of them."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "plan-b",
+      "origin_step": 3,
+      "inherited": true,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool",
+       "connector",
+       "edge",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "GET /imports/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "plan-b",
+      "origin_step": 4,
+      "inherited": true,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "chat-backlog",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 966000,
+      "active": [
+       "db",
+       "q-chat"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": [
+        "chat-1",
+        "chat-2",
+        "chat-3",
+        "chat-4",
+        "chat-5",
+        "chat-6"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "chat-backlog",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 966000,
+      "active": [
+       "q-chat",
+       "chat-pool",
+       "chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       },
+       {
+        "kind": "reply",
+        "from": "chat",
+        "to": "chat-pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": [
+        "chat-2",
+        "chat-3",
+        "chat-4",
+        "chat-5",
+        "chat-6"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000,
+       "chat_accounts": 2475
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The backlog peaks at about {{chat_backlog}} when the import ends."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 7,
+      "origin": "chat-backlog",
+      "origin_step": 2,
+      "inherited": false,
+      "clock_ms": 1122000,
+      "active": [
+       "q-chat",
+       "chat-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 323,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "fix-throttle": [
+     {
+      "step": 0,
+      "origin": "plan-b",
+      "origin_step": 0,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /imports"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /imports"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "plan-b",
+      "origin_step": 1,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "web",
+       "edge",
+       "connector"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "202 Accepted"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "202 Accepted"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "init"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "plan-b",
+      "origin_step": 2,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [
+        "val-1",
+        "val-2",
+        "val-3",
+        "val-4",
+        "val-5",
+        "val-6"
+       ],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "uploaded"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "{{rows}} become {{validate_jobs}} of {{rows_per_job}} each; the queue draws a few of them."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "plan-b",
+      "origin_step": 3,
+      "inherited": true,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool",
+       "connector",
+       "edge",
+       "db"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "GET /imports/:id"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "plan-b",
+      "origin_step": 4,
+      "inherited": true,
+      "clock_ms": 216000,
+      "active": [
+       "q-import",
+       "import-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 73
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "fix-throttle",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 1122000,
+      "active": [
+       "db",
+       "q-chat",
+       "chat-pool",
+       "chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       },
+       {
+        "kind": "reply",
+        "from": "chat",
+        "to": "chat-pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 373,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "fix-throttle",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 1122000,
+      "active": [],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        "import",
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000,
+        "import": "validated"
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 373,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The import takes {{throttle_extra}} longer; no account waits behind the queue."
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ],
+    "search-throttled": [
+     {
+      "step": 0,
+      "origin": "plan-a",
+      "origin_step": 0,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "connector",
+       "edge",
+       "web"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /users"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /users"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 0
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The edge lets {{rate_limit}} through per tenant; above that the connector waits and resends."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 1,
+      "origin": "plan-a",
+      "origin_step": 1,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "db"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 2,
+      "origin": "plan-a",
+      "origin_step": 2,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-default",
+       "q-chat"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-1"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-1"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [
+       "The create asks to skip search indexing; one reindex at the end covers every user."
+      ],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 3,
+      "origin": "plan-a",
+      "origin_step": 3,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "web",
+       "edge",
+       "connector"
+      ],
+      "messages": [
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "201 Created"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "201 Created"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-1"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-1"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 4,
+      "origin": "plan-a",
+      "origin_step": 4,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "q-default",
+       "pool",
+       "q-chat",
+       "chat-pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        "mail-1",
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        "chat-1"
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 5,
+      "origin": "plan-a",
+      "origin_step": 5,
+      "inherited": true,
+      "clock_ms": 0,
+      "active": [
+       "chat-pool",
+       "chat",
+       "pool"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       },
+       {
+        "kind": "reply",
+        "from": "chat",
+        "to": "chat-pool",
+        "label": "200 OK"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 1
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 1,
+       "users_created": 1,
+       "chat_accounts": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 6,
+      "origin": "plan-a",
+      "origin_step": 6,
+      "inherited": true,
+      "clock_ms": 1500000,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "db",
+       "q-default",
+       "q-chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /users"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /users"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "mail-2",
+        "mail-3"
+       ],
+       "q-import": [],
+       "q-chat": [
+        "chat-2"
+       ]
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3000,
+       "users_created": 3000,
+       "chat_accounts": 1
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 7,
+      "origin": "plan-a",
+      "origin_step": 7,
+      "inherited": true,
+      "clock_ms": 1500000,
+      "active": [
+       "q-default",
+       "pool",
+       "q-chat",
+       "chat-pool",
+       "chat"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "chat-pool",
+        "to": "chat",
+        "label": "create account"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3000,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 8,
+      "origin": "plan-a",
+      "origin_step": 8,
+      "inherited": true,
+      "clock_ms": 1500000,
+      "active": [
+       "connector",
+       "edge",
+       "web",
+       "q-default"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "connector",
+        "to": "edge",
+        "label": "POST /reindex"
+       },
+       {
+        "kind": "send",
+        "from": "edge",
+        "to": "web",
+        "label": "POST /reindex"
+       },
+       {
+        "kind": "reply",
+        "from": "web",
+        "to": "edge",
+        "label": "202 Accepted"
+       },
+       {
+        "kind": "reply",
+        "from": "edge",
+        "to": "connector",
+        "label": "202 Accepted"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [
+        "reindex"
+       ],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000
+      },
+      "failed": [],
+      "failures": [],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 9,
+      "origin": "search-throttled",
+      "origin_step": 0,
+      "inherited": false,
+      "clock_ms": 1500000,
+      "active": [
+       "q-default",
+       "pool",
+       "search"
+      ],
+      "messages": [
+       {
+        "kind": "send",
+        "from": "pool",
+        "to": "search",
+        "label": "index user"
+       },
+       {
+        "kind": "reply",
+        "from": "search",
+        "to": "pool",
+        "label": "429 Too Many Requests"
+       }
+      ],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        "reindex",
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 1200,
+       "searchable": 600
+      },
+      "failed": [
+       "search"
+      ],
+      "failures": [
+       {
+        "node": "search",
+        "label": "throttled"
+       }
+      ],
+      "notes": [],
+      "hazards": [],
+      "skipped": []
+     },
+     {
+      "step": 10,
+      "origin": "search-throttled",
+      "origin_step": 1,
+      "inherited": false,
+      "clock_ms": 1500000,
+      "active": [
+       "pool"
+      ],
+      "messages": [],
+      "hit": null,
+      "queues": {
+       "q-default": [],
+       "q-import": [],
+       "q-chat": []
+      },
+      "workers": {
+       "pool": [
+        null,
+        null,
+        null,
+        null
+       ],
+       "import-pool": [
+        null,
+        null
+       ],
+       "chat-pool": [
+        null
+       ]
+      },
+      "caches": {},
+      "stores": {
+       "db": {
+        "users": 3000
+       }
+      },
+      "vars": {},
+      "counters": {
+       "requests": 3001,
+       "users_created": 3000,
+       "chat_accounts": 3000,
+       "search_requests": 1200,
+       "searchable": 600
+      },
+      "failed": [
+       "search"
+      ],
+      "failures": [],
+      "notes": [
+       "Nothing retries the reindex in this plan; the connector has to call it again."
+      ],
+      "hazards": [],
+      "skipped": []
+     }
+    ]
+   }
+  }
+ ]
+}

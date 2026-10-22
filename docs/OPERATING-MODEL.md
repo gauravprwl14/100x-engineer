@@ -52,7 +52,7 @@ conversation that questions must reach. `SOURCE: original`
 | code-reviewer | independent review of someone else's diff | no | diff-review, code-craft, minimal-diff |
 | security-reviewer | application security review of a diff or design | no | app-security, security-baseline |
 | independent-verifier | re-runs each task's declared verify commands itself; trusts no report | no | verification-gate |
-| comprehension-mapper | maps an unfamiliar codebase into a durable architecture note | docs only | codebase-comprehension, diagramming |
+| comprehension-mapper | maps an unfamiliar codebase into a durable architecture note; on request, a visual walkthrough (`scenario.json`) | docs only | codebase-comprehension, diagramming, explain |
 | rca-investigator | incident timeline, hypotheses, root cause, action items | docs only | root-cause-analysis |
 
 ## 2. Agent protocol

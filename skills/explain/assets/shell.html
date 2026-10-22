@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" data-tier="{{flow_tier}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>{{flow_title}}</title>
+<style>{{flow_css}}</style>
+</head>
+<body>
+<a class="skip" href="#flow-main">Skip to the walkthrough</a>
+<main id="flow-app" class="wrap" aria-busy="true">
+  <p class="loading" role="status">Drawing the walkthrough…</p>
+</main>
+<noscript><p class="fatal">This page draws its walkthrough with JavaScript, which is off. explain.md beside this file has the same walkthrough as tables.</p></noscript>
+<script type="application/json" id="flow-data">{{flow_data}}</script>
+<script>{{flow_js}}</script>
+</body>
+</html>

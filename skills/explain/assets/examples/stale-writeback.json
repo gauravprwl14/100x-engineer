@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": {
+    "en": "Notes service: a slow read writes a stale note back into the cache",
+    "ja": "ノートサービス：遅い読み取りが古いノートをキャッシュに書き戻す"
+  },
+  "subject": {
+    "kind": "concept",
+    "lede": {
+      "en": "GET reads the cache, falls back to the database and fills the cache; PATCH writes the database, then deletes the cache key. If a PATCH lands between a GET's database read and its cache fill, the cache keeps the old note until the TTL of {{cache_ttl}} runs out.",
+      "ja": "GET はキャッシュを読み、なければデータベースを読んでキャッシュを埋める。PATCH はデータベースを書いてからキャッシュキーを削除する。GET の読み取りとキャッシュ書き込みの間に PATCH が入ると、TTL {{cache_ttl}} が切れるまで古いノートが残る。"
+    }
+  },
+  "nodes": [
+    {"id": "reader", "role": "client", "label": "Reader"},
+    {"id": "editor", "role": "client", "label": "Editor"},
+    {"id": "api", "role": "service", "label": "notes-api", "ref": "src/routes.js:4", "ev": "e-route-get"},
+    {"id": "cache", "role": "cache", "label": "Cache", "ref": "src/notes.js:7", "ev": "e-cache-get"},
+    {"id": "db", "role": "store", "label": "Database", "ref": "src/notes.js:9", "ev": "e-db-read"}
+  ],
+  "numbers": {
+    "cache_ttl": {"v": 300, "unit": "s", "tag": "verified", "ev": "e-ttl"},
+    "second_delete_delay": {
+      "v": 500, "unit": "ms", "tag": "estimated",
+      "basis": "Longer than the slowest GET between its database read and its cache fill; a proposal, not in the code."
+    }
+  },
+  "evidence": {
+    "e-route-get": {"at": "src/routes.js:4", "anchor": "router.get('/notes/:id'"},
+    "e-route-patch": {"at": "src/routes.js:5", "anchor": "router.patch('/notes/:id'"},
+    "e-status-204": {"at": "src/routes.js:7", "anchor": "res.status(204)"},
+    "e-ttl": {"at": "src/notes.js:2", "anchor": "CACHE_TTL_SECONDS = 300"},
+    "e-cache-get": {"at": "src/notes.js:7", "anchor": "cache.get(cacheKey(id))"},
+    "e-db-read": {"at": "src/notes.js:9", "anchor": "SELECT body FROM notes"},
+    "e-cache-set": {"at": "src/notes.js:10", "anchor": "cache.set(cacheKey(id), note"},
+    "e-db-write": {"at": "src/notes.js:15", "anchor": "UPDATE notes SET body"},
+    "e-cache-del": {"at": "src/notes.js:16", "anchor": "cache.del(cacheKey(id))"},
+    "e-fill-if-fresh": {"at": "fix/fill-if-fresh.lua:5", "anchor": "if cached > tonumber(ARGV[2]) then return 0"},
+    "e-no-version-check": {
+      "absent": "a version check or lock between the database read and the cache fill",
+      "git_grep": "version|lock|compareAndSet",
+      "path": "src/",
+      "hits": 0
+    }
+  },
+  "initial": {
+    "stores": {"db": {"notes/a": "v1"}}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "Cold read fills the cache, the next read hits",
+      "steps": [
+        {"t": "Reader asks for the note", "do": [["send", "reader", "api", "GET /notes/:id"]], "ev": ["e-route-get"]},
+        {"t": "Cache miss", "do": [["cache.get", "cache", "note:a"]], "expect": {"hit": "miss"}, "ev": ["e-cache-get"]},
+        {"t": "Read the note from the database", "do": [["db.read", "db", "notes/a"]], "expect": {"vars": {"read": "v1"}}, "ev": ["e-db-read"]},
+        {"t": "Fill the cache with a TTL of {{cache_ttl}}", "do": [["cache.set", "cache", "note:a", "$read"]], "expect": {"cache": {"cache": {"note:a": "v1"}}, "stale": {"cache": {"note:a": false}}}, "ev": ["e-cache-set", "e-ttl"]},
+        {"t": "Reply with the note", "do": [["reply", "api", "reader", "200 OK"]], "ev": ["e-route-get"]},
+        {"t": "The next read is a cache hit", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"], ["reply", "api", "reader", "200 OK"]], "expect": {"hit": "hit"}, "ev": ["e-cache-get"]}
+      ]
+    },
+    {
+      "id": "race",
+      "kind": "race",
+      "title": "A PATCH lands between a GET's read and its cache fill",
+      "severity": "high",
+      "fixed_by": ["fix-set-if-fresh"],
+      "steps": [
+        {"t": "Reader's GET misses the cache", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"]], "expect": {"hit": "miss"}, "ev": ["e-route-get", "e-cache-get"]},
+        {"t": "Reader's GET reads the old note", "d": "The request now holds the old note in memory; nothing ties it to the row's current state.", "do": [["db.read", "db", "notes/a"]], "expect": {"vars": {"read": "v1"}}, "ev": ["e-db-read", "e-no-version-check"]},
+        {"t": "Editor's PATCH writes the new note", "do": [["send", "editor", "api", "PATCH /notes/:id"], ["db.write", "db", "notes/a", "v2"]], "expect": {"store": {"db": {"notes/a": "v2"}}}, "ev": ["e-route-patch", "e-db-write"]},
+        {"t": "PATCH deletes the cache key and replies", "d": "The key is already absent, so this delete changes nothing.", "do": [["cache.del", "cache", "note:a"], ["reply", "api", "editor", "204 No Content"]], "expect": {"cache": {"cache": {"note:a": null}}}, "ev": ["e-cache-del", "e-status-204"]},
+        {"t": "Reader's GET fills the cache with the old note", "d": "The stale value enters the cache here, after the only delete has already run.", "do": [["cache.set", "cache", "note:a", "$read"]], "hazard": "stale-writeback", "expect": {"cache": {"cache": {"note:a": "v1"}}, "stale": {"cache": {"note:a": true}}}, "ev": ["e-cache-set", "e-no-version-check"]},
+        {"t": "Reader gets the old note", "do": [["reply", "api", "reader", "200 OK"]], "ev": ["e-route-get"]},
+        {"t": "Every later read hits the stale entry until the TTL ends", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"], ["note", "Stale for up to {{cache_ttl}} after the fill."]], "expect": {"hit": "hit", "stale": {"cache": {"note:a": true}}}, "ev": ["e-cache-get", "e-ttl"]}
+      ]
+    },
+    {
+      "id": "fix-set-if-fresh",
+      "kind": "fix",
+      "title": "The GET fills the cache only if the note is unchanged since its read",
+      "branch": {"from": "race", "at": 4},
+      "steps": [
+        {"t": "Reader's GET skips the fill: the note changed after its read", "d": "The fill compares the note it read with the row as it is now; the PATCH changed the row, so nothing is written and the cache stays empty.", "do": [["cache.set-if-fresh", "cache", "note:a", "$read"]], "expect": {"cache": {"cache": {"note:a": null}}}, "ev": ["e-cache-set", "e-fill-if-fresh"], "tag": "inferred"},
+        {"t": "Reader gets the note it read, once", "d": "This one response is as old as the read; no later read sees it.", "do": [["reply", "api", "reader", "200 OK"]], "ev": ["e-route-get"]},
+        {"t": "The next read misses and caches the new note", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"], ["db.read", "db", "notes/a"], ["cache.set-if-fresh", "cache", "note:a", "$read"], ["reply", "api", "reader", "200 OK"]], "expect": {"hit": "miss", "vars": {"read": "v2"}, "cache": {"cache": {"note:a": "v2"}}, "stale": {"cache": {"note:a": false}}}, "ev": ["e-cache-get", "e-db-read", "e-fill-if-fresh"], "tag": "inferred"}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "set-if-fresh", "label": "Fill the cache only if the row is unchanged since the read", "fit": "pass", "scenario": "fix-set-if-fresh",
+       "pros": ["No stale window: a fill that lost the race is dropped", "The PATCH handler does not change"],
+       "cons": ["Needs an atomic compare in the cache client, or a version to compare", "A dropped fill sends the next read to the database again"]},
+      {"id": "second-delete", "label": "Delete the key again after a delay", "fit": "pass",
+       "pros": ["Two lines in the PATCH handler", "No schema change"],
+       "cons": ["A stale window of up to {{second_delete_delay}} remains", "The delay is a guess about the slowest GET"]},
+      {"id": "ttl-only", "label": "Keep the code, rely on the TTL", "fit": "fail", "scenario": "race",
+       "pros": ["No change"],
+       "cons": ["Stale for up to {{cache_ttl}} after every unlucky PATCH"]}
+    ],
+    "chosen": "set-if-fresh",
+    "deciding_factor": "It removes the stale window instead of shortening it, for one compare per fill.",
+    "revisit_when": "The compare adds visible latency to a fill, or the cache cannot compare atomically.",
+    "source": "SOURCE: original (made-up example)"
+  },
+  "checks": [
+    {"scenario": "race", "step": 4, "q": "The PATCH already deleted the key. What does the cache hold after this step?", "answer": "The old note, v1: the GET fills the cache after the only delete ran."},
+    {"scenario": "fix-set-if-fresh", "step": 4, "q": "Same moment, with the fix: does the GET write its old note into the cache?", "answer": "No. The row changed since the read, so the fill is skipped and the cache stays empty."}
+  ],
+  "compare": ["race", "fix-set-if-fresh"]
+}
