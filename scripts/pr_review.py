@@ -104,6 +104,15 @@ def is_skipped(i): return (i.get("user") or {}).get("decision") == "skip"
 def is_edited(i): return bool((i.get("user") or {}).get("edited"))
 def is_posted(i): return bool(i.get("posted"))
 
+LEAK_ID = re.compile(r"\b\d+-[A-Z]{1,4}-\d{2,3}\b|\b[AQX]-\d{2,3}\b")   # internal item IDs; the gate's G3 uses this too
+
+def user_note(r, i, default):
+    """The user's adjust note, with any item ID swapped for that item's title — files 2 and 3 must not show IDs."""
+    n = ((i.get("user") or {}).get("note") or "").strip()
+    if not n: return default
+    titles = {x["id"]: x["title"] for x in r["items"]}
+    return LEAK_ID.sub(lambda m: f"\"{titles[m.group(0)]}\"" if m.group(0) in titles else "another item", n)
+
 def to_post(r):
     """Open, not skipped by the user — the items that get a number and a row in the action table."""
     return [i for i in actionable(r) if not is_skipped(i)]
@@ -368,7 +377,7 @@ def render_comments(r):
                       + ("" if w.get("in_diff") or not w.get("line") else " — not in this PR's diff, so it goes in the general comment"), ""]
             if s == "D": L += [f"**Existing thread:** {i['dup_of_existing_comment']}", ""]
             L += [f"**Why (for you):** {i['why'].strip()}", ""]
-            if is_edited(i) and (i.get("user") or {}).get("note"): L += [f"**Your change:** {i['user']['note'].strip()}", ""]
+            if is_edited(i) and (i.get("user") or {}).get("note"): L += [f"**Your change:** {user_note(r, i, '')}", ""]
             L += ["**Paste this:**" if s != "C" else f"**Say this to {i['ask']['who']}:**", "", quote(paste_text(i) if s != "D" else f"+1 — {i['comment'].strip()}"), ""]
             ch = i.get("change") or {}
             if ch.get("type") in ("suggestion", "diff"): L += [f"<sub>Change checked: {ch.get('checked')}</sub>", ""]
@@ -382,7 +391,7 @@ def render_comments(r):
     sk = skipped(r)
     if sk:
         L += ["## Not posting (skipped by you)", ""]
-        L += [f"- {i['title']} — your note: {(i.get('user') or {}).get('note') or 'none'}" for i in sk] + [""]
+        L += [f"- {i['title']} — your note: {user_note(r, i, 'none')}" for i in sk] + [""]
     if not groups and not praise: L += ["Nothing to post.", ""]
     return "\n".join(L).rstrip() + "\n"
 
@@ -401,7 +410,7 @@ def render_questions(r):
     in10 = (f"{len(qs)} thing{'s' if len(qs) != 1 else ''} this review could not confirm or needs someone to answer"
             + (f" — answered by: {', '.join(whos)}." if qs else "."))
     L = [f"# PR {pr['number']} — open questions", "", f"> **In 10 seconds:** {in10}", "",
-         "| # | What we don't know | Why it matters | How to confirm | Who answers | Where to ask | Comment |",
+         "| Comment # | What we don't know | Why it matters | How to confirm | Who answers | Where to ask | Comment |",
          "|---|---|---|---|---|---|---|"]
     for i in qs:
         n = num.get(i["id"])
@@ -575,7 +584,9 @@ def followup_text(pr_dir, url):
             else "A few more points from my review that didn't make it into the review summary:")
     print(head + "\n\n---\n\n" + "\n\n---\n\n".join(parts))
 
-def emit(pr_dir, mode):
+BODY_MAX = 3000   # review summary length (chars) above which emit warns; long summaries are hard to read
+
+def emit(pr_dir, mode, body_max=BODY_MAX):
     if mode not in ("draft", "submit"): sys.exit("mode must be draft or submit")
     r = load(pr_dir)
     if not posting_ids(r): print("nothing new to post: every comment is skipped, already posted, or for you to send by hand", file=sys.stderr); sys.exit(3)
@@ -584,6 +595,8 @@ def emit(pr_dir, mode):
     print(f"{'DRAFT (pending, only you see it)' if mode == 'draft' else 'SUBMIT as COMMENT (visible to everyone)'} review on {r['pr']['url']} @ {r['pr']['head_sha'][:10]}", file=sys.stderr)
     for c in rev["comments"]: print(f"  inline  {c['path']}:{c.get('start_line', c['line'])}{'-' + str(c['line']) if 'start_line' in c else ''}  {c['body'].splitlines()[0][:90]}", file=sys.stderr)
     print(f"  body    {len(rev['body'])} chars, {rev['body'].count('---') } general comment(s)", file=sys.stderr)
+    if len(rev["body"]) > body_max:
+        print(f"  WARN    body is over {body_max} chars: offer to post the general comments as separate PR comments", file=sys.stderr)
 
 # ---------------------------------------------------------------- find · slug · next run · root INDEX.md
 PULL_RE = re.compile(r"^(https?://[^/\s]+/[^/\s]+/[^/\s]+/pull/\d+)")
@@ -984,6 +997,7 @@ def main(argv=None):
     s = sub.add_parser("feature", help="render <run-root>/README.md"); s.add_argument("run_root")
     s = sub.add_parser("merge", help="merge agent fragments into review.json"); s.add_argument("pr_dir"); s.add_argument("fragments", nargs="+")
     s = sub.add_parser("emit", help="print the GitHub review payload"); s.add_argument("pr_dir"); s.add_argument("mode", choices=("draft", "submit"))
+    s.add_argument("--body-max", type=int, default=BODY_MAX, help=f"warn when the summary is longer (default {BODY_MAX})")
     s = sub.add_parser("preview", help="print what post would send"); s.add_argument("pr_dir")
     s = sub.add_parser("mark-posted", help="record a successful post"); s.add_argument("pr_dir"); s.add_argument("url"); s.add_argument("mode", choices=("draft", "submit"))
     s = sub.add_parser("followup-text", help="general comments of a post as one PR comment"); s.add_argument("pr_dir"); s.add_argument("url")
@@ -1000,7 +1014,7 @@ def main(argv=None):
     elif a.cmd == "feature":
         (pathlib.Path(a.run_root) / "README.md").write_text(render_feature(a.run_root), encoding="utf-8"); print(f"rendered {a.run_root}/README.md")
     elif a.cmd == "merge": merge(a.pr_dir, a.fragments)
-    elif a.cmd == "emit": emit(a.pr_dir, a.mode)
+    elif a.cmd == "emit": emit(a.pr_dir, a.mode, a.body_max)
     elif a.cmd == "preview": preview(a.pr_dir)
     elif a.cmd == "mark-posted": mark_posted(a.pr_dir, a.url, a.mode)
     elif a.cmd == "followup-text": followup_text(a.pr_dir, a.url)
