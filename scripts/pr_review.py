@@ -796,19 +796,32 @@ def resolve_cr(repo=None, url=None, out=None):
         return fallback_cr(slug, name).resolve(), "parent of the repo is inside a git work tree: user fallback"
     return (parent / DEFAULT_DIR / name).resolve(), f"default <parent>/{DEFAULT_DIR}/<repo>"
 
-def paths_info(cr, rule):
+PARENT_RULE_FILES = ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md")
+
+def parent_rules(repo):
+    """Instruction files in the folders above the clone, nearest first — Claude Code loads these too.
+    Stops at $HOME: files there are the user's own, not workspace rules."""
+    top = main_repo(repo) if repo else None
+    if not top: return []
+    home, out = pathlib.Path.home().resolve(), []
+    for d in top.parents:
+        if d == home: break
+        out += [str(d / n) for n in PARENT_RULE_FILES if (d / n).is_file()]
+    return out
+
+def paths_info(cr, rule, repo=None):
     meta = cr / META_DIR
     profile = config_home() / "profile.md"
     return {"cr": str(cr), "meta": str(meta), "profile": str(profile), "source_of_rule": rule,
             "context": str(cr / CONTEXT_FILE), "context_exists": (cr / CONTEXT_FILE).is_file(),
             "meta_files": {n: {"path": str(meta / n), "exists": (meta / n).is_file()} for n in META_FILES},
-            "profile_exists": profile.is_file()}
+            "profile_exists": profile.is_file(), "parent_rules": parent_rules(repo)}
 
 def cmd_out_dir(a, full):
     if a.repo and not pathlib.Path(a.repo).is_dir(): print(f"pr_review: --repo {a.repo} is not a directory", file=sys.stderr); sys.exit(2)
     cr, rule = resolve_cr(a.repo, a.url, a.out)
     if getattr(a, "ensure", False): scaffold(cr, a.repo, a.url)
-    info = paths_info(cr, rule)
+    info = paths_info(cr, rule, a.repo)
     if a.json:
         if not full: info = {k: info[k] for k in ("cr", "meta", "profile", "source_of_rule")}
         print(json.dumps(info, indent=2))
@@ -834,6 +847,7 @@ STACK_SIGNALS = (
     ("docker-compose.yml", "Docker Compose"), ("compose.yaml", "Docker Compose"), ("Makefile", "make"),
 )
 CONVENTION_GLOBS = ("CLAUDE.md", "AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md",
+                    ".github/instructions/*.instructions.md", ".claude/memory/*.md", ".claude/rules/**/*.md",
                     ".github/skills/*/SKILL.md", ".claude/skills/*/SKILL.md", "CONTRIBUTING.md", ".github/CONTRIBUTING.md",
                     ".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE.md", ".github/PULL_REQUEST_TEMPLATE/*.md",
                     "pull_request_template.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS")
@@ -944,7 +958,7 @@ def cmd_init(a):
     cr, rule = resolve_cr(a.repo, a.url, a.out)
     made = scaffold(cr, a.repo, a.url)
     if a.json:
-        info = paths_info(cr, rule); info["created"] = [str(m) for m in made]
+        info = paths_info(cr, rule, a.repo); info["created"] = [str(m) for m in made]
         print(json.dumps(info, indent=2))
     else:
         for m in made: print(f"created {m}")
