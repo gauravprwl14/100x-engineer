@@ -14,6 +14,7 @@ Rules: `rubric.md` only.
 | `PLUGIN` · `OUT_DIR` · `LANG` · `USER` | `$(100x root)` · see Variants · comment language (en/ja) · `gh api --hostname {{HOST}} user -q .login` |
 | `CONTEXT_MD` | `<CR>/CONTEXT.md` (`context` from `100x pr_review paths --json`) |
 | `META` · `PROFILE` | `<CR>/_meta/` (`focus.md`, `decisions.md` — whichever exist) · `~/.config/pr-review/profile.md` if it exists, else "none" (both from `100x pr_review paths --json`) |
+| `PARENT_RULES` | `parent_rules` from `100x pr_review paths --json` (instruction files in folders above the clone, nearest first), else "none" |
 | `PRIOR` | re-review: previous `review.json` + `recheck_of` SHA; else "none" |
 | `FOCUS` | matching blocks of `focus-generic.md` + `META/focus.md` lines + the stack reviewer file(s) + PR hints |
 
@@ -37,7 +38,7 @@ blast-radius order, cite the convention before blocking). Shape to copy (facts a
 | History | `git -C {{REPO_DIR}} log --oneline {{BASE_SHA}}..{{HEAD_SHA}}` |
 | Existing comments | `gh pr view {{NUM}} -R {{GH_REPO}} --comments` · `gh api --hostname {{HOST}} repos/{{OWNER}}/{{REPO}}/pulls/{{NUM}}/comments` · `…/pulls/{{NUM}}/reviews` (incl. bots) |
 | Purpose · spec | {{CONTEXT}} · {{SPEC}} |
-| Context and conventions, in this order | 1. `{{CONTEXT_MD}}` (the repo's architecture, boundaries, own review rubric and severity labels, related repos) · 2. `{{SNAP}}/{{NUM}}/CLAUDE.md`, `AGENTS.md` (and any nested ones on changed paths) · 3. `{{META}}focus.md`, `{{META}}decisions.md` (author decisions and accepted gaps → `not_to_raise` or `status: accepted`) · 4. `{{PROFILE}}` (how this user wants comments written). On a conflicting code convention the repo's own files (2) win over its summary (1); otherwise a later source never overrides an earlier one |
+| Context and conventions, in this order | 1. `{{CONTEXT_MD}}` (the repo's architecture, boundaries, own review rubric and severity labels, related repos) · 2. `{{SNAP}}/{{NUM}}/CLAUDE.md`, `AGENTS.md` (and any nested ones on changed paths), their `@path` imports, and every other file `CONTEXT_MD` lists under **Conventions sources**, read at `{{SNAP}}/{{NUM}}/` — for `.claude/memory/` read `MEMORY.md` first, then only the entries that touch the changed paths · 2b. `{{PARENT_RULES}}` and their `@path` imports (workspace rules; the repo's own files win on conflict) · 3. `{{META}}focus.md`, `{{META}}decisions.md` (author decisions and accepted gaps → `not_to_raise` or `status: accepted`) · 4. `{{PROFILE}}` (how this user wants comments written). On a conflicting code convention the repo's own files (2) win over its summary (1); otherwise a later source never overrides an earlier one |
 | Prior review | {{PRIOR}} — keep its IDs, set `previous_status`, re-verify each at `{{HEAD_SHA}}`. Copy every `user` and `posted` block forward unchanged (the user's decisions and post record win over your wording); if an item the user edited or posted is now fixed or changed, set its status and say so in `why` — never rewrite the user's text. Keep `<PR>-U-NN` items (re-verify like any other) |
 
 | # | Step | Output |
