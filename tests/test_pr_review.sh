@@ -62,6 +62,18 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert sorted(d)==[
 run 0 "paths --json" pr_review paths --repo "$WS/app" --json
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["context"].endswith("/widgets/CONTEXT.md"); assert set(d["meta_files"])=={"focus.md","decisions.md","settings.json"}' "$OUT/r.out" \
   && ok "  context path + meta files" || bad "  paths --json incomplete"
+# Conventions beyond CLAUDE.md: memory, rules and instructions files in the repo, CLAUDE.md in a parent folder
+mkdir -p "$TMP/wsp/sub" && printf '# workspace rules\n' > "$TMP/wsp/CLAUDE.md"
+mkrepo "$TMP/wsp/sub/conv"; C="$TMP/wsp/sub/conv"
+mkdir -p "$C/.claude/memory" "$C/.claude/rules/kotlin" "$C/.github/instructions"
+touch "$C/.claude/memory/MEMORY.md" "$C/.claude/rules/kotlin/style.md" "$C/.github/instructions/backend.instructions.md"
+run 0 "paths --json lists parent CLAUDE.md" pr_review paths --repo "$C" --json --out "$TMP/conv-cr"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["parent_rules"]==[sys.argv[2]], d["parent_rules"]' "$OUT/r.out" "$TMP/wsp/CLAUDE.md" \
+  && ok "  parent_rules = the workspace CLAUDE.md only" || bad "  parent_rules wrong"
+run 0 "init lists memory, rules and instructions" pr_review init --repo "$C" --out "$TMP/conv-cr"
+for f in .claude/memory/MEMORY.md .claude/rules/kotlin/style.md .github/instructions/backend.instructions.md; do
+  grep -q -- "- \`$f\`" "$TMP/conv-cr/CONTEXT.md" && ok "  CONTEXT.md lists $f" || bad "  CONTEXT.md misses $f"
+done
 run 2 "--repo that does not exist is refused" pr_review out-dir --repo "$TMP/nope"
 run 2 "no subcommand is a usage error" pr_review
 
