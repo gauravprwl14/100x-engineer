@@ -16,15 +16,16 @@ every `gh api` call takes `--hostname HOST`, all three parsed from the PR URL.
 | 3 | Context | `gh issue view <n> -R …`, then `gh issue view <n> -R … --comments` for each linked issue/spec |
 | 4 | Existing comments | `gh pr view <n> -R … --comments`, `gh api --hostname HOST repos/OWNER/REPO/pulls/<n>/comments`, `…/reviews` → passed to every agent (dedupe, rubric §1.8) |
 | 5 | Load order | `$CR/CONTEXT.md` → repo `CLAUDE.md`/`AGENTS.md` (from `<snap>/<n>/`) → `meta/focus.md` + `meta/decisions.md` if present → `profile` if present. Pass them all to every agent; never invent one that is absent. On a conflicting code convention the repo's own files win over `CONTEXT.md` |
-| 6 | Size tier + folders | `additions + deletions` → agents per rubric §6 · `<run-root>/PR-<num>__<area>-<short-title>__<author>/` (area = backend/frontend/spec/mixed) |
-| 7 | Fan out | ONE message, all `run_in_background: true`, ≤ 10 agents; prompt = `reviewer-prompt.md` filled, row from its Variants. FOCUS = `focus-generic.md` blocks + `meta/focus.md` + `reviewers/<stack>.md` for each stack `100x stack_audit <snap>/<n> --here` reports |
-| 8 | Merge fragments | `100x pr_review merge <pr-dir> <scratch>/sec-<n>/fragment.json …`; move `5-security.md` in; for each "skipped X (same as Y)" line, fold any stronger evidence/fix into Y by hand |
+| 6 | Size tier + folders | `additions + deletions` → agents per rubric §6; Design / Scenario lenses per its Lenses table or `--design` / `--scenarios`, noting the trigger for the report · `<run-root>/PR-<num>__<area>-<short-title>__<author>/` (area = backend/frontend/spec/mixed) |
+| 7 | Fan out | ONE message, all `run_in_background: true`, ≤ 10 agents, lenses included (subagents cannot spawn subagents, so the main session starts every agent); prompt = `reviewer-prompt.md` filled, row from its Variants. FOCUS = `focus-generic.md` blocks + `meta/focus.md` + `reviewers/<stack>.md` for each stack `100x stack_audit <snap>/<n> --here` reports |
+| 8 | Merge fragments | `100x pr_review merge <pr-dir> <scratch>/{sec,des,scn}-<n>/fragment.json …` (whichever ran); move `5-security.md` in; for each "skipped X (same as Y)" line, fold any stronger evidence/fix into Y by hand; paste the Design fragment's `decisions` into `1-context.md` `## Author's decisions` as `Risk if wrong` · `Cost to undo` columns (a decision the PR reviewer did not list gets its own row) |
+| 8b | Cross-examine | for every new `DES`/`SCN` item open the cited line at the pinned SHA (`<snap>/<n>/<path>`) or rerun the cited command; not confirmed → `evidence: inferred`, status `question`, `blocks` other than merge (normally `none`), `confirm_by` + `unknown` (G15) |
 | 9 | Check suggestions | `100x pr_suggest <pr-dir> --repo <clone> --snap <snap> --write`, plus `--cmd "<typecheck>"` and `--link <rel>=<abs>` from `meta/settings.json` (`typecheck`, `links`) when the clone has deps; else `--note "<why not>"`. Failing changes are downgraded to `pseudo` |
 | 10 | Verify | re-open the top ~8 claims yourself (snapshot grep, `git -C <clone> show <sha>:<path>`, rerun commands); fix or drop what does not hold, in `review.json` |
 | 11 | Render + gate | `100x pr_review render <pr-dir>` · `100x pr_review feature <run-root>` · `100x pr_review_gate <run-root> --snap <snap>` → 0 · then `100x pr_review index "$CR"` (`INDEX.md` is always regenerated, never hand-edited) |
 | 12 | Report | below. Never fix code; never post here |
 
-**Report** (≤ 20 lines): per PR the README's In-10-seconds line, the recommendation, the action
+**Report** (≤ 20 lines): per PR the README's In-10-seconds line, one line on which lenses ran and why (rubric §6 Lenses), the recommendation, the action
 table rows as `# · type · where · blocks`, who must answer what (file 3), and the path to
 `README.md`. End with the three-step loop: "1. Read `README.md` + `2-comments-to-post.md`.
 2. Change anything: `/pr-review adjust <pr-url>`. 3. Post: `/pr-review post <pr-url>`." Never

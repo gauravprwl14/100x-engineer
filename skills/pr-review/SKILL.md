@@ -4,7 +4,7 @@ description: >
   PR comments to post on GitHub or GitHub Enterprise: a PR URL becomes SHA-pinned, paste-ready
   comments and questions you adjust, then post as a draft review only after an explicit yes. Not
   for your own diff before pushing (→ diff-review).
-argument-hint: "[<folder>] <pr-url | owner/repo#n | n> [...] [--repo <dir>] [--out <dir>] [--security] [--lang en|ja|auto]  |  adjust <pr-url> | adjust <folder> <n>  |  post <pr-url> | post <folder> <n> [draft|submit]"
+argument-hint: "[<folder>] <pr-url | owner/repo#n | n> [...] [--repo <dir>] [--out <dir>] [--security] [--design] [--scenarios] [--lang en|ja|auto]  |  adjust <pr-url> | adjust <folder> <n>  |  post <pr-url> | post <folder> <n> [draft|submit]"
 ---
 
 # PR review
@@ -28,6 +28,8 @@ draft review only when they say yes. Three commands, always in this order, plus 
 | `--repo <dir>` | local clone; its matching remote resolves bare numbers | the current repo if a remote matches, else ask |
 | `--out <dir>` | review root `CR` | `100x pr_review out-dir` (below) |
 | `--security` | always add the Security agent | off |
+| `--design` | always add the Design lens (challenges the PR's decisions) | when `references/rubric.md` §6 Lenses triggers |
+| `--scenarios` | always add the Scenario lens (inputs neither code nor tests handle) | when `references/rubric.md` §6 Lenses triggers |
 | `--lang` | language of author-facing comments | `auto` = the PR body's language |
 
 **Where output goes.** `CR` comes from `100x pr_review paths --url <pr-url> --json`, first match:
@@ -164,6 +166,8 @@ This skill rejects:
 - **A duplicate of a point a teammate or bot already raised** — G4.
 - **`gh api repos/acme/widgets/...` typed by hand on a GHE PR** — wrong host; G7 and rule 2.
 - **"Consider validating input"** with no value — G2 wants a code span, number or quoted text.
+- **An unproved design challenge or missed scenario posted as a blocking finding** — workflow step
+  8b, G15.
 
 **Honest limitations:** the gate checks shape, links, rendering and evidence labels, not whether a
 finding is true; step 10 re-verifies only the top ~8 claims by hand. Posting depends on `gh` and

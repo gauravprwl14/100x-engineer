@@ -137,6 +137,83 @@ run 0 "merge a security fragment" pr_review merge "$RUN/$PRD" "$ROOT/scripts/dat
 has "9999-SEC-101"
 python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert "9999-SEC-101" not in [i["id"] for i in r["items"]]' "$RUN/$PRD/review.json" \
   && ok "  same_as item is not duplicated" || bad "  same_as item was merged in"
+
+echo "== reviewer lenses (G15-lens)"
+# lens <dir> : fresh copy of the golden PR folder; edit <dir> <py on r>: rewrite its review.json
+lens() { rm -rf "$1"; cp -R "$FIX/$PRD" "$1"; }
+edit() { python3 - "$1/review.json" "$2" <<'PY'
+import json, sys
+p = sys.argv[1]; r = json.load(open(p)); exec(sys.argv[2]); json.dump(r, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+}
+# cols <dir> : add Risk if wrong / Cost to undo columns to 1-context.md's Author's decisions table
+cols() { python3 - "$1/1-context.md" <<'PY'
+import sys
+p = sys.argv[1]; t = open(p).read(); head, rest = t.split("## Author's decisions\n", 1); sec, tail = rest.split("\n## ", 1)
+add = lambda l: l + (" Risk if wrong | Cost to undo |" if "Decision" in l else "---|---|" if l.startswith("|---") else " low | low |") if l.startswith("|") else l
+open(p, "w").write(head + "## Author's decisions   \n" + "\n".join(add(l) for l in sec.split("\n")) + "\n## " + tail)
+PY
+}
+# frag <out> <template> <prefix> <first> <n> [same_as-count] : n lens items cloned from the template's first item
+frag() { python3 - "$@" <<'PY'
+import copy, json, sys
+out, tpl, pre, first, n = sys.argv[1:6]; sa = int(sys.argv[6]) if len(sys.argv) > 6 else 0
+fr = json.load(open(tpl)); one = fr["items"][0]; first, n = int(first), int(n)
+fr["items"] = [dict(copy.deepcopy(one), id=f"9999-{pre}-{k}") for k in range(first, first + n)]
+fr["items"] += [dict(copy.deepcopy(one), id=f"9999-{pre}-{k}", same_as="9999-BUG-01") for k in range(first + n, first + n + sa)]
+json.dump(fr, open(out, "w"))
+PY
+}
+SCN="$ROOT/scripts/data/pr_review_scenario_fragment.json"; DES="$ROOT/scripts/data/pr_review_design_fragment.json"
+L1="$TMP/lens-scn"; lens "$L1"
+run 0 "merge the scenario template" pr_review merge "$L1" "$SCN"; has "merged 1 fragment"
+run 0 "  render" pr_review render "$L1"
+run 0 "  gate passes" pr_review_gate "$L1" --no-render-mermaid
+L2="$TMP/lens-des"; lens "$L2"
+run 0 "merge the design template" pr_review merge "$L2" "$DES"
+python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert "decisions" not in r and all(c["dimension"]!="Design decision" for c in r["coverage"])' "$L2/review.json" \
+  && ok "  fragment 'decisions' is not copied into review.json" || bad "  'decisions' leaked into review.json"
+run 0 "  render" pr_review render "$L2"
+run 1 "  gate: DES item but no Risk/Cost columns in 1-context.md" pr_review_gate "$L2" --no-render-mermaid
+has "G15-lens"; has "'Risk if wrong' and 'Cost to undo' columns"
+cols "$L2"
+run 0 "  gate passes once the columns are added (heading with trailing spaces)" pr_review_gate "$L2" --no-render-mermaid
+edit "$L2" 'i = next(x for x in r["items"] if x["id"] == "9999-DES-202"); i["status"] = "open"; i["blocks"] = "merge"'
+run 0 "  render the inferred DES item as open + blocks merge" pr_review render "$L2"
+run 1 "  gate: unverified lens claim must be a question" pr_review_gate "$L2" --no-render-mermaid
+has "G15-lens"; has "unverified lens claim → make it a question for the author"
+edit "$L2" 'i = next(x for x in r["items"] if x["id"] == "9999-DES-202"); i["status"] = "question"; i["blocks"] = "merge"'
+run 0 "  render the inferred DES item as question + blocks merge" pr_review render "$L2"
+run 1 "  gate: an unverified lens question still cannot block the merge" pr_review_gate "$L2" --no-render-mermaid
+has "has status 'question', blocks 'merge'"
+L0="$TMP/lens-agent"; lens "$L0"
+edit "$L0" 'r["run"]["agents"].append({"role": "Design", "model": "claude-opus"})'
+run 0 "render: Design in run.agents, no DES item" pr_review render "$L0"
+run 1 "  gate: Design ran, so the columns are required" pr_review_gate "$L0" --no-render-mermaid
+has "the Design lens ran, so the '## Author's decisions' table needs"
+L5="$TMP/lens-five"; lens "$L5"; frag "$TMP/des5.json" "$DES" DES 201 5 1
+run 0 "merge 5 DES items + 1 same_as (cap is 5, same_as not counted)" pr_review merge "$L5" "$TMP/des5.json"; has "skipped 9999-DES-206"
+run 0 "  render" pr_review render "$L5"; cols "$L5"
+run 0 "  gate passes with exactly 5" pr_review_gate "$L5" --no-render-mermaid
+edit "$L5" 'r["items"].append(dict(next(x for x in r["items"] if x["id"] == "9999-DES-201"), id="9999-DES-206", same_as="9999-BUG-01"))'
+run 0 "  render with a same_as DES item kept in review.json" pr_review render "$L5"
+run 0 "  gate passes: same_as items are not counted" pr_review_gate "$L5" --no-render-mermaid
+L3="$TMP/lens-cap"; lens "$L3"; cp "$L3/review.json" "$TMP/cap.before"; frag "$TMP/des6.json" "$DES" DES 201 6
+run 1 "merge refuses 6 DES items" pr_review merge "$L3" "$TMP/des6.json"
+has "6 new DES lens items after merge — cap is 5 — keep the ones with the biggest blast radius"
+cmp -s "$L3/review.json" "$TMP/cap.before" && ok "  review.json is not written" || bad "  review.json changed"
+frag "$TMP/scn-a.json" "$SCN" SCN 301 3; frag "$TMP/scn-b.json" "$SCN" SCN 304 3
+run 1 "merge refuses two 3-item SCN fragments (6 in total)" pr_review merge "$L3" "$TMP/scn-a.json" "$TMP/scn-b.json"
+has "6 new SCN lens items after merge"
+cmp -s "$L3/review.json" "$TMP/cap.before" && ok "  review.json is not written" || bad "  review.json changed"
+L4="$TMP/lens-scn6"; lens "$L4"
+edit "$L4" "s = json.load(open('$SCN'))['items'][0]; r['items'] += [dict(s, id=f'9999-SCN-3{n:02d}') for n in range(1, 7)]"
+run 0 "  render 6 SCN items injected into review.json" pr_review render "$L4"
+run 1 "gate: more than 5 new SCN items in one review" pr_review_gate "$L4" --no-render-mermaid
+has "G15-lens"; has "6 new SCN lens items — cap is 5"
+edit "$L4" 'r["run"]["recheck_of"] = "0a1b2c3"; r["items"][-1]["previous_status"] = "open"'
+run 0 "  re-review: render with one SCN item carried forward" pr_review render "$L4"
+run 0 "  gate passes: carried-forward items don't count" pr_review_gate "$L4" --no-render-mermaid
 cp -R "$FIX/$PRD" "$TMP/emit"
 run 0 "emit draft" pr_review emit "$TMP/emit" draft
 python3 "$ROOT/scripts/pr_review.py" emit "$TMP/emit" draft 2>/dev/null >"$OUT/r.out"

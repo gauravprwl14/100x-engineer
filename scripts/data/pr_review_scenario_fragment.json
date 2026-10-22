@@ -1,0 +1,15 @@
+{
+  "_illustrative": "ILLUSTRATIVE ONLY: what the Scenario lens writes to <scratchpad>/scn-<PR>/fragment.json (ids <PR>-SCN-3NN, at most 5). Merged with `100x pr_review merge <pr-dir> <fragment>`.",
+  "agents": [{"role": "Scenario", "model": "claude-opus"}],
+  "items": [
+    {"id": "9999-SCN-301", "kind": "issue", "blocks": "rollout", "severity": "major", "status": "open",
+     "title": "A restart mid-minute resets the cap", "why": "The count lives in process memory, so a deploy or crash in the middle of the 60 s window lets the same address get 3 more mails.",
+     "where": {"path": "src/reset/limiter.ts", "line": 11, "start_line": null, "in_diff": true},
+     "ask": {"who": "author", "where": "line comment"}, "comment": "Scenario: 3 resets for `user@acme.test`, then the API restarts at 30 s, then 3 more resets → 6 mails in 60 s, not 3. Could the counter live in the shared store (e.g. Redis `INCR` with a 60 s TTL) before this is turned on?",
+     "change": {"type": "pseudo", "body": "count = store.incr(`reset:${email}`, ttl=60s)  # survives restarts and is shared by every instance", "checked": "n/a"},
+     "evidence": {"type": "ran", "detail": "`node scripts/try-reset.js user@acme.test --restart-after 3` → 6 mails in 60 s"},
+     "confirm_by": null, "unknown": null, "dup_of_existing_comment": null}
+  ],
+  "not_to_raise": [],
+  "coverage": [{"dimension": "Scenarios (missed cases)", "checked": "restart, case of the address, clock jump", "result": "1 new: restart mid-window"}]
+}

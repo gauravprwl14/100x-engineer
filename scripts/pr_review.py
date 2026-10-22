@@ -105,6 +105,21 @@ def is_edited(i): return bool((i.get("user") or {}).get("edited"))
 def is_posted(i): return bool(i.get("posted"))
 
 LEAK_ID = re.compile(r"\b\d+-[A-Z]{1,4}-\d{2,3}\b|\b[AQX]-\d{2,3}\b")   # internal item IDs; the gate's G3 uses this too
+LENS_PREFIXES = ("DES", "SCN")   # optional reviewer lenses: Design <PR>-DES-2NN, Scenario <PR>-SCN-3NN
+LENS_MAX = 5                     # new lens items per prefix per review; the gate's G15 uses both
+LENS_RE = re.compile(r"^\d+-(" + "|".join(LENS_PREFIXES) + r")-\d{2,3}$")
+
+def lens_of(iid):
+    m = LENS_RE.match(str(iid)); return m.group(1) if m else None
+
+def lens_counts(items):
+    """{prefix: n} for lens items new this run: same_as items are never merged and carried-forward
+    items (previous_status set on a re-review) were capped by the run that raised them."""
+    out = {}
+    for i in items:
+        p = None if i.get("same_as") or i.get("previous_status") else lens_of(i.get("id"))
+        if p: out[p] = out.get(p, 0) + 1
+    return out
 
 def user_note(r, i, default):
     """The user's adjust note, with any item ID swapped for that item's title — files 2 and 3 must not show IDs."""
@@ -533,6 +548,8 @@ def merge(pr_dir, fragments):
         for k in ("not_to_raise", "coverage"): r.setdefault(k, []).extend(fr.get(k, []))
         for a in fr.get("agents", []):
             if a not in r["run"]["agents"]: r["run"]["agents"].append(a)
+    for p, n in lens_counts(r["items"]).items():   # over the merged items, so split fragments can't dodge the cap
+        if n > LENS_MAX: sys.exit(f"{n} new {p} lens items after merge — cap is {LENS_MAX} — keep the ones with the biggest blast radius; nothing written")
     (d / "review.json").write_text(json.dumps(r, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"merged {len(fragments)} fragment(s) into {d / 'review.json'}")
 

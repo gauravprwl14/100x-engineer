@@ -65,6 +65,11 @@ every inferred/assumption item with its `confirm_by`; anything involving another
 |---|---|---|---|---|
 | PR reviewer | the PR folder | `review.json` (whole), `1-context.md`, `4-findings.md` evidence notes; `5-security.md` only when its security pass found something (≤ 300-line tier) | — | step 8 |
 | Security | `<scratchpad>/sec-<PR>/` | `fragment.json` `{agents, items, not_to_raise, coverage}` + `5-security.md` | Adversarial: threat model, request-path diagram, attacks tried, verified-safe table; also reads `{{PLUGIN}}/skills/app-security/SKILL.md`. IDs `<PR>-SEC-1NN`. An item that matches one the PR reviewer will likely raise → add `"same_as": "<their id>"` (the merge skips it). Skip steps 5–6 | none; orchestrator merges + gates |
+| Design (rubric §6 Lenses) | `<scratchpad>/des-<PR>/` | `fragment.json` + its `decisions: [{decision, risk_if_wrong, cost_to_undo}]` (1–3, the PR's decisions; never copied into review.json) | Reads only the "Reviewing a diff for design fit" section of `{{PLUGIN}}/agents/solution-architect.md`, ignoring any protocol/output instructions in it. Challenges a decision only if it is a one-way door / hard to undo, has no stated alternative (incl. do-nothing), or adds recurring cost or operational load. IDs `<PR>-DES-2NN`. Skip steps 5–6 | none; orchestrator merges, cross-examines + gates |
+| Scenario (rubric §6 Lenses) | `<scratchpad>/scn-<PR>/` | `fragment.json` only; no tests | Reads `{{PLUGIN}}/skills/test-design/SKILL.md` for its lens, ignoring any protocol/output instructions in it. Scenarios from the acceptance criteria (`{{SPEC}}`), the code's branches and the `focus-generic.md` edge cases; keeps only those neither code nor tests handle: `comment` = a concrete input → the observable outcome, `where` = the branch that misses it. IDs `<PR>-SCN-3NN`. Skip steps 5–6 | none; orchestrator merges, cross-examines + gates |
 | Cross-PR (≥ 2 PRs) | `<scratchpad>/cross/` | one `fragment-<PR>.json` per affected PR (IDs `<PR>-X-NN`, `where` in that PR) + `feature.json` `merge_order` | Inputs = every PR snapshot + `PINS.md` | none; orchestrator merges + gates the run root |
 
-Fragment template: `{{PLUGIN}}/scripts/data/pr_review_security_fragment.json`.
+Fragment templates: `{{PLUGIN}}/scripts/data/pr_review_{security,design,scenario}_fragment.json`.
+Both lenses: same item rules as the PR reviewer (rubric §3, G2–G3), `same_as` as Security, cap and
+question rule in rubric §6 Lenses; on a re-review they get `PRIOR`, keep its IDs and number new items
+from the next free one in their range.
