@@ -27,12 +27,13 @@ SEVS = ("critical", "major", "minor", "trivial")
 STATUS_RE = re.compile(r"^(open|needs_decision|question|accepted|wont_fix|fixed:[0-9a-f]{7,40})$")
 CHANGE_TYPES = ("suggestion", "diff", "pseudo", "none")
 EVIDENCE = ("ran", "read", "inferred", "assumption", "user")
-USER_FIELDS = ("title", "why", "comment", "kind", "blocks", "change", "where", "ask", "also_ask")
+USER_FIELDS = ("title", "why", "comment", "kind", "blocks", "change", "where", "ask", "also_ask",
+               "status", "confirm_by", "unknown")   # the last three let a question become a suggestion
 RECS = ("approve", "comment", "request_changes")
 CHECKED_OK = re.compile(r"^(typecheck ok|lint ok|typecheck \+ lint ok|applies cleanly — typecheck not run \(.+\))$")
 CHECKED_RE = re.compile(r"^(typecheck ok|lint ok|typecheck \+ lint ok|applies cleanly — typecheck not run \(.+\)|not checked — .+|n/a)$")
 ID_RE = re.compile(r"^(\d+)-[A-Z]{1,4}-\d{2,3}$")
-LEAK_ID = re.compile(r"\b\d+-[A-Z]{1,4}-\d{2,3}\b|\b[AQX]-\d{2,3}\b")
+LEAK_ID = rr.LEAK_ID
 LEAK_EMOJI = re.compile("[🔴🟠🟡🟢⚪➖✅❓🔎📖▶⚠]")
 JARGON = re.compile(r"\b(Should-fix|Needs decision|Read in code|Ran it|Sev:|Severity:|Evidence:|merged into|Merged ID|kept as)\b", re.I)
 ACTION_NUM = re.compile(r"(?<![\w/&])#\d{1,2}\b")
