@@ -32,7 +32,8 @@ def main(payload=None):
         "The 100x-engineer plugin is installed.",
         "Start any engineering task with the `/100x:100x` router skill; it "
         "picks the skills the task needs.",
-        "Plugin tools run as `100x <tool>`; `100x list` shows them.",
+        "Plugin tools run as `100x <tool>`; `100x list` shows them. If `100x` is a shell "
+        "alias or function on this machine, run `command 100x <tool>` instead.",
         f"Agent protocol and report contract: {root}/docs/OPERATING-MODEL.md",
         "Commit, push, PR and publish commands need a fresh signed receipt from "
         "`100x verified` in repositories that configure .claude/verification-policy.json.",
