@@ -34,7 +34,7 @@ own: the record format, the rendering and the gate.
 |---|---|---|---|
 | `review.json` | written by agents | machines | schema §3 |
 | `README.md` | rendered | you, first | who reviewed, what the PR does, recommendation, blocks merge vs rollout, action table, not-to-raise, changes since last review |
-| `1-context.md` | hand-written | anyone new | sections `## Problem` · `## Before → after` (1 diagram) · `## Terms` · `## Author's decisions` · `## Not in this PR` (G13) |
+| `1-context.md` | hand-written | anyone new | sections `## Problem` · `## Before → after` (1 diagram) · `## Terms` · `## Author's decisions` · `## Not in this PR` (G13); when Design ran, the orchestrator adds `Risk if wrong` · `Cost to undo` columns to the decisions table from the Design fragment's `decisions` (G15) |
 | `2-comments-to-post.md` | rendered | you → author | Quick index (every comment by priority, with theme and related comments) · A) line · B) general · C) ask someone else · D) reply in existing thread · E) praise; each: Why (for you) + Paste this |
 | `3-questions.md` | rendered | you | every question / needs-decision / inferred / assumption item: what we don't know · why · how to confirm · who · where |
 | `4-findings.md` | mixed | depth | rendered between `<!-- rendered:coverage\|findings START … -->` / `END` markers; hand-written `## Evidence notes` with `### <ID> — <title>` (IDs must exist, G13) |
@@ -66,7 +66,7 @@ diagrams, no `#123`).
 
 | Item field | Values | Rule |
 |---|---|---|
-| `id` | `<PR>-<DIM>-<NN>`; security agent `…-1NN`; cross-PR `<PR>-X-NN` | stable across re-reviews, never reused |
+| `id` | `<PR>-<DIM>-<NN>`; security agent `…-1NN`; Design lens `<PR>-DES-2NN`; Scenario lens `<PR>-SCN-3NN`; cross-PR `<PR>-X-NN` | stable across re-reviews, never reused |
 | `kind` | `issue` · `suggestion` · `question` · `nit` · `praise` | Conventional Comments label |
 | `blocks` | `merge` · `rollout` (before enabling for real users) · `none` | nit/praise → `none` |
 | `severity` | `critical` · `major` · `minor` · `trivial` | |
@@ -132,6 +132,7 @@ downgrade it.
 | G12-readme | "who reviewed" rows missing; action-table refs ≠ actionable, not-skipped items |
 | G13-handwritten | 1-context sections/diagram missing; diagram without "Reading this diagram"; evidence note for an unknown ID; mermaid in 4-findings; `#n` in hand-written text |
 | G14-user | bad `user` block (decision, edited fields without `original`, missing by/at); `evidence: user` on a non-`U` id or without a user block; bad `posted` record; a posted item marked skip |
+| G15-lens | a `DES`/`SCN` item with `inferred`/`assumption` evidence whose status is not `question`/`needs_decision`, or that has `blocks: merge`; > 5 new items (`previous_status` null, no `same_as`) under one lens prefix across all merged fragments; Design ran (`run.agents` role `Design`) while `1-context.md` `## Author's decisions` lacks `Risk if wrong` and `Cost to undo` columns |
 | mermaid | parse error or GitHub-unsafe syntax (rendered with `npx` mermaid-cli when present; otherwise a stdlib syntax check and a WARN, never a FAIL) |
 
 ## 5. Coverage dimensions
@@ -153,4 +154,13 @@ downgrade it.
 | > 300 | PR reviewer; + Security when `--security` or the PR touches auth, session, IP, ACL, tokens, uploads | when Security ran |
 | ≥ 2 PRs | + 1 Cross-PR agent | — |
 
-Cap 10 agents per run (group small PRs above that).
+Cap 10 agents per run (group small PRs above that); lenses count toward it.
+
+| Lens | Runs when the diff has any of | Skipped when only | Force |
+|---|---|---|---|
+| Design | a migration or new table · a new dependency · a public API/DTO/schema change · a cache or feature flag · a new module/service · > 300 changed lines\* | UI copy, tests, docs or renames | `--design` |
+| Scenario | new branches or state changes · deletes · permission checks · async/queue code · a linked ticket with acceptance criteria\* · code changes far outnumbering test changes | config, docs or styling | `--scenarios` |
+
+\* counts only together with another trigger in its row. Each lens adds ≤ 5 new items (merge
+refuses more) to the existing files, never a new one; an item no opened line or rerun command
+proves is a question (G15). Report line: `Design: migration + new dependency · Scenario: skipped, docs only`.
