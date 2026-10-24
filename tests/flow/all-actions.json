@@ -3,6 +3,20 @@
   "tier": "light",
   "title": "Every v1 action once, for reducer parity between Python and JS",
   "subject": {"kind": "concept", "lede": "A job queue, two worker slots, a cache and a store; ids such as C3 and R3 are not numbers."},
+  "terms": [{"term": "set-if-fresh", "means": "Write the cache only if the row is unchanged since it was read.", "example": "The overwritten k is skipped."}],
+  "outline": [{"title": "fillIfFresh(key, read)", "scenario": "all", "lines": [
+    {"code": "current = db.read(key)", "steps": [4], "tag": "inferred"},
+    {"code": "if current != read: return", "indent": 1, "steps": [4], "ev": "e-fill-if-fresh"},
+    {"code": "cache.set(key, read)", "steps": [4, 5], "tag": "inferred"}
+  ]}],
+  "diagrams": [
+    {"id": "job-states", "kind": "state", "scenario": "all", "tag": "inferred",
+     "title": "A job's states", "caption": "A job waits in the queue, runs in a slot, then frees it.",
+     "source": "stateDiagram-v2\n  [*] --> queued\n  queued --> running: pickup\n  running --> done: free\n  running --> failed: timeout\n  done --> [*]\n  failed --> [*]"},
+    {"id": "fill-if-fresh", "kind": "flowchart", "ev": ["e-fill-if-fresh"],
+     "title": "Fill only if fresh",
+     "source": "flowchart TD\n  read[\"db.read(key)\"] --> same{\"unchanged since the read?\"}\n  same -->|\"yes\"| fill[\"cache.set(key, read)\"]\n  same -->|\"no\"| skip[\"skip the fill\"]"}
+  ],
   "evidence": {"e-fill-if-fresh": {"at": "fix/fill-if-fresh.lua:5", "anchor": "if cached > tonumber(ARGV[2]) then return 0"}},
   "nodes": [
     {"id": "client", "role": "client", "label": "Client"},
@@ -23,7 +37,7 @@
       "title": "Queue, workers, cache, store, failure",
       "steps": [
         {"t": "Client posts two jobs", "do": [["send", "client", "api", "POST /jobs"], ["enqueue", "jobs", "job-a"], ["enqueue", "jobs", "job-b"], ["counter", "enqueued", 2]], "expect": {"queues": {"jobs": 2}, "counters": {"enqueued": 2}}, "tag": "inferred"},
-        {"t": "Both slots pick up a job", "do": [["pickup", "jobs", "pool"], ["pickup", "jobs", "pool"]], "expect": {"queues": {"jobs": 0}}, "tag": "inferred"},
+        {"t": "Both slots pick up a job", "do": [["pickup", "jobs", "pool"], ["pickup", "jobs", "pool"]], "code": ["while pool.free_slots > 0 and queue:", "  pool.start(queue.pop())  // 2 slots, 2 jobs"], "expect": {"queues": {"jobs": 0}}, "tag": "inferred"},
         {"t": "Slots free in either order", "do": [["free", "pool", "job-b"], ["free", "pool"], ["counter", "enqueued", -2]], "expect": {"counters": {"enqueued": 0}}, "tag": "inferred"},
         {"t": "Write, read back, cache, then overwrite", "do": [["db.write", "db", "k", "x"], ["db.read", "db", "k", "got"], ["cache.set", "kv", "k", "$got"], ["db.write", "db", "k", "y"], ["db.write", "db", "copy", "$got"], ["cache.set", "kv", "lit", true], ["mark-stale", "kv", "lit"]], "expect": {"vars": {"got": "x"}, "stale": {"kv": {"k": true, "lit": true, "warm": false}}, "store": {"db": {"copy": "x"}}}, "tag": "inferred"},
         {"t": "Fill only if fresh: the unchanged seed is written, the overwritten k is skipped", "do": [["db.read", "db", "seed", "s"], ["cache.set-if-fresh", "kv", "fresh", "$s"], ["cache.set-if-fresh", "kv", "late", "$got"]], "expect": {"cache": {"kv": {"fresh": "s0", "late": null}}, "stale": {"kv": {"fresh": false}}}, "ev": ["e-fill-if-fresh"], "tag": "inferred"},

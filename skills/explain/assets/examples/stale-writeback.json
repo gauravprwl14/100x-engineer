@@ -12,6 +12,46 @@
       "ja": "GET はキャッシュを読み、なければデータベースを読んでキャッシュを埋める。PATCH はデータベースを書いてからキャッシュキーを削除する。GET の読み取りとキャッシュ書き込みの間に PATCH が入ると、TTL {{cache_ttl}} が切れるまで古いノートが残る。"
     }
   },
+  "context": {
+    "purpose": {
+      "en": "A reader sees the note an editor just saved, not the one from before the edit.",
+      "ja": "編集者が保存した直後のノートが、編集前のものではなく読者に表示される。"
+    },
+    "why_now": "Reads go through a cache; one unlucky timing of a read and an edit keeps the old note there until the cache entry runs out.",
+    "in_scope": ["Reading a note through the cache (GET)", "Saving a note and clearing its cache entry (PATCH)"],
+    "out_of_scope": ["Creating and deleting notes", "How the cache itself evicts entries"],
+    "entry_points": [
+      {"label": "GET /notes/:id", "kind": "route", "scenario": "race", "ev": "e-route-get"},
+      {"label": "PATCH /notes/:id", "kind": "route", "scenario": "race", "ev": "e-route-patch"}
+    ]
+  },
+  "terms": [
+    {"term": "cache-aside", "means": "The code reads the cache first and, on a miss, reads the database and fills the cache itself.", "example": "A GET misses, reads the row, then writes it into the cache."},
+    {"term": "TTL", "means": "How long a cache entry lives before the cache drops it on its own.", "example": "Here {{cache_ttl}}."},
+    {"term": "stale write-back", "means": "A fill that writes a value the database has already replaced."}
+  ],
+  "outline": [
+    {"title": "getNote(db, cache, id)", "scenario": "race", "lines": [
+      {"code": "cached = cache.get(cacheKey(id))", "steps": [0], "ev": "e-cache-get"},
+      {"code": "if cached: return cached", "indent": 0, "steps": [6], "ev": "e-cache-hit"},
+      {"code": "note = db.query('SELECT body FROM notes WHERE id = $1')", "steps": [1], "ev": "e-db-read"},
+      {"code": "cache.set(cacheKey(id), note, ttl = CACHE_TTL_SECONDS)", "steps": [4], "ev": "e-cache-set"},
+      {"code": "return note", "steps": [5], "ev": "e-return-note"}
+    ]},
+    {"title": "patchNote(db, cache, id, body)", "scenario": "race", "lines": [
+      {"code": "db.query('UPDATE notes SET body = $2 WHERE id = $1')", "steps": [2], "ev": "e-db-write"},
+      {"code": "cache.del(cacheKey(id))", "steps": [3], "ev": "e-cache-del"}
+    ]}
+  ],
+  "diagrams": [
+    {"id": "race-sequence", "kind": "sequence", "scenario": "race",
+     "title": {"en": "The race as a sequence: who calls whom, in what order",
+               "ja": "競合をシーケンス図で：誰がどの順で誰を呼ぶか"},
+     "caption": {"en": "Read top to bottom. The PATCH writes the database and deletes the key between the GET's database read and its cache fill, so the fill puts the old note back.",
+                 "ja": "上から下へ読む。PATCH は GET のデータベース読み取りとキャッシュ書き込みの間にデータベースを書き、キーを消す。そのため書き込みが古いノートを戻す。"},
+     "ev": ["e-route-get", "e-cache-get", "e-db-read", "e-route-patch", "e-db-write", "e-cache-del", "e-cache-set"],
+     "source": "sequenceDiagram\n  participant R as Reader\n  participant E as Editor\n  participant A as notes-api\n  participant C as Cache\n  participant D as Database\n  R->>A: GET /notes/:id\n  A->>C: get note:a\n  C-->>A: miss\n  A->>D: SELECT body (reads v1)\n  E->>A: PATCH /notes/:id\n  A->>D: UPDATE body = v2\n  A->>C: del note:a\n  A-->>E: 204 No Content\n  A->>C: set note:a = v1 (stale)\n  A-->>R: 200 OK, the old note"}
+  ],
   "nodes": [
     {"id": "reader", "role": "client", "label": "Reader"},
     {"id": "editor", "role": "client", "label": "Editor"},
@@ -32,6 +72,8 @@
     "e-status-204": {"at": "src/routes.js:7", "anchor": "res.status(204)"},
     "e-ttl": {"at": "src/notes.js:2", "anchor": "CACHE_TTL_SECONDS = 300"},
     "e-cache-get": {"at": "src/notes.js:7", "anchor": "cache.get(cacheKey(id))"},
+    "e-cache-hit": {"at": "src/notes.js:8", "anchor": "if (cached) return cached"},
+    "e-return-note": {"at": "src/notes.js:11", "anchor": "return note"},
     "e-db-read": {"at": "src/notes.js:9", "anchor": "SELECT body FROM notes"},
     "e-cache-set": {"at": "src/notes.js:10", "anchor": "cache.set(cacheKey(id), note"},
     "e-db-write": {"at": "src/notes.js:15", "anchor": "UPDATE notes SET body"},
@@ -66,13 +108,14 @@
       "kind": "race",
       "title": "A PATCH lands between a GET's read and its cache fill",
       "severity": "high",
+      "origin": "in-code",
       "fixed_by": ["fix-set-if-fresh"],
       "steps": [
         {"t": "Reader's GET misses the cache", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"]], "expect": {"hit": "miss"}, "ev": ["e-route-get", "e-cache-get"]},
-        {"t": "Reader's GET reads the old note", "d": "The request now holds the old note in memory; nothing ties it to the row's current state.", "do": [["db.read", "db", "notes/a"]], "expect": {"vars": {"read": "v1"}}, "ev": ["e-db-read", "e-no-version-check"]},
+        {"t": "Reader's GET reads the old note", "d": "The request now holds the old note in memory; nothing ties it to the row's current state.", "do": [["db.read", "db", "notes/a"]], "code": ["note = db.query('SELECT body FROM notes WHERE id = $1')", "// nothing remembers which version of the row this was"], "expect": {"vars": {"read": "v1"}}, "ev": ["e-db-read", "e-no-version-check"]},
         {"t": "Editor's PATCH writes the new note", "do": [["send", "editor", "api", "PATCH /notes/:id"], ["db.write", "db", "notes/a", "v2"]], "expect": {"store": {"db": {"notes/a": "v2"}}}, "ev": ["e-route-patch", "e-db-write"]},
         {"t": "PATCH deletes the cache key and replies", "d": "The key is already absent, so this delete changes nothing.", "do": [["cache.del", "cache", "note:a"], ["reply", "api", "editor", "204 No Content"]], "expect": {"cache": {"cache": {"note:a": null}}}, "ev": ["e-cache-del", "e-status-204"]},
-        {"t": "Reader's GET fills the cache with the old note", "d": "The stale value enters the cache here, after the only delete has already run.", "do": [["cache.set", "cache", "note:a", "$read"]], "hazard": "stale-writeback", "expect": {"cache": {"cache": {"note:a": "v1"}}, "stale": {"cache": {"note:a": true}}}, "ev": ["e-cache-set", "e-no-version-check"]},
+        {"t": "Reader's GET fills the cache with the old note", "d": "The stale value enters the cache here, after the only delete has already run.", "do": [["cache.set", "cache", "note:a", "$read"]], "code": ["cache.set(cacheKey(id), note, ttl = CACHE_TTL_SECONDS)", "// note is still the value read before the PATCH"], "hazard": "stale-writeback", "expect": {"cache": {"cache": {"note:a": "v1"}}, "stale": {"cache": {"note:a": true}}}, "ev": ["e-cache-set", "e-no-version-check"]},
         {"t": "Reader gets the old note", "do": [["reply", "api", "reader", "200 OK"]], "ev": ["e-route-get"]},
         {"t": "Every later read hits the stale entry until the TTL ends", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"], ["note", "Stale for up to {{cache_ttl}} after the fill."]], "expect": {"hit": "hit", "stale": {"cache": {"note:a": true}}}, "ev": ["e-cache-get", "e-ttl"]}
       ]
@@ -83,7 +126,7 @@
       "title": "The GET fills the cache only if the note is unchanged since its read",
       "branch": {"from": "race", "at": 4},
       "steps": [
-        {"t": "Reader's GET skips the fill: the note changed after its read", "d": "The fill compares the note it read with the row as it is now; the PATCH changed the row, so nothing is written and the cache stays empty.", "do": [["cache.set-if-fresh", "cache", "note:a", "$read"]], "expect": {"cache": {"cache": {"note:a": null}}}, "ev": ["e-cache-set", "e-fill-if-fresh"], "tag": "inferred"},
+        {"t": "Reader's GET skips the fill: the note changed after its read", "d": "The fill compares the note it read with the row as it is now; the PATCH changed the row, so nothing is written and the cache stays empty.", "do": [["cache.set-if-fresh", "cache", "note:a", "$read"]], "code": ["cached_version = cache.hget(key, 'v')", "if cached_version > read_version: return  // a newer write landed", "cache.hset(key, body, read_version)"], "expect": {"cache": {"cache": {"note:a": null}}}, "ev": ["e-cache-set", "e-fill-if-fresh"], "tag": "inferred"},
         {"t": "Reader gets the note it read, once", "d": "This one response is as old as the read; no later read sees it.", "do": [["reply", "api", "reader", "200 OK"]], "ev": ["e-route-get"]},
         {"t": "The next read misses and caches the new note", "do": [["send", "reader", "api", "GET /notes/:id"], ["cache.get", "cache", "note:a"], ["db.read", "db", "notes/a"], ["cache.set-if-fresh", "cache", "note:a", "$read"], ["reply", "api", "reader", "200 OK"]], "expect": {"hit": "miss", "vars": {"read": "v2"}, "cache": {"cache": {"note:a": "v2"}}, "stale": {"cache": {"note:a": false}}}, "ev": ["e-cache-get", "e-db-read", "e-fill-if-fresh"], "tag": "inferred"}
       ]

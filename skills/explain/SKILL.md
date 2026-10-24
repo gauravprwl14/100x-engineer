@@ -75,26 +75,25 @@ the project and which are defaults. On a conflict the project's file wins over t
    - **PR** (URL or `#n`): `100x pr_review find "$CR" <pr-url>`. A hit gives the run folder:
      `PINS.md` for base and head SHA, `review.json` for findings and the PR threads they link. No hit: pin it with
      `100x pr_snapshot --repo <clone> --url <pr-url> --pr <n> --dest <scratch>/snap` and say that
-     review threads are unavailable. Never call `gh`: only pr-review's steps do
-     (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`).
+     review threads are unavailable. Never call `gh` (rule 10).
    - **path[:symbol]**: the file at `git rev-parse HEAD`, the symbol via `100x repo_map --symbol`.
    - **"concept"**: a plan or idea with no code yet; evidence is ADRs, specs and measured numbers.
 
    Tier is `light` unless `--heavy` or the project says otherwise. Ask **at most two** questions,
    only when the request does not answer them: the focus ("which part worries you?") and, for
    heavy, which options to compare. Otherwise pick and say what you picked.
-2. **Research** with `references/research-recipe.md`: nodes from changed symbols and one hop of
-   callers and callees, absences by `git grep`, scenarios (happy path, the user's focus, the
-   riskiest), a fix per issue, the decision from threads and `100x decide trace`.
-3. **Write** `scenario.json` in the output dir (`100x flow new <slug>` writes a starter). Numbers
-   in prose go through `{{name}}`; every step lists its evidence ids.
+2. **Research** with `references/research-recipe.md`: context first (a pr-review run's
+   `1-context.md` when present), nodes from changed symbols and one hop, absences by `git grep`,
+   scenarios (happy, the focus, the riskiest), a fix per issue, the outline, diagrams, the decision.
+3. **Write** `scenario.json` in the output dir (`100x flow new <slug>` writes a starter),
+   `context`, `terms` and `outline` first. Prose numbers go through `{{name}}`; every step and
+   outline line lists its evidence ids.
 4. **Check.** `100x flow check <dir>/scenario.json --tier <tier> --repo <clone>` until exit 0.
-   `--repo` names the git clone the evidence cites; it defaults to the current directory, so it is
-   required whenever the output dir is outside that repo (always, for a PR). A failing anchor
-   means the claim is wrong or the line moved: re-read the line, do not swap in whatever token
-   is there now.
+   `--repo` is the clone the evidence cites (default: the current directory), so it is required
+   when the output dir is outside it (always, for a PR). A failing anchor means the claim is wrong
+   or the line moved: re-read the line, never swap in whatever token is there now.
 5. **Build.** `100x flow build <dir>/scenario.json --tier <tier> --out <dir>` writes the
-   self-contained HTML and the `.md` export (step-card tables for a PR comment).
+   HTML (self-contained except the diagram renderer) and the `.md` export (step-card tables for a PR comment).
 6. **Open and report.** Open the HTML (`open` / `xdg-open`). Report in ≤ 10 lines: the target and
    SHA, tier, scenarios with their worst hazard, issues and their fix or `open`, the decision, the
    count of `inferred` steps, the paths. Leave everything uncommitted.
@@ -107,7 +106,7 @@ the project and which are defaults. On a conflict the project's file wins over t
 | rendering | static step cards, one SVG per step, involved boxes highlighted | animation (moving messages, queue chips, worker slots, cache TTL bars, stale hatching) |
 | fixes | fix scenario listed after its issue | before/after toggle per fix |
 | extras | `.md` export | compare tab (scenarios on one clock), live counters, predict-before-reveal pauses, en + ja, deep links `#<scenario>.<step>` |
-| both | offline (all JS/CSS inlined), system fonts, dark mode, reduced motion, stacked layout under 640px |
+| both | a Contents index, collapsible sections, offline (all JS/CSS inlined) except diagrams, which fall back to their source; system fonts, dark mode, reduced motion, stacked under 640px |
 
 Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy`.
 
@@ -170,16 +169,35 @@ Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy
     nothing unless asked.
     *Enforced by:* convention
 
+14. A PR page has `context`: a `purpose` a person outside the module understands, and a scope
+    naming which entry points the page animates (`entry_points[].scenario`) and which it does not.
+    *Enforced by:* `100x flow check <dir>/scenario.json` (presence, shape, ids); review (wording)
+
+15. `terms` defines every word a newcomer would stop at; step titles use plain words, and an
+    identifier in one (`camelCase`, `snake_case`, `a.b`) must be a term or a node label.
+    *Enforced by:* `100x flow check <dir>/scenario.json` (`jargon in step title`)
+
+16. Every issue scenario says its `origin`: `in-code`, `found-in-review` or `what-if`. A what-if
+    is labelled as one, never drawn as a real bug, and its fix cites the real design.
+    *Enforced by:* `100x flow check <dir>/scenario.json`
+
+17. `outline` is pseudocode of the main entry point, each line citing its real line (`ev`) or
+    tagged `inferred`; a step's `code` is the few pseudocode lines that make that step happen.
+    *Enforced by:* `100x flow check <dir>/scenario.json`
+
+18. Add one or two `diagrams` where they help (light ≤ 2, heavy ≤ 4): a sequence of the main entry
+    point's calls, a flowchart for gate or branch logic, a state diagram for a lifecycle, an er
+    diagram for the data model; each lists `ev` or is tagged `inferred`.
+    *Enforced by:* `100x flow check <dir>/scenario.json` (shape, cites, mermaid via `check_diagrams`)
+
 ## Verify
 
 ```bash
-# the content against the code: anchors, absences, numbers, fixes, budgets (~1s);
-# --repo is the clone the evidence cites, required when <dir> is outside it
+# content vs code: anchors, absences, numbers, fixes, budgets, diagrams (~1s); --repo = cited clone
 100x flow check <dir>/scenario.json --tier light --repo <clone>
-# render: one offline HTML + the .md export (~1s)
+# render: one HTML (offline, except diagrams, which fall back to their source) + the .md (~1s)
 100x flow build <dir>/scenario.json --tier light --out <dir>
-# the engine itself: reducer, golden states, seeded bad scenarios (~5s; node and Chrome
-# smoke tests SKIP when absent)
+# the engine: reducer, golden states, seeded bad scenarios (~5s; node/Chrome smoke SKIP if absent)
 bash tests/test_flow.sh
 ```
 
@@ -187,8 +205,7 @@ bash tests/test_flow.sh
 
 This skill rejects:
 
-- **A step citing a line that moved.** `"at": "src/cache.py:42@ab12cd3", "anchor":
-  "invalidate"` where line 42 at that SHA is a blank line: `flow check` names the evidence id.
+- **A step citing a line that moved** (`src/cache.py:42@ab12cd3` is blank): `flow check` names it.
 - **"There is no lock" with nothing behind it**, or with a `git grep` that finds 3 hits:
   absences are counted, not asserted.
 - **"Retries 3 times, 200ms apart" as bare prose.** Each number needs `{{retries}}` and a tag;
@@ -198,31 +215,33 @@ This skill rejects:
   it diverges, so the reader replays the same timeline with the fix in place.
 - **`expect: "hit"` on a step whose key was deleted two steps earlier**: the reducer says miss.
 - **A light page with 14 steps and 4 scenarios**: over budget; split it or pass `--heavy`.
+- **A diagram whose source is not its `kind`**, or uses an undeclared participant: `flow check` names it.
+- **A PR page a newcomer cannot place**: no purpose, one of eight routes animated without saying
+  so, `applyDiff` in a step title with no term, or a what-if race that reads as a real bug.
 - **Project knowledge baked into the skill**: a folder name, a glossary term or a team's tier
   default written here instead of read from that project's `CLAUDE.md`.
 
 **Honest limitations:** the checker proves that cited lines and counted absences exist and that
-the timeline is internally consistent; it cannot prove the step's sentence describes what the
-line does. That is rule 8 and review. Hazard detection covers only `stale-writeback` in v1; other
-races are scenarios the agent writes and the reader judges.
+the timeline is internally consistent; it cannot prove a step's sentence describes what the line
+does, or that a purpose reads plainly (rules 8 and 14, review). Hazard detection covers only
+`stale-writeback` in v1; other races are scenarios the agent writes and the reader judges.
 
 ## Scale
 
-`solo`: replaying your own fix against the bug's timeline before you push. `small-team`: the
-review artifact for a risky PR, read in two minutes instead of a 40-comment thread. `org`: the
-onboarding page for a flow everyone touches and nobody drew. `high-blast-radius`: the race and
-load scenarios are where an outage would have started.
+`solo`: replay your fix against the bug's timeline before you push. `small-team`: a risky PR's
+review artifact, read in two minutes, not a long thread. `org`: the onboarding page for a flow
+everyone touches and nobody drew. `high-blast-radius`: where an outage would start.
 
 ## Sources
 
-- The six questions, the scenario/fix/decision model, the tiers and their budgets, the evidence
-  tag set, the "agent writes only data, a tested engine renders it" split, and `flow check`'s
-  rules: `SOURCE: original` (this skill's design, 2026-10-22).
+- The six questions, the scenario/fix/decision model, tiers, evidence tags, the "agent writes only
+  data, a tested engine renders it" split, context, terms, origin, outline, diagrams and `flow
+  check`'s rules: `SOURCE: original` (2026-10-22; context, code panes, diagrams 2026-10-24).
 - The reference page whose structure the engine follows (plans as data, state as a pure reduce
   over each step's actions, a player over it): a user-supplied local page, not published;
   `SOURCE: original`.
-- `verified` / `inferred` labelling, and the rule that a `verified` claim carries a `file:line`:
-  `reviewers/_evidence-labels.md`; `skills/codebase-comprehension/SKILL.md` rule 3.
+- `verified` / `inferred` labels, a `file:line` per `verified` claim: `reviewers/_evidence-labels.md`;
+  `skills/codebase-comprehension/SKILL.md` rule 3. Diagram type and level: `skills/diagramming/`.
 - `gh` only in the pr-review skill's steps, never in `scripts/` or other skills:
   `decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`.
 - The pr-review run folder (`PINS.md`, `review.json`, `CR` resolution): `skills/pr-review/SKILL.md`,

@@ -40,7 +40,7 @@ appears outside a documented allowlist:
 no tool in it sends anything off your machine. The one exception is a skill step, not a
 tool: `pr-review`'s `post` command runs `gh api … /pulls/<n>/reviews` to create a **draft**
 review, and only after it has shown you the exact payload and you answered yes (see
-"GitHub writes" below). Its tools' only network use is `git fetch` in `pr_snapshot`. If something on your system deleted a file
+"GitHub writes" below). Its tools' only network use is `git fetch` in `pr_snapshot`. A page built by `explain` that has diagrams loads one pinned file, mermaid from cdnjs (integrity-checked, no referrer), when you open it; offline it shows the diagram source instead. If something on your system deleted a file
 after you installed a plugin, it was not this one — check your other installed plugins.
 
 The one apparent exception is a false positive worth knowing about:

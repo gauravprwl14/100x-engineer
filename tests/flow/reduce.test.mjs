@@ -11,7 +11,7 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const require = createRequire(import.meta.url);
-const { reduceScenario, ReduceError, parseAt } = require(path.join(root, "skills/explain/assets/flow-player.js"));
+const { reduceScenario, ReduceError, parseAt, splitTerms, outlineHits, stepSnippets, effectiveSteps } = require(path.join(root, "skills/explain/assets/flow-player.js"));
 const golden = JSON.parse(readFileSync(path.join(here, "states.json"), "utf8"));
 const load = file => JSON.parse(readFileSync(path.join(root, file), "utf8"));
 
@@ -89,4 +89,37 @@ test("parseAt matches flow.py AT_RX on the same inputs", () => {
     "print(json.dumps([(lambda m: m and {'path': m['path'], 'line': m['line'], 'rev': m['rev']})(flow.AT_RX.match(c)) for c in json.loads(sys.argv[2])]))";
   const want = JSON.parse(execFileSync("python3", ["-c", py, path.join(root, "scripts"), JSON.stringify(cases)], { encoding: "utf8" }));
   assert.deepEqual(cases.map(parseAt), want);
+});
+
+test("splitTerms wraps whole-word terms in any case and leaves part-words alone", () => {
+  const terms = [{ term: "TTL" }, { term: "cache" }, { term: "Promise.all" }];
+  assert.deepEqual(splitTerms("The Cache TTL ends; caches and recache stay.", terms),
+    ["The ", { term: "Cache", i: 1 }, " ", { term: "TTL", i: 0 }, " ends; caches and recache stay."]);
+  assert.deepEqual(splitTerms("Promise.all(x)", terms), [{ term: "Promise.all", i: 2 }, "(x)"]);
+  assert.deepEqual(splitTerms("no glossary", []), ["no glossary"]);
+});
+
+test("splitTerms prefers the longest term and matches next to CJK text", () => {
+  const terms = [{ term: "cache" }, { term: "cache key" }];
+  assert.deepEqual(splitTerms("キャッシュのcache keyを消す", terms), ["キャッシュの", { term: "cache key", i: 1 }, "を消す"]);
+});
+
+test("outlineHits lights a line by step identity, so a fix's inherited step matches the issue's line", () => {
+  const doc = load("skills/explain/assets/examples/stale-writeback.json");
+  const sc = {}; for (const s of doc.scenarios) sc[s.id] = s;
+  const entries = {}; for (const id of Object.keys(sc)) entries[id] = effectiveSteps(id, sc);
+  const outline = [{ scenario: "race", lines: [{ code: "a", steps: [1] }, { code: "b", steps: [5] }, { code: "c" }] }];
+  assert.deepEqual(outlineHits(outline, entries, "race", 1), [{ o: 0, l: 0 }]);
+  assert.deepEqual(outlineHits(outline, entries, "fix-set-if-fresh", 1), [{ o: 0, l: 0 }]); // inherited from race
+  assert.deepEqual(outlineHits(outline, entries, "fix-set-if-fresh", 5), []); // the fix's own step, not race's step 5
+  assert.deepEqual(outlineHits(outline, entries, "race", 99), []);
+});
+
+test("stepSnippets keeps well-formed snippets for the step's evidence and skips the rest", () => {
+  const good = { path: "src/a.js", sha: "abc1234", start: 3, lines: ["x", "y"], hl: 4 };
+  const snippets = { e1: good, e2: { path: "src/b.js", start: 0, lines: ["z"], hl: 1 }, e3: { path: "c", start: 1, lines: [], hl: 1 } };
+  assert.deepEqual(stepSnippets({ ev: ["e1", "e2", "e3", "e4"] }, snippets), [Object.assign({ ev: "e1" }, good)]);
+  assert.deepEqual(stepSnippets({ ev: ["e1"] }, {}), []);
+  assert.deepEqual(stepSnippets({ ev: ["e1"] }, null), []);
+  assert.deepEqual(stepSnippets({}, snippets), []);
 });

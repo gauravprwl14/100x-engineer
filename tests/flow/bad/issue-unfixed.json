@@ -69,6 +69,7 @@
    "kind": "race",
    "title": "Concurrent write",
    "severity": "high",
+   "origin": "in-code",
    "steps": [
     {
      "t": "Writer updates the row",

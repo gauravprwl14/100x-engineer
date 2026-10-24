@@ -6,14 +6,55 @@ read everything at that SHA: `PINS.md` head for a PR, `git rev-parse HEAD` for a
 
 ```mermaid
 flowchart LR
-  S[1 symbols<br/>changed or named] --> H[2 one hop<br/>callers + callees]
+  X[0 context<br/>purpose, scope, terms] --> S[1 symbols<br/>changed or named]
+  S --> H[2 one hop<br/>callers + callees]
   H --> N[3 nodes<br/>by role]
   N --> A[4 absences<br/>git grep]
   A --> T[5 threads<br/>to commits]
   T --> P[6 pick scenarios]
   P --> F[7 fix per issue]
   F --> D[8 decision]
+  D --> O[9 outline<br/>pseudocode]
+  O --> G[10 diagrams]
 ```
+
+## 0. Context first
+
+A reader who knows the product but not this module needs four answers before the first step:
+what a user gets, why now, which entry points the page animates, and what the words mean. Write
+`context` and `terms` (`references/schema.md`) before any scenario.
+
+**When the output folder sits inside a pr-review run folder** (siblings `1-context.md`,
+`4-findings.md`, `README.md`), that review already wrote this down. Reuse it, then verify every
+line it cites at the pinned SHA as for any other evidence:
+
+| `1-context.md` | becomes |
+|---|---|
+| `> **In 10 seconds:**` | `context.purpose`, rewritten so a person outside the module follows it |
+| `## Problem` | `context.why_now` |
+| `## Terms` | `terms` rows (`term`, `means`, an `example` where the review gave one) |
+| `## Before → after` | `context.in_scope` bullets; the happy and fix scenarios replay it |
+| `## Author's decisions` | `decision.options` and `deciding_factor` (step 8) |
+| `## Not in this PR` | `context.out_of_scope` |
+
+**Otherwise** derive them yourself:
+
+| field | from |
+|---|---|
+| `purpose` | the PR body, the linked spec or ticket, then the tests' names: what a user can now do or no longer suffers |
+| `why_now` | the PR body or the issue it closes; leave it out rather than guess |
+| `in_scope` / `out_of_scope` | `git diff --name-only <base>...<head>`, grouped by area; what the spec names that the diff does not touch is out |
+| `entry_points` | every route, job, event handler, command or screen the diff adds or changes (`git grep` the router or job registry at the head SHA) |
+| `terms` | every identifier or domain word a step title or `d` needs that a newcomer would stop at |
+
+Each entry point the page animates gets `scenario`; the rest get a `note` such as "same gates as
+the animated route" or "not changed by this PR". A page that animates one route of several and
+does not say so reads as a claim about all of them.
+
+A scenario that shows a failure the code does not have today (a race the design prevents, kept to
+show why) is `origin: "what-if"`; one taken from a review thread is `found-in-review`; one you
+traced in the code is `in-code`. A what-if's fix scenario is the real design, so at least one of
+its own steps cites the line that prevents the failure.
 
 ## 1. Symbols
 
@@ -125,6 +166,82 @@ ADRs and specs the PR or the project links, then commit messages. The card names
 each option's `fit`, the chosen one, the deciding factor and `revisit_when`. With no recorded
 decision, write the options the code implies, tag the card `inferred`, and put
 "no recorded decision" in `source`.
+
+## 9. Outline and step code
+
+The `outline` is the main entry point as pseudocode, so a reader sees the whole function before
+the timeline splits it into steps. Each step's `code` is the slice of it that step plays.
+
+| rule | why |
+|---|---|
+| names from the code: the real function, variable and field names | the reader can search for them |
+| control flow kept: every `if`, loop, early return, `await` that matters, transaction start and end | the race lives between those lines |
+| no invented helpers: a call in the pseudocode is a call in the code | an invented `ensureFresh()` hides the bug |
+| drop logging, validation boilerplate and type plumbing | they are not the behaviour |
+| ≤ 20 lines an outline, ≤ 8 lines a step's `code` | longer is the code itself; link the real line instead |
+| each line has `ev` (its real line) or `tag: "inferred"` | same rule as steps; `flow check` enforces it |
+| `steps` lists the visible step indexes (0-based) a line drives | the player highlights the line as it plays |
+
+Worked example, from the made-up notes service in `assets/examples/stale-writeback.json`
+(`getNote` and `patchNote` in its `src/notes.js`). The outline of the GET route:
+
+```json
+{"title": "GET /notes/:id -> getNote(db, cache, id)", "scenario": "happy", "lines": [
+  {"code": "cached = cache.get(cacheKey(id))", "steps": [1], "ev": "e-cache-get"},
+  {"code": "if cached: return cached", "steps": [5], "ev": "e-cache-hit"},
+  {"code": "note = db.query(SELECT body FROM notes WHERE id)", "steps": [2], "ev": "e-db-read"},
+  {"code": "cache.set(cacheKey(id), note, ttl=CACHE_TTL_SECONDS)", "steps": [3], "ev": "e-cache-set"},
+  {"code": "return note", "steps": [4], "ev": "e-return-note"}
+]}
+```
+
+A line with no evidence entry to cite is `"tag": "inferred"` instead of `ev`. The race step "Reader's GET fills
+the cache with the old note" then carries one line from the outline,
+`"code": ["cache.set(cacheKey(id), note, ttl=CACHE_TTL_SECONDS)  # note read before the PATCH"]`,
+nothing the code does not do. A line such as
+`if note.isStale(): skip` would be an invented helper; the absence of that check is a
+`verified-absent` evidence, not a pseudocode line.
+
+## 10. Diagrams
+
+`diagrams` (`references/schema.md`) gives the reader the shape in one picture before the steps
+split it up. Add one or two where they help (light ≤ 2, heavy ≤ 4); none beats a decorative one.
+Pick the type and level with `skills/diagramming/SKILL.md`:
+
+| the page needs | `kind` | level |
+|---|---|---|
+| who calls whom on the main entry point, with its error replies | `sequence` | L2: one participant per node, only calls crossing a node |
+| the gates or branches before a write, each failure's status | `flowchart` | L1/L2: one box per decision |
+| an entity's lifecycle (job, order, session states) | `state` | L2 |
+| the table or document the flow writes (columns, keys, uniqueness) | `er` | L1 for names; L2 for the columns the steps touch |
+
+| rule | why |
+|---|---|
+| sequence participants and flowchart boxes use the node `label`s | the diagram and the map name the same boxes |
+| declare every sequence participant (`participant` / `actor`) before its first message | `check_diagrams` rejects an auto-created one |
+| arrows only from `-> --> ->> -->> -x --x`; branches as `alt` / `else` | the set `check_diagrams` accepts |
+| quote a flowchart label that has parens: `A["check (auth)"]` | an unquoted `(` breaks the parse |
+| ≤ 12 nodes or participants; split rather than grow | L1 budget; past it the picture is the code |
+| `ev` lists the lines each arrow or box rests on, or `tag: "inferred"` | same rule as steps and outline lines |
+| `scenario` names the scenario that animates it | the page links "Watch it animated" |
+| `caption` says how to read it in one or two sentences, numbers as `{{name}}` | the source is code; the caption is prose |
+
+Worked example, the PATCH route of the made-up notes service in
+`assets/examples/stale-writeback.json`; the participants are its node labels (`Editor`,
+`notes-api`, `Database`, `Cache`) and every arrow is a line its evidence already cites:
+
+```json
+{"id": "patch-calls", "kind": "sequence", "title": "PATCH /notes/:id, call by call",
+ "scenario": "race", "ev": ["e-route-patch", "e-db-write", "e-cache-del", "e-status-204"],
+ "caption": "Top to bottom: the database write lands first, then the cache key is deleted.",
+ "source": "sequenceDiagram\n  %% level: 2\n  actor Editor\n  participant API as notes-api\n  participant DB as Database\n  participant Cache\n  Editor->>API: PATCH /notes/:id\n  API->>DB: UPDATE notes SET body\n  API->>Cache: del(cacheKey(id))\n  API-->>Editor: 204"}
+```
+
+No `alt` branch here because the code has none; a branch the code does not have is invention,
+drawn or written.
+
+Check a source before writing it into the JSON: put it in a ```mermaid fence in a scratch `.md`
+and run `100x check_diagrams <file>`; `flow check` runs the same check on every diagram.
 
 ## Numbers
 

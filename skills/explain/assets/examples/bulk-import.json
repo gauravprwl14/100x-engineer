@@ -6,6 +6,28 @@
   "kind": "plan",
   "lede": "Two ways to load {{rows}} into a web app that hands follow-up work to background queues. Plan A sends one create per row through a rate-limited edge; Plan B uploads one CSV and lets workers validate and import it. Both trigger the same mail, chat and search work; the queues and worker pools decide when it is done."
  },
+ "terms": [
+  {
+   "term": "worker pool",
+   "means": "A fixed number of threads that take jobs off one queue; a job waits while every thread is busy.",
+   "example": "The chat pool has one thread, so chat jobs run one at a time."
+  },
+  {
+   "term": "reindex",
+   "means": "Rebuilding the search index entries for many users in one job."
+  }
+ ],
+ "diagrams": [
+  {
+   "id": "plan-b-flow",
+   "kind": "flowchart",
+   "scenario": "plan-b",
+   "tag": "inferred",
+   "title": "Plan B as a flow: one file in, three queues out",
+   "caption": "Follow the arrows left to right. The chat queue is drained by a single thread, so it is where Plan B backs up.",
+   "source": "flowchart LR\n  connector[\"Connector\"] -->|\"one CSV\"| web[\"Web app\"]\n  web -->|\"initialize job\"| qimport[\"import queue\"]\n  qimport --> importpool[\"Import pool: validate, then import\"]\n  importpool -->|\"create users\"| db[\"Database\"]\n  importpool -->|\"mail job\"| qdefault[\"default queue\"]\n  importpool -->|\"chat job per row\"| qchat[\"chat queue\"]\n  qdefault --> pool[\"Default pool\"]\n  qchat --> chatpool[\"Chat pool, one thread\"]\n  pool -->|\"reindex\"| search[\"Search index\"]\n  chatpool -->|\"create account\"| chat[\"Chat service\"]"
+  }
+ ],
  "nodes": [
   {
    "id": "connector",
@@ -1012,6 +1034,7 @@
    "id": "chat-backlog",
    "kind": "load",
    "severity": "medium",
+   "origin": "found-in-review",
    "fixed_by": [
     "fix-throttle"
    ],
@@ -1283,7 +1306,12 @@
       }
      },
      "time": "~{{import_time}} + {{throttle_extra}}",
-     "tag": "inferred"
+     "tag": "inferred",
+     "code": [
+      "for row in csv:",
+      "  import(row)",
+      "  sleep(1 / chat_clear_rate)  // the pace one chat thread keeps"
+     ]
     },
     {
      "t": "Chat accounts finish with the import; nothing waits",
@@ -1306,6 +1334,7 @@
    "id": "search-throttled",
    "kind": "failure",
    "severity": "low",
+   "origin": "what-if",
    "open": true,
    "branch": {
     "from": "plan-a",

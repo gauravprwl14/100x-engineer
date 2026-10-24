@@ -13,17 +13,21 @@ vocabulary and reducer semantics are skills/explain/references/actions.md.
 
 check   structure, action arity and node refs, evidence anchors at their SHA (`git show`),
         counted absences (`git grep`), bare numbers in prose, tier budgets, every issue
-        fixed or open, each step's `expect` and `hazard` against the reducer.
+        fixed or open, each step's `expect` and `hazard` against the reducer, context on a PR,
+        an origin on every issue, outline lines cited, no unexplained identifier in a step title,
+        each diagram's mermaid source through scripts/check_diagrams.py and its `kind`.
 reduce  the state after every step; `--json` is the golden format tests/flow/states.json.
 build   inlines skills/explain/assets/{shell.html,flow-player.js,flow-player.css} and the
         scenario into <out>/index.html, and writes the <out>/explain.md export; refuses
-        what check rejects at the same tier (evidence only when --repo is given).
+        what check rejects at the same tier (evidence only when --repo is given). With --repo,
+        the lines around each cited line are read from git into the page as real code.
 
 Exit codes: 0 clean, 1 findings, 2 unreadable input, not a git repo, or missing assets.
 Python stdlib only; git via subprocess.
 """
 import argparse, difflib, html, json, math, pathlib, re, subprocess, sys
 
+import check_diagrams
 from _mutation_guard import safe_record_name
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -48,6 +52,21 @@ MAX_WORKER_SLOTS = 12
 TIME_UNITS_MS = {"ms": 1, "s": 1000, "min": 60000, "h": 3600000}
 ANCHOR_WINDOW = 2
 HTTP_STATUS_MIN, HTTP_STATUS_MAX = 100, 599
+ORIGINS = ("in-code", "what-if", "found-in-review")
+ENTRY_KINDS = ("route", "job", "event", "command", "function", "screen")
+CONTEXT_LIMITS = {"in_scope": 8, "out_of_scope": 8, "entry_points": 12}
+MAX_TERMS = 12
+OUTLINE_BUDGET = {"light": 1, "heavy": 3}
+MAX_OUTLINE_LINES = 20
+MAX_OUTLINE_INDENT = 6
+MAX_STEP_CODE_LINES = 8
+DIAGRAM_KINDS = ("sequence", "flowchart", "state", "er", "class")
+DIAGRAM_BUDGET = {"light": 2, "heavy": 4}
+# check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
+# own step cards, so that one obligation is dropped here and every other problem is kept.
+DIAGRAM_STEP_TABLE_PROBLEM = "level 3 requires a numbered step table"
+# A snippet shows the cited line with a little context above and more below it.
+SNIPPET_BEFORE, SNIPPET_AFTER = 3, 5
 
 ID_RX = re.compile(r"^[a-z][a-z0-9_-]*$")
 EV_ID_RX = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
@@ -59,23 +78,38 @@ AT_RX = re.compile(r"^(?P<path>[^:]+):(?P<line>[1-9][0-9]*)(?:@(?P<rev>[0-9a-f]{
 HTTP_CLASS_RX = re.compile(r"^[1-5]xx$", re.I)
 PLACEHOLDER_RX = re.compile(r"\{\{\s*([^}]*?)\s*\}\}")
 WORD_RX = re.compile(r"[A-Za-z0-9_]+")
+# "PR 1497", "PR #1497", "#1227": a reference to another PR or issue is a name, not a quantity.
+PR_REF_RX = re.compile(r"\bPR\s*#?[0-9]+\b|#[0-9]+\b", re.I)
+# Identifier-shaped words a reader outside the module cannot decode: camelCase, PascalCase
+# with two capitals, snake_case, dotted calls. Both parts of a dotted word need two characters,
+# so "e.g" and "v1.2" stay plain words.
+TOKEN_RX = re.compile(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*", re.ASCII)
+JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\w{2,}(?:\.\w+)*",
+                       re.ASCII)
 
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
-            {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare"}),
+            {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
+             "context", "terms", "outline", "diagrams"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
     "evidence-at": ({"at", "anchor"}, set()),
     "evidence-absent": ({"absent", "git_grep", "path", "hits"}, set()),
     "initial": (set(), {"stores", "caches"}),
-    "scenario": ({"id", "kind", "title", "steps"}, {"severity", "fixed_by", "open", "branch"}),
+    "scenario": ({"id", "kind", "title", "steps"}, {"severity", "fixed_by", "open", "branch", "origin"}),
     "branch": ({"from", "at"}, set()),
-    "step": ({"t", "do"}, {"d", "expect", "hazard", "time", "ev", "tag"}),
+    "step": ({"t", "do"}, {"d", "expect", "hazard", "time", "ev", "tag", "code"}),
     "expect": (set(), {"hit", "vars", "cache", "stale", "store", "queues", "counters"}),
     "decision": ({"options", "chosen", "deciding_factor", "revisit_when", "source"}, set()),
     "option": ({"id", "label", "fit", "pros", "cons"}, {"scenario"}),
     "check": ({"scenario", "step", "q", "answer"}, set()),
+    "context": ({"purpose", "in_scope"}, {"why_now", "out_of_scope", "entry_points"}),
+    "entry-point": ({"label"}, {"kind", "scenario", "note", "ev"}),
+    "term": ({"term", "means"}, {"example"}),
+    "outline": ({"title", "scenario", "lines"}, set()),
+    "outline-line": ({"code"}, {"indent", "steps", "ev", "tag"}),
+    "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
 }
 
 # action -> argument kinds; a trailing "?" marks an optional argument.
@@ -199,6 +233,11 @@ def validate(doc, f):
     for sid, scenario in ctx["scenarios"].items():
         validate_scenario(sid, scenario, ctx, f)
     validate_extras(doc, ctx, f)
+    validate_origins(ctx, f)
+    validate_context(doc, ctx, f)
+    validate_terms(doc, f)
+    validate_outline(doc, ctx, f)
+    validate_diagrams(doc, ctx, f)
     return ctx
 
 
@@ -374,6 +413,11 @@ def validate_scenario(sid, s, ctx, f):
                     f.add(loc + ".fixed_by", f"scenario '{fid}' is kind {target.get('kind')}, not fix")
     if sev is not None and not fixed_by and s.get("open") is not True:
         f.add(loc, "issue has neither fixed_by nor open: true")
+    origin = s.get("origin")
+    if origin is not None and origin not in ORIGINS:
+        f.add(loc + ".origin", f"must be one of {', '.join(ORIGINS)}")
+    elif origin is None and sev is not None:
+        f.add(loc + ".origin", "issue has no origin: say whether it is in-code, what-if or found-in-review")
     br = s.get("branch")
     if br is not None and check_keys(br, "branch", loc + ".branch", f):
         src = ctx["scenarios"].get(br.get("from")) if isinstance(br.get("from"), str) else None
@@ -402,6 +446,8 @@ def validate_step(loc, st, ctx, f):
     for eid in ev:
         if eid not in ctx["evidence"]:
             f.add(loc + ".ev", f"unknown evidence id '{eid}'")
+    if "code" in st and not is_code_lines(st["code"], MAX_STEP_CODE_LINES):
+        f.add(loc + ".code", f"must be a list of 1-{MAX_STEP_CODE_LINES} pseudocode lines (strings)")
     tag = st.get("tag")
     if tag is not None and tag not in STEP_TAGS:
         f.add(loc + ".tag", f"must be one of {', '.join(STEP_TAGS)}")
@@ -571,6 +617,189 @@ def validate_extras(doc, ctx, f):
                     f.add("compare", f"unknown scenario '{sid}'")
 
 
+def is_code_lines(v, most):
+    return (isinstance(v, list) and 1 <= len(v) <= most
+            and all(isinstance(x, str) and x.strip() for x in v))
+
+
+def is_text_list(v, least, most):
+    return isinstance(v, list) and least <= len(v) <= most and all(is_text(x) for x in v)
+
+
+def validate_origins(ctx, f):
+    """A what-if issue is not in the code, so its fix is the real design: it must cite it."""
+    scenarios = ctx["scenarios"]
+    for sid, s in scenarios.items():
+        if s.get("origin") != "what-if" or not isinstance(s.get("fixed_by"), list):
+            continue
+        for fid in s["fixed_by"]:
+            fix = scenarios.get(fid) if isinstance(fid, str) else None
+            if fix is None or not isinstance(fix.get("steps"), list):
+                continue
+            if not any(isinstance(st, dict) and isinstance(st.get("ev"), list) and st["ev"]
+                       for st in fix["steps"]):
+                f.add(f"scenario {fid}", f"fix for what-if issue '{sid}' cites no evidence: a "
+                                         "what-if is not in the code, so its fix must cite the real "
+                                         "design in at least one step's ev")
+
+
+def validate_context(doc, ctx, f):
+    if "context" not in doc:
+        if subject_of(doc).get("kind") == "pr":
+            f.add("context", "subject.kind pr needs context: say what the PR does for a user "
+                             "(purpose) and what it covers (in_scope)")
+        return
+    c = doc["context"]
+    if not check_keys(c, "context", "context", f):
+        return
+    for k in ("purpose", "why_now"):
+        if k in c and not is_text(c[k]):
+            f.add(f"context.{k}", "must be text")
+    for k, least in (("in_scope", 1), ("out_of_scope", 0)):
+        if k in c and not is_text_list(c[k], least, CONTEXT_LIMITS[k]):
+            f.add(f"context.{k}", f"must be a list of {least}-{CONTEXT_LIMITS[k]} text items")
+    eps = c.get("entry_points", [])
+    if not (isinstance(eps, list) and len(eps) <= CONTEXT_LIMITS["entry_points"]):
+        f.add("context.entry_points", f"must be a list of at most {CONTEXT_LIMITS['entry_points']} entry points")
+        eps = []
+    for i, ep in enumerate(eps):
+        loc = f"context.entry_points[{i}]"
+        if not check_keys(ep, "entry-point", loc, f):
+            continue
+        for k in ("label", "note"):
+            if k in ep and not is_text(ep[k]):
+                f.add(f"{loc}.{k}", "must be text")
+        if "kind" in ep and ep["kind"] not in ENTRY_KINDS:
+            f.add(loc + ".kind", f"must be one of {', '.join(ENTRY_KINDS)}")
+        if "scenario" in ep and not known(ep["scenario"], ctx["scenarios"]):
+            f.add(loc + ".scenario", f"unknown scenario {json.dumps(ep['scenario'])}")
+        if "ev" in ep and not known(ep["ev"], ctx["evidence"]):
+            f.add(loc + ".ev", f"unknown evidence id {json.dumps(ep['ev'])}")
+
+
+def validate_terms(doc, f):
+    terms = doc.get("terms")
+    if terms is None:
+        return
+    if not (isinstance(terms, list) and len(terms) <= MAX_TERMS):
+        f.add("terms", f"must be a list of at most {MAX_TERMS} terms")
+        return
+    seen = {}
+    for i, t in enumerate(terms):
+        loc = f"terms[{i}]"
+        if not check_keys(t, "term", loc, f):
+            continue
+        term = t.get("term")
+        if not (isinstance(term, str) and term.strip()):
+            f.add(loc + ".term", "must be a non-empty string")
+        elif term.strip().lower() in seen:
+            f.add(loc + ".term", f"duplicate term '{term}' (also terms[{seen[term.strip().lower()]}]): "
+                                 "define each term once")
+        else:
+            seen[term.strip().lower()] = i
+        for k in ("means", "example"):
+            if k in t and not is_text(t[k]):
+                f.add(f"{loc}.{k}", "must be text")
+
+
+def validate_outline(doc, ctx, f):
+    outline = doc.get("outline")
+    if outline is None:
+        return
+    if not isinstance(outline, list):
+        f.add("outline", "must be a list of outlines")
+        return
+    for i, o in enumerate(outline):
+        loc = f"outline[{i}]"
+        if not check_keys(o, "outline", loc, f):
+            continue
+        if not is_text(o.get("title")):
+            f.add(loc + ".title", "must be text")
+        if not known(o.get("scenario"), ctx["scenarios"]):
+            f.add(loc + ".scenario", f"unknown scenario {json.dumps(o.get('scenario'))}")
+        lines = o.get("lines")
+        if not (isinstance(lines, list) and 1 <= len(lines) <= MAX_OUTLINE_LINES):
+            f.add(loc + ".lines", f"must be a list of 1-{MAX_OUTLINE_LINES} lines")
+            continue
+        for j, ln in enumerate(lines):
+            validate_outline_line(f"{loc}.lines[{j}]", ln, ctx, f)
+
+
+def validate_outline_line(loc, ln, ctx, f):
+    if not check_keys(ln, "outline-line", loc, f):
+        return
+    if not (isinstance(ln.get("code"), str) and ln["code"].strip()):
+        f.add(loc + ".code", "must be a non-empty pseudocode string")
+    if "indent" in ln and not (is_int(ln["indent"]) and 0 <= ln["indent"] <= MAX_OUTLINE_INDENT):
+        f.add(loc + ".indent", f"must be an integer from 0 to {MAX_OUTLINE_INDENT}")
+    if "steps" in ln and not (isinstance(ln["steps"], list) and all(is_int(x) and x >= 0 for x in ln["steps"])):
+        f.add(loc + ".steps", "must be a list of step indexes")
+    if "tag" in ln and ln["tag"] != "inferred":
+        f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
+    if "ev" in ln and not known(ln["ev"], ctx["evidence"]):
+        f.add(loc + ".ev", f"unknown evidence id {json.dumps(ln['ev'])}")
+    elif "ev" not in ln and ln.get("tag") != "inferred":
+        f.add(loc, "outline line has no evidence: cite an ev id or tag it inferred")
+
+
+def validate_diagrams(doc, ctx, f):
+    diagrams = doc.get("diagrams")
+    if diagrams is None:
+        return
+    if not isinstance(diagrams, list):
+        f.add("diagrams", "must be a list of diagrams")
+        return
+    seen = set()
+    for i, dg in enumerate(diagrams):
+        loc = f"diagrams[{i}]"
+        if not check_keys(dg, "diagram", loc, f):
+            continue
+        did = dg.get("id")
+        if not (isinstance(did, str) and ID_RX.match(did)):
+            f.add(loc + ".id", "must match [a-z][a-z0-9_-]*")
+        elif did in seen:
+            f.add(loc + ".id", f"duplicate diagram id '{did}'")
+        else:
+            seen.add(did)
+            loc = f"diagram '{did}'"
+        if not is_text(dg.get("title")):
+            f.add(loc + ".title", "must be text")
+        if "caption" in dg and not is_text(dg["caption"]):
+            f.add(loc + ".caption", "must be text")
+        if "scenario" in dg and not known(dg["scenario"], ctx["scenarios"]):
+            f.add(loc + ".scenario", f"unknown scenario {json.dumps(dg['scenario'])}")
+        ev = dg.get("ev", [])
+        if not (isinstance(ev, list) and all(isinstance(x, str) for x in ev)):
+            f.add(loc + ".ev", "must be a list of evidence ids")
+            ev = []
+        for eid in ev:
+            if eid not in ctx["evidence"]:
+                f.add(loc + ".ev", f"unknown evidence id '{eid}'")
+        if "tag" in dg and dg["tag"] != "inferred":
+            f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
+        elif not ev and dg.get("tag") != "inferred":
+            f.add(loc, "diagram has no evidence: cite ev ids or tag it inferred")
+        kind = dg.get("kind")
+        if kind not in DIAGRAM_KINDS:
+            f.add(loc + ".kind", f"must be one of {', '.join(DIAGRAM_KINDS)}")
+        src = dg.get("source")
+        if not (isinstance(src, str) and src.strip()):
+            f.add(loc + ".source", "must be a non-empty mermaid source string")
+            continue
+        check_mermaid(loc, kind, src, f)
+
+
+def check_mermaid(loc, kind, src, f):
+    """scripts/check_diagrams.py's checks on one source, every ERROR a finding, plus the
+    detected diagram type against the declared kind."""
+    dtype, _level, _nodes, _edges, problems = check_diagrams.check_block(src, "", None)
+    for sev, msg in problems:
+        if sev == "ERROR" and not msg.startswith(DIAGRAM_STEP_TABLE_PROBLEM):
+            f.add(loc, msg)
+    if dtype is not None and kind in DIAGRAM_KINDS and dtype != kind:
+        f.add(loc, f"kind '{kind}' does not match the source: check_diagrams reads a {dtype} diagram")
+
+
 # ---------------------------------------------------------------- prose numbers
 
 def prose_fields(doc):
@@ -612,13 +841,35 @@ def prose_fields(doc):
         if isinstance(c, dict):
             yield f"checks[{i}].q", c.get("q"), False
             yield f"checks[{i}].answer", c.get("answer"), False
+    c = obj(doc.get("context"))
+    for k in ("purpose", "why_now"):
+        yield f"context.{k}", c.get(k), False
+    for k in ("in_scope", "out_of_scope"):
+        for i, x in enumerate(seq(c.get(k))):
+            yield f"context.{k}[{i}]", x, False
+    for i, ep in enumerate(seq(c.get("entry_points"))):
+        if isinstance(ep, dict):
+            yield f"context.entry_points[{i}].label", ep.get("label"), False
+            yield f"context.entry_points[{i}].note", ep.get("note"), False
+    for i, t in enumerate(seq(doc.get("terms"))):
+        if isinstance(t, dict):
+            yield f"terms[{i}].means", t.get("means"), False
+            yield f"terms[{i}].example", t.get("example"), False
+    for i, o in enumerate(seq(doc.get("outline"))):
+        if isinstance(o, dict):
+            yield f"outline[{i}].title", o.get("title"), False
+    for i, dg in enumerate(seq(doc.get("diagrams"))):
+        if isinstance(dg, dict):
+            yield f"diagrams[{i}].title", dg.get("title"), False
+            yield f"diagrams[{i}].caption", dg.get("caption"), False
 
 
 def bare_numbers(text, allow_http_status, pr=None):
     """Digits that should be a {{name}}. Exempt: ids such as C3, an HTTP class such as 5xx,
-    the subject's own PR number, and a status code in a reply label."""
+    the subject's own PR number, a PR or issue reference (PR 1497, #1227), and a status code
+    in a reply label."""
     out = []
-    for w in WORD_RX.findall(PLACEHOLDER_RX.sub(" ", text)):
+    for w in WORD_RX.findall(PR_REF_RX.sub(" ", PLACEHOLDER_RX.sub(" ", text))):
         if not w[0].isdigit() or HTTP_CLASS_RX.match(w) or w == pr:
             continue
         if allow_http_status and w.isdigit() and HTTP_STATUS_MIN <= int(w) <= HTTP_STATUS_MAX:
@@ -641,6 +892,36 @@ def check_prose(doc, numbers, f):
             if bare:
                 f.add(loc + suffix, f"bare number {', '.join(repr(b) for b in bare)} in prose: "
                                     "use a {{name}} placeholder backed by numbers")
+
+
+def words_of(value):
+    """Every identifier-ish token in a Text, all languages, placeholders removed."""
+    if not is_text(value):
+        return set()
+    return {w.lower() for _, s in text_variants(value) for w in TOKEN_RX.findall(PLACEHOLDER_RX.sub(" ", s))}
+
+
+def check_jargon(doc, ctx, f):
+    """A step title is read before anything else on the card: an identifier in it must be a
+    defined term or a word the map already shows."""
+    plain = set()
+    for t in seq(doc.get("terms")):
+        if isinstance(t, dict) and isinstance(t.get("term"), str):
+            plain |= {w.lower() for w in TOKEN_RX.findall(t["term"])}
+    for nid, n in ctx["nodes"].items():
+        plain |= {nid.lower()} | words_of(n.get("label"))
+    for s in seq(doc.get("scenarios")):
+        if not isinstance(s, dict):
+            continue
+        for j, st in enumerate(seq(s.get("steps"))):
+            title = st.get("t") if isinstance(st, dict) else None
+            if not is_text(title):
+                continue
+            for suffix, text in text_variants(title):
+                for w in TOKEN_RX.findall(PLACEHOLDER_RX.sub(" ", text)):
+                    if JARGON_RX.fullmatch(w) and w.lower() not in plain:
+                        f.add(f"scenario {s.get('id')} step {j}.t{suffix}",
+                              f"jargon in step title: '{w}': add it to terms or say it in plain words")
 
 
 # ---------------------------------------------------------------- reducer
@@ -879,6 +1160,21 @@ def check_budget(ctx, states, tier, f):
         if isinstance(c, dict) and known(c.get("scenario"), states) and is_int(c.get("step")) \
                 and c["step"] >= len(states[c["scenario"]]):
             f.add("checks", f"step {c['step']} is past the end of scenario {c['scenario']}")
+    outline = seq(ctx["doc"].get("outline"))
+    if len(outline) > OUTLINE_BUDGET[tier]:
+        f.add("outline", f"over budget ({tier}): {len(outline)} outlines, max {OUTLINE_BUDGET[tier]}")
+    for i, o in enumerate(outline):
+        if not (isinstance(o, dict) and known(o.get("scenario"), states)):
+            continue
+        n = len(states[o["scenario"]])
+        for j, ln in enumerate(seq(o.get("lines"))):
+            for k in seq(obj(ln).get("steps")):
+                if is_int(k) and k >= n:
+                    f.add(f"outline[{i}].lines[{j}].steps",
+                          f"step {k} is past the end of scenario {o['scenario']} ({n} visible step(s), 0-based)")
+    diagrams = seq(ctx["doc"].get("diagrams"))
+    if len(diagrams) > DIAGRAM_BUDGET[tier]:
+        f.add("diagrams", f"over budget ({tier}): {len(diagrams)} diagrams, max {DIAGRAM_BUDGET[tier]}")
     if tier == "light":
         for k in ("compare", "checks"):
             if ctx["doc"].get(k):
@@ -989,6 +1285,7 @@ def run_checks(doc, ctx, f, tier, repo, rev):
         states = reduce_all(ctx, f)
         check_expectations(ctx, states, f)
     check_prose(doc, ctx["numbers"], f)
+    check_jargon(doc, ctx, f)
     check_budget(ctx, states, tier, f)
     if repo is not None and not structural:
         check_evidence(ctx, repo, rev, f)
@@ -1051,7 +1348,49 @@ def run_reduce(path, only, as_json):
     return 0
 
 
-def build(scenario, tier, out_dir, assets_dir=ASSETS):
+def anchor_line(lines, line, anchor):
+    """The line within the anchor window that holds the anchor, nearest the cited one first,
+    so the highlight lands on the code check matched; the cited line when none does."""
+    if isinstance(anchor, str) and anchor:
+        for n in sorted(range(line - ANCHOR_WINDOW, line + ANCHOR_WINDOW + 1), key=lambda n: abs(n - line)):
+            if 1 <= n <= len(lines) and anchor in lines[n - 1]:
+                return n
+    return line
+
+
+def collect_snippets(doc, repo, rev_flag=None):
+    """Real code around every cited line, read from git at the revision check resolves:
+    {evidence id: {path, sha, start, lines, hl}}. Pulled here so the page never shows code
+    the agent typed. An entry git cannot read is left out; no repo gives {}."""
+    if repo is None:
+        return {}
+    rc, _, _ = git(repo, "rev-parse", "--show-toplevel")
+    if rc != 0:
+        return {}
+    sha = subject_of(doc).get("sha")
+    default_rev = (sha if isinstance(sha, str) and SHA_RX.match(sha) else None) or rev_flag or "HEAD"
+    out, files = {}, {}
+    for eid, e in obj(doc.get("evidence")).items():
+        m = AT_RX.match(e["at"]) if isinstance(e, dict) and isinstance(e.get("at"), str) else None
+        if not m:
+            continue
+        rc, full, _ = git(repo, "rev-parse", "--verify", "--quiet", (m.group("rev") or default_rev) + "^{commit}")
+        if rc != 0:
+            continue
+        full, path, line = full.strip(), m.group("path"), int(m.group("line"))
+        if (full, path) not in files:
+            rc, text, _ = git(repo, "show", f"{full}:{path}")
+            files[(full, path)] = text.splitlines() if rc == 0 else None
+        lines = files[(full, path)]
+        if not lines or line > len(lines):
+            continue
+        line = anchor_line(lines, line, e.get("anchor"))
+        start, end = max(1, line - SNIPPET_BEFORE), min(len(lines), line + SNIPPET_AFTER)
+        out[eid] = {"path": path, "sha": full, "start": start, "lines": lines[start - 1:end], "hl": line}
+    return out
+
+
+def build(scenario, tier, out_dir, assets_dir=ASSETS, snippets=None):
     """Inline the engine assets and the scenario into <out_dir>/index.html.
 
     The shell must carry {{flow_css}}, {{flow_js}} and {{flow_data}}; it may carry
@@ -1066,7 +1405,8 @@ def build(scenario, tier, out_dir, assets_dir=ASSETS):
     absent = [t for t in REQUIRED_SHELL_TOKENS if "{{" + t + "}}" not in shell]
     if absent:
         raise Unreadable(f"shell.html lacks {', '.join('{{' + t + '}}' for t in absent)}")
-    payload = json.dumps({"tier": tier, "scenario": scenario}, ensure_ascii=False).replace("<", "\\u003c")
+    payload = json.dumps({"tier": tier, "scenario": scenario, "snippets": snippets or {}},
+                         ensure_ascii=False).replace("<", "\\u003c")
     table = {"flow_css": css.replace("</style", "<\\/style"),
              "flow_js": js.replace("</script", "<\\/script"),
              "flow_data": payload, "flow_tier": tier,
@@ -1168,14 +1508,123 @@ def describe_changes_md(prev, cur, numbers):
     return "; ".join(out) or "no change"
 
 
+WHAT_IF_BANNER = "What-if: this is not in the code. It shows why the real design is the way it is."
+
+
+def render_context_md(doc, ctx, numbers):
+    c = doc.get("context")
+    if not c:
+        return []
+    out = ["", "## Before you watch", "", f"**{md_text(c.get('purpose'), numbers)}**"]
+    if c.get("why_now"):
+        out += ["", f"Why now: {md_text(c['why_now'], numbers)}"]
+    for k, head in (("in_scope", "In this PR"), ("out_of_scope", "Not in this PR")):
+        if c.get(k):
+            out += ["", f"{head}:", ""] + [f"- {md_text(x, numbers)}" for x in c[k]]
+    if c.get("entry_points"):
+        out += ["", "| entry point | kind | animated in | note | evidence |", "|---|---|---|---|---|"]
+        for ep in c["entry_points"]:
+            sc = ctx["scenarios"].get(ep.get("scenario"))
+            shown = f"`{ep['scenario']}` ({md_text(sc.get('title'), numbers)})" if sc else "not animated"
+            ev = describe_evidence_md(ep["ev"], doc) if ep.get("ev") else ""
+            out.append(f"| {md_text(ep.get('label'), numbers)} | {ep.get('kind', '')} | {shown} | "
+                       f"{md_text(ep.get('note'), numbers)} | {ev} |")
+    return out
+
+
+def render_terms_md(doc, numbers):
+    if not doc.get("terms"):
+        return []
+    out = ["", "## Terms", "", "| term | means | example |", "|---|---|---|"]
+    for t in doc["terms"]:
+        out.append(f"| `{t['term']}` | {md_text(t.get('means'), numbers)} | {md_text(t.get('example'), numbers)} |")
+    return out
+
+
+def render_diagrams_md(doc, numbers):
+    if not doc.get("diagrams"):
+        return []
+    out = ["", "## Diagrams"]
+    for dg in doc["diagrams"]:
+        src = dg["source"].strip("\n")
+        fence = "`" * max(3, 1 + max((len(r) for r in re.findall(r"`+", src)), default=0))
+        out += ["", f"### {md_text(dg.get('title'), numbers)}", "", fence + "mermaid", src, fence]
+        if dg.get("caption"):
+            out += ["", md_text(dg["caption"], numbers)]
+        ev = ", ".join(describe_evidence_md(e, doc) for e in dg.get("ev") or []) or "*inferred*"
+        shown = f"Animated in `{dg['scenario']}`. " if dg.get("scenario") else ""
+        out += ["", f"{shown}Evidence: {ev}"]
+    return out
+
+
+MD_SECTION_ANSWERS = {
+    "Before you watch": "what the change does for a user, what it covers and where it starts",
+    "Terms": "the words a reader outside the module needs",
+    "Diagrams": "the flow at a glance, as diagrams",
+    "Workflow outline": "the code path as pseudocode, each line linked to its step",
+    "Map": "which boxes the scenarios use, their role and where they live in the code",
+    "Decision": "which option was chosen, against what, and when to revisit it",
+    "Numbers": "every number on the page and what backs it",
+}
+HEADING_RX = re.compile(r"^(#{1,6}) (.+)$")
+FENCE_RX = re.compile(r"^(`{3,})")
+
+
+def collect_headings(lines):
+    """[(level, text, anchor)] for every heading outside a code fence, anchored the way GitHub
+    does it: lowercase, punctuation dropped, spaces to hyphens, repeats suffixed -1, -2."""
+    out, used, fence = [], {}, None
+    for ln in lines:
+        m = FENCE_RX.match(ln)
+        if m and (fence is None or m.group(1).startswith(fence)):
+            fence = None if fence else m.group(1)
+            continue
+        heading = HEADING_RX.match(ln) if fence is None else None
+        if not heading:
+            continue
+        base = re.sub(r"[^\w\- ]", "", heading.group(2).strip().lower()).replace(" ", "-")
+        n = used.get(base, 0)
+        used[base] = n + 1
+        out.append((len(heading.group(1)), heading.group(2), base if n == 0 else f"{base}-{n}"))
+    return out
+
+
+def render_contents_md(head, body, answers):
+    """A `## Contents` row per `##` section of body, in order: a link and what it answers."""
+    rows = ["", "## Contents", "", "| section | answers |", "|---|---|"]
+    before = len(collect_headings(head + rows))
+    sections = [h for h in collect_headings(head + rows + body)[before:] if h[0] == 2]
+    for (_, text, anchor), answer in zip(sections, answers):
+        label = text.replace("[", "\\[").replace("]", "\\]")
+        rows.append(f"| [{label}](#{anchor}) | {answer} |")
+    return rows
+
+
+def render_outline_md(doc, ctx, numbers):
+    if not doc.get("outline"):
+        return []
+    out = ["", "## Workflow outline"]
+    for o in doc["outline"]:
+        out += ["", f"`{md_text(o.get('title'), numbers)}`, animated in `{o.get('scenario')}`:", "", "```"]
+        for ln in o.get("lines") or []:
+            notes = [f"step {', '.join(str(k + 1) for k in ln['steps'])}"] if ln.get("steps") else []
+            notes += ["inferred"] if ln.get("tag") == "inferred" else []
+            out.append("  " * ln.get("indent", 0) + ln["code"] + (f"  # {' · '.join(notes)}" if notes else ""))
+        out.append("```")
+    return out
+
+
 def render_markdown(doc, ctx, states, tier):
     numbers = ctx["numbers"]
     sub = doc.get("subject") or {}
     meta = [sub.get("kind", "")] + [f"{k} `{sub[k]}`" for k in ("repo", "sha", "base", "pr") if k in sub]
     lines = [f"# {md_text(doc.get('title'), numbers)}", "", md_text(sub.get("lede"), numbers), "",
              "| | |", "|---|---|", f"| subject | {' · '.join(meta)} |", f"| tier | {tier} |",
-             "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |", "",
-             "## Map", "", "| node | role | code |", "|---|---|---|"]
+             "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |"]
+    top, lines = lines, []
+    lines += render_context_md(doc, ctx, numbers) + render_terms_md(doc, numbers) \
+        + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
+    lines += ["", "## Map", "", "| node | role | code |", "|---|---|---|"]
     for nid, n in ctx["nodes"].items():
         ref = f"`{n['ref']}`" if n.get("ref") else ""
         ctxt = " (outside the diff)" if n.get("outside_diff") else ""
@@ -1183,8 +1632,11 @@ def render_markdown(doc, ctx, states, tier):
     init = initial_state(ctx)
     for sid, s in ctx["scenarios"].items():
         sts = states.get(sid, [])
-        head = [s.get("kind", "")] + ([f"severity {s['severity']}"] if s.get("severity") else [])
+        head = [s.get("kind", "")] + ([f"origin: {s['origin']}"] if s.get("origin") else []) \
+            + ([f"severity {s['severity']}"] if s.get("severity") else [])
         lines += ["", f"## {md_text(s.get('title'), numbers)}", "", f"`{sid}` · {' · '.join(head)}", ""]
+        if s.get("origin") == "what-if":
+            lines += [f"> {WHAT_IF_BANNER}", ""]
         if s.get("fixed_by"):
             lines.append(f"Fixed by: {', '.join('`' + x + '`' for x in s['fixed_by'])}.")
         elif s.get("open"):
@@ -1207,6 +1659,10 @@ def render_markdown(doc, ctx, states, tier):
             if step.get("ev") and step.get("tag") == "inferred":
                 ev += " · *inferred*"
             lines.append(f"| {st['step'] + 1} | {what} | {describe_changes_md(prev, st, numbers)} | {ev} |")
+        for st in own:
+            code = s["steps"][st["origin_step"]].get("code")
+            if code:
+                lines += ["", f"Step {st['step'] + 1}:", "", "```"] + code + ["```"]
     dec = doc.get("decision")
     if dec:
         lines += ["", "## Decision", "", "| option | solves it | pros | cons |", "|---|---|---|---|"]
@@ -1224,7 +1680,19 @@ def render_markdown(doc, ctx, states, tier):
             back = (describe_evidence_md(n["ev"], doc) if n.get("tag") == "verified" and n.get("ev")
                     else md_text(n.get("source") or n.get("basis"), {}))
             lines.append(f"| `{name}` | {fmt_number(n)} | {n.get('tag')} | {back} |")
-    return "\n".join(lines) + "\n"
+    return "\n".join(top + render_contents_md(top, lines, contents_answers(doc, ctx)) + lines) + "\n"
+
+
+def contents_answers(doc, ctx):
+    """What each `##` section of explain.md answers, in the order render_markdown writes them."""
+    answers = [MD_SECTION_ANSWERS[k] for k, present in (
+        ("Before you watch", doc.get("context")), ("Terms", doc.get("terms")),
+        ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
+        if present]
+    answers += [f"{s.get('kind')} scenario `{sid}`: each step, what it changes and its evidence"
+                for sid, s in ctx["scenarios"].items()]
+    return answers + [MD_SECTION_ANSWERS[k] for k, present in (
+        ("Decision", doc.get("decision")), ("Numbers", ctx["numbers"])) if present]
 
 
 def run_build(path, tier, out_dir, assets_dir, repo=None):
@@ -1236,7 +1704,13 @@ def run_build(path, tier, out_dir, assets_dir, repo=None):
             print(f"  FINDING {l}: {m}", file=sys.stderr)
         print(f"flow build: refused, {len(f.items)} finding(s) at tier {tier}", file=sys.stderr)
         return 1
-    target = build(doc, tier, out_dir, assets_dir)
+    snippets = collect_snippets(doc, repo)
+    cited = sum(1 for e in obj(doc.get("evidence")).values() if isinstance(e, dict) and "at" in e)
+    if cited and len(snippets) < cited:
+        why = "no --repo given" if repo is None else f"git could not read {cited - len(snippets)} of them"
+        print(f"flow build: real code for {len(snippets)} of {cited} cited line(s) ({why}); "
+              "the page shows pseudocode for the rest", file=sys.stderr)
+    target = build(doc, tier, out_dir, assets_dir, snippets)
     md = pathlib.Path(out_dir) / MD_EXPORT
     md.write_text(render_markdown(doc, ctx, states, tier), encoding="utf-8")
     print(f"flow build: wrote {target} and {md} (tier {tier})")
@@ -1248,6 +1722,11 @@ def starter(slug):
         "schema": SCHEMA, "tier": "light",
         "title": {"en": f"{slug}: what happens, what can go wrong, what fixes it"},
         "subject": {"kind": "concept", "lede": {"en": "One sentence: what this explains and for whom."}},
+        "context": {"purpose": {"en": "Replace: what this lets a user do, in their words."},
+                    "in_scope": [{"en": "Replace: one thing this covers."}]},
+        "terms": [{"term": "API", "means": {"en": "Replace: what this word means here, in plain words."}}],
+        "outline": [{"title": "handleRequest(request)", "scenario": "happy", "lines": [
+            {"code": "row = db.read(request.id)", "steps": [1], "tag": "inferred"}]}],
         "nodes": [{"id": "client", "role": "client", "label": "Client"},
                   {"id": "api", "role": "service", "label": "API"},
                   {"id": "db", "role": "store", "label": "Database"}],

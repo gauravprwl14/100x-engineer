@@ -1,0 +1,114 @@
+{
+ "schema": 1,
+ "tier": "heavy",
+ "title": "Seeded bad case",
+ "subject": {
+  "kind": "concept",
+  "lede": "One defect away from a valid scenario."
+ },
+ "nodes": [
+  {
+   "id": "client",
+   "role": "client",
+   "label": "Client"
+  },
+  {
+   "id": "api",
+   "role": "service",
+   "label": "API"
+  },
+  {
+   "id": "cache",
+   "role": "cache",
+   "label": "Cache"
+  },
+  {
+   "id": "db",
+   "role": "store",
+   "label": "Database"
+  }
+ ],
+ "evidence": {
+  "e-get": {
+   "at": "src/notes.js:7",
+   "anchor": "cache.get(cacheKey(id))"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "Read",
+   "steps": [
+    {
+     "t": "Client asks, cache misses",
+     "do": [
+      [
+       "send",
+       "client",
+       "api",
+       "GET /notes/:id"
+      ],
+      [
+       "cache.get",
+       "cache",
+       "note:a"
+      ]
+     ],
+     "expect": {
+      "hit": "miss"
+     },
+     "ev": [
+      "e-get"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "race",
+   "kind": "race",
+   "title": "Concurrent write",
+   "severity": "high",
+   "origin": "what-if",
+   "fixed_by": [
+    "fix"
+   ],
+   "steps": [
+    {
+     "t": "Writer updates the row",
+     "do": [
+      [
+       "db.write",
+       "db",
+       "notes/a",
+       "v2"
+      ]
+     ],
+     "tag": "inferred"
+    }
+   ]
+  },
+  {
+   "id": "fix",
+   "kind": "fix",
+   "title": "Versioned write",
+   "branch": {
+    "from": "race",
+    "at": 1
+   },
+   "steps": [
+    {
+     "t": "The reader checks the version first",
+     "do": [
+      [
+       "db.read",
+       "db",
+       "notes/a"
+      ]
+     ],
+     "tag": "inferred"
+    }
+   ]
+  }
+ ]
+}
