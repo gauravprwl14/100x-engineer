@@ -268,7 +268,6 @@ svg.map.narrow { max-height: none; }
 
 /* panels */
 .panel { padding: 14px var(--s4); display: grid; gap: var(--s3); }
-.below { display: grid; gap: var(--s4); }
 .tbl { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
 th, td { text-align: start; padding: 6px var(--s2); border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -294,7 +293,6 @@ td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dec { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3); }
 .dec dt { font: 700 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .dec dd { margin: 2px 0 0; }
-.ev-panel summary { cursor: pointer; font-weight: 700; font-size: 17px; }
 .errorbox { border: 2px solid var(--bad); background: var(--badsoft); border-radius: var(--r-sm); padding: var(--s3); display: grid; gap: 6px; }
 .foot { color: var(--muted); font-size: 13px; }
 .foot p { margin: 0; }
@@ -369,6 +367,50 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
 .ol-line.cur { background: var(--soft); border-inline-start-color: var(--req); font-weight: 700; }
 .ol-n { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
+/* contents: a book-index card, one row per section */
+.contents { gap: var(--s2); }
+.toc-head { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); justify-content: space-between; align-items: center; }
+.toc-head h2 { font-size: 17px; font-weight: 700; }
+.toc-tools { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.toc { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.toc a { display: grid; grid-template-columns: auto minmax(var(--s4), 1fr) auto; column-gap: var(--s2); align-items: baseline; padding: 6px var(--s2); border-radius: var(--r-sm); color: var(--fg); text-decoration: none; }
+.toc a:hover { background: var(--surface-2); }
+.toc-t { font-weight: 650; color: var(--req); text-decoration: underline; text-underline-offset: 2px; }
+.toc-lead { align-self: end; margin-bottom: 0.4em; border-bottom: 2px dotted var(--line-strong); }
+.toc-n { font: 500 12px var(--font-mono); color: var(--muted); text-align: end; }
+.toc-w { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+
+/* folding sections: the heading is the summary */
+.fold.panel { display: block; }
+.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--s2); min-height: 28px; border-radius: var(--r-sm); }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: ""; flex: none; width: 0.5em; height: 0.5em; margin-inline: 2px 4px; border-inline-end: 2px solid var(--muted); border-block-end: 2px solid var(--muted); transform: rotate(-45deg); transition: transform 0.15s; }
+.fold[open] > summary::before { transform: rotate(45deg); }
+.fold > summary h2 { font-size: 17px; font-weight: 700; }
+.fold > summary:hover h2 { text-decoration: underline; text-underline-offset: 3px; }
+.fold-body { display: grid; gap: var(--s3); min-width: 0; margin-top: var(--s3); }
+.fold.bare > .fold-body { gap: var(--s4); }
+.fold.bare > summary { padding-inline: var(--s2); }
+.fold { scroll-margin-top: var(--s3); }
+
+/* diagrams: beside the outline on a wide screen */
+.pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); align-items: start; }
+.dg { margin: 0; display: grid; gap: var(--s2); min-width: 0; }
+.dg-title { font-size: 15px; }
+.dg-box { overflow: auto; min-height: 160px; padding: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.dg.inferred .dg-box { border: 2px dashed var(--line-strong); }
+.dg-box svg { display: block; height: auto; margin-inline: auto; }
+.dg-wait { margin: 0; }
+.dg-note { margin-bottom: var(--s2); }
+.dg-src { margin: 0; font: 12.5px/1.5 var(--font-mono); white-space: pre; }
+.dg-src code { font-size: inherit; overflow-wrap: normal; }
+.dg-cap { display: grid; gap: 6px; font-size: 14px; }
+.dg-cap p { margin: 0; }
+@media (max-width: 1099px) { .dg-wide { display: none; } }
+.dg-ev summary { cursor: pointer; font-size: 12.5px; color: var(--muted); min-height: 24px; }
+.dg-ev .chips { margin-top: 6px; }
+.dg-cap > p:first-child { color: var(--muted); max-width: 95ch; }
+
 /* code pane and code blocks */
 .codepane { gap: var(--s2); align-content: start; }
 .code-head { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: space-between; align-items: center; }
@@ -425,6 +467,10 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
   .main.has-code .steps { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); column-gap: var(--s3); }
   .main.has-code .codepane { grid-area: code; position: sticky; top: var(--s3); align-self: start; max-height: calc(100vh - 2 * var(--s3)); overflow: auto; }
 }
+@media (min-width: 1100px) {
+  .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pair.wide { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 900px) {
   .card { grid-template-columns: minmax(0, 1fr); }
 }
@@ -442,6 +488,9 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
   .stat.wide { grid-column: auto; }
   .pc { grid-template-columns: minmax(0, 1fr); }
   .svgbox { padding: 4px; }
+  .toc a { grid-template-columns: minmax(0, 1fr); }
+  .toc-lead { display: none; }
+  .toc-n { text-align: start; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
