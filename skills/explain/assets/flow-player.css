@@ -329,6 +329,70 @@ svg.race { display: block; width: 100%; height: auto; }
 .rvals span { display: block; font: 600 10.5px var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); overflow-wrap: anywhere; }
 .rvals b { font-size: 20px; font-variant-numeric: tabular-nums; }
 
+/* before you watch */
+.before h3, .card-code h4 { font: 700 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 4px; }
+.purpose { margin: 0; font-size: clamp(17px, 2.2vw, 20px); font-weight: 600; line-height: 1.4; max-width: 75ch; }
+.why { margin: 0; color: var(--muted); max-width: 95ch; }
+.why b { color: var(--fg); }
+.scopes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3); }
+.scope { padding-inline-start: var(--s3); border-inline-start: 3px solid var(--good); }
+.scope.s-outScope { border-inline-start-style: dashed; border-inline-start-color: var(--line-strong); }
+.scope ul { margin: 0; padding-inline-start: 18px; display: grid; gap: 2px; }
+.btn.sm { min-height: 28px; padding: 3px 10px; font-size: 12.5px; }
+.terms dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s2) var(--s4); }
+.terms dt { font: 700 13px var(--font-mono); }
+.terms dd { margin: 0; color: var(--muted); font-size: 13.5px; }
+.term { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: help; text-decoration: underline dotted var(--req); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.term.open { background: var(--soft); border-radius: 3px; }
+.term-tip { position: absolute; z-index: 20; max-width: min(320px, calc(100vw - 2 * var(--s2))); background: var(--fg); color: var(--bg); border-radius: var(--r-sm); padding: var(--s2) var(--s3); font: 13px/1.45 var(--font-body); display: grid; gap: 4px; }
+.term-tip code { color: var(--bg); }
+
+/* origin and WHAT-IF */
+.stage-origin { padding: var(--s3) 18px 0; }
+.banner.origin.o-what-if { background: var(--jobsoft); border: 1.5px dashed var(--job); }
+.banner.origin.o-what-if b { background: var(--job); }
+.banner.origin.o-found-in-review { background: var(--soft); border-color: var(--req); }
+.banner.origin.o-found-in-review b { background: var(--req); }
+.banner.origin.o-in-code b { background: var(--good); }
+.wi { display: inline-block; white-space: nowrap; font: 700 11px/1.6 var(--font-mono); letter-spacing: 0.06em; color: var(--job); border: 1.5px dashed var(--job); border-radius: 99px; padding: 0 var(--s2); }
+.tabs [role="tab"][aria-selected="true"] .wi { color: var(--surface); border-color: currentColor; }
+
+/* workflow outline */
+.ol { display: grid; gap: 4px; }
+.ol h3 code { font-size: 14px; }
+.ol-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.ol-line { width: 100%; min-height: 26px; display: flex; flex-wrap: wrap; gap: 2px var(--s3); justify-content: space-between; align-items: baseline; text-align: start; padding: 3px var(--s2); padding-inline-start: calc(var(--s2) + var(--ind, 0) * 2ch); border: 0; border-inline-start: 3px solid transparent; border-radius: var(--r-sm); background: none; color: var(--fg); font: 13px/1.45 var(--font-mono); text-decoration: none; }
+button.ol-line, a.ol-line { cursor: pointer; }
+button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
+.ol-line code { font-size: inherit; white-space: pre-wrap; }
+.ol-line.inferred { border-inline-start: 3px dashed var(--line-strong); }
+.ol-line.cur { background: var(--soft); border-inline-start-color: var(--req); font-weight: 700; }
+.ol-n { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* code pane and code blocks */
+.codepane { gap: var(--s2); align-content: start; }
+.code-head { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: space-between; align-items: center; }
+.code-head h2 { font-size: 17px; font-weight: 700; }
+.code-body { display: grid; gap: var(--s3); min-width: 0; }
+.code-body > p { margin: 0; }
+.pseudo { min-width: 0; }
+.src { margin: 0 0 4px; font-size: 12px; }
+.pseudo pre, .snip pre { margin: 0; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); font: 12.5px/1.5 var(--font-mono); }
+.pseudo pre { padding: var(--s2) var(--s3); }
+.snip pre { padding: var(--s2) 0; }
+.pseudo code { font-size: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.snip code { font-size: inherit; overflow-wrap: normal; white-space: pre; }
+.snip code { display: block; min-width: max-content; }
+.snip { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.snip figcaption { display: flex; flex-wrap: wrap; gap: var(--s2); font-size: 12px; }
+.ln { display: block; padding-inline: var(--s2) var(--s3); border-inline-start: 3px solid transparent; }
+.ln.hl { background: var(--jobsoft); border-inline-start-color: var(--job); font-weight: 700; }
+.lno { display: inline-block; min-width: 3ch; margin-inline-end: 1.5ch; text-align: end; color: var(--muted); user-select: none; font-weight: 400; }
+.card-code { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: var(--s2); min-width: 0; }
+.card-code summary { cursor: pointer; font-weight: 600; font-size: 13.5px; min-height: 24px; }
+.card-code h4 { margin-top: var(--s2); }
+.card-code .snip + .snip { margin-top: var(--s2); }
+
 /* light tier */
 .scenario { display: grid; gap: var(--s3); }
 .sc-head { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: baseline; padding-top: var(--s2); border-top: 2px solid var(--line); }
@@ -352,6 +416,14 @@ svg.race { display: block; width: 100%; height: auto; }
 @media (max-width: 1100px) {
   .main { grid-template-columns: minmax(0, 1fr); }
   .side { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+}
+/* code beside the diagram on a wide screen; below it otherwise (the DOM order) */
+@media (min-width: 1100px) {
+  .main.has-code { grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); grid-template-areas: "stage code" "side code"; }
+  .main.has-code .stage { grid-area: stage; }
+  .main.has-code .side { grid-area: side; grid-template-columns: minmax(0, 1fr); }
+  .main.has-code .steps { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); column-gap: var(--s3); }
+  .main.has-code .codepane { grid-area: code; position: sticky; top: var(--s3); align-self: start; max-height: calc(100vh - 2 * var(--s3)); overflow: auto; }
 }
 @media (max-width: 900px) {
   .card { grid-template-columns: minmax(0, 1fr); }
