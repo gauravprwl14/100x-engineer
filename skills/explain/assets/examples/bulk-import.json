@@ -17,6 +17,17 @@
    "means": "Rebuilding the search index entries for many users in one job."
   }
  ],
+ "diagrams": [
+  {
+   "id": "plan-b-flow",
+   "kind": "flowchart",
+   "scenario": "plan-b",
+   "tag": "inferred",
+   "title": "Plan B as a flow: one file in, three queues out",
+   "caption": "Follow the arrows left to right. The chat queue is drained by a single thread, so it is where Plan B backs up.",
+   "source": "flowchart LR\n  connector[\"Connector\"] -->|\"one CSV\"| web[\"Web app\"]\n  web -->|\"initialize job\"| qimport[\"import queue\"]\n  qimport --> importpool[\"Import pool: validate, then import\"]\n  importpool -->|\"create users\"| db[\"Database\"]\n  importpool -->|\"mail job\"| qdefault[\"default queue\"]\n  importpool -->|\"chat job per row\"| qchat[\"chat queue\"]\n  qdefault --> pool[\"Default pool\"]\n  qchat --> chatpool[\"Chat pool, one thread\"]\n  pool -->|\"reindex\"| search[\"Search index\"]\n  chatpool -->|\"create account\"| chat[\"Chat service\"]"
+  }
+ ],
  "nodes": [
   {
    "id": "connector",

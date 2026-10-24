@@ -43,6 +43,15 @@
       {"code": "cache.del(cacheKey(id))", "steps": [3], "ev": "e-cache-del"}
     ]}
   ],
+  "diagrams": [
+    {"id": "race-sequence", "kind": "sequence", "scenario": "race",
+     "title": {"en": "The race as a sequence: who calls whom, in what order",
+               "ja": "競合をシーケンス図で：誰がどの順で誰を呼ぶか"},
+     "caption": {"en": "Read top to bottom. The PATCH writes the database and deletes the key between the GET's database read and its cache fill, so the fill puts the old note back.",
+                 "ja": "上から下へ読む。PATCH は GET のデータベース読み取りとキャッシュ書き込みの間にデータベースを書き、キーを消す。そのため書き込みが古いノートを戻す。"},
+     "ev": ["e-route-get", "e-cache-get", "e-db-read", "e-route-patch", "e-db-write", "e-cache-del", "e-cache-set"],
+     "source": "sequenceDiagram\n  participant R as Reader\n  participant E as Editor\n  participant A as notes-api\n  participant C as Cache\n  participant D as Database\n  R->>A: GET /notes/:id\n  A->>C: get note:a\n  C-->>A: miss\n  A->>D: SELECT body (reads v1)\n  E->>A: PATCH /notes/:id\n  A->>D: UPDATE body = v2\n  A->>C: del note:a\n  A-->>E: 204 No Content\n  A->>C: set note:a = v1 (stale)\n  A-->>R: 200 OK, the old note"}
+  ],
   "nodes": [
     {"id": "reader", "role": "client", "label": "Reader"},
     {"id": "editor", "role": "client", "label": "Editor"},
