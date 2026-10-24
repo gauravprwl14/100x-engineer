@@ -9,6 +9,14 @@
     {"code": "if current != read: return", "indent": 1, "steps": [4], "ev": "e-fill-if-fresh"},
     {"code": "cache.set(key, read)", "steps": [4, 5], "tag": "inferred"}
   ]}],
+  "diagrams": [
+    {"id": "job-states", "kind": "state", "scenario": "all", "tag": "inferred",
+     "title": "A job's states", "caption": "A job waits in the queue, runs in a slot, then frees it.",
+     "source": "stateDiagram-v2\n  [*] --> queued\n  queued --> running: pickup\n  running --> done: free\n  running --> failed: timeout\n  done --> [*]\n  failed --> [*]"},
+    {"id": "fill-if-fresh", "kind": "flowchart", "ev": ["e-fill-if-fresh"],
+     "title": "Fill only if fresh",
+     "source": "flowchart TD\n  read[\"db.read(key)\"] --> same{\"unchanged since the read?\"}\n  same -->|\"yes\"| fill[\"cache.set(key, read)\"]\n  same -->|\"no\"| skip[\"skip the fill\"]"}
+  ],
   "evidence": {"e-fill-if-fresh": {"at": "fix/fill-if-fresh.lua:5", "anchor": "if cached > tonumber(ARGV[2]) then return 0"}},
   "nodes": [
     {"id": "client", "role": "client", "label": "Client"},

@@ -86,6 +86,9 @@ expect_bad jargon-title         "jargon in step title: 'getNote': add it to term
 expect_bad outline-line-uncited "outline line has no evidence: cite an ev id or tag it inferred"
 expect_bad outline-step-out-of-range "step 3 is past the end of scenario happy (1 visible step(s), 0-based)"
 expect_bad duplicate-term       "duplicate term 'ttl' (also terms\[0\])"
+expect_bad diagram-kind-mismatch "diagram 'read': kind 'flowchart' does not match the source: check_diagrams reads a sequence diagram"
+expect_bad diagram-uncited      "diagram 'read': diagram has no evidence: cite ev ids or tag it inferred"
+expect_bad diagram-bad-mermaid  "diagram 'read': participant 'A' used before a \`participant\`/\`actor\` declaration"
 
 echo "--- context, terms, outline, origin, step code: what passes and what does not"
 # mut <name> <python statement on d>: the example with one change, written to $TMP/<name>.json
@@ -146,6 +149,60 @@ run 1 "four outlines are over the heavy budget" check "$TMP/outline-heavy.json" 
 has "over budget (heavy): 4 outlines, max 3"
 mut outline-inherited 'd["outline"][0]["scenario"]="fix-set-if-fresh"; d["outline"][0]["lines"][0]["steps"]=[6]'
 run 0 "outline step indexes count inherited steps" check "$TMP/outline-inherited.json" --repo "$REPO"
+
+echo "--- diagrams: mermaid through check_diagrams, kind, evidence, prose, budgets"
+DG='d["diagrams"][0]'
+mut dg-flow "$DG"'.update(kind="flowchart", source="flowchart LR\n  reader[\"Reader\"] --> api[\"notes-api\"]\n  api --> hit{\"cached?\"}\n  hit -->|\"yes\"| reader\n  hit -->|\"no\"| db[\"Database\"]")'
+run 0 "a valid flowchart passes" check "$TMP/dg-flow.json" --repo "$REPO"
+has "0 finding(s)"
+mut dg-state "$DG"'.update(kind="state", source="stateDiagram-v2\n  [*] --> fresh\n  fresh --> stale: PATCH lands mid-read\n  stale --> [*]: TTL ends")'
+run 0 "a valid state diagram passes" check "$TMP/dg-state.json" --repo "$REPO"
+has "0 finding(s)"
+mut dg-digits "$DG"'["source"] += "\n  A->>C: retry 3 times, 250 ms apart\n  A->>D: SELECT 1"'
+run 0 "digits in a diagram source are code, not bare numbers" check "$TMP/dg-digits.json" --repo "$REPO"
+hasnt "bare number"
+mut dg-caption-num "$DG"'["caption"]["en"] = "Read top to bottom: 3 calls race."'
+run 1 "a bare number in a diagram caption is caught" check "$TMP/dg-caption-num.json" --repo "$REPO"
+has "diagrams\[0\].caption.en: bare number '3' in prose"; count "FINDING" 1
+mut dg-title-num "$DG"'["title"]["ja"] = "競合 2 件"'
+run 1 "a bare number in a diagram title, ja included, is caught" check "$TMP/dg-title-num.json" --repo "$REPO"
+has "diagrams\[0\].title.ja: bare number '2'"; count "FINDING" 1
+mut dg-ph "$DG"'["caption"]["en"] = "Stale for up to {{cache_ttl}}."'
+run 0 "a {{name}} placeholder in a caption passes" check "$TMP/dg-ph.json" --repo "$REPO"
+# 31 nodes infers level 3: check_diagrams' step table under the block is not owed here, its
+# branch rule still is
+BIG='"flowchart TD\n" + "\n".join(f"  n{i} --> n{i+1}" for i in range(30))'
+mut dg-big "$DG"'.update(kind="flowchart", tag="inferred", source='"$BIG"' + "\n  n30 --> pick{\"done?\"}")'
+run 0 "a level-3 diagram does not owe check_diagrams' step table" check "$TMP/dg-big.json" --repo "$REPO"
+hasnt "step table"
+mut dg-big-nobranch "$DG"'.update(kind="flowchart", tag="inferred", source='"$BIG"')'
+run 1 "a level-3 diagram still owes a shown branch" check "$TMP/dg-big-nobranch.json" --repo "$REPO"
+has "diagram 'race-sequence': level 3 requires at least one shown branch"; count "FINDING" 1
+mut dg-untyped "$DG"'["source"] = "pie title Notes\n  \"a\" : 1"'
+run 1 "a source check_diagrams cannot type is a finding" check "$TMP/dg-untyped.json" --repo "$REPO"
+has "diagram 'race-sequence': could not identify a diagram type"; count "FINDING" 1
+mut dg-shape 'd["diagrams"].append(dict(d["diagrams"][0])); d["diagrams"][0].update(kind="gantt", scenario="nope", ev=["e-nope"], tag="verified", caption=7); d["diagrams"][1]["sourc"] = d["diagrams"][1].pop("source")'
+run 1 "kind, scenario, ev, tag, caption, a duplicate id and an unknown key are findings" check "$TMP/dg-shape.json" --repo "$REPO"
+has "diagram 'race-sequence'.kind: must be one of sequence, flowchart, state, er, class"
+has "diagram 'race-sequence'.scenario: unknown scenario \"nope\""
+has "diagram 'race-sequence'.ev: unknown evidence id 'e-nope'"
+has "diagram 'race-sequence'.tag: must be 'inferred'"
+has "diagram 'race-sequence'.caption: must be text"
+has "diagrams\[1\].id: duplicate diagram id 'race-sequence'"
+has "diagrams\[1\]: unknown key 'sourc' (did you mean 'source'?)"
+mut dg-tagged 'd["diagrams"][0].pop("ev"); d["diagrams"][0]["tag"] = "inferred"'
+run 0 "a diagram tagged inferred needs no ev" check "$TMP/dg-tagged.json" --repo "$REPO"
+mut dg-notlist 'd["diagrams"] = {"race-sequence": d["diagrams"][0]}'
+run 1 "diagrams that are not a list are a finding" check "$TMP/dg-notlist.json" --repo "$REPO"
+has "diagrams: must be a list of diagrams"
+mut dg-heavy 'd["diagrams"] = [dict(d["diagrams"][0], id="d%d" % i) for i in range(5)]'
+run 1 "five diagrams are over the heavy budget" check "$TMP/dg-heavy.json" --repo "$REPO"
+has "over budget (heavy): 5 diagrams, max 4"; count "FINDING" 1
+mut dg-heavy-ok 'd["diagrams"] = [dict(d["diagrams"][0], id="d%d" % i) for i in range(4)]'
+run 0 "four diagrams fit the heavy budget" check "$TMP/dg-heavy-ok.json" --repo "$REPO"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["diagrams"].append(dict(d["diagrams"][0], id="third")); print(json.dumps(d))' "$FIX/all-actions.json" >"$TMP/dg-light.json"
+run 1 "three diagrams are over the light budget" check "$TMP/dg-light.json" --repo "$REPO"
+has "over budget (light): 3 diagrams, max 2"; count "FINDING" 1
 
 echo "--- the same example under other conditions"
 run 1 "example at --tier light is over budget" check "$EX" --repo "$REPO" --tier light
@@ -358,7 +415,21 @@ for want in ("## A PATCH lands between", "| # | what happens | state after | evi
              "Step 2:\n\n```\nnote = db.query(", "Step 5:\n\n```\ncache.set(cacheKey(id)", "Step 5:\n\n```\ncached_version"):
     assert want in md, want
 assert "{{" not in md, "unfilled placeholder in explain.md"
-assert md.index("## Before you watch") < md.index("## Terms") < md.index("## Workflow outline") < md.index("## Map")
+assert md.index("## Before you watch") < md.index("## Terms") < md.index("## Diagrams") < md.index("## Workflow outline") < md.index("## Map")
+assert md.index("| generated |") < md.index("## Contents") < md.index("## Before you watch"), "Contents sits under the lede table"
+contents = md[md.index("## Contents"):md.index("## Before you watch")]
+links = re.findall(r"^\| \[(.+?)\]\(#([^)]+)\) \| (.+) \|$", contents, re.M)
+after = [h for h in re.findall(r"^## (.+)$", md[md.index("## Before you watch"):], re.M)]
+assert [t for t, _, _ in links] == after, (links, after)
+for want in ("| [Before you watch](#before-you-watch) | what the change does for a user",
+             "| [Diagrams](#diagrams) | the flow at a glance, as diagrams |",
+             "| [A PATCH lands between a GET's read and its cache fill](#a-patch-lands-between-a-gets-read-and-its-cache-fill) | race scenario `race`",
+             "| [Numbers](#numbers) |"):
+    assert want in contents, want
+for want in ("### The race as a sequence: who calls whom, in what order\n\n```mermaid\nsequenceDiagram\n  participant R as Reader",
+             "  A-->>R: 200 OK, the old note\n```\n\nRead top to bottom.",
+             "Animated in `race`. Evidence: `src/routes.js:4`, `src/notes.js:7`"):
+    assert want in md, want
 assert "What-if:" not in md, "no what-if banner on an in-code issue"
 assert data["snippets"] == {}, "no --repo, no snippets"
 print("md ok")
@@ -367,6 +438,21 @@ PY2
 run 0 "build --tier heavy overrides nothing else" build "$BULK" --tier heavy --out "$TMP/real-heavy"
 grep -q 'data-tier="heavy"' "$TMP/real-heavy/index.html" && ok "  heavy page carries tier heavy" || bad "  heavy tier missing"
 grep -q '^## Plan B under load' "$TMP/real-heavy/explain.md" && ok "  bulk-import explain.md has every scenario" || bad "  bulk md"
+python3 - "$TMP/real-heavy/explain.md" >"$OUT/r.out" 2>&1 <<'PY7'
+import sys
+md = open(sys.argv[1]).read()
+assert "## Diagrams\n\n### Plan B as a flow: one file in, three queues out\n\n```mermaid\nflowchart LR\n" in md
+assert "Animated in `plan-b`. Evidence: *inferred*" in md
+assert "| [Diagrams](#diagrams) |" in md and "| [Before you watch]" not in md, "rows only for sections present"
+PY7
+[ $? -eq 0 ] && ok "  bulk-import explain.md fences its flowchart, marks it inferred, lists only present sections" || bad "  bulk md diagrams / contents"
+python3 "$F" build "$TMP/new/demo-flow.json" --out "$TMP/starter-site" >/dev/null 2>&1
+grep -q '^| \[Workflow outline\](#workflow-outline) |' "$TMP/starter-site/explain.md" && ! grep -q 'Diagrams' "$TMP/starter-site/explain.md" \
+  && ok "  a page with no diagrams has no Diagrams section or row" || bad "  starter md contents"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["scenarios"][2]["title"]="Map"; d["diagrams"][0]["source"]+="\n  %% a ``` fence in a comment"; print(json.dumps(d))' "$EX" >"$TMP/dup-heading.json"
+run 0 "build with a scenario titled like a fixed section" build "$TMP/dup-heading.json" --out "$TMP/dup-heading"
+grep -q '^| \[Map\](#map-1) | fix scenario `fix-set-if-fresh`' "$TMP/dup-heading/explain.md" && ok "  a repeated heading links to its -1 anchor" || bad "  duplicate heading anchor"
+grep -q '^````mermaid$' "$TMP/dup-heading/explain.md" && ok "  a source holding a fence gets a longer fence" || bad "  fence length"
 grep -q '^> What-if: this is not in the code. It shows why the real design is the way it is.$' "$TMP/real-heavy/explain.md" \
   && grep -q 'failure · origin: what-if · severity low' "$TMP/real-heavy/explain.md" \
   && ok "  a what-if issue carries its origin and the what-if banner" || bad "  what-if banner / origin in md"
@@ -421,10 +507,12 @@ PY5
 
 echo "--- optional: the engine renders in headless Chrome (never required)"
 CHROME="${FLOW_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+# no network in tests: mermaid never loads, so every run exercises the diagram fallback
+NO_NET='--host-resolver-rules=MAP * ~NOTFOUND'
 # <page> <width> [#hash]: the JSON tests/flow/smoke-probe.js leaves on <html data-probe>
 probe() {
   python3 -c 'import sys; p=open(sys.argv[1]).read(); open(sys.argv[2], "w").write(p.replace("</body>", "<script>" + open(sys.argv[3]).read() + "</script></body>"))' "$1" "$1.probe.html" "$FIX/smoke-probe.js"
-  "$CHROME" --headless=new --disable-gpu --no-first-run --window-size="$2",900 --virtual-time-budget=5000 --dump-dom "file://$1.probe.html${3:-}" 2>/dev/null \
+  "$CHROME" "$NO_NET" --headless=new --disable-gpu --no-first-run --window-size="$2",900 --virtual-time-budget=5000 --dump-dom "file://$1.probe.html${3:-}" 2>/dev/null \
     | python3 -c 'import html, re, sys; m = re.search(r"data-probe=\"([^\"]*)\"", sys.stdin.read()); print(html.unescape(m.group(1)) if m else "{}")'
 }
 if [ -x "$CHROME" ]; then
@@ -434,7 +522,7 @@ if [ -x "$CHROME" ]; then
     want=$(python3 "$F" reduce "$ex" --json | python3 -c 'import json,sys; print(",".join(f"{k}:{len(v)}" for k,v in json.load(sys.stdin)["scenarios"].items()))')
     site="$TMP/smoke-$(basename "$ex" .json)-$tier"
     python3 "$F" build "$ex" --tier "$tier" --repo "$REPO" --out "$site" >/dev/null 2>&1
-    "$CHROME" --headless=new --disable-gpu --no-first-run --virtual-time-budget=5000 --dump-dom "file://$site/index.html" >"$OUT/r.out" 2>/dev/null
+    "$CHROME" "$NO_NET" --headless=new --disable-gpu --no-first-run --virtual-time-budget=5000 --dump-dom "file://$site/index.html" >"$OUT/r.out" 2>/dev/null
     tagline=$(grep -o '<html[^>]*>' "$OUT/r.out" | head -1)
     case "$tagline" in
       *data-flow-error*) bad "smoke $name: data-flow-error set" ;;

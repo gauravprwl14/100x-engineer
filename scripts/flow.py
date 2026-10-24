@@ -14,7 +14,8 @@ vocabulary and reducer semantics are skills/explain/references/actions.md.
 check   structure, action arity and node refs, evidence anchors at their SHA (`git show`),
         counted absences (`git grep`), bare numbers in prose, tier budgets, every issue
         fixed or open, each step's `expect` and `hazard` against the reducer, context on a PR,
-        an origin on every issue, outline lines cited, no unexplained identifier in a step title.
+        an origin on every issue, outline lines cited, no unexplained identifier in a step title,
+        each diagram's mermaid source through scripts/check_diagrams.py and its `kind`.
 reduce  the state after every step; `--json` is the golden format tests/flow/states.json.
 build   inlines skills/explain/assets/{shell.html,flow-player.js,flow-player.css} and the
         scenario into <out>/index.html, and writes the <out>/explain.md export; refuses
@@ -26,6 +27,7 @@ Python stdlib only; git via subprocess.
 """
 import argparse, difflib, html, json, math, pathlib, re, subprocess, sys
 
+import check_diagrams
 from _mutation_guard import safe_record_name
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -58,6 +60,11 @@ OUTLINE_BUDGET = {"light": 1, "heavy": 3}
 MAX_OUTLINE_LINES = 20
 MAX_OUTLINE_INDENT = 6
 MAX_STEP_CODE_LINES = 8
+DIAGRAM_KINDS = ("sequence", "flowchart", "state", "er", "class")
+DIAGRAM_BUDGET = {"light": 2, "heavy": 4}
+# check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
+# own step cards, so that one obligation is dropped here and every other problem is kept.
+DIAGRAM_STEP_TABLE_PROBLEM = "level 3 requires a numbered step table"
 # A snippet shows the cited line with a little context above and more below it.
 SNIPPET_BEFORE, SNIPPET_AFTER = 3, 5
 
@@ -83,7 +90,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline"}),
+             "context", "terms", "outline", "diagrams"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -102,6 +109,7 @@ KEYS = {
     "term": ({"term", "means"}, {"example"}),
     "outline": ({"title", "scenario", "lines"}, set()),
     "outline-line": ({"code"}, {"indent", "steps", "ev", "tag"}),
+    "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
 }
 
 # action -> argument kinds; a trailing "?" marks an optional argument.
@@ -229,6 +237,7 @@ def validate(doc, f):
     validate_context(doc, ctx, f)
     validate_terms(doc, f)
     validate_outline(doc, ctx, f)
+    validate_diagrams(doc, ctx, f)
     return ctx
 
 
@@ -733,6 +742,64 @@ def validate_outline_line(loc, ln, ctx, f):
         f.add(loc, "outline line has no evidence: cite an ev id or tag it inferred")
 
 
+def validate_diagrams(doc, ctx, f):
+    diagrams = doc.get("diagrams")
+    if diagrams is None:
+        return
+    if not isinstance(diagrams, list):
+        f.add("diagrams", "must be a list of diagrams")
+        return
+    seen = set()
+    for i, dg in enumerate(diagrams):
+        loc = f"diagrams[{i}]"
+        if not check_keys(dg, "diagram", loc, f):
+            continue
+        did = dg.get("id")
+        if not (isinstance(did, str) and ID_RX.match(did)):
+            f.add(loc + ".id", "must match [a-z][a-z0-9_-]*")
+        elif did in seen:
+            f.add(loc + ".id", f"duplicate diagram id '{did}'")
+        else:
+            seen.add(did)
+            loc = f"diagram '{did}'"
+        if not is_text(dg.get("title")):
+            f.add(loc + ".title", "must be text")
+        if "caption" in dg and not is_text(dg["caption"]):
+            f.add(loc + ".caption", "must be text")
+        if "scenario" in dg and not known(dg["scenario"], ctx["scenarios"]):
+            f.add(loc + ".scenario", f"unknown scenario {json.dumps(dg['scenario'])}")
+        ev = dg.get("ev", [])
+        if not (isinstance(ev, list) and all(isinstance(x, str) for x in ev)):
+            f.add(loc + ".ev", "must be a list of evidence ids")
+            ev = []
+        for eid in ev:
+            if eid not in ctx["evidence"]:
+                f.add(loc + ".ev", f"unknown evidence id '{eid}'")
+        if "tag" in dg and dg["tag"] != "inferred":
+            f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
+        elif not ev and dg.get("tag") != "inferred":
+            f.add(loc, "diagram has no evidence: cite ev ids or tag it inferred")
+        kind = dg.get("kind")
+        if kind not in DIAGRAM_KINDS:
+            f.add(loc + ".kind", f"must be one of {', '.join(DIAGRAM_KINDS)}")
+        src = dg.get("source")
+        if not (isinstance(src, str) and src.strip()):
+            f.add(loc + ".source", "must be a non-empty mermaid source string")
+            continue
+        check_mermaid(loc, kind, src, f)
+
+
+def check_mermaid(loc, kind, src, f):
+    """scripts/check_diagrams.py's checks on one source, every ERROR a finding, plus the
+    detected diagram type against the declared kind."""
+    dtype, _level, _nodes, _edges, problems = check_diagrams.check_block(src, "", None)
+    for sev, msg in problems:
+        if sev == "ERROR" and not msg.startswith(DIAGRAM_STEP_TABLE_PROBLEM):
+            f.add(loc, msg)
+    if dtype is not None and kind in DIAGRAM_KINDS and dtype != kind:
+        f.add(loc, f"kind '{kind}' does not match the source: check_diagrams reads a {dtype} diagram")
+
+
 # ---------------------------------------------------------------- prose numbers
 
 def prose_fields(doc):
@@ -791,6 +858,10 @@ def prose_fields(doc):
     for i, o in enumerate(seq(doc.get("outline"))):
         if isinstance(o, dict):
             yield f"outline[{i}].title", o.get("title"), False
+    for i, dg in enumerate(seq(doc.get("diagrams"))):
+        if isinstance(dg, dict):
+            yield f"diagrams[{i}].title", dg.get("title"), False
+            yield f"diagrams[{i}].caption", dg.get("caption"), False
 
 
 def bare_numbers(text, allow_http_status, pr=None):
@@ -1101,6 +1172,9 @@ def check_budget(ctx, states, tier, f):
                 if is_int(k) and k >= n:
                     f.add(f"outline[{i}].lines[{j}].steps",
                           f"step {k} is past the end of scenario {o['scenario']} ({n} visible step(s), 0-based)")
+    diagrams = seq(ctx["doc"].get("diagrams"))
+    if len(diagrams) > DIAGRAM_BUDGET[tier]:
+        f.add("diagrams", f"over budget ({tier}): {len(diagrams)} diagrams, max {DIAGRAM_BUDGET[tier]}")
     if tier == "light":
         for k in ("compare", "checks"):
             if ctx["doc"].get(k):
@@ -1467,6 +1541,65 @@ def render_terms_md(doc, numbers):
     return out
 
 
+def render_diagrams_md(doc, numbers):
+    if not doc.get("diagrams"):
+        return []
+    out = ["", "## Diagrams"]
+    for dg in doc["diagrams"]:
+        src = dg["source"].strip("\n")
+        fence = "`" * max(3, 1 + max((len(r) for r in re.findall(r"`+", src)), default=0))
+        out += ["", f"### {md_text(dg.get('title'), numbers)}", "", fence + "mermaid", src, fence]
+        if dg.get("caption"):
+            out += ["", md_text(dg["caption"], numbers)]
+        ev = ", ".join(describe_evidence_md(e, doc) for e in dg.get("ev") or []) or "*inferred*"
+        shown = f"Animated in `{dg['scenario']}`. " if dg.get("scenario") else ""
+        out += ["", f"{shown}Evidence: {ev}"]
+    return out
+
+
+MD_SECTION_ANSWERS = {
+    "Before you watch": "what the change does for a user, what it covers and where it starts",
+    "Terms": "the words a reader outside the module needs",
+    "Diagrams": "the flow at a glance, as diagrams",
+    "Workflow outline": "the code path as pseudocode, each line linked to its step",
+    "Map": "which boxes the scenarios use, their role and where they live in the code",
+    "Decision": "which option was chosen, against what, and when to revisit it",
+    "Numbers": "every number on the page and what backs it",
+}
+HEADING_RX = re.compile(r"^(#{1,6}) (.+)$")
+FENCE_RX = re.compile(r"^(`{3,})")
+
+
+def collect_headings(lines):
+    """[(level, text, anchor)] for every heading outside a code fence, anchored the way GitHub
+    does it: lowercase, punctuation dropped, spaces to hyphens, repeats suffixed -1, -2."""
+    out, used, fence = [], {}, None
+    for ln in lines:
+        m = FENCE_RX.match(ln)
+        if m and (fence is None or m.group(1).startswith(fence)):
+            fence = None if fence else m.group(1)
+            continue
+        heading = HEADING_RX.match(ln) if fence is None else None
+        if not heading:
+            continue
+        base = re.sub(r"[^\w\- ]", "", heading.group(2).strip().lower()).replace(" ", "-")
+        n = used.get(base, 0)
+        used[base] = n + 1
+        out.append((len(heading.group(1)), heading.group(2), base if n == 0 else f"{base}-{n}"))
+    return out
+
+
+def render_contents_md(head, body, answers):
+    """A `## Contents` row per `##` section of body, in order: a link and what it answers."""
+    rows = ["", "## Contents", "", "| section | answers |", "|---|---|"]
+    before = len(collect_headings(head + rows))
+    sections = [h for h in collect_headings(head + rows + body)[before:] if h[0] == 2]
+    for (_, text, anchor), answer in zip(sections, answers):
+        label = text.replace("[", "\\[").replace("]", "\\]")
+        rows.append(f"| [{label}](#{anchor}) | {answer} |")
+    return rows
+
+
 def render_outline_md(doc, ctx, numbers):
     if not doc.get("outline"):
         return []
@@ -1488,7 +1621,9 @@ def render_markdown(doc, ctx, states, tier):
     lines = [f"# {md_text(doc.get('title'), numbers)}", "", md_text(sub.get("lede"), numbers), "",
              "| | |", "|---|---|", f"| subject | {' · '.join(meta)} |", f"| tier | {tier} |",
              "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |"]
-    lines += render_context_md(doc, ctx, numbers) + render_terms_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
+    top, lines = lines, []
+    lines += render_context_md(doc, ctx, numbers) + render_terms_md(doc, numbers) \
+        + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
     lines += ["", "## Map", "", "| node | role | code |", "|---|---|---|"]
     for nid, n in ctx["nodes"].items():
         ref = f"`{n['ref']}`" if n.get("ref") else ""
@@ -1545,7 +1680,19 @@ def render_markdown(doc, ctx, states, tier):
             back = (describe_evidence_md(n["ev"], doc) if n.get("tag") == "verified" and n.get("ev")
                     else md_text(n.get("source") or n.get("basis"), {}))
             lines.append(f"| `{name}` | {fmt_number(n)} | {n.get('tag')} | {back} |")
-    return "\n".join(lines) + "\n"
+    return "\n".join(top + render_contents_md(top, lines, contents_answers(doc, ctx)) + lines) + "\n"
+
+
+def contents_answers(doc, ctx):
+    """What each `##` section of explain.md answers, in the order render_markdown writes them."""
+    answers = [MD_SECTION_ANSWERS[k] for k, present in (
+        ("Before you watch", doc.get("context")), ("Terms", doc.get("terms")),
+        ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
+        if present]
+    answers += [f"{s.get('kind')} scenario `{sid}`: each step, what it changes and its evidence"
+                for sid, s in ctx["scenarios"].items()]
+    return answers + [MD_SECTION_ANSWERS[k] for k, present in (
+        ("Decision", doc.get("decision")), ("Numbers", ctx["numbers"])) if present]
 
 
 def run_build(path, tier, out_dir, assets_dir, repo=None):
