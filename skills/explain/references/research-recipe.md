@@ -15,6 +15,7 @@ flowchart LR
   P --> F[7 fix per issue]
   F --> D[8 decision]
   D --> O[9 outline<br/>pseudocode]
+  O --> G[10 diagrams]
 ```
 
 ## 0. Context first
@@ -187,20 +188,60 @@ Worked example, from the made-up notes service in `assets/examples/stale-writeba
 ```json
 {"title": "GET /notes/:id -> getNote(db, cache, id)", "scenario": "happy", "lines": [
   {"code": "cached = cache.get(cacheKey(id))", "steps": [1], "ev": "e-cache-get"},
-  {"code": "if cached: return cached", "steps": [5], "tag": "inferred"},
+  {"code": "if cached: return cached", "steps": [5], "ev": "e-cache-hit"},
   {"code": "note = db.query(SELECT body FROM notes WHERE id)", "steps": [2], "ev": "e-db-read"},
   {"code": "cache.set(cacheKey(id), note, ttl=CACHE_TTL_SECONDS)", "steps": [3], "ev": "e-cache-set"},
-  {"code": "return note", "steps": [4], "tag": "inferred"}
+  {"code": "return note", "steps": [4], "ev": "e-return-note"}
 ]}
 ```
 
-Lines 2 and 5 are `inferred` only because the example has no evidence entry for
-`src/notes.js:8` and `:11`; add one each and they become cited. The race step "Reader's GET fills
+A line with no evidence entry to cite is `"tag": "inferred"` instead of `ev`. The race step "Reader's GET fills
 the cache with the old note" then carries one line from the outline,
 `"code": ["cache.set(cacheKey(id), note, ttl=CACHE_TTL_SECONDS)  # note read before the PATCH"]`,
 nothing the code does not do. A line such as
 `if note.isStale(): skip` would be an invented helper; the absence of that check is a
 `verified-absent` evidence, not a pseudocode line.
+
+## 10. Diagrams
+
+`diagrams` (`references/schema.md`) gives the reader the shape in one picture before the steps
+split it up. Add one or two where they help (light ≤ 2, heavy ≤ 4); none beats a decorative one.
+Pick the type and level with `skills/diagramming/SKILL.md`:
+
+| the page needs | `kind` | level |
+|---|---|---|
+| who calls whom on the main entry point, with its error replies | `sequence` | L2: one participant per node, only calls crossing a node |
+| the gates or branches before a write, each failure's status | `flowchart` | L1/L2: one box per decision |
+| an entity's lifecycle (job, order, session states) | `state` | L2 |
+| the table or document the flow writes (columns, keys, uniqueness) | `er` | L1 for names; L2 for the columns the steps touch |
+
+| rule | why |
+|---|---|
+| sequence participants and flowchart boxes use the node `label`s | the diagram and the map name the same boxes |
+| declare every sequence participant (`participant` / `actor`) before its first message | `check_diagrams` rejects an auto-created one |
+| arrows only from `-> --> ->> -->> -x --x`; branches as `alt` / `else` | the set `check_diagrams` accepts |
+| quote a flowchart label that has parens: `A["check (auth)"]` | an unquoted `(` breaks the parse |
+| ≤ 12 nodes or participants; split rather than grow | L1 budget; past it the picture is the code |
+| `ev` lists the lines each arrow or box rests on, or `tag: "inferred"` | same rule as steps and outline lines |
+| `scenario` names the scenario that animates it | the page links "Watch it animated" |
+| `caption` says how to read it in one or two sentences, numbers as `{{name}}` | the source is code; the caption is prose |
+
+Worked example, the PATCH route of the made-up notes service in
+`assets/examples/stale-writeback.json`; the participants are its node labels (`Editor`,
+`notes-api`, `Database`, `Cache`) and every arrow is a line its evidence already cites:
+
+```json
+{"id": "patch-calls", "kind": "sequence", "title": "PATCH /notes/:id, call by call",
+ "scenario": "race", "ev": ["e-route-patch", "e-db-write", "e-cache-del", "e-status-204"],
+ "caption": "Top to bottom: the database write lands first, then the cache key is deleted.",
+ "source": "sequenceDiagram\n  %% level: 2\n  actor Editor\n  participant API as notes-api\n  participant DB as Database\n  participant Cache\n  Editor->>API: PATCH /notes/:id\n  API->>DB: UPDATE notes SET body\n  API->>Cache: del(cacheKey(id))\n  API-->>Editor: 204"}
+```
+
+No `alt` branch here because the code has none; a branch the code does not have is invention,
+drawn or written.
+
+Check a source before writing it into the JSON: put it in a ```mermaid fence in a scratch `.md`
+and run `100x check_diagrams <file>`; `flow check` runs the same check on every diagram.
 
 ## Numbers
 
