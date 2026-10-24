@@ -6,6 +6,17 @@
   "kind": "plan",
   "lede": "Two ways to load {{rows}} into a web app that hands follow-up work to background queues. Plan A sends one create per row through a rate-limited edge; Plan B uploads one CSV and lets workers validate and import it. Both trigger the same mail, chat and search work; the queues and worker pools decide when it is done."
  },
+ "terms": [
+  {
+   "term": "worker pool",
+   "means": "A fixed number of threads that take jobs off one queue; a job waits while every thread is busy.",
+   "example": "The chat pool has one thread, so chat jobs run one at a time."
+  },
+  {
+   "term": "reindex",
+   "means": "Rebuilding the search index entries for many users in one job."
+  }
+ ],
  "nodes": [
   {
    "id": "connector",
@@ -1012,6 +1023,7 @@
    "id": "chat-backlog",
    "kind": "load",
    "severity": "medium",
+   "origin": "found-in-review",
    "fixed_by": [
     "fix-throttle"
    ],
@@ -1283,7 +1295,12 @@
       }
      },
      "time": "~{{import_time}} + {{throttle_extra}}",
-     "tag": "inferred"
+     "tag": "inferred",
+     "code": [
+      "for row in csv:",
+      "  import(row)",
+      "  sleep(1 / chat_clear_rate)  // the pace one chat thread keeps"
+     ]
     },
     {
      "t": "Chat accounts finish with the import; nothing waits",
@@ -1306,6 +1323,7 @@
    "id": "search-throttled",
    "kind": "failure",
    "severity": "low",
+   "origin": "what-if",
    "open": true,
    "branch": {
     "from": "plan-a",
