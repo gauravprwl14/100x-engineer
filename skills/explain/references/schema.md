@@ -11,11 +11,12 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 |---|---|---|
 | [Top level](#top-level) | which keys exist, which are required, which are heavy-only | ~25 lines |
 | [Context, vocabulary, outline](#context-vocabulary-outline) | how the page says what the PR does, defines its words and sketches the code | ~35 lines |
+| [Diagrams](#diagrams) | how a mermaid diagram is written, cited and checked | ~20 lines |
 | [Nodes, numbers, evidence](#nodes-numbers-evidence) | how boxes, tagged numbers and checkable evidence are written | ~45 lines |
 | [Scenarios and steps](#scenarios-and-steps) | how a timeline, an issue and its origin, a fix branch, a step's `expect` and `code` are written | ~50 lines |
 | [Decision, checks, compare](#decision-checks-compare) | how the trade-off card and the heavy extras are written | ~20 lines |
-| [Rules check enforces](#rules-check-enforces) | every finding `flow check` can raise, and the light/heavy budgets | ~40 lines |
-| [Build contract](#build-contract) | what `flow build` reads and writes, the shell tokens, how data is escaped, where real-code snippets come from, the page's ready signal | ~30 lines |
+| [Rules check enforces](#rules-check-enforces) | every finding `flow check` can raise, and the light/heavy budgets | ~45 lines |
+| [Build contract](#build-contract) | what `flow build` reads and writes, the shell tokens, how data is escaped, where real-code snippets come from, the page's ready signal, the `explain.md` sections | ~35 lines |
 
 ## Top level
 
@@ -36,6 +37,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `context` | pr | object | what the PR does for a user and what it covers; required when `subject.kind` is `pr` |
 | `terms` | no | list ≤ 12 | the words a reader outside the module needs |
 | `outline` | no | list (light ≤ 1, heavy ≤ 3) | pseudocode of the workflow, lines linked to steps |
+| `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
 
 Light is the subset without `checks`, `compare` and `ja` text; a light check notes and ignores
 them, so the same file upgrades with `--tier heavy`. A value in state (`initial`, `cache.set`,
@@ -71,6 +73,27 @@ words), `why_now` (Text), `in_scope` (1-8 Text, req), `out_of_scope` (≤ 8 Text
 | `steps` | no | 0-based indexes into the scenario's visible steps, inherited included |
 | `ev` | one of | evidence id |
 | `tag` | one of | `inferred`; a line needs `ev` or `tag: inferred`, as a step does |
+
+## Diagrams
+
+**Diagram** — one mermaid diagram, drawn beside the Workflow outline and fenced in `explain.md`.
+
+| key | req | notes |
+|---|---|---|
+| `id` | yes | `[a-z][a-z0-9_-]*`, unique among diagrams |
+| `title` | yes | Text |
+| `kind` | yes | `sequence` `flowchart` `state` `er` `class`; must be the type the source declares (`sequenceDiagram`, `flowchart`/`graph`, `stateDiagram`/`stateDiagram-v2`, `erDiagram`, `classDiagram`) |
+| `source` | yes | mermaid source string; code, not prose, so the bare-number check skips it. Never HTML: the page hands it to mermaid as text and shows it as text when mermaid cannot load |
+| `caption` | no | Text: one or two sentences on how to read it; prose, so bare numbers are checked |
+| `ev` | one of | list of evidence ids |
+| `tag` | one of | `inferred`; a diagram needs `ev` or `tag: inferred`, as a step does |
+| `scenario` | no | the scenario it explains; the page links to it ("Watch it animated") |
+
+`flow check` runs the source through `scripts/check_diagrams.py` (the `diagramming` skill's
+checker): every error it reports is a finding, except its level-3 demand for a numbered step table
+under the block, which the page's own step cards meet. A sequence participant must be declared
+before its first message, a flowchart label holding parentheses is quoted, and no placeholder text
+is left in.
 
 ## Nodes, numbers, evidence
 
@@ -171,7 +194,7 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `step has no evidence` | `ev` non-empty or `tag: inferred` |
 | `bad anchor` | the revision exists, the file exists at it, the line is in range, the anchor is within ±2 lines |
 | `absence contradicted` / `absence: git grep failed` | the stated hit count is the real one |
-| `bare number` | a word starting with a digit in any prose field (every Text, every language, `context`, `terms`, outline titles; not `code`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
+| `bare number` | a word starting with a digit in any prose field (every Text, every language, `context`, `terms`, outline titles, diagram titles and captions; not `code` or a diagram `source`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
 | `unknown number` | every `{{name}}` is in `numbers` |
 | `issue has neither fixed_by nor open: true` | Q4: every issue says what fixes it, or that nothing does yet |
 | `expect contradicts reducer` | `expect` and a declared `hazard` match the replay |
@@ -184,6 +207,10 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `jargon in step title` | a camelCase, PascalCase (two capitals), snake_case or dotted (`Promise.all`; both parts ≥ 2 characters) word in a step `t`, any language, that is not a word of a `terms[].term`, of a node `label` or a node `id` (case-insensitive). `PATCH`, `ACL`, `postgres`, `e.g.` pass |
 | `duplicate term` | each term is defined once, case-insensitively |
 | `outline line has no evidence` | each outline line has `ev` or `tag: inferred` |
+| `diagram has no evidence` | each diagram has `ev` or `tag: inferred` |
+| `diagram '<id>': <problem>` | a problem `scripts/check_diagrams.py` reports in the source (undeclared sequence participant, unrecognised arrow, unquoted parentheses in a flowchart label, placeholder text, a declared level's node budget, a level-3 diagram with no shown branch, no recognisable diagram type); its level-3 step-table rule does not apply |
+| `kind '<kind>' does not match the source` | `kind` names the diagram type check_diagrams reads from the source |
+| `duplicate diagram id` | diagram ids are unique |
 | `step N is past the end of scenario` | outline `steps` and `checks[].step` index the scenario's visible steps |
 | `over budget` | the tier's limits below |
 
@@ -193,6 +220,7 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | scenarios | ≤ 2 | ≤ 5 |
 | steps per scenario, inherited included | ≤ 8 | ≤ 12 |
 | outlines | ≤ 1 | ≤ 3 |
+| diagrams | ≤ 2 | ≤ 4 |
 
 Exit 0 clean, 1 findings, 2 unreadable file, invalid JSON, `schema` ≠ 1, or evidence with no git
 repo. Hazards and notes never change the exit code. `--json` prints
@@ -219,9 +247,12 @@ citation one line off still highlights the matched code). Without `--repo`, or w
 entry is left out (`{}` with no repo), build still succeeds and prints one stderr note, and the
 player shows pseudocode only.
 
-`explain.md` is the PR-comment export: the lede table; `## Before you watch` (purpose, why now,
-in / not in this PR, entry points with the scenario that animates each), `## Terms`, `## Workflow
-outline` (each outline fenced, indented, linked lines ending `# step N`, 1-based); the map; a
+`explain.md` is the PR-comment export: the lede table; `## Contents` (one row per `##` section
+present below it, in page order: a link to its GitHub anchor and what the section answers);
+`## Before you watch` (purpose, why now,
+in / not in this PR, entry points with the scenario that animates each), `## Terms`, `## Diagrams`
+(per diagram a `###` title, a ```` ```mermaid ```` fence, the caption, the scenario it animates and
+its evidence or *inferred*), `## Workflow outline` (each outline fenced, indented, linked lines ending `# step N`, 1-based); the map; a
 section per scenario with its kind, `origin:` and severity, a what-if banner, a table (step, what
 happens, what the step changed, evidence) and a fenced `Step N:` block per step with `code`; the
 decision and the numbers, with `{{name}}` filled in.
