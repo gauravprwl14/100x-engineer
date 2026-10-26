@@ -93,12 +93,19 @@ def search_session(path, root_label, query, case_sensitive):
                     continue
                 if not isinstance(record, dict) or record.get("type") not in SEARCHABLE_TYPES:
                     continue
+                # The line-level substring check above is only a cheap prefilter — the
+                # keyword may have matched a sibling field (gitBranch, cwd, sessionId,
+                # uuid) instead of what the turn actually said. Only the extracted
+                # message text counts as a real hit.
+                text = extract_text(record.get("message") or {})
+                text_haystack = text if case_sensitive else text.lower()
+                if needle not in text_haystack:
+                    continue
                 hits += 1
                 record_cwd = record.get("cwd")
                 if isinstance(record_cwd, str) and record_cwd:
                     cwd = record_cwd
                 if snippet is None:
-                    text = extract_text(record.get("message") or {})
                     snippet = make_snippet(text, query)
     except OSError:
         return None
@@ -131,7 +138,7 @@ def iter_sessions(root):
 
 def resolve_roots(roots_arg):
     if roots_arg:
-        candidates = [Path(r).expanduser() for r in roots_arg.split(",") if r.strip()]
+        candidates = [Path(r.strip()).expanduser() for r in roots_arg.split(",") if r.strip()]
     else:
         candidates = [Path.home() / home_dir / "projects" for home_dir in DEFAULT_HOME_DIRS]
     return [r for r in candidates if r.is_dir()]
@@ -188,6 +195,8 @@ def main(argv=None):
 
     if not args.query.strip():
         parser.error("query must not be empty")
+    if args.limit < 0:
+        parser.error("--limit must be >= 0 (0 = no limit)")
 
     results, error = run(args.query, args.roots, args.limit, args.case_sensitive)
     if error:

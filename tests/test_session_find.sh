@@ -61,6 +61,13 @@ user_line "$S4" "/repo/backend" "Early spike for the tagging module."
 printf 'not valid json at all, still mentions tagging module\n' >> "$S4"
 touch -t 202510010900 "$S4"
 
+# Session 7 (.claude root): a real user turn, but the query only appears in the
+# sibling `cwd` metadata field, never in the message content itself — must NOT be
+# reported (metadata-field false positive, distinct from the hook-noise case above).
+S7="$CLAUDE/-proj-unrelated/77777777-0000-0000-0000-000000000007.jsonl"
+user_line "$S7" "/repo/tagging module/path" "This content is unrelated to the query."
+touch -t 202510220900 "$S7"
+
 BOTH_ROOTS="$CLAUDE,$CC1"
 
 python3 "$SF" "tagging module" --roots "$BOTH_ROOTS" --json >"$OUT/c.out" 2>"$OUT/c.err"
@@ -71,6 +78,7 @@ has "22222222-0000-0000-0000-000000000002"
 has "11111111-0000-0000-0000-000000000001"
 has "44444444-0000-0000-0000-000000000004"
 no  "33333333-0000-0000-0000-000000000003"
+no  "77777777-0000-0000-0000-000000000007"
 
 # Ranking: the most recently modified matching session (session 2, cc-1) must be
 # first in the JSON array, the oldest (session 4) last.
@@ -102,6 +110,17 @@ no "This session is about something else entirely"
 python3 "$SF" "tagging module" --roots "$BOTH_ROOTS" --json --limit 2 >"$OUT/c.out" 2>&1
 COUNT="$(python3 -c "import json; print(len(json.load(open('$OUT/c.out'))))")"
 [ "$COUNT" = "2" ] && ok "limit: --limit 2 returns exactly 2 results" || bad "limit: expected 2 results, got $COUNT"
+
+# A negative --limit is a usage error, not silently-wrong Python slice behaviour.
+python3 "$SF" "tagging module" --roots "$BOTH_ROOTS" --limit -1 >"$OUT/c.out" 2>"$OUT/c.err"
+rc_is 2 $? "negative limit: argparse usage error"
+
+# --roots entries with surrounding whitespace are trimmed, not treated as a
+# different (non-existent) path.
+python3 "$SF" "tagging module" --roots " $CLAUDE , $CC1 " --json >"$OUT/c.out" 2>"$OUT/c.err"
+rc_is 0 $? "roots with whitespace: still resolves both roots"
+has "11111111-0000-0000-0000-000000000001"
+has "22222222-0000-0000-0000-000000000002"
 
 # Table (non-JSON) output carries the same session ids and a snippet line.
 python3 "$SF" "tagging module" --roots "$BOTH_ROOTS" >"$OUT/c.out" 2>&1
