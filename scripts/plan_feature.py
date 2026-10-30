@@ -14,7 +14,15 @@ Design constraints taken from how this gets used in practice:
 
     plan_feature.py new login --kind auth --work api,web-ui --tier small --stack nestjs
     plan_feature.py new tagging --work api,web-ui --tier small   # --kind defaults to universal
+    plan_feature.py new prefs --screens "settings, shopping cart" --roles admin,viewer --tier small
+    plan_feature.py cases --screens delete --roles viewer [--json]   # read-only checklist
     plan_feature.py audit docs/engineering/specs/login   # or specs/login, or login
+
+`--screens` takes screen names (scripts/data/screen_patterns.json, plus a project's own
+taxonomy in <records root>/screen_patterns.json, which wins a clash) and adds their
+behaviour families to --kind; `--roles` adds three rows per role to §7
+(source `role:<name>`), which the audit re-expands from the header so a deleted role
+row fails like any other seeded row.
 
 `audit_spec(path)` is the importable audit: (errors, warnings, status), no printing,
 no exit; `plan_dag lint --spec` calls it so a plan cannot start from an unready spec.
@@ -24,7 +32,7 @@ Specs live under the root `_paths.py` resolves (docs/engineering/ by default).
 
 Python stdlib only.
 """
-import argparse, datetime, json, pathlib, re, sys
+import argparse, datetime, difflib, json, pathlib, re, sys, unicodedata
 import _md as md
 import _mutation_guard as mg
 import _paths
@@ -54,16 +62,39 @@ EDGE = json.loads((DATA / "edge_cases.json").read_text())
 # separate catalogue so the two can be maintained independently -- merged here
 # so `--kind` accepts either without the caller needing to know which file a
 # kind came from. Optional: a repo without the infra catalogue still works.
-INFRA_PATH = DATA / "edge_cases_infra.json"
-if INFRA_PATH.exists():
-    EDGE_INFRA = json.loads(INFRA_PATH.read_text())
-    for k, v in EDGE_INFRA.items():
+def merge_catalogue(path):
+    """Merge one optional catalogue's kinds into EDGE; returns the raw file ({} when
+    absent) so callers can read its `_` keys."""
+    if not path.exists():
+        return {}
+    extra = json.loads(path.read_text())
+    for k, v in extra.items():
         if k.startswith("_"):
             continue
         if k in EDGE:
-            print(f"warning: kind '{k}' defined in both edge_cases.json and "
-                  f"edge_cases_infra.json; the infra catalogue wins", file=sys.stderr)
+            print(f"warning: kind '{k}' defined in an earlier catalogue and {path.name}; "
+                  f"{path.name} wins", file=sys.stderr)
         EDGE[k] = v
+    return extra
+
+
+INFRA_PATH = DATA / "edge_cases_infra.json"
+EDGE_INFRA = merge_catalogue(INFRA_PATH)
+# Screen-behaviour families (settings, destructive-action, ...) and the per-role
+# templates. `_planned` families are names screen_patterns.json may map to before
+# their entries exist; they are reported, never silently treated as checked.
+EDGE_UI = merge_catalogue(DATA / "edge_cases_ui.json")
+UI_KINDS = [k for k in EDGE_UI if not k.startswith("_")]
+ROLE_TEMPLATES = EDGE_UI.get("_roles", [])
+PLANNED = set(EDGE_UI.get("_planned", []))
+UNCHECKED_FAMILIES = PLANNED | {"baseline", "none"}
+SCREENS_PATH = DATA / "screen_patterns.json"
+# A project's own screen names (its product taxonomy) stay in its repo, never here.
+PROJECT_SCREENS_PATH = RECORDS / "screen_patterns.json"
+# Role names reach a markdown table cell and a `role:<name>` source, so the shape is
+# an allowlist: no `|`, no newline, no spaces (spec §10).
+ROLE_RX = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+MAX_CLOSEST = 3
 
 DECS = json.loads((DATA / "decisions_required.json").read_text())
 KINDS = [k for k in EDGE if not k.startswith("_")]
@@ -88,16 +119,167 @@ QUESTION_TYPES = ("must-ask", "default")
 MAX_QUESTIONS = 5
 
 
-def gather(kinds):
-    edges, decs = [], []
-    seen = set()
-    for k in ["universal"] + [k for k in kinds if k != "universal"]:
+def edge_rows(kinds):
+    """(kind, what, why, test) for `kinds` in order; the first `what` wins."""
+    edges, seen = [], set()
+    for k in kinds:
         for e in EDGE.get(k, []):
             if e[0] not in seen:
                 seen.add(e[0]); edges.append((k, *e))
-        for d in DECS.get(k, []):
-            decs.append((k, *d))
-    return edges, decs
+    return edges
+
+
+def gather(kinds):
+    order = ["universal"] + [k for k in kinds if k != "universal"]
+    return edge_rows(order), [(k, *d) for k in order for d in DECS.get(k, [])]
+
+
+def role_rows(roles):
+    """(source, what, why, test) per role, in --roles order, from the `_roles`
+    templates. The role name is in `what`, so gather()'s dedup keeps every role."""
+    return [(f"role:{r}", *(cell.replace("{role}", r) for cell in t))
+            for r in roles for t in ROLE_TEMPLATES]
+
+
+def norm_screen(name):
+    """The one comparison form for screen names (contract: NFKC, casefold, & as and,
+    collapsed whitespace), so `Tea & Biscuits` and `tea  and biscuits` are one name."""
+    s = unicodedata.normalize("NFKC", name).casefold().replace("&", " and ")
+    return " ".join(s.split())
+
+
+PAYMENT_FAMILIES = {"checkout", "money-transfer", "subscription"}
+SINGLE_FAMILY_LISTS = (["baseline"], ["none"])
+
+
+def find_pattern_errors(doc):
+    """Contract violations in a screen_patterns.json document; [] when valid. A
+    project's file is checked before use because a checkout screen missing `payment`
+    would silently skip the risk floor, and a `|` would break the spec table."""
+    pats = doc.get("patterns") if isinstance(doc, dict) else None
+    if not isinstance(pats, list):
+        return ["no `patterns` list"]
+    errs, seen = [], {}
+    for i, p in enumerate(pats):
+        aliases = p.get("aliases", []) if isinstance(p, dict) else None
+        names = [p.get("name"), *aliases] if isinstance(aliases, list) else [None]
+        fam = p.get("families") if isinstance(p, dict) else None
+        if not all(isinstance(n, str) and n.strip() for n in names):
+            errs.append(f"pattern {i + 1}: name and aliases must be non-empty strings")
+            continue
+        label = p["name"]
+        for n in names:
+            if "," in n or "|" in n:
+                errs.append(f"{label}: {n!r} contains ',' or '|'")
+            # A newline or other control character would split the header's screens row.
+            if any(unicodedata.category(c).startswith("C") for c in n):
+                errs.append(f"{label}: {n!r} contains a control character")
+            if norm_screen(n) in seen:
+                errs.append(f"{label}: {n!r} repeats a name or alias of "
+                            f"{pats[seen[norm_screen(n)]]['name']!r}")
+            seen[norm_screen(n)] = i
+        if not isinstance(fam, list) or not fam or not all(isinstance(f, str) for f in fam):
+            errs.append(f"{label}: `families` must be a non-empty list of strings")
+            continue
+        if fam in SINGLE_FAMILY_LISTS:
+            continue
+        unknown = [f for f in fam if f not in KINDS and f not in PLANNED]
+        if unknown:
+            errs.append(f"{label}: unknown families {unknown}")
+        if PAYMENT_FAMILIES & set(fam) and "payment" not in fam:
+            errs.append(f"{label}: lists {sorted(PAYMENT_FAMILIES & set(fam))} without payment")
+        if "auth-screens" in fam and "auth" not in fam:
+            errs.append(f"{label}: lists auth-screens without auth")
+    return errs
+
+
+_SCREEN_INDEX = None
+
+
+def load_screen_index():
+    """({normalised name or alias: pattern}, error lines), loaded on first use so
+    `audit` and `new` without --screens never read the maps. A project's own
+    taxonomy (<records root>/screen_patterns.json) is layered on top of the plugin's
+    generic one, so on a clash the project's meaning of a word wins."""
+    global _SCREEN_INDEX
+    if _SCREEN_INDEX is not None:
+        return _SCREEN_INDEX, []
+    index = {}
+    for path in (SCREENS_PATH, PROJECT_SCREENS_PATH):
+        if path != SCREENS_PATH and not path.is_file():
+            continue
+        try:
+            doc = json.loads(path.read_text())
+        except (OSError, ValueError) as e:
+            return {}, [f"malformed screen map {rel(path)}: {e}"]
+        errs = find_pattern_errors(doc)
+        if errs:
+            return {}, [f"malformed screen map {rel(path)}: {len(errs)} problem(s)"] + \
+                       [f"  {x}" for x in errs]
+        for p in doc["patterns"]:
+            for n in [p["name"], *p.get("aliases", [])]:
+                index[norm_screen(n)] = p
+    _SCREEN_INDEX = index
+    return index, []
+
+
+def split_list(raw):
+    return [x.strip() for x in (raw or "").split(",") if x.strip()]
+
+
+def resolve_screens(raw):
+    """(patterns in the order given, deduped; error lines). Exact match only: a
+    fuzzy match would seed a checklist for a screen nobody named."""
+    index, errs = load_screen_index()
+    if errs:
+        return [], errs
+    found, names = [], split_list(raw)
+    if not names:
+        return [], ["--screens names no screen; give comma-separated pattern names"]
+    for name in names:
+        pattern = index.get(norm_screen(name))
+        if pattern is None:
+            near = difflib.get_close_matches(norm_screen(name), list(index), n=10, cutoff=0.5)
+            closest = list(dict.fromkeys(index[k]["name"] for k in near))[:MAX_CLOSEST]
+            errs.append(f"unknown screen '{name}'; closest: {', '.join(closest) or '(none)'}")
+        elif pattern not in found:
+            found.append(pattern)
+    return found, errs
+
+
+def resolve_kinds(kind_arg, screens_arg, roles_arg):
+    """(kinds, screen names, roles, notes) or (None, ..., error lines): --kind first,
+    then each screen's built families in order, deduped. `notes` go to stderr."""
+    kinds, notes = split_list(kind_arg), []
+    bad = [k for k in kinds if k not in KINDS]
+    if bad:
+        return None, [], [], [f"unknown kind(s): {bad}. available: {KINDS}"]
+    patterns = []
+    if screens_arg is not None:
+        patterns, errs = resolve_screens(screens_arg)
+        if errs:
+            return None, [], [], errs
+    for p in patterns:
+        kinds += [f for f in p["families"] if f in KINDS and f not in kinds]
+        unchecked = [f for f in p["families"] if f in UNCHECKED_FAMILIES]
+        if unchecked:
+            notes.append(f"not yet checked: {p['name']} ({', '.join(unchecked)})")
+    roles = list(dict.fromkeys(split_list(roles_arg)))
+    if roles_arg is not None:
+        bad_roles = [r for r in roles if not ROLE_RX.match(r)]
+        if bad_roles or not roles:
+            return None, [], [], [f"invalid --roles {bad_roles or [roles_arg]}: each role "
+                                  f"matches {ROLE_RX.pattern} (lower-case, digits, '-')"]
+    return kinds, [p["name"] for p in patterns], roles, notes
+
+
+def risk_note(kinds, declared):
+    """The stderr line naming the kind that raised the risk floor, or None."""
+    risk = bl.risk_floor(kinds, declared)
+    if risk == declared:
+        return None
+    k = next(k for k in kinds if bl.RISK_BY_KIND.get(k) == risk)
+    return f"risk raised to {risk} by kind {k}"
 
 
 def esc(x):
@@ -147,11 +329,11 @@ def question_rows(batch):
 
 
 def cmd_new(a):
-    kinds = [k.strip() for k in (a.kind or "universal").split(",") if k.strip()] or ["universal"]
-    bad = [k for k in kinds if k not in KINDS]
-    if bad:
-        print(f"unknown kind(s): {bad}. available: {KINDS}", file=sys.stderr)
+    kinds, screens, roles, notes = resolve_kinds(a.kind, a.screens, a.roles)
+    if kinds is None:
+        print("\n".join(notes), file=sys.stderr)
         return 2
+    kinds = kinds or ["universal"]
     if not a.tier:
         print(f"--tier is required: one of {TIER_ORDER}. There is no default tier; "
               f"declaring one is the point (skills/scale-appropriateness/SKILL.md)",
@@ -181,7 +363,12 @@ def cmd_new(a):
     if d.exists() and not a.force:
         print(f"{rel(d)} already exists (use --force)", file=sys.stderr)
         return 2
+    if screens and risk_note(kinds, a.risk):
+        notes.append(risk_note(kinds, a.risk))
+    if notes:
+        print("\n".join(notes), file=sys.stderr)
     edges, decs = gather(kinds)
+    edges += role_rows(roles)
     today = datetime.date.today().isoformat()
     prefilled = {}
     if "public-api" in (a.work or ""):
@@ -197,6 +384,8 @@ def cmd_new(a):
          f"| field | value |", "|---|---|",
          f"| feature | {a.name} |",
          f"| kinds | {', '.join(kinds)} |",
+         *([f"| screens | {esc(', '.join(screens))} |"] if screens else []),
+         *([f"| roles | {', '.join(roles)} |"] if roles else []),
          f"| stack | {a.stack or 'unspecified'} |",
          f"| prd | {prd_link} |",
          f"| baseline | {bl.version(BASELINE)} |",
@@ -285,7 +474,8 @@ def cmd_new(a):
               "until then.", ""]
     s += [
           "## 7. Edge cases", "",
-          f"{len(edges)} seeded from the catalogue for kinds: {', '.join(kinds)}. "
+          f"{len(edges)} seeded from the catalogue for kinds: {', '.join(kinds)}"
+          + (f"; roles: {', '.join(roles)}" if roles else "") + ". "
           "Every row needs a `status` of `covered` (with a test reference), `accepted`, "
           "`deferred` (with a follow-up reference), `n/a(<reason>)` or "
           "`waived(<reason or ADR>)`.", "",
@@ -687,13 +877,15 @@ def audit_acceptance(text, spec_dir, errs, warns):
     return crits
 
 
-def audit_seeded(text, kinds, edges, decisions, errs):
+def audit_seeded(text, kinds, edges, decisions, errs, roles=()):
     """Mirror of the §0b missing-row rule for §7 and §5: a seeded row is answered
     (n/a(<reason>), waived(<reason>), a chosen option), never deleted, or the audit
-    would pass a spec that dropped the edge case nobody wanted to think about."""
+    would pass a spec that dropped the edge case nobody wanted to think about.
+    `roles` comes from the header, so a deleted role row is caught like any other."""
     def norm(s):
         return re.sub(r"\s+", " ", s).strip().lower()
     want_e, want_d = gather([k for k in kinds if k in KINDS])
+    want_e += role_rows(roles)
     have_e = {norm(r[2]) for r in edges if len(r) > 2}
     have_d = {norm(r[1]) for r in decisions if len(r) > 1}
     gone_e = [w for _, w, *_ in want_e if norm(w) not in have_e]
@@ -780,8 +972,17 @@ def _audit(sp):
     noref = [r for r in edges if len(r) > 5 and r[4].lower() == "covered"
              and no_evidence(r[5])]
     feature, vids = proof_context(text)
+    # `screens` is a record of what was asked for, never re-resolved: the map may
+    # change after the spec is written, and `kinds` already holds what it resolved to.
+    roles = split_list(nfr_field("roles"))
+    bad_roles = [r for r in roles if not ROLE_RX.match(r)]
+    if bad_roles:
+        errs.append(f"invalid role name(s) in the header: {', '.join(bad_roles)} — each "
+                    f"matches {ROLE_RX.pattern}")
+        roles = [r for r in roles if ROLE_RX.match(r)]
     seeded_test = {re.sub(r"\s+", " ", w).strip().lower(): test
-                   for _, w, _, test in gather([k for k in kinds if k in KINDS])[0]}
+                   for _, w, _, test in gather([k for k in kinds if k in KINDS])[0]
+                   + role_rows(roles)}
     e_bad, e_copied, e_review = [], [], []
     for r in covered:
         if len(r) > 5 and not no_evidence(r[5]):
@@ -810,7 +1011,7 @@ def _audit(sp):
     if unknown_kinds:
         errs.append(f"unknown kind(s) in the header: {', '.join(unknown_kinds)}; "
                     f"available: {', '.join(KINDS)}")
-    audit_seeded(text, kinds, edges, rows_of(text, "| # | decision |"), errs)
+    audit_seeded(text, kinds, edges, rows_of(text, "| # | decision |"), errs, roles)
 
     # open questions: at most five, each typed, each with a recommendation
     qs = [r for r in rows_of(text, "| # | type | question |") if r and r[0]]
@@ -911,6 +1112,37 @@ def cmd_audit(a):
     return 0
 
 
+def cmd_cases(a):
+    """Print the checklist for kinds/screens/roles; read-only, so QA, review and build
+    agents can pull it without a spec and outside a git repository."""
+    if a.kind is None and a.screens is None:
+        print("plan_feature cases: give --kind and/or --screens", file=sys.stderr)
+        return 2
+    kinds, screens, roles, notes = resolve_kinds(a.kind, a.screens, a.roles)
+    if kinds is None:
+        print("\n".join(notes), file=sys.stderr)
+        return 2
+    if screens and risk_note(kinds, RISK_ORDER[0]):
+        notes.append(risk_note(kinds, RISK_ORDER[0]))
+    if notes:
+        print("\n".join(notes), file=sys.stderr)
+    # Unlike `new`, universal rows only on request: they are on every spec already,
+    # and a reviewer asking about a settings screen wants the settings list. Ids are
+    # C<n>, not E<n>: without the universal rows the numbers differ from a spec's §7,
+    # so an E-id cited from here would name a different row there.
+    rows = [{"id": f"C{i}", "source": src, "what": what, "why": why, "test": test}
+            for i, (src, what, why, test) in enumerate(edge_rows(kinds) + role_rows(roles), 1)]
+    if a.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    print("| # | source | edge case | why it gets missed | test |")
+    print("|---|---|---|---|---|")
+    for r in rows:
+        print(f"| {r['id']} | {r['source']} | {esc(r['what'])} | {esc(r['why'])} | "
+              f"{esc(r['test'])} |")
+    return 0
+
+
 def cmd_index(a):
     dry = getattr(a, "dry_run", False)
     if not dry and mg.require_git_root(IN_GIT_REPO, "plan_feature.py index", ROOT):
@@ -946,10 +1178,19 @@ def cmd_index(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
+    screens_help = ("comma-separated screen-pattern names or aliases from "
+                    "scripts/data/screen_patterns.json plus the project's own "
+                    "<records root>/screen_patterns.json (e.g. \"settings, delete\"); "
+                    "matched exactly after normalising case, spaces and '&'. Their "
+                    "families join --kind")
+    roles_help = ("comma-separated roles (e.g. admin,viewer); adds 3 rows per role: "
+                  "sees, hidden or disabled, refused on direct URL/API")
     n = sub.add_parser("new"); n.add_argument("name")
-    n.add_argument("--kind", default="universal",
+    n.add_argument("--kind", default=None,
                     help=f"comma-separated feature kinds (default universal, the edge cases "
                          f"every feature shares): {','.join(KINDS)}")
+    n.add_argument("--screens", default=None, help=screens_help)
+    n.add_argument("--roles", default=None, help=roles_help)
     n.add_argument("--stack", default=None)
     n.add_argument("--tier", "--scale", dest="tier", default=None,
                     help=f"REQUIRED load tier: {'|'.join(TIER_ORDER)} "
@@ -964,6 +1205,15 @@ def main():
     n.add_argument("--dry-run", action="store_true",
                     help="print what would be created/changed; write nothing")
     n.set_defaults(fn=cmd_new)
+    ca = sub.add_parser("cases", help="print the edge-case checklist for kinds, screens "
+                                      "and roles; writes nothing")
+    ca.add_argument("--kind", default=None,
+                    help="comma-separated kinds; universal only when named")
+    ca.add_argument("--screens", default=None, help=screens_help)
+    ca.add_argument("--roles", default=None, help=roles_help)
+    ca.add_argument("--json", action="store_true",
+                    help="a JSON list of {id, source, what, why, test}")
+    ca.set_defaults(fn=cmd_cases)
     au = sub.add_parser("audit")
     au.add_argument("dir", help="the spec directory, its spec.md, specs/<name> under the "
                                 "records root, or the bare name")

@@ -39,8 +39,9 @@ _tiers = json.loads((DATA / "scale_tiers.json").read_text())
 TIER_ORDER = _tiers["_order"]
 RISK_ORDER = _tiers["_risk"]["order"]
 RISK_BY_KIND = _tiers["_risk"]["implied_by_kind"]
-# Feature kinds a `when_any` clause may name: both edge-case catalogues' keys.
-KNOWN_KINDS = {k for f in ("edge_cases.json", "edge_cases_infra.json") if (DATA / f).exists()
+# Feature kinds a `when_any` clause may name: every edge-case catalogue's keys.
+KNOWN_KINDS = {k for f in ("edge_cases.json", "edge_cases_infra.json", "edge_cases_ui.json")
+               if (DATA / f).exists()
                for k in json.loads((DATA / f).read_text()) if not k.startswith("_")}
 
 # Skills being written in parallel; an owner_skill naming one of these is not an
