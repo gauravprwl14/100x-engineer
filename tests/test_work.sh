@@ -511,6 +511,10 @@ expect D-backup.not-named none
 printf '%s union\n' "$TMP/reclink" > "$TMP/link-hint.txt"
 HUNDREDX_WORK_BACKUP_HINT="$TMP/link-hint.txt" doc
 expect D-backup.not-named none
+ln -s "$TMP/loop-b" "$TMP/loop-a"; ln -s "$TMP/loop-a" "$TMP/loop-b"
+printf '%s union\n%s union\n' "$TMP/loop-a" "$REC" > "$TMP/loop-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT="$TMP/loop-hint.txt" doc
+expect D-backup.crashed none; expect D-backup.not-named none
 rm "$HOME/.config/100x/work.json"
 echo "recent" >> "$BK/mirrors.txt"; gc commit -q -am recent
 doc; expect D-backup.unpushed none

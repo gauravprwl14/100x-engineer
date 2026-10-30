@@ -265,17 +265,18 @@ def is_newer_schema(event):
     return is_int(event.get("schema")) and event["schema"] > SCHEMA
 
 
+def is_text(value):
+    return isinstance(value, str)
+
+
 def is_text_list(value):
-    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+    return isinstance(value, list) and all(is_text(v) for v in value)
 
 
 # field: (test, what it must be). A field may be absent; one that is present must pass.
-FIELD_SHAPES = {"at": (lambda v: isinstance(v, str), "text"),
-                "text": (lambda v: isinstance(v, str), "text"),
-                "id": (lambda v: isinstance(v, str), "text"),
-                "reason": (lambda v: isinstance(v, str), "text"),
-                "pr": (is_int, "a PR number")}
-SET_SHAPES = {"goal": (lambda v: isinstance(v, str), "text"),
+FIELD_SHAPES = {"at": (is_text, "text"), "text": (is_text, "text"), "id": (is_text, "text"),
+                "reason": (is_text, "text"), "pr": (is_int, "a PR number")}
+SET_SHAPES = {"goal": (is_text, "text"),
               "repos": (is_text_list, "a list of text"),
               "conventions": (is_text_list, "a list of text"),
               "merge_order": (lambda v: isinstance(v, list) and all(is_int(n) for n in v),
@@ -602,7 +603,10 @@ def hint_entry(hint, root):
         if not words:
             continue
         path = pathlib.Path(words[0]).expanduser()
-        named = (path if path.is_absolute() else home / path).resolve()
+        try:
+            named = (path if path.is_absolute() else home / path).resolve()
+        except RuntimeError:   # Python 3.9 raises this for a symlink loop; it covers nothing
+            continue
         if named == real or named in real.parents:
             return line.strip()
     return None
