@@ -1197,7 +1197,7 @@ def crashed(check_id, err):
                    f"{check_id} could not finish: {type(err).__name__}: {err}",
                    "a record, config or hooks file has a shape this version does not expect, "
                    "or doctor has a bug", "re-run with --json and report this finding; the "
-                   "other checks above still ran")
+                   "other checks still ran")
 
 
 def run_doctor(cwd):
