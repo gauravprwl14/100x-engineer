@@ -32,9 +32,9 @@ never stores: read it live. Finding which past session did something is `session
 | 1 | Run `100x work doctor`; if the problem is about another worktree, add `--cwd <that dir>`. Use `--json` when you need to branch on finding ids |
 | 2 | Read the header first: `session brief here: yes/no` is a dry run of the SessionStart hook for that directory, and `cwd: ... -> <workstream>` is what it matched |
 | 3 | Take findings in order (error, warn, info). Explain each in one plain sentence: what broke, why, what the fix does |
-| 4 | Apply, without asking, fixes that only restore the record dir or the plugin install: `chmod 700 <record dir>`, setting an unreadable event aside inside the record dir, the `claude plugin uninstall / marketplace update / install` sequence for a stale config dir |
-| 5 | Ask first before anything else: editing a backup tool's file list, adding a git remote, resolving the backup repo's rebase, and any record change that alters meaning (`release-hold`, `start --pr`, a handoff's text) |
-| 6 | Re-run `100x work doctor` after each fix until it prints `no problems found` or only `info` findings the user chose to keep (exit 0) |
+| 4 | Apply, without asking, only `chmod 700 <record dir>` |
+| 5 | Show the exact command and ask first before every other fix: the `claude plugin uninstall / marketplace update / install` chain for a stale config dir (it can stop halfway: when uninstall succeeds and install fails, that config dir has no plugin until install is run again), editing a backup tool's file list, adding a git remote, finishing or aborting the backup repo's rebase or merge, and any record change that alters meaning (`release-hold`, `start --pr`, a handoff's text) |
+| 6 | Re-run `100x work doctor` after each fix until it exits 0: no error or warning. `info` findings the user accepts (no backup configured, a stale hold, no record yet) are fine; state each once, plainly |
 
 "Why didn't the hold block the push": in this version a hold is recorded and shown in the
 brief, but no hook blocks a push on it; that check is PRD phase P2
@@ -55,9 +55,11 @@ brief, but no hook blocks a push on it; that check is PRD phase P2
    is a doctor run that exits 0, shown, not a claim that the fix was applied.
    *Enforced by:* `bash tests/test_work.sh` ("exit 0", "exits 1", "exit 2" cases)
 
-4. Ask before any fix outside the record dir and the plugin install, and before any record
-   change that alters what it says. Releasing a hold is the user's decision even when doctor
-   calls it stale.
+4. Ask before any fix other than `chmod 700` on the record dir, including a plugin reinstall,
+   and before any record change that alters what it says. Releasing a hold is the user's
+   decision even when doctor calls it stale. Never move, edit or delete an event file: doctor
+   reports an unreadable or malformed event, the brief already skips it, and anything it held
+   is recorded again as a new event.
    *Enforced by:* review
 
 5. Report backup state as doctor measured it: commits ahead of upstream are counted from
@@ -85,9 +87,11 @@ This skill rejects:
   workstream: D-lookup names the missing `--pr` and pre-fills the `100x work start` command.
 - **Reinstalling the plugin in the wrong config dir**: the fix carries `CLAUDE_CONFIG_DIR=<dir>`
   for the exact dir whose cached copy lacks the work hooks.
-- **Editing the backup's file list, or releasing a hold, without asking**: rule 4.
+- **Editing the backup's file list, reinstalling the plugin, or releasing a hold, without
+  asking**: rule 4.
+- **Moving or deleting an event file to make D-events clean**: rule 4; the brief already skips it.
 - **"Backed up" said on a hint file alone** while the backup repo is days ahead of its upstream
-  or stuck on a rebase: D-backup reports both.
+  or stopped mid-rebase, merge or cherry-pick: D-backup reports each.
 - **Stopping after the first fix** without a clean re-run: rule 3.
 
 **Honest limitations:**
@@ -107,6 +111,8 @@ multi-tenant state to check.
 ## Sources
 
 `SOURCE: original`. The checks follow this plugin's own work record design
-(`prds/work-continuity/prd.md` §9, §9b, §15; ADR-0006) and the Claude Code plugin cache layout
-(`<config dir>/plugins/cache/<marketplace>/<plugin>/<version>/`) as found on the owner's
-machines; no published schema for that layout was found.
+(`prds/work-continuity/prd.md` §9, §9b, §15; ADR-0006) and two Claude Code files as found on
+the owner's machines: `<config dir>/plugins/installed_plugins.json` (the `installPath` per
+`<plugin>@<marketplace>`, which D-hooks checks) and the cache layout
+(`<config dir>/plugins/cache/<marketplace>/<plugin>/<version>/`, its fallback when that file is
+missing or unreadable). No published schema for either was found.

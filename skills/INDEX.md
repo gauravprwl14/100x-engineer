@@ -50,6 +50,6 @@
 | 6 meta | [prompt-bench](prompt-bench/SKILL.md) | Prompt or instruction A/B test: does a follow-up, CLAUDE.md rule, persona, template or skill text beat a placebo? Blind runs on hard tasks with hidden | 164 |
 | 6 meta | [session-find](session-find/SKILL.md) | Which past Claude Code session built, reviewed or explained a feature (a tagging module, a PR, a spec): search ~/.claude and ~/.cc-1 session transcrip | 97 |
 | 6 meta | [untrusted-agent-config](untrusted-agent-config/SKILL.md) | Third party repo, fork, plugin or MCP server: audit its CLAUDE.md, AGENTS.md, hooks and .mcp.json as untrusted config before you run an agent in it. N | 133 |
-| 6 meta | [work-doctor](work-doctor/SKILL.md) | Session brief not showing, wrong workstream, "is my work record backed up", "work doctor", "why didn't the hold block the push", after switching lapto | 112 |
+| 6 meta | [work-doctor](work-doctor/SKILL.md) | Session brief not showing, wrong workstream, "is my work record backed up", "work doctor", "why didn't the hold block the push", after switching lapto | 118 |
 
 Phase order is the order work moves through them; see `docs/PLAYBOOK.md` for the command sequence per task.
