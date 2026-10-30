@@ -8,7 +8,7 @@ pass=0; fail=0
 check() { if eval "$2" >/dev/null 2>&1; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
 
 check "100x plugin tools are on PATH (plugin loaded)" "command -v 100x"
-check "the 100x SessionStart hook ran (CLAUDE_PLUGIN_ROOT or 100x root resolves)" "100x root"
+check "100x resolves its plugin root (whether the SessionStart hook ran: look for its notice at the top of the session)" "100x root"
 check "gh is installed" "command -v gh"
 check "gh is authenticated" "gh auth status"
 echo "--- private ref probe"
