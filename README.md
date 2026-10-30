@@ -11,7 +11,7 @@ block "done" without evidence.
 | 1 | [How a request flows](#how-a-request-flows) | what happens between typing a request and "done" |
 | 2 | [Start here](#start-here) | install from GitHub, update, and the one command to type |
 | 3 | [Agents](#agents) | the 11 specialists, and which of them write code |
-| 4 | [Skills by phase](#skills-by-phase) | the 46 skills, grouped by when they fire |
+| 4 | [Skills by phase](#skills-by-phase) | the 47 skills, grouped by when they fire |
 | 5 | [Gates by phase](#gates-by-phase) | the check that blocks each phase, and how |
 | 6 | [Built-in defaults](#built-in-defaults) | what is applied without asking, what is asked, with three examples |
 | 7 | [Where records go](#where-records-go) | the records root and its layout |
@@ -85,7 +85,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 
 ## Skills by phase
 
-**46 skills**. The phase map and every trigger are generated into
+**47 skills**. The phase map and every trigger are generated into
 [`skills/INDEX.md`](skills/INDEX.md) by `100x check_index --gen-collections`.
 
 | phase | count | skills |
@@ -96,7 +96,7 @@ questions come back through their reports. Full contract: `docs/OPERATING-MODEL.
 | 3 before shipping | 8 | diff-review, pr-description, pr-review, recheck, release-rollout, review-gates, security-baseline, verification-gate |
 | 4 when broken | 2 | bug-fix, root-cause-analysis |
 | 5 understanding | 2 | codebase-comprehension, explain |
-| 6 meta | 5 | agent-instructions, project-learning, prompt-bench, session-find, untrusted-agent-config |
+| 6 meta | 6 | agent-instructions, project-learning, prompt-bench, session-find, untrusted-agent-config, work-doctor |
 
 Plus 11 stack reviewers in [`reviewers/`](reviewers/INDEX.md): NestJS, Next.js/React,
 React Native + Expo, Flutter, native Android/iOS, Kubernetes, cloud IaC, Rails,

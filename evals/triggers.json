@@ -641,6 +641,14 @@
       "reject": [
         "explain"
       ]
+    },
+    {
+      "prompt": "the session brief for my workstream is not showing in this worktree",
+      "expect": "work-doctor"
+    },
+    {
+      "prompt": "is my work record backed up after switching laptops",
+      "expect": "work-doctor"
     }
   ]
 }
