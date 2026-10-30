@@ -17,7 +17,7 @@ block "done" without evidence.
 | 7 | [Where records go](#where-records-go) | the records root and its layout |
 | 8 | [The commit gate](#the-commit-gate) | modes, signed receipts and their limit, the hooks |
 | 9 | [Does it actually work?](#does-it-actually-work) | the measured numbers, and the claim it does **not** make |
-| 10 | [Tools](#tools) | the 48 command-line tools, grouped |
+| 10 | [Tools](#tools) | the 49 command-line tools, grouped |
 | 11 | [Honest limitations](#honest-limitations) | what it misses, measured not guessed |
 | 12 | [Research](#research) | the evidence every skill cites |
 | 13 | [Migrating from 0.1](#migrating-from-01) | the new install id, renamed skills and changed commands |
@@ -238,7 +238,7 @@ measures that, and "100x" is a name, not a claim.
 
 ## Tools
 
-**48 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
+**49 tools**, each run as `100x <tool>`. Python standard library and git only; the `pr-review`
 skill's own steps also call `gh` (`decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`).
 `100x list` prints the ones for your project; `100x list --all` adds the 5 maintainer tools,
 which check this plugin itself rather than your code. Every tool runs by name either way.
@@ -255,10 +255,11 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | PR review (the `pr-review` skill) | `pr_review`, `pr_review_gate`, `pr_snapshot`, `pr_suggest` |
 | prompt evaluation (the `prompt-bench` skill) | `prompt_bench` |
 | agent configuration | `check_agents_md`, `audit_agent_config` |
+| work continuity (private record outside every repo) | `work` |
 | maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
-bash tests/run_all.sh    # 52 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 53 test suites, the seeded-defect evals and the lints
 ```
 
 How the diff checkers behave, whichever one runs:

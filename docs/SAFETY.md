@@ -84,6 +84,7 @@ them, with a warning that says how to settle it.
 | `check_index.py --fix-stubs` | **rewrites existing docs in place** | matched markdown | **requires `--yes`** |
 | `agent_report.py extract -o` | one report JSON | the path given (may sit outside the repo, next to a worktree) | scope: one named file; a symlink planted at the path cannot redirect the write |
 | `diagram_from_code.py` | a `.mmd` file | `tempfile.mkdtemp()` | temp dir, removed |
+| `work.py` (`start`, `note`, `decide`, `hold`, `release-hold`, `handoff`) | one event file per call | `~/.config/100x/work/<ws>/events/` (or `$HUNDREDX_WORK_DIR`), never a repository | each file created once with `O_EXCL`, never edited, moved or deleted; the record dir and its subfolders created `0700`; free text matching the backup's secret patterns or an email address is refused and nothing is written |
 | `run_evals.py` | scratch repos | `tempfile.TemporaryDirectory()` | temp dir, removed |
 | `pr_review.py` (`init`, `render`, `feature`, `merge`, `mark-posted`, `index`, `context --refresh`) | `CONTEXT.md`, `INDEX.md`, `_meta/*` (created only when missing), rendered review files, `review.json` | the review root `CR` resolved by `pr_review out-dir`: by default `<parent of the clone>/code-review/<repo>/`, else `~/.config/pr-review/reviews/…` — outside the reviewed repo, so the records-root containment above does not apply | scope: the folder it is pointed at; `init` never overwrites; `context --refresh` rewrites only the `<!-- auto -->` blocks |
 | `pr_snapshot.py` | exported head/base trees, `.diff`, `PINS.md` | `--dest` | scope: one directory; the clone only receives `git fetch` (objects and remote refs), never a checkout |
@@ -168,7 +169,7 @@ cannot make the record writers write outside the project.
 
 ## The hooks
 
-Five hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
+Seven hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 `${CLAUDE_PLUGIN_ROOT}/hooks/`.
 
 | hook | event | what it can do |
@@ -177,6 +178,8 @@ Five hooks, registered in `hooks/hooks.json`, all run as `python3` scripts from
 | `stop_gate.py` | `Stop` | block ending a turn once; never twice in a row |
 | `recheck_gate.py` | `Stop`, `SubagentStop` (engineer agents by default) | block ending a substantive turn (a file edit, or a final answer of 1500+ chars) once, with the re-check prompt from `skills/recheck/references/recheck-prompt.md` as the reason; on `SubagentStop` only for the backend/frontend/mobile engineer agents unless `subagents` is set to `off`, `all` or a list; skipped under `stop_hook_active`, `HUNDREDX_RECHECK=manual\|off` or `~/.config/100x/recheck.json`; reads the transcript's last 2 MB (a subagent's own file when it has one), its `.meta.json`, and that file, writes nothing, runs no subprocess |
 | `session_start.py` | `SessionStart` | add six lines of context naming `/100x:100x`, `100x list`, the operating model, the receipt rule and the generated-docs index rule; reads nothing in your repo |
+| `work_brief.py` | `SessionStart` | add context only: when the session's `origin` remote and branch match a workstream in `~/.config/100x/work` (or `$HUNDREDX_WORK_DIR`), injects that workstream's brief; otherwise prints nothing; reads the record and runs `git remote get-url` / `git rev-parse`, writes nothing, no network |
+| `work_fork_guard.py` | `PreToolUse` (Agent, Task) | after a compaction, warn on a `fork` subagent (default) or block it when `fork_policy` is `refuse` (`~/.config/100x/work.json` or `HUNDREDX_FORK_POLICY`); reads the transcript, writes nothing, runs no subprocess |
 | `index_check.py` | `PostToolUse` (Write, Edit, MultiEdit) | add context only, never blocks: after a `.md` write, warns when a long multi-section file lacks `## Contents`, when its folder has 2+ docs and no `INDEX.md`, or when the folder's `INDEX.md` does not list it (OPERATING-MODEL §9); reads that file and lists its folder, writes nothing, runs no subprocess |
 
 **What the gate is.** An integrity aid against a confused agent and against casual
