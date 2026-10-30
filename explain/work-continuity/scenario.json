@@ -1,0 +1,1187 @@
+{
+ "schema": 1,
+ "tier": "heavy",
+ "title": "Work continuity: how sessions share one memory",
+ "subject": {
+  "kind": "plan",
+  "repo": "gauravprwl14/100x-engineer",
+  "pr": 10,
+  "lede": "Today the rules and decisions for a feature live inside one long chat, and every summary loses some. The plan writes them into a private notebook on your laptop, never in the team's repositories, so any session, old, new, any worktree, starts from the same page. Your own backup carries it to a new laptop, and helper agents get a short card instead of a copy of the chat."
+ },
+ "context": {
+  "purpose": "Start any session on a feature and have it already know which PR does what, what is on hold and what was decided, without you repeating it.",
+  "why_now": "In one recent session you repeated the same rules about {{m1}}, and forks used {{fork_share}} of the tokens.",
+  "in_scope": [
+   "Saving decisions, holds and conventions in a private notebook on your laptop",
+   "Briefing every new session at start-up",
+   "Telling an open session what changed",
+   "A lock so two sessions do not fix one PR",
+   "Warning before forking a summarised session"
+  ],
+  "out_of_scope": [
+   "Anything teammates can see in a repository",
+   "Your team's own audit hook",
+   "Choosing a model per task",
+   "Background launchers (separate PRD)"
+  ],
+  "entry_points": [
+   {
+    "label": "Session start",
+    "kind": "event",
+    "scenario": "with-record",
+    "ev": "e-sessionstart"
+   },
+   {
+    "label": "Each prompt you send",
+    "kind": "event",
+    "scenario": "old-and-new",
+    "ev": "e-prompt"
+   },
+   {
+    "label": "git push, gh pr create",
+    "kind": "command",
+    "scenario": "old-and-new",
+    "ev": "e-push"
+   },
+   {
+    "label": "Claiming a PR",
+    "kind": "command",
+    "scenario": "claim-race",
+    "ev": "e-r6"
+   },
+   {
+    "label": "Starting a helper agent",
+    "kind": "event",
+    "scenario": "fork-vs-brief",
+    "ev": "e-agent"
+   }
+  ]
+ },
+ "terms": [
+  {
+   "term": "work record",
+   "means": "A private notebook for one feature, kept as files on your laptop, that every session reads and adds notes to.",
+   "example": "A hospital patient's chart."
+  },
+  {
+   "term": "workstream",
+   "means": "One feature family: all the PRs that belong together.",
+   "example": "Album comments: backend, frontend and settings PRs."
+  },
+  {
+   "term": "brief",
+   "means": "A one-page summary of the record, handed to a session when it starts."
+  },
+  {
+   "term": "hold",
+   "means": "A note that blocks a push or PR until it is released.",
+   "example": "Do not push PR #3 yet."
+  },
+  {
+   "term": "claim",
+   "means": "A lock that says which session is working on a PR right now."
+  },
+  {
+   "term": "fork",
+   "means": "A helper agent that starts with a copy of the whole conversation."
+  },
+  {
+   "term": "summary",
+   "means": "What happens when a chat gets too long: the start is replaced by a short summary, and details are lost."
+  },
+  {
+   "term": "hook",
+   "means": "A small script the plugin runs at set moments: session start, each prompt, before a push."
+  },
+  {
+   "term": "backup",
+   "means": "Your claude-setup tool, which copies the notebook to your private backup and restores it on a new laptop.",
+   "example": "Nothing manual on a new Mac."
+  },
+  {
+   "term": "cursor",
+   "means": "The last note a session has seen, so it can be told what is new."
+  },
+  {
+   "term": "phase",
+   "means": "One step of the rollout; each must pass before the next is built."
+  }
+ ],
+ "outline": [
+  {
+   "title": "session start, then each prompt, then each push",
+   "scenario": "with-record",
+   "lines": [
+    {
+     "code": "on session start:",
+     "steps": [
+      3
+     ],
+     "ev": "e-sessionstart"
+    },
+    {
+     "code": "workstream = lookup(host/owner/repo from git remote, branch)",
+     "indent": 1,
+     "ev": "e-sessionstart"
+    },
+    {
+     "code": "inject brief(workstream) read from ~/.config/100x/work",
+     "indent": 1,
+     "steps": [
+      4,
+      5
+     ],
+     "ev": "e-hook-inject"
+    },
+    {
+     "code": "on each prompt: inject 'since you last looked' if there are newer notes",
+     "ev": "e-prompt"
+    },
+    {
+     "code": "before git push / gh pr: refuse if the PR is held or claimed by another session",
+     "ev": "e-push"
+    },
+    {
+     "code": "before a fork after a summary: warn and offer a brief",
+     "ev": "e-agent"
+    }
+   ]
+  }
+ ],
+ "diagrams": [
+  {
+   "id": "phases",
+   "kind": "flowchart",
+   "title": "The rollout: each phase must pass before the next is built",
+   "source": "flowchart LR\n  P0[\"Phase 0: backup PR merged + cloud prompt check\"] --> P1[\"Phase 1: brief, notes, fork warning\"]\n  P1 --> M{\"brief fits the budget and forks drop on your next feature?\"}\n  M -- yes --> P2[\"Phase 2: what-changed notes, holds and claims enforced\"]\n  M -- no --> STOP[\"Stop: drop it before building more\"]\n  P2 --> P3[\"Phase 3: decision queue, only one-way doors reach you\"]",
+   "caption": "Each phase is built only after the one before it passes on a real feature. Phase one works on a single laptop even before the backup change merges.",
+   "ev": [
+    "e-p0",
+    "e-p1",
+    "e-p2",
+    "e-p3"
+   ]
+  },
+  {
+   "id": "shape",
+   "kind": "flowchart",
+   "title": "Who talks to whom",
+   "scenario": "with-record",
+   "source": "flowchart LR\n  A[\"Session A\"] --> H[\"Plugin hooks\"]\n  B[\"Session B: any terminal, worktree or config dir\"] --> H\n  H -->|read, add one file| W[(\"Private notebook on your laptop\")]\n  H -->|lock file| K[(\"Claim locks, this laptop\")]\n  H -->|check holds| P[\"git push / gh pr\"]\n  W -.->|your own backup| CS[(\"claude-setup, private\")]\n  CS -.->|restore| W2[(\"Notebook on another laptop\")]",
+   "caption": "Sessions never talk to each other or to the team's repository. They read and write one private folder, and your own backup carries it to other laptops.",
+   "ev": [
+    "e-sessionstart",
+    "e-prompt",
+    "e-push",
+    "e-record"
+   ]
+  }
+ ],
+ "decision": {
+  "options": [
+   {
+    "id": "o6",
+    "label": "Private files on your laptop, carried by your own backup",
+    "fit": "pass",
+    "pros": [
+     "Nothing in any team repository",
+     "The plugin never pushes",
+     "Restored on a new laptop with no manual step"
+    ],
+    "cons": [
+     "Cloud sessions only get the brief in their first prompt",
+     "Two laptops agree after each syncs"
+    ]
+   },
+   {
+    "id": "o4",
+    "label": "A dedicated private repository the plugin pushes to",
+    "fit": "pass",
+    "pros": [
+     "Works from the cloud"
+    ],
+    "cons": [
+     "The plugin would have to push",
+     "Duplicates your existing backup"
+    ]
+   },
+   {
+    "id": "o3",
+    "label": "A hidden ref in each project repository",
+    "fit": "fail",
+    "pros": [
+     "Cloud sessions could read it"
+    ],
+    "cons": [
+     "Lives in the team's repository"
+    ]
+   },
+   {
+    "id": "o2",
+    "label": "Claude Code's own memory",
+    "fit": "fail",
+    "pros": [
+     "Already backed up"
+    ],
+    "cons": [
+     "Each worktree and config dir sees a different copy",
+     "One file many sessions edit"
+    ]
+   }
+  ],
+  "chosen": "o6",
+  "deciding_factor": "It is the only option that keeps everything out of the team's repositories without the plugin pushing, and your existing backup already restores it on a new laptop.",
+  "revisit_when": "Cloud sessions become your main way of working.",
+  "source": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md"
+ },
+ "checks": [
+  {
+   "scenario": "today",
+   "step": 3,
+   "q": "The chat was just summarised. Where will Session A put the next fix?",
+   "answer": "It guesses, because the rule was in the part of the chat that got summarised away."
+  },
+  {
+   "scenario": "with-record",
+   "step": 5,
+   "q": "Session B is brand new. Does it know where fixes go?",
+   "answer": "Yes: the brief from the record tells it at start-up."
+  },
+  {
+   "scenario": "claim-race",
+   "step": 2,
+   "q": "Both asked at once and Session A won. What happens to Session B's request?",
+   "answer": "Refused: the lock file already exists, and only one create can succeed."
+  }
+ ],
+ "compare": [
+  "today",
+  "with-record"
+ ],
+ "nodes": [
+  {
+   "id": "you",
+   "role": "client",
+   "label": "You"
+  },
+  {
+   "id": "sess-a",
+   "role": "service",
+   "label": "Session A (old, still open)"
+  },
+  {
+   "id": "sess-b",
+   "role": "service",
+   "label": "Session B (new: another terminal, worktree or background)"
+  },
+  {
+   "id": "helper",
+   "role": "service",
+   "label": "Helper agent"
+  },
+  {
+   "id": "hooks",
+   "role": "edge",
+   "label": "Plugin hooks"
+  },
+  {
+   "id": "copy",
+   "role": "cache",
+   "label": "What this session last saw"
+  },
+  {
+   "id": "memory",
+   "role": "store",
+   "label": "Chat memory (inside one session)"
+  },
+  {
+   "id": "record",
+   "role": "store",
+   "label": "Work record (private, on your laptop)",
+   "ref": "~/.config/100x/work",
+   "ev": "e-record"
+  },
+  {
+   "id": "claims",
+   "role": "store",
+   "label": "PR claim lock (this laptop)",
+   "ref": "~/.cache/100x/claims",
+   "ev": "e-claimfile"
+  },
+  {
+   "id": "github",
+   "role": "external",
+   "label": "Your private backup (claude-setup)",
+   "outside_diff": true
+  }
+ ],
+ "numbers": {
+  "compactions": {
+   "v": 28,
+   "unit": "summaries",
+   "tag": "measured",
+   "source": "python3 bench/work-continuity/transcript_metrics.py on session a94b2d46"
+  },
+  "prompts": {
+   "v": 752,
+   "unit": "prompts",
+   "tag": "measured",
+   "source": "python3 bench/work-continuity/transcript_metrics.py on session a94b2d46"
+  },
+  "m1": {
+   "v": 11.3,
+   "unit": "times per hundred prompts",
+   "tag": "measured",
+   "source": "python3 bench/work-continuity/transcript_metrics.py on session a94b2d46"
+  },
+  "m1_target": {
+   "v": 3,
+   "unit": "times per hundred prompts",
+   "tag": "verified",
+   "ev": "e-m1"
+  },
+  "fork_share": {
+   "v": 46,
+   "unit": "%",
+   "tag": "measured",
+   "source": "python3 bench/work-continuity/transcript_metrics.py on session a94b2d46"
+  },
+  "fork_per": {
+   "v": 25,
+   "unit": "million tokens",
+   "tag": "estimated",
+   "basis": "8.0 billion fork tokens / 327 fork agents (PRD section 9c)"
+  },
+  "brief_per": {
+   "v": 5,
+   "unit": "million tokens",
+   "tag": "estimated",
+   "basis": "1.7 billion tokens / 365 general-purpose agents; different tasks, rough"
+  },
+  "questions": {
+   "v": 7,
+   "unit": "questions",
+   "tag": "verified",
+   "ev": "e-bench-brief"
+  },
+  "brief_correct": {
+   "v": 7,
+   "unit": "right",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "none_correct": {
+   "v": 2,
+   "unit": "right",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "brief_cost": {
+   "v": 0.052,
+   "unit": "USD per run",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "none_cost": {
+   "v": 0.065,
+   "unit": "USD per run",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "brief_secs": {
+   "v": 9,
+   "unit": "s",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "none_secs": {
+   "v": 17,
+   "unit": "s",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "runs": {
+   "v": 3,
+   "unit": "runs per arm",
+   "tag": "measured",
+   "source": "bash bench/work-continuity/resume/run.sh --yes --runs 3"
+  },
+  "hook_timeout": {
+   "v": 10,
+   "unit": "s",
+   "tag": "verified",
+   "ev": "e-timeout"
+  },
+  "lease": {
+   "v": 2,
+   "unit": "h",
+   "tag": "estimated",
+   "basis": "PRD Q4 recommendation, renewed on each push or event"
+  }
+ },
+ "evidence": {
+  "e-compactions": {
+   "at": "prds/work-continuity/prd.md:47",
+   "anchor": "context summaries"
+  },
+  "e-fork": {
+   "at": "prds/work-continuity/prd.md:49",
+   "anchor": "fork subagents"
+  },
+  "e-restated": {
+   "at": "prds/work-continuity/prd.md:50",
+   "anchor": "restated branch ownership"
+  },
+  "e-m1": {
+   "at": "prds/work-continuity/prd.md:53",
+   "anchor": "M1"
+  },
+  "e-chosen": {
+   "at": "prds/work-continuity/prd.md:136",
+   "anchor": "O6"
+  },
+  "e-deciding": {
+   "at": "prds/work-continuity/prd.md:137",
+   "anchor": "single deciding factor"
+  },
+  "e-change": {
+   "at": "prds/work-continuity/prd.md:138",
+   "anchor": "what would change it"
+  },
+  "e-o2": {
+   "at": "prds/work-continuity/prd.md:125",
+   "anchor": "O2"
+  },
+  "e-o3": {
+   "at": "prds/work-continuity/prd.md:126",
+   "anchor": "O3"
+  },
+  "e-o4": {
+   "at": "prds/work-continuity/prd.md:127",
+   "anchor": "O4"
+  },
+  "e-o6": {
+   "at": "prds/work-continuity/prd.md:129",
+   "anchor": "O6"
+  },
+  "e-r3": {
+   "at": "prds/work-continuity/prd.md:104",
+   "anchor": "R3"
+  },
+  "e-r6": {
+   "at": "prds/work-continuity/prd.md:107",
+   "anchor": "R6"
+  },
+  "e-r8": {
+   "at": "prds/work-continuity/prd.md:109",
+   "anchor": "R8"
+  },
+  "e-r11": {
+   "at": "prds/work-continuity/prd.md:112",
+   "anchor": "R11"
+  },
+  "e-r12": {
+   "at": "prds/work-continuity/prd.md:113",
+   "anchor": "R12"
+  },
+  "e-analogy": {
+   "at": "prds/work-continuity/prd.md:143",
+   "anchor": "Analogy"
+  },
+  "e-record": {
+   "at": "prds/work-continuity/prd.md:163",
+   "anchor": "events"
+  },
+  "e-claimfile": {
+   "at": "prds/work-continuity/prd.md:164",
+   "anchor": "claims"
+  },
+  "e-sessionstart": {
+   "at": "prds/work-continuity/prd.md:182",
+   "anchor": "SessionStart"
+  },
+  "e-prompt": {
+   "at": "prds/work-continuity/prd.md:183",
+   "anchor": "UserPromptSubmit"
+  },
+  "e-push": {
+   "at": "prds/work-continuity/prd.md:184",
+   "anchor": "PreToolUse on Bash"
+  },
+  "e-agent": {
+   "at": "prds/work-continuity/prd.md:185",
+   "anchor": "PreToolUse on Agent"
+  },
+  "e-e1": {
+   "at": "prds/work-continuity/prd.md:192",
+   "anchor": "E1"
+  },
+  "e-e2": {
+   "at": "prds/work-continuity/prd.md:193",
+   "anchor": "E2"
+  },
+  "e-e3": {
+   "at": "prds/work-continuity/prd.md:194",
+   "anchor": "E3"
+  },
+  "e-e8": {
+   "at": "prds/work-continuity/prd.md:199",
+   "anchor": "E8"
+  },
+  "e-e11": {
+   "at": "prds/work-continuity/prd.md:202",
+   "anchor": "E11"
+  },
+  "e-forkcost": {
+   "at": "prds/work-continuity/prd.md:215",
+   "anchor": "cost per agent"
+  },
+  "e-p0": {
+   "at": "prds/work-continuity/prd.md:238",
+   "anchor": "P0"
+  },
+  "e-p1": {
+   "at": "prds/work-continuity/prd.md:239",
+   "anchor": "P1"
+  },
+  "e-p2": {
+   "at": "prds/work-continuity/prd.md:240",
+   "anchor": "P2"
+  },
+  "e-p3": {
+   "at": "prds/work-continuity/prd.md:241",
+   "anchor": "P3"
+  },
+  "e-x4": {
+   "at": "prds/work-continuity/prd.md:250",
+   "anchor": "X4"
+  },
+  "e-bench-brief": {
+   "at": "bench/work-continuity/README.md:43",
+   "anchor": "| brief | 3 |"
+  },
+  "e-bench-none": {
+   "at": "bench/work-continuity/README.md:44",
+   "anchor": "| none | 3 |"
+  },
+  "e-baseline": {
+   "at": "bench/work-continuity/README.md:23",
+   "anchor": "a94b2d46"
+  },
+  "e-hook-inject": {
+   "at": "bench/work-continuity/resume/brief-plugin/hooks/brief.py:6",
+   "anchor": "additionalContext"
+  },
+  "e-brief-holds": {
+   "at": "bench/work-continuity/resume/brief.md:14",
+   "anchor": "do not push"
+  },
+  "e-waves": {
+   "at": "skills/orchestrate/SKILL.md:63",
+   "anchor": "Every task in a wave runs at once"
+  },
+  "e-timeout": {
+   "at": "hooks/hooks.json:10",
+   "anchor": "timeout"
+  },
+  "e-adr6": {
+   "at": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md:65",
+   "anchor": "chosen"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "today",
+   "kind": "issue",
+   "severity": "high",
+   "origin": "found-in-review",
+   "fixed_by": [
+    "with-record"
+   ],
+   "title": "Today: the rules live only in the chat, so a summary loses them",
+   "steps": [
+    {
+     "t": "You tell Session A where fixes go",
+     "d": "Example: fixes to the comment API go on the backend branch.",
+     "do": [
+      [
+       "send",
+       "you",
+       "sess-a",
+       "fixes go on the backend branch"
+      ],
+      [
+       "db.write",
+       "memory",
+       "rule",
+       "backend branch"
+      ]
+     ],
+     "ev": [
+      "e-restated"
+     ]
+    },
+    {
+     "t": "Weeks of work pile up in the same chat",
+     "d": "One session in your review carried {{prompts}} of your prompts.",
+     "do": [
+      [
+       "counter",
+       "prompts",
+       752
+      ],
+      [
+       "note",
+       "{{prompts}} in one session"
+      ]
+     ],
+     "ev": [
+      "e-baseline"
+     ]
+    },
+    {
+     "t": "The chat gets too long and is summarised",
+     "d": "The summary keeps the gist and drops details like which branch owns which fix. That session was summarised {{compactions}} times.",
+     "do": [
+      [
+       "db.write",
+       "memory",
+       "rule",
+       null
+      ],
+      [
+       "note",
+       "rule lost in the summary"
+      ]
+     ],
+     "ev": [
+      "e-compactions"
+     ]
+    },
+    {
+     "t": "Session A puts a fix on the wrong branch",
+     "d": "It no longer knows the rule, so it guesses.",
+     "do": [
+      [
+       "fail",
+       "sess-a",
+       "fix on the wrong branch"
+      ]
+     ],
+     "tag": "inferred"
+    },
+    {
+     "t": "You repeat the rule, again",
+     "d": "This happened about {{m1}} in that session.",
+     "do": [
+      [
+       "send",
+       "you",
+       "sess-a",
+       "again: fixes go on the backend branch"
+      ],
+      [
+       "db.write",
+       "memory",
+       "rule",
+       "backend branch"
+      ],
+      [
+       "counter",
+       "restated",
+       1
+      ]
+     ],
+     "ev": [
+      "e-m1"
+     ],
+     "expect": {
+      "store": {
+       "memory": {
+        "rule": "backend branch"
+       }
+      },
+      "counters": {
+       "restated": 1
+      }
+     }
+    },
+    {
+     "t": "A forked helper copies the whole chat",
+     "d": "A fork starts with the entire conversation, about {{fork_per}} each. Forks were {{fork_share}} of all tokens.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "helper",
+       "copy of the entire conversation"
+      ],
+      [
+       "counter",
+       "fork_copies",
+       1
+      ]
+     ],
+     "ev": [
+      "e-fork",
+      "e-forkcost"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "with-record",
+   "kind": "fix",
+   "branch": {
+    "from": "today",
+    "at": 1
+   },
+   "title": "With the work record: the rule is written down in a private notebook every session reads",
+   "steps": [
+    {
+     "t": "The rule is also saved as a note in the work record",
+     "d": "Think of a hospital chart: whoever is on shift reads it and adds a note. The note is one new file in a private folder on your laptop, not in the chat and not in the team's repository.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "record",
+       "append note: fixes go on the backend branch"
+      ],
+      [
+       "db.write",
+       "record",
+       "convention",
+       "backend branch"
+      ]
+     ],
+     "ev": [
+      "e-analogy",
+      "e-record"
+     ]
+    },
+    {
+     "t": "The chat is summarised, as before",
+     "d": "Chat memory still loses the detail. The notebook does not.",
+     "do": [
+      [
+       "db.write",
+       "memory",
+       "rule",
+       null
+      ]
+     ],
+     "ev": [
+      "e-compactions"
+     ],
+     "expect": {
+      "store": {
+       "memory": {
+        "rule": null
+       },
+       "record": {
+        "convention": "backend branch"
+       }
+      }
+     }
+    },
+    {
+     "t": "Session B starts in another terminal or worktree",
+     "d": "It does not need Session A's id: the hook finds the feature from the repository and branch.",
+     "do": [
+      [
+       "send",
+       "sess-b",
+       "hooks",
+       "session starts on this branch"
+      ]
+     ],
+     "ev": [
+      "e-sessionstart"
+     ]
+    },
+    {
+     "t": "The hook reads the notebook from disk",
+     "d": "Local files only, no network, so it never hits the start-up cut-off of {{hook_timeout}}.",
+     "do": [
+      [
+       "db.read",
+       "record",
+       "convention",
+       "conv"
+      ],
+      [
+       "cache.set",
+       "copy",
+       "convention",
+       "$conv"
+      ]
+     ],
+     "ev": [
+      "e-sessionstart",
+      "e-r11",
+      "e-timeout"
+     ]
+    },
+    {
+     "t": "Session B gets a short brief at start-up",
+     "d": "Goal, which PR does what, merge order, holds, decisions, conventions, and a line saying it is private: never quote it in commits or PR text.",
+     "do": [
+      [
+       "cache.get",
+       "copy",
+       "convention"
+      ],
+      [
+       "reply",
+       "hooks",
+       "sess-b",
+       "brief: fixes go on the backend branch, PR #3 on hold"
+      ]
+     ],
+     "ev": [
+      "e-hook-inject",
+      "e-r12"
+     ],
+     "expect": {
+      "hit": "hit"
+     }
+    },
+    {
+     "t": "Your own backup carries the notebook to a new laptop",
+     "d": "Your backup tool copies the folder to your private backup and restores it on a new Mac. The team's repositories never see it.",
+     "do": [
+      [
+       "send",
+       "record",
+       "github",
+       "backup copies new notes"
+      ],
+      [
+       "reply",
+       "github",
+       "record",
+       "restored on the other laptop"
+      ]
+     ],
+     "ev": [
+      "e-e8",
+      "e-x4"
+     ]
+    },
+    {
+     "t": "Benchmark: the brief answers what the chat forgot",
+     "d": "A fresh session got {{brief_correct}} of {{questions}} with the brief and {{none_correct}} without, over {{runs}}. It was cheaper ({{brief_cost}} against {{none_cost}}) and faster ({{brief_secs}} against {{none_secs}}).",
+     "do": [
+      [
+       "note",
+       "with brief {{brief_correct}}, without {{none_correct}}"
+      ]
+     ],
+     "ev": [
+      "e-bench-brief",
+      "e-bench-none"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "old-and-new",
+   "kind": "edge",
+   "title": "An old session is still open while you give a new session new instructions",
+   "steps": [
+    {
+     "t": "You tell Session B: do not push PR #3 yet",
+     "d": "Session B saves it as a hold in the record.",
+     "do": [
+      [
+       "send",
+       "you",
+       "sess-b",
+       "hold PR #3"
+      ],
+      [
+       "send",
+       "sess-b",
+       "record",
+       "append hold"
+      ],
+      [
+       "db.write",
+       "record",
+       "hold-pr3",
+       "held"
+      ]
+     ],
+     "ev": [
+      "e-r8",
+      "e-brief-holds"
+     ]
+    },
+    {
+     "t": "Session A sees the new note on disk",
+     "d": "Session A never talks to Session B; both read and write the same private folder.",
+     "do": [
+      [
+       "db.read",
+       "record",
+       "hold-pr3",
+       "h"
+      ],
+      [
+       "cache.set",
+       "copy",
+       "hold-pr3",
+       "$h"
+      ]
+     ],
+     "ev": [
+      "e-prompt",
+      "e-e1"
+     ]
+    },
+    {
+     "t": "Session A's next prompt starts with what changed",
+     "d": "A hook adds a line before your prompt: since you last looked, PR #3 is on hold.",
+     "do": [
+      [
+       "cache.get",
+       "copy",
+       "hold-pr3"
+      ],
+      [
+       "send",
+       "hooks",
+       "sess-a",
+       "since you last looked: PR #3 is on hold"
+      ]
+     ],
+     "ev": [
+      "e-prompt"
+     ],
+     "expect": {
+      "hit": "hit"
+     }
+    },
+    {
+     "t": "Session A tries to push PR #3 anyway",
+     "d": "Before any push or PR, the hook re-checks the record.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "hooks",
+       "push PR #3"
+      ],
+      [
+       "db.read",
+       "record",
+       "hold-pr3",
+       "now"
+      ]
+     ],
+     "ev": [
+      "e-push"
+     ]
+    },
+    {
+     "t": "The push is refused",
+     "do": [
+      [
+       "reply",
+       "hooks",
+       "sess-a",
+       "refused: PR #3 is on hold"
+      ]
+     ],
+     "ev": [
+      "e-push",
+      "e-r8"
+     ]
+    },
+    {
+     "t": "Teammates see none of this",
+     "d": "No file, branch, setting or commit text in the repository comes from the notebook.",
+     "do": [
+      [
+       "note",
+       "nothing written to the repository"
+      ]
+     ],
+     "ev": [
+      "e-e11",
+      "e-x4"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "claim-race",
+   "kind": "race",
+   "title": "Two sessions try to fix the same PR at the same moment",
+   "steps": [
+    {
+     "t": "Both sessions ask for the lock on PR #1",
+     "d": "Each tries to create the same lock file; the operating system lets only one create succeed.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "claims",
+       "claim PR #1, only if free"
+      ],
+      [
+       "send",
+       "sess-b",
+       "claims",
+       "claim PR #1, only if free"
+      ]
+     ],
+     "ev": [
+      "e-r6",
+      "e-e3"
+     ]
+    },
+    {
+     "t": "Session A's request lands first and wins",
+     "do": [
+      [
+       "db.write",
+       "claims",
+       "pr1",
+       "Session A"
+      ],
+      [
+       "reply",
+       "claims",
+       "sess-a",
+       "PR #1 is yours"
+      ]
+     ],
+     "ev": [
+      "e-claimfile",
+      "e-r6"
+     ],
+     "expect": {
+      "store": {
+       "claims": {
+        "pr1": "Session A"
+       }
+      }
+     }
+    },
+    {
+     "t": "Session B is refused, because the lock already exists",
+     "d": "Two winners are impossible: the create is atomic.",
+     "do": [
+      [
+       "reply",
+       "claims",
+       "sess-b",
+       "refused: held by Session A"
+      ]
+     ],
+     "ev": [
+      "e-e3"
+     ]
+    },
+    {
+     "t": "Session B waits, works read-only, or takes over on purpose",
+     "d": "Taking over is explicit and logged. A claim expires after about {{lease}} so a crashed session cannot block forever.",
+     "do": [
+      [
+       "note",
+       "takeover is logged"
+      ]
+     ],
+     "ev": [
+      "e-e3"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fork-vs-brief",
+   "kind": "load",
+   "title": "Parallel helpers stay fast, but get a task card instead of a copy of the chat",
+   "steps": [
+    {
+     "t": "Today: a fork helper gets the whole conversation",
+     "d": "Like photocopying the whole notebook for every helper: about {{fork_per}} each.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "helper",
+       "entire conversation"
+      ]
+     ],
+     "ev": [
+      "e-forkcost"
+     ]
+    },
+    {
+     "t": "Instead: a fresh helper gets a one-page task card",
+     "d": "Goal, files it owns, its worktree, the verify command and the brief: about {{brief_per}} each.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "helper",
+       "task card and brief"
+      ]
+     ],
+     "ev": [
+      "e-forkcost"
+     ]
+    },
+    {
+     "t": "Helpers still run side by side",
+     "d": "Independent tasks run at once, each in its own worktree. Nothing about the parallelism changes.",
+     "do": [
+      [
+       "note",
+       "same parallel waves as today"
+      ]
+     ],
+     "ev": [
+      "e-waves"
+     ]
+    },
+    {
+     "t": "After a summary, a fork gets a warning",
+     "d": "Phase one adds a hook: forking from a summarised session warns and offers a brief.",
+     "do": [
+      [
+       "send",
+       "sess-a",
+       "hooks",
+       "start a fork"
+      ],
+      [
+       "reply",
+       "hooks",
+       "sess-a",
+       "warning: this session was summarised, send a brief instead"
+      ]
+     ],
+     "ev": [
+      "e-agent",
+      "e-p1"
+     ]
+    }
+   ]
+  }
+ ],
+ "initial": {
+  "stores": {
+   "memory": {
+    "rule": null
+   },
+   "record": {},
+   "claims": {
+    "pr1": null
+   }
+  }
+ }
+}
