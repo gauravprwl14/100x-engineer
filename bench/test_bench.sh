@@ -39,27 +39,76 @@ print("\n".join(bad) or "case files: ok")
 sys.exit(1 if bad else 0)
 PY
 
+# Besides good.sh and bad.sh, a sample may declare what it must score in its first lines:
+# `# expect: pass`, or `# expect: fail=a,b` (exactly those checks fail). Review fixes add
+# one for each input that was once mis-scored.
 for case_dir in "$here"/cases/[0-9]*/; do
   case_name="$(basename "$case_dir")"
-  for kind in good bad; do
+  extras=()
+  for sample in "$here/samples/$case_name"/*.sh; do
+    [[ "$(basename "$sample" .sh)" == good || "$(basename "$sample" .sh)" == bad ]] || extras+=("$(basename "$sample" .sh)")
+  done
+  for kind in good bad ${extras[@]+"${extras[@]}"}; do
     ws="$work/$case_name-$kind"
     mkdir -p "$ws"
     (cd "$ws" && bash "$case_dir/scaffold.sh")
+    # screen-patterns/AC-10: the screen cases (13-15) need no git, inside or outside the agent.
+    if [[ "$case_name" == 1[3-5]-* ]] && { [[ -e "$ws/.git" ]] \
+        || grep -vE '^\s*#' "$case_dir/scaffold.sh" | grep -qE '\bgit\b|git_init|commit_all'; }; then
+      echo "$case_name: scaffold uses git"; fails=$((fails + 1))
+    fi
     text="$work/$case_name-$kind.txt"
     : > "$text"
     (cd "$ws" && BENCH_TEXT="$text" bash "$here/samples/$case_name/$kind.sh")
     result="$(python3 "$here/checks.py" score "$case_name" "$ws" --text "$text")"
-    verdict="$(KIND="$kind" python3 -c '
+    expect="$(sed -n 's/^# expect: //p' "$here/samples/$case_name/$kind.sh" | head -1)"
+    verdict="$(KIND="$kind" EXPECT="$expect" python3 -c '
 import json, os, sys
 r = json.load(sys.stdin)
 failed = [k for k, v in r["checks"].items() if not v]
-ok = not failed and not r["error"] if os.environ["KIND"] == "good" else bool(failed)
+kind, expect = os.environ["KIND"], os.environ["EXPECT"]
+if expect == "pass" or kind == "good":
+    ok = not failed and not r["error"]
+elif expect.startswith("fail="):
+    ok = not r["error"] and sorted(failed) == sorted(expect[5:].split(","))
+else:
+    ok = bool(failed)
 print(("ok" if ok else "FAIL") + "  failed=" + ",".join(failed) + ("  error=" + r["error"] if r["error"] else ""))
 ' <<<"$result")"
     printf '%-24s %-4s %s\n' "$case_name" "$kind" "$verdict"
     [[ "$verdict" == ok* ]] || fails=$((fails + 1))
   done
 done
+
+# screen-patterns/AC-10: case 15's PR.diff turns case 13's fixture (the PR base) into the
+# head files case 15 puts on disk, so the agent reads a diff that matches the code.
+pr="$work/pr-base"
+cp -R "$here/cases/13-settings-screen-build/fixture" "$pr"
+if (cd "$pr" && patch -p1 -s < "$here/cases/15-review-settings-diff/fixture/PR.diff") \
+   && diff -r -x __pycache__ -x PR.diff -x PR.md -x REVIEW.md "$pr" "$work/15-review-settings-diff-good" >/dev/null; then
+  echo "15 PR.diff: ok"
+else
+  echo "15 PR.diff: FAIL (does not match the head files)"; fails=$((fails + 1))
+fi
+
+# screen-patterns/AC-11: --old-ref is resolved before the cost warning and before any session.
+old_main="$(git -C "$here/.." rev-parse --verify --quiet 'main^{commit}' || true)"
+ref=main; [[ -n "$old_main" ]] || { ref=HEAD; old_main="$(git -C "$here/.." rev-parse HEAD)"; }
+set +e
+named="$(bash "$here/run.sh" --old-ref "$ref" 2>&1)"; named_exit=$?
+unknown="$(bash "$here/run.sh" --old-ref no-such-ref-xyz 2>&1)"; unknown_exit=$?
+default="$(bash "$here/run.sh" 2>&1)"
+set -e
+if [[ $named_exit -eq 2 ]] && grep -q "OLD plugin = $ref ($old_main)" <<<"$named" \
+   && grep -q "Re-run with --yes" <<<"$named" \
+   && [[ $unknown_exit -eq 2 ]] && grep -q "no-such-ref-xyz' is not a commit" <<<"$unknown" \
+   && ! grep -q "COST WARNING" <<<"$unknown" \
+   && grep -q "OLD plugin = 4c1cd93 (4c1cd93" <<<"$default"; then
+  echo "run.sh --old-ref: ok"
+else
+  echo "run.sh --old-ref: FAIL"; printf '%s\n---\n%s\n---\n%s\n' "$named" "$unknown" "$default"
+  fails=$((fails + 1))
+fi
 
 # compare.py end to end on fake eval output: kept dirs laid out like the harness's
 # (<root>/sealed/home/cwd + <root>/out/trace.jsonl), NEW given the good samples, OLD and
@@ -79,8 +128,15 @@ for case in ("10-explain-module", "12-over-building"):
         (root / "out").mkdir()
         init = {"type": "system", "subtype": "init",
                 "slash_commands": ["100x:100x"] if loaded else ["simplify"]}
+        # Only the NEW arm runs the checklist. OLD's `plan_feature new` and a grep for the
+        # name are not checklist use.
+        command = ("100x plan_feature cases --kind settings" if doc == "new" and loaded
+                   else "100x plan_feature new x --kind payment" if doc == "old"
+                   else "grep -rn plan_feature scripts")
+        tool = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": command}}]}}
         result = {"type": "result", "result": (work / f"{case}-{kind}.txt").read_text()}
-        (root / "out/trace.jsonl").write_text(json.dumps(init) + "\n" + json.dumps(result) + "\n")
+        (root / "out/trace.jsonl").write_text("\n".join(map(json.dumps, (init, tool, result))) + "\n")
         grader = {"name": "g", "passed": kind == "good", "weight": 1, "scored": True}
         arms[doc][key].append({"tracePath": str(root / "out/trace.jsonl"), "costUsd": 0.5,
                                "error": None, "graders": [grader]})
@@ -91,8 +147,12 @@ for doc, body in docs.items():
 PY
 summary="$(python3 "$here/compare.py" --new "$fake/new.json" --old "$fake/old.json")"
 echo "$summary"
+# screen-patterns/AC-10: the footer counts, per arm, the runs that used the checklist.
 if grep -q "new vs old: new better in 2, worse in 0" <<<"$summary" \
    && grep -q "plugin-load mismatches 0" <<<"$summary" \
+   && grep -qE "^new .*checklist calls 2/2" <<<"$summary" \
+   && grep -qE "^none .*checklist calls 0/2" <<<"$summary" \
+   && grep -qE "^old .*checklist calls 0/2" <<<"$summary" \
    && ! grep -q WARNING <<<"$summary"; then
   echo "compare.py: ok"
 else
