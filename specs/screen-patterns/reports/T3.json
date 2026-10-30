@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "agent": "backend-engineer",
+  "task_id": "T3",
+  "status": "done",
+  "understanding": "Add instruction pointers so that agents building a screen, reviewing a diff or writing a test plan run `100x plan_feature cases`: ui-baseline rule 12, diff-review rule 8b, feature-planning rule 1c, qa-strategy rule 2b, one row each in qa-engineer, code-reviewer and frontend-engineer, and the pr-review Scenario lens; examples use the generic name \"Settings\" and note that a project's own screen_patterns.json adds names. The CLI comes from T1, so no `cases` command in these files has been run; the AC-10 bench owes the check that agents call it.",
+  "inputs_read": [
+    "analog: skills/distributed-correctness/SKILL.md",
+    "instructions: AGENTS.md (rules 1, 2, 8, 18)",
+    "instructions: research/01-skill-contract.md",
+    "instructions: docs/WRITING.md",
+    "spec: specs/screen-patterns/contract.md",
+    "spec: specs/screen-patterns/spec.md (S6, AC-9, V1)",
+    "spec: scripts/data/edge_cases_ui.json",
+    "spec: scripts/data/screen_patterns.json",
+    "naming: lettered rule-id precedent 1b (feature-planning) and 15a (diff-review)",
+    "lessons: none",
+    "decisions: decisions/ADR-0003-screen-pattern-checklists-are-keyed-by-behaviour-family-and-role-checks-are-section-7-rows.md (filename only)"
+  ],
+  "assumptions": [
+    {"id": "A1", "class": "A", "text": "The cases, new --screens/--roles and testplan new behaviour described matches contract.md as T1 implements it; not run against the CLI (inferred)."},
+    {"id": "A2", "class": "A", "text": "feature-planning's coverage note (28 kinds, 202 cases) assumes T1 merges edge_cases_ui.json into plan_feature's catalogue."},
+    {"id": "A3", "class": "A", "text": "The example names \"Settings\" and \"Delete\" resolve: both are names in scripts/data/screen_patterns.json."}
+  ],
+  "questions": [],
+  "plan_issues": [
+    {"id": "PI-1", "blocking": false, "issue": "`cases` is a read-only lister and does not exit non-zero on a missed row.", "impact": "Naming it as the enforcer slightly overstates mechanical coverage.", "proposal": "Each tag names cases as what prints the checklist and plan_feature audit as the exit-1 gate once rows are seeded."}
+  ],
+  "decisions": [
+    {"id": "D1", "door": "two-way", "scope": "local", "decision": "diff-review rule placed as 8b under Both modes", "basis": "A missed screen row matters when reviewing your own diff too."},
+    {"id": "D2", "door": "two-way", "scope": "local", "decision": "Lettered ids 1c, 2b and code-reviewer row 2b instead of renumbering", "basis": "Repo precedent (1b, 15a)."},
+    {"id": "D3", "door": "two-way", "scope": "local", "decision": "The project-taxonomy clause sits only in ui-baseline rule 12 and feature-planning rule 1c", "basis": "Those are the two places that explain what a screen name is."}
+  ],
+  "changes": [
+    {"path": "skills/ui-baseline/SKILL.md", "summary": "rule 12, Verify lines, failure mode, scale count, sources"},
+    {"path": "skills/diff-review/SKILL.md", "summary": "rule 8b, mode table, Verify step 4b, failure mode, source"},
+    {"path": "skills/feature-planning/SKILL.md", "summary": "rule 1c, inputs row, example command, coverage note, sources"},
+    {"path": "skills/qa-strategy/SKILL.md", "summary": "rule 2b, Verify line, failure mode, scale, source"},
+    {"path": "agents/qa-engineer.md", "summary": "checklist row naming plan_feature cases and testplan new"},
+    {"path": "agents/code-reviewer.md", "summary": "review-order row 2b"},
+    {"path": "agents/frontend-engineer.md", "summary": "default row: run plan_feature cases before building a screen"},
+    {"path": "skills/pr-review/references/reviewer-prompt.md", "summary": "Scenario lens reads screens/roles or infers families, runs cases"}
+  ],
+  "evidence": [
+    {"kind": "test", "cmd": "python3 scripts/lint_skills.py", "exit_code": 0, "output_tail": "lint_skills: 46 skills, 0 errors, 0 warnings"}
+  ],
+  "follow_ups": [
+    "After T1 merges: run the cases commands in the Verify blocks and confirm they match the instructions."
+  ]
+}
