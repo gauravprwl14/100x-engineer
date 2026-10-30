@@ -685,10 +685,12 @@ def check_lookup(ctx):
                         "--ws to work commands")]
     if ctx["ident"] is None:
         branch = git_out(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-        if branch == "HEAD":
-            return [finding("D-lookup.detached", "info", f"{cwd} is on a detached HEAD",
+        if branch in (None, "HEAD"):
+            return [finding("D-lookup.detached", "info", f"{cwd} has no branch checked out "
+                            "(detached HEAD, or no commit yet)",
                             "workstreams match on a branch name", f"git -C {q(cwd)} switch "
-                            "<branch>, or pass --ws to work commands")]
+                            "<branch> (or make the first commit), or pass --ws to work "
+                            "commands")]
         return [finding("D-lookup.bad-origin", "warn", f"origin {redact(url)!r} does not read "
                         "as host/owner/repo", "an unusual remote form",
                         "pass --ws to work commands")]
