@@ -739,9 +739,9 @@ def classify_event_files(ws):
     return unreadable, newer, stray, malformed
 
 
-def listed(names, limit=3):
+def listed(names, limit=3, sep=", "):
     more = f" and {len(names) - limit} more" if len(names) > limit else ""
-    return ", ".join(names[:limit]) + more
+    return sep.join(names[:limit]) + more
 
 
 @check("D-events")
@@ -753,8 +753,7 @@ def check_events(ctx):
         if malformed:
             out.append(finding("D-events.malformed", "error",
                                f"{ws}: {len(malformed)} event file(s) hold fields this version "
-                               f"cannot use, and the brief skips them: {'; '.join(malformed[:3])}"
-                               + (f"; and {len(malformed) - 3} more" if len(malformed) > 3 else ""),
+                               f"cannot use, and the brief skips them: {listed(malformed, sep='; ')}",
                                "the file was edited by hand or written by another tool",
                                f"{KEEP_EVENTS}; if a skipped field mattered, record it again: "
                                f"100x work start {ws} --pr <number>:<branch>:<role>, or 100x "
@@ -1057,6 +1056,18 @@ def backup_git_timeout(where):
                    "git process holding its lock", f"git -C {q(where)} status, to see what is slow")
 
 
+def mid_operation(top, git_dir):
+    """D-backup.mid-operation when a rebase, merge or cherry-pick is waiting, else None."""
+    found = [name for name in MID_OPERATION if git_dir and (pathlib.Path(git_dir) / name).exists()]
+    if not found:
+        return None
+    return finding("D-backup.mid-operation", "error",
+                   f"the backup repo {top} is in the middle of a {MID_OPERATION[found[0]]} "
+                   f"({found[0]} in its git dir)", "a sync or a manual git command stopped on a "
+                   "conflict, so nothing new is committed or pushed",
+                   f"finish or abort it in {top} (git -C {q(top)} status shows how)")
+
+
 def scan_backup_repo(hint):
     """Findings about the git repo holding the hint file, from local refs only."""
     def read(*args):
@@ -1068,9 +1079,6 @@ def scan_backup_repo(hint):
     if top is None:
         return []
     out, top = [], pathlib.Path(top)
-    git_dir = read("rev-parse", "--absolute-git-dir")
-    if git_dir is GIT_TIMED_OUT:
-        return [backup_git_timeout(top)]
     marker = top.joinpath(*SYNC_FAILED_REL)
     if marker.is_file():
         try:
@@ -1084,17 +1092,14 @@ def scan_backup_repo(hint):
                            "its rebase hit a conflict, so nothing new leaves this machine",
                            f"resolve the rebase by hand in {top} (git -C {q(top)} status), "
                            "then let the backup tool clear its marker"))
+    git_dir = read("rev-parse", "--absolute-git-dir")
+    if git_dir is GIT_TIMED_OUT:
+        return out + [backup_git_timeout(top)]
     # During a rebase HEAD is detached, so the upstream lookup below would wrongly read as
     # "never set up"; the stuck operation is the real cause and blocks every later sync.
-    stuck = [name for name in MID_OPERATION if git_dir and (pathlib.Path(git_dir) / name).exists()]
+    stuck = mid_operation(top, git_dir)
     if stuck:
-        out.append(finding("D-backup.mid-operation", "error",
-                           f"the backup repo {top} is in the middle of a "
-                           f"{MID_OPERATION[stuck[0]]} ({stuck[0]} in its git dir)",
-                           "a sync or a manual git command stopped on a conflict, so nothing "
-                           "new is committed or pushed",
-                           f"finish or abort it in {top} (git -C {q(top)} status shows how)"))
-        return out
+        return out + [stuck]
     upstream = read("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if upstream is GIT_TIMED_OUT:
         return out + [backup_git_timeout(top)]
