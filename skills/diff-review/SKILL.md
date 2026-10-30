@@ -17,8 +17,8 @@ intent. Formerly `scoped-review` (own diff) and `reviewing-others-code` (someone
 
 | mode | when | rules | detail |
 |---|---|---|---|
-| **own diff** | before opening your PR, or right after implementing from a spec | 1–8 | `references/own-diff.md` |
-| **someone else's diff** | a teammate's PR, an external contribution, another agent's output | 1–3, 5, 7 + 9–16 | `references/others-diff.md` |
+| **own diff** | before opening your PR, or right after implementing from a spec | 1–8b | `references/own-diff.md` |
+| **someone else's diff** | a teammate's PR, an external contribution, another agent's output | 1–3, 5, 7, 8b + 9–16 | `references/others-diff.md` |
 
 ## Trigger
 
@@ -50,7 +50,7 @@ pending (`codebase-comprehension`).
 
 ## Rules
 
-### Both modes (own diff: all of 1–8)
+### Both modes (own diff: all of 1–8b)
 
 1. Generate the checklist from the diff rather than reviewing from memory; it names the files per question.
    *Enforced by:* `100x review_scope --base origin/main`
@@ -69,6 +69,16 @@ pending (`codebase-comprehension`).
    *Enforced by:* `100x diagram_from_code <dir> --kind sequence --level 3`
 8. Re-check the spec's edge-case table after implementing; implementation reveals missed cases.
    *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
+8b. When the diff adds or changes a screen, check it against its screen-pattern rows. With a
+   spec, pass its header's `kinds` and `roles` (`cases --kind <kinds> --roles <roles>`), never its
+   `screens`; without one, map the screen to its families (`settings`, `destructive-action`,
+   `form`, `list-table`, `detail-view`, `auth-screens`, `scheduling`, `checkout`,
+   `money-transfer`) and roles, or pass `--screens` from the repo root. Each row the diff misses
+   is a finding with its failure scenario: a delete with no confirmation naming the resource, a
+   control rendered for a role that cannot use it, a handler with no role check behind a hidden
+   button. A row that does not apply is `n-a` with a reason. `cases` numbers rows `C1`, `C2`, …
+   (checklist-local, not the spec's `E<n>` ids).
+   *Enforced by:* `100x plan_feature cases --kind <kinds> --roles <roles>` prints the rows
 
 ### Someone else's diff
 
@@ -116,6 +126,9 @@ sed -n '/## Common AI failure modes/,/## Edge cases/p' reviewers/<stack>.md
 100x plan_feature audit <root>/specs/<feature>
 100x design_drift <root>/specs/<feature>/spec.md <code-dir>
 
+# 4b. a screen in the diff: the rows users expect of it (rule 8b)
+100x plan_feature cases --kind settings,destructive-action --roles admin,member
+
 # 5. someone else's diff: precedent and recorded decisions before asserting a convention
 100x repo_map . --symbol <PatternOrClassName>
 100x decide trace <path>
@@ -134,6 +147,8 @@ This skill rejects:
 - **"Looks good to me"** on a diff with in-scope questions unanswered.
 - **An interface with one implementation** shipped as an extension point nobody asked for.
 - **A test whose expected value was copied from the implementation output.**
+- **A new "Delete workspace" button approved** with no confirmation naming the workspace, shown
+  to members who cannot delete, and a route that never checks the role: three `cases` rows missed.
 - **A data-access call with no caller-based authorization check**; **`if exists() then insert()`**
   with no unique constraint behind it; **a new dependency** duplicating the lockfile or stdlib.
 - **A review that re-reports what `bloat_check` already found.**
@@ -173,3 +188,5 @@ ranking and convention citation matter most, because reviewers are unfamiliar wi
   `research/23-findings-antibloat-enforcement.md`, `research/36-findings-antibloat-in-practice.md`.
 - `scripts/review_scope.py`, the nine questions, blocking/should-fix/optional/question labelling,
   blast-radius ordering and intent-before-critique: `SOURCE: original`.
+- Screen-behaviour families and role rows behind rule 8b: `scripts/data/edge_cases_ui.json`,
+  `SOURCE: original`.

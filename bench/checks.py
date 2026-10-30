@@ -557,6 +557,464 @@ print(json.dumps([first.done, second.done, [t.todo_id for t in todos.open_todos(
     }
 
 
+# ---------------------------------------------------------------- 13-15: the settings screen
+# Cases 13-15 share one app (case 13's fixture): app.web.handle(Request) -> Response, users
+# u-1 (admin of w-1 "Acme Design"), u-2 (member of w-1) and u-3 (admin of w-2). The probe
+# drives the agent's pages the way a browser would: it fetches the settings page, parses the
+# forms it renders and submits them, so it does not depend on the agent's route names.
+SCREEN_PROBE = r'''
+import json, re
+from html.parser import HTMLParser
+from urllib.parse import parse_qsl, urlsplit
+from app import store
+from app.http import Request
+from app.web import handle
+
+WS, NAME, TZ_BEFORE, PAGE = "w-1", "Acme Design", "Europe/London", "/workspaces/w-1/settings"
+ADMIN, MEMBER, OUTSIDER = (store.USERS[key] for key in ("u-1", "u-2", "u-3"))
+CONTROL_RX = re.compile(r"delete|remove|rename|save|update|change|apply|submit", re.I)
+DELETE_RX = re.compile(r"delete|remove|destroy", re.I)
+CANCEL_RX = re.compile(r"cancel|discard|reset|undo|restore", re.I)
+TZ_RX = re.compile(r"tz|time_?zone|zone", re.I)
+FILL_TEXT = "Renamed Co"
+
+
+def disabled(attrs):
+    return "disabled" in attrs or attrs.get("aria-disabled") == "true"
+
+
+class Page(HTMLParser):
+    def __init__(self, body):
+        super().__init__(convert_charrefs=True)
+        self.forms, self.controls, self.links, self.script_srcs = [], [], [], []
+        self.form = self.button = self.select = self.option = self.link = self.textarea = None
+        self.feed(body or "")
+
+    def handle_starttag(self, tag, pairs):
+        attrs = {key: value or "" for key, value in pairs}
+        if tag == "form":
+            self.form = {"attrs": attrs, "fields": [], "submits": [], "text": []}
+            self.forms.append(self.form)
+        elif tag == "input":
+            kind = attrs.get("type", "text").lower()
+            if kind in ("submit", "image", "button"):
+                control = {"label": attrs.get("value", kind), "attrs": attrs}
+                self.controls.append(control)
+                if self.form is not None and kind != "button":
+                    self.form["submits"].append(control)
+            elif self.form is not None:
+                self.form["fields"].append({"type": kind, "attrs": attrs, "value": attrs.get("value", "")})
+        elif tag == "button":
+            self.button = {"label": "", "attrs": attrs}
+        elif tag == "select":
+            self.select = {"type": "select", "attrs": attrs, "options": [], "value": None}
+        elif tag == "option" and self.select is not None:
+            self.option = {"value": attrs.get("value"), "selected": "selected" in attrs, "text": ""}
+            self.select["options"].append(self.option)
+        elif tag == "textarea":
+            self.textarea = {"type": "textarea", "attrs": attrs, "value": ""}
+        elif tag == "a":
+            self.link = {"href": attrs.get("href", ""), "text": "", "attrs": attrs}
+        elif tag == "script" and attrs.get("src"):
+            self.script_srcs.append(attrs["src"])
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.form = None
+        elif tag == "button" and self.button is not None:
+            self.controls.append(self.button)
+            kind = self.button["attrs"].get("type", "submit").lower()
+            if self.form is not None and kind == "submit":
+                self.form["submits"].append(self.button)
+            self.button = None
+        elif tag == "option" and self.option is not None:
+            if self.option["value"] is None:
+                self.option["value"] = self.option["text"].strip()
+            self.option = None
+        elif tag == "select" and self.select is not None:
+            options = self.select["options"]
+            chosen = [o for o in options if o["selected"]] or options[:1]
+            self.select["value"] = chosen[0]["value"] if chosen else ""
+            if self.form is not None:
+                self.form["fields"].append(self.select)
+            self.select = None
+        elif tag == "textarea" and self.textarea is not None:
+            if self.form is not None:
+                self.form["fields"].append(self.textarea)
+            self.textarea = None
+        elif tag == "a" and self.link is not None:
+            self.links.append(self.link)
+            self.link = None
+
+    def handle_data(self, data):
+        for holder in (self.button, self.link, self.option):
+            if holder is not None:
+                holder["label" if holder is self.button else "text"] += data
+        if self.textarea is not None:
+            self.textarea["value"] += data
+        if self.form is not None:
+            self.form["text"].append(data)
+
+
+def unpack(response):
+    get = (lambda key: response.get(key)) if isinstance(response, dict) else (lambda key: getattr(response, key, None))
+    return get("status"), str(get("body") or ""), dict(get("headers") or {})
+
+
+def call(user, method, path, form=None):
+    parts = urlsplit(path or PAGE)
+    data = dict(parse_qsl(parts.query))
+    data.update(form or {})
+    try:
+        return unpack(handle(Request(user=user, method=method, path=parts.path or PAGE, form=data)))
+    except Exception as error:
+        return getattr(error, "status", 500), "", {}
+
+
+def follow(user, result):
+    status, body, headers = result
+    location = headers.get("Location") or headers.get("location")
+    if status in (301, 302, 303, 307) and location:
+        return call(user, "GET", location)
+    return result
+
+
+def variants(page):
+    out = []
+    for form in page.forms:
+        action = form["attrs"].get("action", "")
+        method = form["attrs"].get("method", "get").upper()
+        override = [f["value"] for f in form["fields"] if f["attrs"].get("name") in ("_method", "method")]
+        for submit in form["submits"] or [None]:
+            label = " ".join([action] + ([submit["label"], submit["attrs"].get("name", ""),
+                                          submit["attrs"].get("value", "")] if submit else []))
+            if submit and CANCEL_RX.search(submit["label"] + submit["attrs"].get("value", "")):
+                continue
+            kind = "delete" if DELETE_RX.search(label) or "DELETE" in [v.upper() for v in override] else "edit"
+            out.append({"form": form, "submit": submit, "kind": kind,
+                        "method": "POST" if override else method, "action": action})
+    return out
+
+
+CHOSEN = {}
+
+
+def fill(variant, mode, text=NAME):
+    data = {}
+    for field in variant["form"]["fields"]:
+        attrs, kind = field["attrs"], field["type"]
+        name = attrs.get("name")
+        if not name or "disabled" in attrs:
+            continue
+        if kind == "hidden":
+            data[name] = field["value"]
+        elif kind in ("checkbox", "radio"):
+            if mode != "click" or "checked" in attrs:
+                data[name] = field["value"] or "on"
+        elif kind == "select":
+            data[name] = field["value"]
+            if mode == "edit" and TZ_RX.search(name):
+                values = [o["value"] for o in field["options"]]
+                data[name] = "Asia/Tokyo" if "Asia/Tokyo" in values else next(
+                    (v for v in values if v and v != field["value"]), field["value"])
+                CHOSEN["tz"] = data[name]
+        elif mode == "click":
+            data[name] = field["value"]
+        elif mode == "edit":
+            if TZ_RX.search(name):
+                data[name] = CHOSEN.setdefault("tz", "Asia/Tokyo")
+            elif re.search(r"name|title", name, re.I):
+                data[name] = FILL_TEXT
+            else:
+                data[name] = field["value"]
+        else:
+            data[name] = text
+    submit = variant["submit"]
+    if submit and submit["attrs"].get("name"):
+        data[submit["attrs"]["name"]] = submit["attrs"].get("value", "")
+    return data
+
+
+def send(user, variant, data, page_path=PAGE):
+    return call(user, variant["method"], variant["action"] or page_path, data)
+
+
+def settings(user=ADMIN):
+    status, body, _ = call(user, "GET", PAGE)
+    return status, body, Page(body)
+
+
+def deleted():
+    workspace = store.WORKSPACES.get(WS)
+    return workspace is None or any(workspace.get(k) for k in ("deleted", "deleted_at", "is_deleted"))
+
+
+def unchanged():
+    workspace = store.WORKSPACES.get(WS) or {}
+    return not deleted() and workspace.get("name") == NAME and workspace.get("timezone") == TZ_BEFORE
+
+
+def delete_entry():
+    """(variants of the delete form, page they came from); a delete link leads to its own page."""
+    _, _, page = settings()
+    found = [v for v in variants(page) if v["kind"] == "delete" and v["method"] == "POST"]
+    if found:
+        return found, PAGE, None
+    for link in page.links:
+        if DELETE_RX.search(link["href"] + " " + link["text"]):
+            _, body, _ = call(ADMIN, "GET", link["href"])
+            confirm = [v for v in variants(Page(body)) if v["method"] == "POST" and v["kind"] in ("delete", "edit")]
+            return confirm, link["href"], body
+    return [], PAGE, None
+
+
+def scenario_admin_page():
+    status, body, page = settings()
+    scripts = " ".join(call(ADMIN, "GET", src)[1] for src in page.script_srcs)
+    return {"status": status, "named": NAME in body,
+            "guard": "beforeunload" in (body + scripts).lower()}
+
+
+def scenario_member_page():
+    status, body, page = settings(MEMBER)
+    exposed = [c["label"].strip() for c in page.controls
+               if not disabled(c["attrs"]) and CONTROL_RX.search(c["label"] + c["attrs"].get("value", ""))]
+    for form in page.forms:
+        if form["attrs"].get("method", "get").lower() == "post":
+            exposed += [f["attrs"].get("name", "?") for f in form["fields"]
+                        if f["type"] not in ("hidden",) and not disabled(f["attrs"])
+                        and "readonly" not in f["attrs"]]
+    exposed += [link["href"] for link in page.links if DELETE_RX.search(link["href"] + link["text"])]
+    return {"status": status, "named": NAME in body, "exposed": exposed}
+
+
+def scenario_admin_edit():
+    count = len([v for v in variants(settings()[2]) if v["kind"] == "edit" and v["method"] == "POST"])
+    for index in range(count):
+        edits = [v for v in variants(settings()[2]) if v["kind"] == "edit" and v["method"] == "POST"]
+        if index < len(edits):
+            status, body, _ = send(ADMIN, edits[index], fill(edits[index], "edit"))
+            # A 200 answer to a POST is a confirmation step (e.g. "applies to every member"):
+            # submit its form once, as the admin would.
+            confirm = [v for v in variants(Page(body)) if v["kind"] == "edit" and v["method"] == "POST"]
+            if status == 200 and confirm:
+                send(ADMIN, confirm[0], fill(confirm[0], "edit"))
+    workspace = store.WORKSPACES.get(WS) or {}
+    return {"forms": count, "renamed": workspace.get("name") == FILL_TEXT,
+            "timezone": bool(CHOSEN.get("tz")) and workspace.get("timezone") == CHOSEN.get("tz")}
+
+
+def scenario_refused(user):
+    """Every changing form the admin sees, submitted by `user`: refused, and nothing changes."""
+    _, _, page = settings()
+    tried = [v for v in variants(page) if v["method"] == "POST"]
+    entry, path, _ = delete_entry()
+    tried += [v for v in entry if v not in tried]
+    _, _, own = settings(user)
+    token = {f["attrs"]["name"]: f["value"] for form in own.forms for f in form["fields"]
+             if f["type"] == "hidden" and re.search(r"csrf|token", f["attrs"].get("name", ""), re.I)}
+    statuses = []
+    for variant in tried:
+        data = fill(variant, "edit" if variant["kind"] == "edit" else "confirm")
+        data.update(token)
+        statuses.append(send(user, variant, data, path if variant in entry else PAGE)[0])
+    return {"forms": len(tried), "statuses": statuses, "view": settings(user)[0],
+            "unchanged": unchanged()}
+
+
+def scenario_delete_click():
+    _, body, _ = settings()
+    js = any(NAME in m.group(1) for m in re.finditer(r"confirm\s*\((.{0,300})", body, re.S)) or any(
+        NAME in d and DELETE_RX.search(d) for d in re.findall(r"<dialog.*?</dialog>", body, re.S | re.I))
+    entry, path, link_body = delete_entry()
+    if not entry:
+        return {"found": False, "js": js}
+    if link_body is not None:
+        return {"found": True, "js": js, "deleted": deleted(), "named": NAME in link_body}
+    variant = entry[0]
+    status, final, _ = follow(ADMIN, send(ADMIN, variant, fill(variant, "click")))
+    typed = any(f["type"] not in ("hidden", "checkbox", "radio", "select") for f in variant["form"]["fields"])
+    form_text = " ".join(variant["form"]["text"])
+    named = (NAME in final and any(v["method"] == "POST" for v in variants(Page(final)))) \
+        or (typed and NAME in form_text)
+    return {"found": True, "js": js, "deleted": deleted(), "named": named}
+
+
+def scenario_delete_confirmed():
+    for text in (NAME, "DELETE", "delete", "yes", "confirm"):
+        entry, path, _ = delete_entry()
+        if not entry:
+            return {"deleted": False}
+        result = send(ADMIN, entry[0], fill(entry[0], "confirm", text), path)
+        for _ in range(2):
+            if deleted():
+                break
+            _, final, _ = follow(ADMIN, result)
+            nxt = [v for v in variants(Page(final)) if v["method"] == "POST" and v["kind"] == "delete"]
+            if not nxt:
+                break
+            result = send(ADMIN, nxt[0], fill(nxt[0], "confirm", text))
+        if deleted():
+            return {"deleted": True}
+    return {"deleted": False}
+'''
+
+
+def screen_probe(run, call):
+    return run_python(run.ws, SCREEN_PROBE + f"\nprint(json.dumps({call}))\n") or {}
+
+
+def check_13(run):
+    admin = screen_probe(run, "scenario_admin_page()")
+    member = screen_probe(run, "scenario_member_page()")
+    edit = screen_probe(run, "scenario_admin_edit()")
+    by_member = screen_probe(run, "scenario_refused(MEMBER)")
+    by_outsider = screen_probe(run, "scenario_refused(OUTSIDER)")
+    click = screen_probe(run, "scenario_delete_click()")
+    confirmed = screen_probe(run, "scenario_delete_confirmed()")
+
+    def refused(result):
+        return bool(result.get("forms")) and result.get("unchanged") is True \
+            and all(status in (401, 403, 404) or 300 <= (status or 0) < 400
+                    for status in result.get("statuses", []))
+    server_confirm = click.get("found") and not click.get("deleted") and click.get("named")
+    return {
+        "admin_page_renders": admin.get("status") == 200 and admin.get("named") is True,
+        "admin_edits_saved": edit.get("renamed") is True and edit.get("timezone") is True,
+        "member_views_settings": member.get("status") == 200 and member.get("named") is True,
+        "member_sees_no_admin_controls": member.get("status") == 200 and member.get("exposed") == [],
+        "member_direct_request_refused": refused(by_member),
+        "outsider_refused": refused(by_outsider) and by_outsider.get("view") in (401, 403, 404),
+        "delete_confirmation_names_workspace": bool(server_confirm or (click.get("found") and click.get("js"))),
+        "admin_can_delete": confirmed.get("deleted") is True,
+        "unsaved_changes_guard": admin.get("guard") is True,
+        "tests_added_and_pass": any(is_test(rel) for rel in run.changes) and run.tests_pass(),
+    }
+
+
+# Case 14 ships app/settings.py with one planted defect: delete_workspace checks membership,
+# not the admin role. The agent's tests run against that shipped file (they must fail), against
+# the fixed file (they must pass), and against mutants of the fixed file (each must fail).
+SETTINGS_14 = "app/settings.py"
+FIX_14 = ("    workspace = member_of(request, workspace_id)  # the delete form is only shown to admins\n",
+          "    workspace = require_admin(request, workspace_id)\n")
+MUTANTS_14 = {
+    "kills_no_delete_confirmation": [
+        ('    if request.form.get("confirm_name", "").strip() != workspace["name"]:\n', "    if False:\n")],
+    "kills_member_sees_controls": [('    if request.user.role != "admin":\n        body = ', "    if False:\n        body = ")],
+    "kills_member_can_rename": [
+        ("def save_settings(request: Request, workspace_id: str) -> Response:\n"
+         "    workspace = require_admin(request, workspace_id)\n",
+         "def save_settings(request: Request, workspace_id: str) -> Response:\n"
+         "    workspace = member_of(request, workspace_id)\n")],
+    "kills_no_unsaved_guard": [("{GUARD}\"\"\"", "\"\"\"")],
+    "kills_silent_overwrite": [('    if request.form.get("version") != str(workspace.get("version", 0)):\n',
+                                "    if False:\n")],
+    "kills_invalid_timezone_saved": [("    if timezone not in TIMEZONES:\n", "    if False:\n")],
+}
+PLAN_TOPICS_14 = {
+    "plan_covers_delete_confirmation": (r"delet", r"confirm|typ\w*\b.{0,25}\bname|wrong name|name (does not|doesn't) match"),
+    "plan_covers_unsaved_changes": (r"unsaved|beforeunload|navigat\w* away|leav\w* (the )?page|discard", r"."),
+    "plan_covers_member_direct_request": (r"member", r"direct|post\b|api|endpoint",
+                                          r"refus|403|404|denied|forbid"),
+    "plan_covers_member_ui": (r"member", r"hidden|not (shown|visible|rendered|displayed)|absent|disabled|"
+                                         r"read-?only|no (delete|rename|edit|save)|(button|control|form)s? (is|are) (not|hidden)"),
+    "plan_covers_conflict": (r"conflict|concurrent|stale|two admins|simultaneous|overwrit|409", r"."),
+}
+
+
+def mutate(path, replacements):
+    text = path.read_text()
+    for old, new in replacements:
+        if text.count(old) != 1:
+            raise ValueError(f"mutation anchor not found once in {path.name}: {old.strip()[:50]}")
+        text = text.replace(old, new)
+    path.write_text(text)
+
+
+def plan_lines(text):
+    """Table rows, list items and sentences of a test plan, one unit each."""
+    return [unit for line in text.splitlines() for unit in re.split(r"(?<=[.!?])\s+(?=[A-Z])", line)]
+
+
+def check_14(run):
+    shipped = run.copy_with([rel for rel in tree(run.base) if not is_test(rel)])
+    fixed = run.copy_with([rel for rel in tree(run.base) if not is_test(rel)])
+    mutate(fixed / SETTINGS_14, [FIX_14])
+    tests_changed = any(is_test(rel) for rel in run.changes)
+    passes_fixed = tests_changed and unittest_exit(fixed) == 0
+    result = {
+        "tests_pass_on_fixed_code": passes_fixed,
+        "tests_catch_planted_defect": passes_fixed and unittest_exit(shipped) != 0,
+    }
+    for name, replacements in MUTANTS_14.items():
+        mutant = Path(tempfile.mkdtemp(dir=run.scratch))
+        shutil.copytree(fixed, mutant, symlinks=True, dirs_exist_ok=True)
+        mutate(mutant / SETTINGS_14, replacements)
+        result[name] = passes_fixed and unittest_exit(mutant) != 0
+    lines = plan_lines(run.file("TESTPLAN.md"))
+    for name, patterns in PLAN_TOPICS_14.items():
+        result[name] = any(all(re.search(rx, line, re.I) for rx in patterns) for line in lines)
+    result["code_unchanged"] = not [rel for rel in run.changes if rel.startswith("app/")]
+    return result
+
+
+SETTINGS_15 = "app/settings.py"
+FINDINGS_15 = {
+    "finds_delete_without_confirmation": (
+        "delete_workspace", r"delet", r"confirm|one[- ]click|single click|typ\w* (the )?name|are you sure|accident"),
+    "finds_member_sees_delete": (
+        "settings_page", r"delet", r"member|non-?admin|every(one|body)|all users|role"),
+    "finds_rename_missing_role_check": (
+        "rename_workspace", r"renam", r"require_admin|role|admin|member|permission|authori[sz]|403|forbid"),
+    "finds_no_unsaved_guard": (
+        "settings_page", r"unsaved|beforeunload|navigat\w* away|leav\w* the page|discard|lose (the |their |any )?(edit|change|input)", r"."),
+}
+BLOCKING_RX = r"\[(MUST|BLOCKING)\]|\bblock(ing|er)\b|must[- ]fix|critical"
+# A false alarm asserts a defect in code that is fine: escaping, or outsiders reaching the page.
+# Naming that code as correct ("member_of 404s outsiders") is not one.
+FALSE_ALARMS = [
+    (r"xss|cross-site|inject|escap|sanitiz", r"vulnerab|risk|unsafe|missing|unescaped|not escaped|attack|exploit"),
+    (r"outsider|other workspace|another workspace|tenant",
+     r"can (see|read|reach|access|view|open)|leak|expos|bypass"),
+]
+
+
+def function_lines(source, name):
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return range(node.lineno, node.end_lineno + 1)
+    return range(0)
+
+
+def check_15(run):
+    comments = review_comments(run.file("REVIEW.md"))
+    source = read(run.base / SETTINGS_15)
+    result = {}
+    for name, (function, first, second) in FINDINGS_15.items():
+        hits = [c for c in comments if re.search(first, c, re.I) and re.search(second, c, re.I)]
+        if name == "finds_member_sees_delete":
+            # Tied to its defect: names who sees it, and either cites settings_page or says it is shown.
+            page_lines = function_lines(source, function)
+            hits = [c for c in hits if re.search(r"member|non-?admin", c, re.I) and (
+                any(int(n) in page_lines for n in re.findall(r"settings\.py:(\d+)", c))
+                or re.search(r"\bsees?\b|shown|visible|hidden|render", c, re.I))]
+        result[name] = bool(hits)
+        if name == "finds_rename_missing_role_check":
+            result["rename_marked_blocking"] = any(re.search(BLOCKING_RX, c, re.I) for c in hits)
+            lines = function_lines(source, function)
+            result["rename_cites_its_line"] = any(
+                int(n) in lines for c in hits for n in re.findall(r"settings\.py:(\d+)", c))
+    rename_lines = function_lines(source, "rename_workspace")
+    result["no_blocking_false_alarm"] = bool(comments) and not any(
+        re.search(BLOCKING_RX, c, re.I)
+        and not any(int(n) in rename_lines for n in re.findall(r"settings\.py:(\d+)", c))
+        and any(re.search(a, c, re.I) and re.search(b, c, re.I) for a, b in FALSE_ALARMS)
+        for c in comments)
+    result["code_unchanged"] = not [rel for rel in run.changes if rel.startswith(("app/", "tests/"))]
+    return result
+
+
 CHECKS = {path.name: globals()[f"check_{path.name[:2]}"]
           for path in sorted(CASES.iterdir()) if path.is_dir() and path.name[:2].isdigit()}
 

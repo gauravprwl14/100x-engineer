@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 13-settings-screen-build
+description: Build a workspace settings screen for admins and members. Deterministic part is bench/checks.py check_13.
+tags: [code, ui, screens]
+context:
+  scaffold_script: scaffold.sh

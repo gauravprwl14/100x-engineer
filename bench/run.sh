@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Run the bench: 12 scenarios x N runs x 3 arms (no plugin, OLD plugin at 4c1cd93, NEW
-# plugin = this working tree), then score and compare them with compare.py.
+# Run the bench: every scenario in bench/cases x N runs x 3 arms (no plugin, OLD plugin at
+# --old-ref, default 4c1cd93, NEW plugin = this working tree), then score and compare them
+# with compare.py.
 #
 #   bench/run.sh --yes [--runs 3] [--model M] [--concurrency 2] [--case GLOB]
-#                [--arms all|new|old] [--max-cost-usd N] [--out DIR]
+#                [--arms all|new|old] [--old-ref REF] [--max-cost-usd N] [--out DIR]
 #
 # `claude plugin eval` only accepts an eval dir below the plugin, so each arm runs from its
 # own copy of the plugin with bench/cases inside it. NEW is frozen into a snapshot first,
@@ -24,13 +25,20 @@ while [[ $# -gt 0 ]]; do
     --concurrency) concurrency="$2"; shift ;;
     --case) case_glob="$2"; shift ;;
     --arms) arms="$2"; shift ;;
+    --old-ref) OLD_REF="$2"; shift ;;
     --max-cost-usd) max_cost="$2"; shift ;;
     --out) out="$2"; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "run.sh: unknown argument $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+# Resolve OLD before the cost warning, so a mistyped ref fails offline and before any session.
+if ! old_sha="$(git -C "$repo" rev-parse --verify --quiet "$OLD_REF^{commit}")"; then
+  echo "run.sh: --old-ref '$OLD_REF' is not a commit in $repo" >&2
+  exit 2
+fi
 
 cases=$(find "$here/cases" -mindepth 1 -maxdepth 1 -type d -name "${case_glob:-[0-9]*}" | wc -l | tr -d ' ')
 case "$arms" in
@@ -43,6 +51,7 @@ total=$((cases * runs * arm_count))
 
 cat <<EOF
 COST WARNING: this starts $total real agent sessions ($cases cases x $runs runs x $arm_count arms),
+OLD plugin = $OLD_REF ($old_sha),
 each up to 40 turns with Bash, Write and Edit, on your own credential and rate limit, plus
 one haiku judge call per llm grader per run. Measured: \$0.16-0.25 per session on the smallest
 case (default model, 11-12 turns); budget \$0.25-0.80 per session, so roughly
@@ -81,6 +90,7 @@ trap cleanup EXIT
 rsync -a --exclude .git --exclude bench/results "$repo/" "$new_root/"
 git -C "$repo" rev-parse HEAD > "$out/new-base-commit.txt"
 git -C "$repo" status --porcelain > "$out/new-uncommitted-files.txt"
+echo "$OLD_REF $old_sha" > "$out/old-ref.txt"
 
 common=(--eval-dir bench/cases --runs "$runs" --scaffold --keep-temp --trust-plugin
         --allow-tools Bash Write Edit --no-publish --threshold 0 -j "$concurrency")
@@ -94,7 +104,7 @@ if [[ "$arms" != old ]]; then
     --json "$out/new.json" --output-dir "$out/new" || echo "new arm exited $?"
 fi
 if [[ "$arms" != new ]]; then
-  git -C "$repo" worktree add --detach "$old_root" "$OLD_REF" >/dev/null
+  git -C "$repo" worktree add --detach "$old_root" "$old_sha" >/dev/null
   mkdir -p "$old_root/bench"
   cp -R "$here/cases" "$old_root/bench/cases"
   claude plugin eval "$old_root" "${common[@]}" --ablation none \

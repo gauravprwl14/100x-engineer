@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "feature": "screen-patterns",
+  "tier": "small",
+  "spec": "specs/screen-patterns/spec.md",
+  "spec_sha256": "71d14fc636591b0d18c19a2a7198787de7503f8f471ab89b1f256be2e7ac4077",
+  "base": "79bb23c1a4bc087b532c806f8f6d8d75e0e401ad",
+  "tasks": [
+    {
+      "id": "T0",
+      "title": "contract and catalogue data",
+      "owner": "solution-architect",
+      "depends_on": [],
+      "contract": true,
+      "files": [
+        "specs/screen-patterns/contract.md",
+        "scripts/data/edge_cases_ui.json",
+        "scripts/data/screen_patterns.json"
+      ],
+      "acceptance": [
+        "AC-5",
+        "AC-12"
+      ],
+      "verify": [
+        "python3 -c \"import json; json.load(open('scripts/data/edge_cases_ui.json')); json.load(open('scripts/data/screen_patterns.json'))\""
+      ]
+    },
+    {
+      "id": "T1",
+      "title": "plan_feature --screens/--roles/cases, testplan rows, KNOWN_KINDS, tests",
+      "owner": "backend-engineer",
+      "depends_on": [
+        "T0"
+      ],
+      "consumes": [
+        "T0"
+      ],
+      "files": [
+        "scripts/plan_feature.py",
+        "scripts/testplan.py",
+        "scripts/baseline.py",
+        "tests/test_screen_patterns.sh",
+        "tests/test_testplan.sh"
+      ],
+      "acceptance": [
+        "AC-1",
+        "AC-2",
+        "AC-3",
+        "AC-4",
+        "AC-5",
+        "AC-6",
+        "AC-7",
+        "AC-8",
+        "AC-12"
+      ],
+      "verify": [
+        "bash tests/test_screen_patterns.sh",
+        "bash tests/test_testplan.sh",
+        "bash tests/test_planning_tools.sh",
+        "bash tests/test_edge_cases_infra.sh"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "bench cases 13-15, plan_feature usage column, run.sh --old-ref",
+      "owner": "qa-engineer",
+      "depends_on": [
+        "T0"
+      ],
+      "consumes": [
+        "T0"
+      ],
+      "files": [
+        "bench/cases/13-*/**",
+        "bench/cases/14-*/**",
+        "bench/cases/15-*/**",
+        "bench/samples/13-*/**",
+        "bench/samples/14-*/**",
+        "bench/samples/15-*/**",
+        "bench/checks.py",
+        "bench/compare.py",
+        "bench/run.sh",
+        "bench/README.md",
+        "bench/test_bench.sh"
+      ],
+      "acceptance": [
+        "AC-10",
+        "AC-11"
+      ],
+      "verify": [
+        "bash bench/test_bench.sh"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "instruction pointers to plan_feature cases",
+      "owner": "backend-engineer",
+      "depends_on": [
+        "T0"
+      ],
+      "consumes": [
+        "T0"
+      ],
+      "files": [
+        "skills/ui-baseline/SKILL.md",
+        "skills/diff-review/SKILL.md",
+        "skills/feature-planning/SKILL.md",
+        "skills/qa-strategy/SKILL.md",
+        "agents/qa-engineer.md",
+        "agents/code-reviewer.md",
+        "agents/frontend-engineer.md",
+        "skills/pr-review/references/reviewer-prompt.md"
+      ],
+      "acceptance": [
+        "AC-9"
+      ],
+      "verify": [
+        "python3 scripts/lint_skills.py"
+      ]
+    }
+  ]
+}

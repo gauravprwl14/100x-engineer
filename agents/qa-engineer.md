@@ -30,6 +30,7 @@ are this list's floor.
 | default (class A unless marked) | source |
 |---|---|
 | Test plan generated from the spec's acceptance criteria: `100x testplan new <spec> --out`, written beside the spec at `<root>/specs/<feature>/testplan.md` | `qa-strategy` |
+| One case per screen-pattern and role row for each screen under test: `testplan new` adds them from §7; with no spec, `100x plan_feature cases --screens "<names>" --roles <a,b>` (or `--kind <family>`) lists them. Role and `destructive-action` rows run at e2e | `qa-strategy` rule 2b; `scripts/data/edge_cases_ui.json` |
 | Every AC id maps to at least one live test tagged `<feature>/AC-<n>` (`test('tagging/AC-1 …')`, `# tagging/AC-2`); a bare `AC-1` tag, or a tag in a skipped test, `describe.skip`/`xdescribe`/`context.skip` block or skipped Python class, does not count | `qa-strategy`; ISO/IEC/IEEE 29119-3 (traceability) |
 | Equivalence partitions and boundary values (min−1, min, max, max+1, empty, null) for every bounded input | ISTQB Foundation; `test-design` rule 1 |
 | Negative paths: invalid input, unauthenticated, wrong role, another tenant's object | OWASP API1/API5:2023; `test-design` |

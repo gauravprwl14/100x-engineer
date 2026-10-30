@@ -28,13 +28,14 @@ feature and code has drifted from it — that's `codebase-comprehension` +
 
 ## How this avoids interrogating you
 
-Three axes feed the spec, so the gaps are generated rather than remembered:
+Four inputs feed the spec, so the gaps are generated rather than remembered:
 
 | axis | flag | catalogue |
 |---|---|---|
 | feature kind | `--kind auth,crud` (optional, default `universal`) | edge cases + 24 pre-answered decisions |
 | work type | `--work web-ui,api` | implicit requirements (`scripts/data/baseline.json`) |
 | load tier + risk | `--tier small --risk elevated` | what is required and what is not |
+| screen + roles | `--screens "Settings" --roles admin,member` | screen families (`edge_cases_ui.json`) + 3 rows per role |
 
 1. **Every decision ships a default.** Class A/B baseline items are applied silently and
    listed; decisions carry a recommendation. The agent proceeds and records it.
@@ -88,6 +89,13 @@ never deleted; a retired item is marked `deprecated`.
    an error; `review` alone passes but is counted unverified in the audit summary.
    *Enforced by:* `100x plan_feature audit <root>/specs/<name>`
 
+1c. A feature with a screen also passes `--screens "<names>"` (pattern names, resolved to
+   families that merge into `--kind`; a project's `<root>/screen_patterns.json` adds its
+   own names) and `--roles <a,b>` for every role it treats differently, so §7 carries
+   the screen-pattern and role rows. Preview them first.
+   *Enforced by:* `100x plan_feature cases --screens "<names>" --roles <a,b>` (exit 2 on an
+   unknown screen or role); `plan_feature audit` then gates the seeded rows
+
 2. Every edge case must end at `covered` with a named test, `accepted` with a reason,
    or `deferred` with a follow-up reference — `TODO` is not a terminal state — and
    implementation starts only once this audit passes. That gate is the whole
@@ -132,10 +140,13 @@ never deleted; a retired item is marked `deprecated`.
 
 # 1. scaffold: seeds §0b baseline, edge cases + pre-answered decisions
 100x plan_feature new login --kind auth,crud --work api --tier small --stack nestjs
+100x plan_feature new prefs --work web-ui --tier small --screens Settings --roles admin,member
 #    work: web-ui mobile api worker data-pipeline cli iac (public-api = api, public)
 #    kinds: universal auth crud payment upload search realtime migration integration
 #    + infra: cache queue cron webhook third-party-api multi-tenancy pii-compliance
 #      batch-job file-storage notification
+#    + screens: settings destructive-action form list-table detail-view auth-screens
+#      scheduling checkout money-transfer (preview: 100x plan_feature cases --kind <k>)
 #    combine them — a checkout feature is `payment,crud`
 
 # 2. fill §0b and sections 1-14, resolve every edge case, then gate on it
@@ -188,8 +199,9 @@ This skill rejects:
   looks finished while being empty.
 
 **Honest limitations:**
-- The catalogue covers 19 kinds and 140 edge cases: 9 kinds (including `universal`)
-  and 60 cases in `edge_cases.json`, 10 kinds and 80 cases in `edge_cases_infra.json`.
+- The catalogue covers 28 kinds and 200 edge cases: 9 kinds (including `universal`)
+  and 60 cases in `edge_cases.json`, 10 and 80 in `edge_cases_infra.json`, 9 screen
+  families and 60 in `edge_cases_ui.json`.
   A feature outside those gets only the 10 universal cases — add to the catalogue
   rather than pretending coverage.
 - The audit checks **structure, not judgement**. It cannot tell whether a test named
@@ -222,6 +234,9 @@ the spec, because the expensive question becomes "why is it like this" years lat
   `scripts/data/decisions_required.json` —
   `SOURCE: original`, assembled from the failure classes named across
   `research/23`, `research/33`, `research/35` and `research/36`.
+- Screen families, role templates and a generic screen-pattern vocabulary, extended by a
+  project's own `screen_patterns.json`, behind rule 1c: `scripts/data/edge_cases_ui.json`,
+  `scripts/data/screen_patterns.json`, both `SOURCE: original`.
 - The "one named command proves it works" rule appears in 30+ of 48 surveyed
   production agent-instruction files: `research/21-findings-agent-instruction-corpus.md`.
 - Expand/contract migration discipline and rollback-must-be-tested:

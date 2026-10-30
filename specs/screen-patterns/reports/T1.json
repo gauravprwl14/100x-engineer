@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "agent": "backend-engineer",
+  "task_id": "T1",
+  "status": "done",
+  "understanding": "Wire the screen-behaviour catalogue (edge_cases_ui.json) and the screen-name map (screen_patterns.json) into the CLI: plan_feature new gains --screens and --roles (3 rows per role in section 7, protected by the audit), a read-only plan_feature cases prints the checklist, testplan new gives each open UI-family or role row a case, and baseline.KNOWN_KINDS includes the UI kinds; a project's <records root>/screen_patterns.json overlays the generic plugin map. Conventions read: AGENTS.md; analog followed: the edge_cases_infra.json merge in scripts/plan_feature.py and tests/test_edge_cases_infra.sh.",
+  "inputs_read": [
+    "specs/screen-patterns/contract.md",
+    "specs/screen-patterns/spec.md",
+    "AGENTS.md",
+    "scripts/plan_feature.py",
+    "scripts/testplan.py",
+    "scripts/baseline.py",
+    "analog: scripts/plan_feature.py edge_cases_infra.json merge loop and tests/test_edge_cases_infra.sh",
+    "instructions: AGENTS.md (stdlib only, comments explain why, scoped diffs, tests assert detection and no false positives)",
+    "spec: specs/screen-patterns/spec.md sections 2b, 3, 10; contract.md as updated in b735380",
+    "naming: existing cmd_<verb> subcommands and *_PATH data constants in plan_feature.py",
+    "lessons: none",
+    "decisions: ADR-0003"
+  ],
+  "assumptions": [
+    {"class": "A", "text": "Role names use the allowlist ^[a-z][a-z0-9-]{0,31}$, screen names must match a map entry exactly, project map files are validated before use, and table cells go through esc()."},
+    {"class": "A", "text": "Diagnostics go to stderr so cases --json stdout stays valid JSON; failures exit 2."}
+  ],
+  "questions": [],
+  "plan_issues": [],
+  "decisions": [
+    {"door": "two-way", "scope": "local", "decision": "An empty --screens or --roles exits 2 rather than being ignored", "basis": "an explicit empty flag is almost always an empty shell variable"},
+    {"door": "two-way", "scope": "local", "decision": "A project screen map is checked against every contract rule", "basis": "a project checkout screen without payment would silently skip the risk floor"},
+    {"door": "two-way", "scope": "local", "decision": "'risk raised' is printed only when --screens is used", "basis": "keeps output without the new flags byte-identical (spec E10)"}
+  ],
+  "changes": [
+    {"path": "scripts/plan_feature.py", "summary": "UI catalogue merge, --screens with exact normalised resolution and suggestions, project map overlay, --roles rows, screens/roles header rows, audit rebuilds role rows, read-only cases subcommand"},
+    {"path": "scripts/testplan.py", "summary": "one TC-E<n>-1 case per open UI-family or role section 7 row; --all-edge-cases"},
+    {"path": "scripts/baseline.py", "summary": "KNOWN_KINDS also reads edge_cases_ui.json"},
+    {"path": "tests/test_screen_patterns.sh", "summary": "new suite covering AC-1..AC-7, AC-12 and the project-map overlay"},
+    {"path": "tests/test_testplan.sh", "summary": "AC-8 cases"}
+  ],
+  "evidence": [
+    {"kind": "test", "cmd": "bash tests/test_screen_patterns.sh", "exit_code": 0, "output_tail": "screen-patterns: 116 passed, 0 failed"},
+    {"kind": "test", "cmd": "bash tests/test_testplan.sh", "exit_code": 0, "output_tail": "testplan: 222 passed, 0 failed"},
+    {"kind": "test", "cmd": "bash tests/test_planning_tools.sh", "exit_code": 0, "output_tail": "planning-tools: 199 passed, 0 failed"},
+    {"kind": "test", "cmd": "bash tests/test_edge_cases_infra.sh", "exit_code": 0, "output_tail": "edge-cases-infra: 15 passed, 0 failed"}
+  ],
+  "follow_ups": ["regenerate decisions/INDEX.md so ADR-0003 shows accepted"]
+}
