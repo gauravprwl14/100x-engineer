@@ -173,7 +173,7 @@ flowchart LR
 | `note`, `decide`, `ask`, `answer`, `hold`, `release-hold`, `handoff` | append one event |
 | `claim <pr> [--ttl 2h] [--steal]`, `release <pr>` | the per-PR lock on this machine |
 | `cloud <pr> "<task>"` | starts `claude --cloud` with the brief and the task as its first prompt |
-| `doctor` | record found, events, live claims, backed up or not, hook timings |
+| `doctor` | read-only checks: record found and private, events readable, which workstream this folder maps to, a dry run of the SessionStart hook (would a session here get the brief, and how long it took), installed hooks per config dir, backup coverage and state, stale holds; live claims and a hook timing log are P2 |
 
 **Hooks** (added to `hooks/hooks.json`; local files only; each fails open):
 
@@ -227,7 +227,7 @@ Likelihood and impact are integers 1-5; the audit recomputes L x I. A risk with 
 | RI2 | Effort estimate is wrong and scope grows mid-build | 3 | 3 | 9 | launchers, model routing and review modes are separate PRDs; phase 1 is the brief, notes and the fork warning only | assumed |
 | RI3 | The existing codebase makes the recommended option more expensive than scored | 2 | 3 | 6 | phase 1 reuses `hooks/session_start.py` and the plugin's `~/.config/100x` precedent | code |
 | RI4 | the record goes stale because sessions do not write their decisions into it | 4 | 4 | 16 | SessionEnd handoff; `decide` and `hold` are one command; M1 measured on a real feature decides whether phase 2 is worth building | assumed |
-| RI5 | hooks slow down prompts | 2 | 3 | 6 | local files only; timings logged and shown by `doctor` | default |
+| RI5 | hooks slow down prompts | 2 | 3 | 6 | local files only; `doctor` times one dry run of the SessionStart hook and warns past half its timeout; a per-run timing log is P2 | default |
 | RI6 | the brief leaks into commit or PR text | 2 | 4 | 8 | R12 line in every brief; reviewed in the phase 1 test plan | default |
 | RI7 | the backup loses events (delete guard, secret scan) | 2 | 4 | 8 | union mirror is never pruned (claude-setup#1); secret-like text refused at write (R15) | code |
 
@@ -237,7 +237,7 @@ Likelihood and impact are integers 1-5; the audit recomputes L x I. A risk with 
 |---|---|---|---|---|---|
 | P0 | Phase 0 — prerequisites | claude-setup#1 merged and pulled once; one manual check that `claude --cloud "<text>"` starts a session with that text as its first prompt | the backup carries the folder between laptops; cloud briefing is possible | union mirror not merged → stop before phase 2 (phase 1 still works on one laptop); cloud check fails → drop `work cloud` | assumed |
 | P1 | Phase 1 — brief, notes, fork warning | `100x work start/brief/note/decide/hold/handoff/doctor`; SessionStart injects the brief; PreToolUse on Agent warns on forks after a compaction; secret refusal; a `docs/SAFETY.md` row for `~/.config/100x/work` | a fresh session resumes a real multi-PR workstream unaided (M2) and fork share drops (M3) | the brief needs more than 3,000 tokens to be correct, or M3 does not move on one workstream | assumed |
-| P2 | Phase 2 — awareness and locks | UserPromptSubmit "since"; PreToolUse hold and claim check on push and PR; `claim`/`release`; `work cloud` | E1, E3, E5 on one machine; E8 on two laptops; M1 | a hook adds more than 1 s to a prompt at p95, or M1 does not improve | assumed |
+| P2 | Phase 2 — awareness and locks | UserPromptSubmit "since"; PreToolUse hold and claim check on push and PR; `claim`/`release`; `work cloud`; `doctor` shows live claims and hook timings from `~/.cache/100x/work.log` (one line per hook run: event, time taken, result, fail-open reason) | E1, E3, E5 on one machine; E8 on two laptops; M1 | a hook adds more than 1 s to a prompt at p95, or M1 does not improve | assumed |
 | P3 | Phase 3 — decision queue | question events with A/B auto-apply and one batched list | M4 | M4 does not improve on one workstream | assumed |
 
 ## 12. Non-goals (out of scope)
@@ -262,7 +262,7 @@ Personal data touched: session ids and whatever the owner writes in notes. The f
 
 ## 15. Observability
 
-`100x work doctor`: record found, event count, live claims, whether a backup mirror covers the folder, and hook timings from `~/.cache/100x/work.log` (one line per hook run: event, time taken, result, fail-open reason).
+`100x work doctor` is read-only (no write, no fetch, no `gh`) and prints one finding per problem (id, severity, what, cause, fix); exit 1 on any error or warning. Its checks: the record dir exists and is mode 0700; every event file is readable, of this schema and well-formed (a malformed one is named with what is wrong); which workstream the folder maps to; a dry run of the SessionStart hook for that folder (would a session get the brief, and how long the one run took against the hook's timeout); the work hooks registered by each config dir's installed copy (the `installPath` in `plugins/installed_plugins.json`); whether the backup's file list covers the record dir, and whether the backup repo is stopped mid-operation or has unpushed commits (local refs only); holds older than 14 days and workstreams with no recent handoff. Live claims and a hook-run timing log are P2 (§11).
 
 ## 16. Rollout / rollback
 

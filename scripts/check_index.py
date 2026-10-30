@@ -466,6 +466,7 @@ def gen_collections():
             "release-rollout": "3 before shipping",
             "project-learning": "6 meta",
             "session-find": "6 meta",
+            "work-doctor": "6 meta",
         }
         rows = []
         for f in sorted(sk.glob("*/SKILL.md")):

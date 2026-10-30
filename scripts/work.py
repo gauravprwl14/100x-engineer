@@ -20,7 +20,7 @@ the workstream view is derived in memory from the events.
     100x work handoff TEXT         [--ws WS]
     100x work brief [--ws WS] [--max-tokens 3000]
     100x work list
-    100x work doctor
+    100x work doctor [--json] [--cwd DIR]
 
 Without --ws, the workstream is the one whose repos and PR branches match the current
 directory's `origin` remote and branch.
@@ -28,12 +28,17 @@ directory's `origin` remote and branch.
 Environment: HUNDREDX_WORK_DIR (record dir, default ~/.config/100x/work),
 HUNDREDX_WORK=off (disable every command and hook), HUNDREDX_WORK_BACKUP_HINT (a file
 naming the record dir when a backup covers it; else "backup_hint" in ~/.config/100x/work.json;
-unset means doctor reports the record as not backed up).
+unset means doctor reports the record as not backed up), HUNDREDX_CONFIG_DIRS (extra
+Claude config dirs, colon-separated, whose installed plugin doctor inspects).
 
-Exit codes: 0 ok, 1 refused or not found (nothing written), 2 usage error.
+`doctor` is read-only: one finding per problem (id, severity, what, cause, fix), exit 1 when
+any is an error or warning.
+
+Exit codes: 0 ok, 1 refused or not found (nothing written) or doctor found a problem,
+2 usage error.
 Python stdlib only.
 """
-import argparse, datetime, json, os, pathlib, re, secrets, subprocess, sys
+import argparse, datetime, json, os, pathlib, re, secrets, shlex, subprocess, sys, time
 import urllib.parse
 
 SCHEMA = 1
@@ -84,7 +89,9 @@ def disabled():
 def record_dir():
     env = os.environ.get("HUNDREDX_WORK_DIR")
     if env:
-        return pathlib.Path(env).expanduser()
+        # Absolute from this process's start folder, so doctor and its hook dry run read
+        # one record whatever folder --cwd names.
+        return pathlib.Path(os.path.abspath(os.path.expanduser(env)))
     return pathlib.Path.home().joinpath(*DEFAULT_DIR_REL)
 
 
@@ -128,11 +135,15 @@ def redact(text):
     return re.sub(r"//[^/@\s]*@", "//", text)
 
 
-def git_out(cwd, *args):
+def git_out(cwd, *args, timed_out=None):
+    """stdout, None on failure, or `timed_out` when git did not answer in time (doctor
+    passes a marker so a hung repo is reported instead of read as "not set up")."""
     try:
         done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True,
                               text=True, timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        return timed_out
+    except OSError:
         return None
     return done.stdout.strip() if done.returncode == 0 else None
 
@@ -235,12 +246,85 @@ def read_events(ws):
             continue
         if not isinstance(event, dict):
             unreadable += 1
-        elif event.get("schema") != SCHEMA:
+        elif is_newer_schema(event):
             newer += 1
-        elif event.get("type") in EVENT_TYPES:
+        else:
+            # A missing or invalid schema is passed on so derive() can skip it with a reason.
             event["_file"] = name
             events.append(event)
     return events, unreadable, newer
+
+
+def is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_newer_schema(event):
+    """Only a whole number above SCHEMA is newer; a missing or odd schema is malformed, and
+    calling it newer would send the user to reinstall a plugin that cannot help."""
+    return is_int(event.get("schema")) and event["schema"] > SCHEMA
+
+
+def is_text(value):
+    return isinstance(value, str)
+
+
+def is_text_list(value):
+    return isinstance(value, list) and all(is_text(v) for v in value)
+
+
+# field: (test, what it must be). A field may be absent; one that is present must pass.
+FIELD_SHAPES = {"at": (is_text, "text"), "text": (is_text, "text"), "id": (is_text, "text"),
+                "reason": (is_text, "text"), "pr": (is_int, "a PR number")}
+SET_SHAPES = {"goal": (is_text, "text"),
+              "repos": (is_text_list, "a list of text"),
+              "conventions": (is_text_list, "a list of text"),
+              "merge_order": (lambda v: isinstance(v, list) and all(is_int(n) for n in v),
+                              "a list of PR numbers")}
+REQUIRED_FIELDS = {"note": ("text",), "handoff": ("text",), "decision": ("text",),
+                   "hold": ("pr",), "release-hold": ("pr",)}
+
+
+def pr_problem(pr):
+    if not isinstance(pr, dict):
+        return "a prs entry is not an object"
+    if not is_int(pr.get("number")) or pr["number"] < 1:
+        return "a prs entry has no positive number"
+    for key in ("branch", "role"):
+        if not isinstance(pr.get(key), str) or not pr[key].strip():
+            return f"PR {pr['number']} has no {key}"
+    return None
+
+
+def clean_event(event):
+    """(a copy holding only the fields derivation can use, or None to skip the event; what is
+    wrong). Event files can be hand-edited or written by another tool, and one bad field must
+    not take the brief, the lookup or doctor down with it."""
+    if not is_int(event.get("schema")) or event["schema"] != SCHEMA:
+        return None, ["it has no schema" if "schema" not in event else
+                      f"schema {event['schema']!r} is not {SCHEMA}"]
+    kind = event.get("type")
+    if kind not in EVENT_TYPES:
+        return None, []        # tolerant reader: a type this version does not know is ignored
+    usable, problems = dict(event), []
+    shapes = dict(FIELD_SHAPES, **SET_SHAPES) if kind == "set" else FIELD_SHAPES
+    for key, (test, shape) in shapes.items():
+        if key in usable and not test(usable[key]):
+            problems.append(f"{key} is not {shape}")
+            del usable[key]
+    if kind == "set" and "prs" in usable:
+        if not isinstance(usable["prs"], list):
+            problems.append("prs is not a list")
+            del usable["prs"]
+        else:
+            bad = [p for p in map(pr_problem, usable["prs"]) if p]
+            problems += bad
+            usable["prs"] = [pr for pr in usable["prs"] if not pr_problem(pr)]
+    absent = [key for key in REQUIRED_FIELDS.get(kind, ()) if key not in event]
+    problems += [f"{key} is missing" for key in absent]
+    if any(key not in usable for key in REQUIRED_FIELDS.get(kind, ())):
+        return None, problems
+    return usable, problems
 
 
 def workstreams():
@@ -255,9 +339,13 @@ def workstreams():
 
 def derive(ws, events):
     view = {"ws": ws, "goal": "", "repos": [], "prs": {}, "merge_order": [],
-            "conventions": [], "decisions": {}, "holds": {}, "notes": []}
+            "conventions": [], "decisions": {}, "holds": {}, "notes": [], "skipped": []}
     for event in events:
-        apply_event(view, event)
+        usable, problems = clean_event(event)
+        if problems:
+            view["skipped"].append({"file": event.get("_file", "?"), "problems": problems})
+        if usable is not None:
+            apply_event(view, usable)
     return view
 
 
@@ -334,20 +422,27 @@ def resolve_ws(explicit, cwd=None):
 def render_brief(view, newer=0, max_tokens=DEFAULT_MAX_TOKENS):
     """Markdown under max_tokens (len/4): oldest notes go first, then oldest decisions.
     Holds, PRs and the privacy line always stay."""
+    return trim_brief(view, newer, max_tokens)["text"]
+
+
+def trim_brief(view, newer, max_tokens):
+    """The brief plus what the budget cut, so doctor can say what a session will not see."""
     notes = view["notes"][-BRIEF_RECENT:]
     decisions = list(view["decisions"].values())
     dropped = len(view["notes"]) - len(notes)
+    cut = {"notes": 0, "decisions": 0}
     while True:
         text = brief_text(view, notes, decisions, dropped, newer)
-        if len(text) / CHARS_PER_TOKEN <= max_tokens:
-            return text
+        fits = len(text) / CHARS_PER_TOKEN <= max_tokens
+        if fits or not (notes or decisions):
+            return {"text": text, "fits": fits, **cut}
         if notes:
             notes = notes[1:]
             dropped += 1
-        elif decisions:
-            decisions = decisions[1:]
+            cut["notes"] += 1
         else:
-            return text
+            decisions = decisions[1:]
+            cut["decisions"] += 1
 
 
 def brief_text(view, notes, decisions, dropped, newer):
@@ -377,6 +472,10 @@ def brief_text(view, notes, decisions, dropped, newer):
         or ["- none"]
     if newer:
         lines += ["", f"{newer} event(s) use a newer schema: upgrade the plugin to read them."]
+    skipped = len(view.get("skipped") or [])
+    if skipped:
+        lines += ["", f"{skipped} event{'' if skipped == 1 else 's'} skipped: malformed "
+                  "(`100x work doctor` names the file and what is wrong)."]
     return "\n".join(lines) + "\n"
 
 
@@ -493,52 +592,673 @@ def backup_hint():
     return pathlib.Path(hint).expanduser() if isinstance(hint, str) and hint else None
 
 
-def backup_line(root):
-    """(hint file, line) when a line of the hint file starts with the record dir, given
-    home-relative or absolute; None otherwise."""
-    hint = backup_hint()
-    if hint is None:
-        return None
-    names = {str(root)}
+def hint_entry(hint, root):
+    """The first line of the hint file whose path (home-relative or absolute) is the record
+    dir or a folder holding it, or None. Links are resolved on both sides, so a linked record
+    dir matches a line naming its real path and the reverse. OSError when it cannot be read."""
     home = pathlib.Path.home()
-    if home in root.parents:
-        names.add(str(root.relative_to(home)))
-    try:
-        lines = hint.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return None
-    for line in lines:
+    real = root.resolve()
+    for line in hint.read_text(encoding="utf-8", errors="replace").splitlines():
         words = line.split()
-        if words and words[0].rstrip("/") in names:
-            return hint, line.strip()
+        if not words:
+            continue
+        path = pathlib.Path(words[0]).expanduser()
+        try:
+            named = (path if path.is_absolute() else home / path).resolve()
+        except RuntimeError:   # Python 3.9 raises this for a symlink loop; it covers nothing
+            continue
+        if named == real or named in real.parents:
+            return line.strip()
     return None
 
 
-def cmd_doctor(_args):
-    root = record_dir()
-    print(f"record dir: {root}")
+def home_relative(path):
+    home = pathlib.Path.home()
+    return str(path.relative_to(home)) if home in path.parents else str(path)
+
+
+# ---------------------------------------------------------------- doctor
+#
+# Read-only diagnosis: every check reads files, git refs and one dry run of the SessionStart
+# hook, and returns findings. Nothing here writes, fetches or calls gh. Adding a check is one
+# function decorated with @check(<id>).
+
+SEVERITIES = ("error", "warn", "info")
+FAILING = ("error", "warn")
+HOLD_STALE_DAYS = 14
+HANDOFF_LAG_DAYS = 7
+UNPUSHED_HOURS = 24
+# Optional convention, not a dependency on any one backup tool: a backup that rebases before
+# it pushes can leave this file at its repository's root when the rebase stops, with the
+# reason in its first lines. When present, the backup is stuck until someone resolves it.
+SYNC_FAILED_REL = (".state", "remote-sync-failed")
+SYNC_FAILED_SHOWN = 5
+# What git leaves in its git dir while a rebase, merge or cherry-pick waits on the user.
+MID_OPERATION = {"rebase-merge": "rebase", "rebase-apply": "rebase or am",
+                 "MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick"}
+GIT_TIMED_OUT = object()
+PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent.parent
+PLUGIN_NAME = "100x"
+WORK_HOOKS = (("SessionStart", "work_brief.py"), ("PreToolUse", "work_fork_guard.py"))
+BRIEF_HOOK = "work_brief.py"
+HOOK_TIMEOUT_S = 10        # used when hooks.json does not state the hook's own timeout
+HOOK_SLOW_FRACTION = 0.5   # a dry run past half the timeout is one bad day from being killed
+CONFIG_DIRS_ENV = "HUNDREDX_CONFIG_DIRS"
+CONFIG_DIRS_SEP = ":"
+DEFAULT_CONFIG_DIR = ".claude"
+PLACEHOLDER_MARKET = "<marketplace>"
+INSTALLED_REL = ("plugins", "installed_plugins.json")
+SEMVER_RX = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
+# docs/SAFETY.md: event files are never edited, moved or deleted, so no fix may suggest it;
+# the brief already skips a bad file, and a new event supersedes what it said.
+KEEP_EVENTS = "leave the file where it is (event files are never edited, moved or deleted)"
+
+CHECKS = []
+
+
+def check(check_id):
+    def register(fn):
+        CHECKS.append((check_id, fn))
+        return fn
+    return register
+
+
+def finding(fid, severity, what, cause, fix):
+    return {"id": fid, "severity": severity, "what": what, "cause": cause, "fix": fix}
+
+
+def q(path):
+    return shlex.quote(str(path))
+
+
+def parse_at(text):
+    """An aware UTC datetime, or None; a hand-edited stamp without a zone would otherwise
+    crash the subtraction against utc_now()."""
+    try:
+        stamp = datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo else None
+
+
+def age_days(then, now):
+    return (now - then).total_seconds() / 86400
+
+
+@check("D-record")
+def check_record(ctx):
+    out, root = [], ctx["root"]
     if disabled():
-        print("HUNDREDX_WORK=off: every command and hook is disabled")
-    if not root.is_dir():
-        print("  not created yet (`100x work start` creates it)")
+        out.append(finding("D-record.off", "warn", "HUNDREDX_WORK=off: every work command "
+                           "and hook is disabled, so no session gets a brief",
+                           "the variable is set in this shell or its profile",
+                           "unset HUNDREDX_WORK"))
+    if not root.exists():
+        out.append(finding("D-record.missing", "info", f"no work record yet at {root}",
+                           "no workstream has been started on this machine (or "
+                           "HUNDREDX_WORK_DIR points elsewhere)",
+                           "100x work start <name> --repo <host/owner/repo> "
+                           "--pr <number>:<branch>:<role>"))
+    elif not root.is_dir():
+        out.append(finding("D-record.not-dir", "error", f"{root} exists but is not a directory",
+                           "something else was created at the record path",
+                           f"move {q(root)} aside by hand, or set HUNDREDX_WORK_DIR"))
     else:
         mode = root.stat().st_mode & 0o777
-        print(f"  mode {mode:o}" + ("" if mode & 0o077 == 0 else
-                                    "  WARNING: readable by other users; chmod 700 it"))
-        for ws in workstreams():
-            events, unreadable, newer = read_events(ws)
-            extra = "".join([f", {unreadable} unreadable" if unreadable else "",
-                             f", {newer} newer-schema" if newer else ""])
-            print(f"  {ws}: {len(events)} events{extra}")
-    found = backup_line(root)
-    if found:
-        print(f"backup: {found[0]} names it ({found[1]})")
+        if mode & 0o077:
+            out.append(finding("D-record.mode", "warn",
+                               f"record dir is mode {mode:o}: other users can read it",
+                               "it was created or copied by something other than `100x work` "
+                               "(a restore or a sync keeps the source mode)",
+                               f"chmod 700 {q(root)}"))
+    return out
+
+
+def classify_event_files(ws):
+    """(unreadable, newer-schema, stray, malformed) in one workstream's events folder: file
+    names, and for malformed "<file>: <what is wrong>"."""
+    folder = record_dir() / ws / "events"
+    unreadable, newer, stray, malformed = [], [], [], []
+    try:
+        entries = sorted(folder.iterdir())
+    except OSError:
+        return unreadable, newer, stray, malformed
+    for path in entries:
+        if not EVENT_NAME_RX.match(path.name):
+            stray.append(path.name)
+            continue
+        try:
+            event = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unreadable.append(path.name)
+            continue
+        if not isinstance(event, dict):
+            unreadable.append(path.name)
+        elif is_newer_schema(event):
+            newer.append(path.name)
+        else:
+            problems = clean_event(event)[1]
+            if problems:
+                malformed.append(f"{path.name}: {', '.join(problems)}")
+    return unreadable, newer, stray, malformed
+
+
+def listed(names, limit=3, sep=", "):
+    more = f" and {len(names) - limit} more" if len(names) > limit else ""
+    return sep.join(names[:limit]) + more
+
+
+@check("D-events")
+def check_events(ctx):
+    out = []
+    for ws in workstreams():
+        unreadable, newer, stray, malformed = classify_event_files(ws)
+        folder = record_dir() / ws / "events"
+        if malformed:
+            out.append(finding("D-events.malformed", "error",
+                               f"{ws}: {len(malformed)} event file(s) hold fields this version "
+                               f"cannot use, and the brief skips them: {listed(malformed, sep='; ')}",
+                               "the file was edited by hand or written by another tool",
+                               f"{KEEP_EVENTS}; if a skipped field mattered, record it again: "
+                               f"100x work start {ws} --pr <number>:<branch>:<role>, or 100x "
+                               f"work note TEXT --ws {ws}"))
+        if unreadable:
+            out.append(finding("D-events.unreadable", "warn",
+                               f"{ws}: {len(unreadable)} event file(s) are not readable JSON "
+                               f"({listed(unreadable)}); the brief skips them",
+                               "a crash or an interrupted sync truncated the file, or it was "
+                               "edited by hand",
+                               f"{KEEP_EVENTS}; compare it with your backup copy and record "
+                               f"anything it held again: 100x work note TEXT --ws {ws}"))
+        if newer:
+            out.append(finding("D-events.newer-schema", "warn",
+                               f"{ws}: {len(newer)} event(s) use a schema newer than {SCHEMA} "
+                               "and are ignored here",
+                               "another session or laptop runs a newer 100x plugin",
+                               "upgrade the plugin here: " + reinstall_cmd(None, None)))
+        if stray:
+            out.append(finding("D-events.stray", "info",
+                               f"{ws}: {len(stray)} file(s) in events/ are not named like an "
+                               f"event and are ignored ({listed(stray)})",
+                               "a file was copied in by hand or by a sync tool's conflict copy",
+                               f"none needed in {q(folder)}: they are ignored; if one is a "
+                               "conflict copy of an event, record what it says again with "
+                               "100x work note"))
+    return out
+
+
+@check("D-lookup")
+def check_lookup(ctx):
+    cwd = ctx["cwd"]
+    if git_out(cwd, "rev-parse", "--show-toplevel") is None:
+        return [finding("D-lookup.not-repo", "info", f"{cwd} is not inside a git repository, "
+                        "so no workstream can match it",
+                        "the hooks match a session on its origin remote and branch",
+                        "run doctor with --cwd <a worktree of the workstream>, or pass "
+                        "--ws to work commands")]
+    url = git_out(cwd, "remote", "get-url", "origin")
+    if not url:
+        return [finding("D-lookup.no-origin", "warn", f"{cwd} has no origin remote",
+                        "workstreams match on origin; this repo has none (or names it "
+                        "differently)", f"git -C {q(cwd)} remote add origin <url>, or pass "
+                        "--ws to work commands")]
+    if ctx["ident"] is None:
+        branch = git_out(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+        if branch in (None, "HEAD"):
+            return [finding("D-lookup.detached", "info", f"{cwd} has no branch checked out "
+                            "(detached HEAD, or no commit yet)",
+                            "workstreams match on a branch name", f"git -C {q(cwd)} switch "
+                            "<branch> (or make the first commit), or pass --ws to work "
+                            "commands")]
+        return [finding("D-lookup.bad-origin", "warn", f"origin {redact(url)!r} does not read "
+                        "as host/owner/repo", "an unusual remote form",
+                        "pass --ws to work commands")]
+    repo, branch = ctx["ident"]
+    matches = ctx["matches"]
+    if len(matches) > 1:
+        return [finding("D-lookup.several", "warn",
+                        f"{repo} {branch} matches {len(matches)} workstreams: "
+                        f"{', '.join(matches)}; hooks and commands refuse to guess",
+                        "the same repo and branch were added to more than one workstream",
+                        f"pass --ws, or move the branch in one of them: 100x work start "
+                        f"{matches[-1]} --pr <number>:<other-branch>:<role>")]
+    if matches:
+        return []
+    same_repo = [ws for ws in workstreams() if repo in load_view(ws)["repos"]]
+    near = (f"; {', '.join(same_repo)} has this repo but not this branch"
+            if same_repo else "")
+    target = same_repo[0] if len(same_repo) == 1 else "<name>"
+    repo_arg = "" if same_repo else f" --repo {repo}"
+    return [finding("D-lookup.none", "info", f"{repo} {branch} matches no workstream{near}",
+                    "no `100x work start` has named this repo and branch",
+                    f"100x work start {target}{repo_arg} --pr <number>:{shlex.quote(branch)}"
+                    ":<role>")]
+
+
+def hooks_config(plugin_root):
+    """hooks.json's "hooks" object, or None when it is missing or unreadable."""
+    try:
+        config = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    hooks = config.get("hooks") if isinstance(config, dict) else None
+    return hooks if isinstance(hooks, dict) else None
+
+
+def hook_commands(hooks, event):
+    for group in hooks.get(event) or []:
+        for entry in (group.get("hooks") or []) if isinstance(group, dict) else []:
+            if isinstance(entry, dict) and isinstance(entry.get("command"), str):
+                yield entry
+
+
+def missing_hooks(hooks):
+    if hooks is None:
+        return [name for _, name in WORK_HOOKS]
+    return [name for event, name in WORK_HOOKS
+            if not any(f"/hooks/{name}" in e["command"] for e in hook_commands(hooks, event))]
+
+
+def brief_hook_timeout():
+    hooks = hooks_config(PLUGIN_ROOT) or {}
+    for entry in hook_commands(hooks, "SessionStart"):
+        if BRIEF_HOOK in entry["command"] and isinstance(entry.get("timeout"), (int, float)):
+            return entry["timeout"]
+    return HOOK_TIMEOUT_S
+
+
+def run_brief_hook_dry(cwd):
+    """Feed hooks/work_brief.py the payload a SessionStart in cwd would send.
+    (brief text or None, seconds, error text or None)."""
+    payload = json.dumps({"hook_event_name": "SessionStart", "source": "startup",
+                          "cwd": str(cwd), "session_id": "doctor-dry-run"})
+    # No bytecode: a dry run must not leave __pycache__ in the plugin install either.
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    if env.get("HUNDREDX_WORK_DIR"):
+        env["HUNDREDX_WORK_DIR"] = str(record_dir())
+    started = time.monotonic()
+    try:
+        done = subprocess.run([sys.executable, str(PLUGIN_ROOT / "hooks" / BRIEF_HOOK)],
+                              input=payload, capture_output=True, text=True, env=env,
+                              timeout=brief_hook_timeout())
+    except subprocess.TimeoutExpired:
+        return None, time.monotonic() - started, "timed out; Claude Code would kill it"
+    except OSError as err:
+        return None, time.monotonic() - started, str(err)
+    took = time.monotonic() - started
+    if not done.stdout.strip():
+        return None, took, (done.stderr.strip().splitlines() or [None])[0]
+    try:
+        context = json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"]
+    except (ValueError, KeyError, TypeError):
+        return None, took, "printed something that is not SessionStart hook output"
+    return context, took, None
+
+
+@check("D-brief")
+def check_brief(ctx):
+    out, matches = [], ctx["matches"]
+    brief, took, err = run_brief_hook_dry(ctx["cwd"])
+    ctx["brief_hook"] = {"gets_brief": bool(brief), "seconds": round(took, 2)}
+    limit = brief_hook_timeout()
+    if took > limit * HOOK_SLOW_FRACTION:
+        out.append(finding("D-brief.slow", "warn", f"the SessionStart hook took {took:.1f} s "
+                           f"of its {limit} s timeout", "a large record or a slow git call",
+                           "check `100x work list` for very large workstreams"))
+    if len(matches) == 1 and not disabled() and not brief:
+        out.append(finding("D-brief.hook-silent", "error",
+                           f"{ctx['cwd']} matches {matches[0]}, but the SessionStart hook "
+                           "would print no brief", f"the hook failed open ({err or 'no output'})",
+                           f"100x work brief --ws {matches[0]} shows the error"))
+    if len(matches) != 1:
+        return out
+    events, _, newer = read_events(matches[0])
+    trimmed = trim_brief(derive(matches[0], events), newer, DEFAULT_MAX_TOKENS)
+    if trimmed["decisions"] or not trimmed["fits"]:
+        out.append(finding("D-brief.budget", "warn",
+                           f"{matches[0]}'s brief is over its {DEFAULT_MAX_TOKENS}-token budget: "
+                           f"{trimmed['decisions']} oldest decision(s) and {trimmed['notes']} "
+                           "note(s) are cut" + ("" if trimmed["fits"] else
+                                                ", and it still does not fit"),
+                           "many or long decisions; each new --id adds one",
+                           "re-decide superseded decisions under their old id "
+                           f"(100x work decide TEXT --id <id> --ws {matches[0]}) so they "
+                           "replace rather than accumulate"))
+    elif trimmed["notes"]:
+        out.append(finding("D-brief.notes-cut", "info",
+                           f"{matches[0]}'s brief cuts {trimmed['notes']} recent note(s) to fit "
+                           f"{DEFAULT_MAX_TOKENS} tokens", "long notes",
+                           f"leave a short handoff that restates the state: 100x work "
+                           f"handoff TEXT --ws {matches[0]}"))
+    return out
+
+
+def list_config_dirs():
+    """Claude config dirs to inspect, in order, without duplicates."""
+    raw = [os.environ.get("CLAUDE_CONFIG_DIR") or "",
+           str(pathlib.Path.home() / DEFAULT_CONFIG_DIR)]
+    raw += (os.environ.get(CONFIG_DIRS_ENV) or "").split(CONFIG_DIRS_SEP)
+    seen, out = set(), []
+    for text in raw:
+        if not text.strip():
+            continue
+        path = pathlib.Path(text).expanduser()
+        key = path.resolve() if path.exists() else path
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+    return out
+
+
+def version_key(path):
+    """A release name (0.10.0 > 0.9.1) always sorts above any other folder name, so a
+    commit-sha folder such as 4f2a9c1 never wins on its digits; mtime breaks ties."""
+    release = SEMVER_RX.match(path.name)
+    rank = (1, tuple(int(n) for n in release.groups())) if release else (0, ())
+    return rank, path.stat().st_mtime
+
+
+def newest_cached_copy(config_dir):
+    found = [p.parent.parent for p in
+             config_dir.glob(f"plugins/cache/*/{PLUGIN_NAME}/*/hooks/hooks.json")]
+    if not found:
+        return None
+    newest = max(found, key=version_key)
+    return newest, newest.parent.parent.name
+
+
+def installed_copies(config_dir):
+    """([(plugin version dir, marketplace)], whether installed_plugins.json named them).
+    Claude Code records the copy its sessions load there, per `<name>@<marketplace>` key;
+    old version folders stay in the cache, so the newest folder is only a fallback guess."""
+    try:
+        manifest = json.loads(config_dir.joinpath(*INSTALLED_REL).read_text(encoding="utf-8"))
+        plugins = manifest["plugins"]
+        if not isinstance(plugins, dict):
+            raise TypeError("plugins is not an object")
+    except (OSError, ValueError, KeyError, TypeError):
+        newest = newest_cached_copy(config_dir)
+        return ([newest] if newest else []), False
+    copies = []
+    for key, installs in sorted(plugins.items()):
+        name, _, market = key.partition("@")
+        if name != PLUGIN_NAME or not isinstance(installs, list):
+            continue
+        for install in installs:      # one entry per scope (user, project); check each
+            path = install.get("installPath") if isinstance(install, dict) else None
+            if not isinstance(path, str) or not path:
+                continue
+            copy = (pathlib.Path(path).expanduser(), market)
+            if copy not in copies:
+                copies.append(copy)
+    return copies, True
+
+
+def reinstall_cmd(config_dir, market):
+    market = market or PLACEHOLDER_MARKET
+    prefix = f"CLAUDE_CONFIG_DIR={q(config_dir)} " if config_dir else ""
+    plugin = f"{PLUGIN_NAME}@{market}"
+    return (f"{prefix}claude plugin uninstall {plugin} && {prefix}claude plugin marketplace "
+            f"update {market} && {prefix}claude plugin install {plugin}")
+
+
+def plugin_hooks_fix():
+    """A dev checkout can diff its hooks.json; an installed copy is not a git repo of its
+    own (or sits inside an unrelated one, such as a backed-up config dir), so reinstall it."""
+    top = git_out(PLUGIN_ROOT, "rev-parse", "--show-toplevel")
+    if top and pathlib.Path(top).resolve() == PLUGIN_ROOT:
+        return f"git -C {q(PLUGIN_ROOT)} diff hooks/hooks.json, and restore the work hook entries"
+    market = PLUGIN_ROOT.parent.parent.name if PLUGIN_ROOT.parent.name == PLUGIN_NAME else None
+    return "reinstall the plugin: " + reinstall_cmd(None, market)
+
+
+@check("D-hooks")
+def check_hooks(ctx):
+    out = []
+    missing = missing_hooks(hooks_config(PLUGIN_ROOT))
+    if missing:
+        out.append(finding("D-hooks.plugin", "error", f"this plugin ({PLUGIN_ROOT}) does not "
+                           f"register {', '.join(missing)} in hooks/hooks.json",
+                           "hooks/hooks.json was edited or is from a partial copy",
+                           plugin_hooks_fix()))
+    for config_dir in list_config_dirs():
+        if not config_dir.is_dir():
+            continue
+        copies, from_manifest = installed_copies(config_dir)
+        guess = "" if from_manifest else (f" ({config_dir.joinpath(*INSTALLED_REL)} is missing "
+                                          "or unreadable, so this is the newest cache folder)")
+        if not copies:
+            out.append(finding("D-hooks.not-installed", "info",
+                               f"no installed {PLUGIN_NAME} plugin under {config_dir}{guess}",
+                               "the plugin is not installed for this config dir, or is loaded "
+                               "with --plugin-dir", f"CLAUDE_CONFIG_DIR={q(config_dir)} claude "
+                               f"plugin install {PLUGIN_NAME}@{PLACEHOLDER_MARKET}"))
+        for version_dir, market in copies:
+            if not version_dir.is_dir():
+                out.append(finding("D-hooks.install-missing", "warn",
+                                   f"{config_dir.joinpath(*INSTALLED_REL)} says sessions load "
+                                   f"{version_dir}, which does not exist",
+                                   "the cache folder was deleted, or an install stopped halfway",
+                                   reinstall_cmd(config_dir, market) + "; then restart sessions"))
+                continue
+            gone = missing_hooks(hooks_config(version_dir))
+            if gone:
+                out.append(finding("D-hooks.installed-old", "warn",
+                                   f"the installed copy in {config_dir} ({version_dir.name}) is "
+                                   f"older than this plugin: it does not register "
+                                   f"{', '.join(gone)}{guess}",
+                                   "the plugin cache is a snapshot taken at install time; "
+                                   "sessions using this config dir run the old hooks",
+                                   reinstall_cmd(config_dir, market) + "; then restart sessions"))
+    return out
+
+
+def backup_git_timeout(where):
+    return finding("D-backup.git-timeout", "warn",
+                   f"could not read backup repo state in {where}: git did not answer within "
+                   f"{GIT_TIMEOUT_S} s", "a very large or busy repo, a slow disk, or a stuck "
+                   "git process holding its lock", f"git -C {q(where)} status, to see what is slow")
+
+
+def mid_operation(top, git_dir):
+    """D-backup.mid-operation when a rebase, merge or cherry-pick is waiting, else None."""
+    found = [name for name in MID_OPERATION if git_dir and (pathlib.Path(git_dir) / name).exists()]
+    if not found:
+        return None
+    return finding("D-backup.mid-operation", "error",
+                   f"the backup repo {top} is in the middle of a {MID_OPERATION[found[0]]} "
+                   f"({found[0]} in its git dir)", "a sync or a manual git command stopped on a "
+                   "conflict, so nothing new is committed or pushed",
+                   f"finish or abort it in {top} (git -C {q(top)} status shows how)")
+
+
+def scan_backup_repo(hint):
+    """Findings about the git repo holding the hint file, from local refs only."""
+    def read(*args):
+        return git_out(top, *args, timed_out=GIT_TIMED_OUT)
+
+    top = git_out(hint.parent, "rev-parse", "--show-toplevel", timed_out=GIT_TIMED_OUT)
+    if top is GIT_TIMED_OUT:
+        return [backup_git_timeout(hint.parent)]
+    if top is None:
+        return []
+    out, top = [], pathlib.Path(top)
+    marker = top.joinpath(*SYNC_FAILED_REL)
+    if marker.is_file():
+        try:
+            head = marker.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            head = []
+        shown = " | ".join(line.strip() for line in head[:SYNC_FAILED_SHOWN] if line.strip())
+        out.append(finding("D-backup.sync-failed", "error",
+                           f"the backup repo's last sync stopped: {marker} says: "
+                           f"{shown or '(empty)'}",
+                           "its rebase hit a conflict, so nothing new leaves this machine",
+                           f"resolve the rebase by hand in {top} (git -C {q(top)} status), "
+                           "then let the backup tool clear its marker"))
+    git_dir = read("rev-parse", "--absolute-git-dir")
+    if git_dir is GIT_TIMED_OUT:
+        return out + [backup_git_timeout(top)]
+    # During a rebase HEAD is detached, so the upstream lookup below would wrongly read as
+    # "never set up"; the stuck operation is the real cause and blocks every later sync.
+    stuck = mid_operation(top, git_dir)
+    if stuck:
+        return out + [stuck]
+    upstream = read("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream is GIT_TIMED_OUT:
+        return out + [backup_git_timeout(top)]
+    if not upstream:
+        out.append(finding("D-backup.no-upstream", "info",
+                           f"the backup repo {top} has no upstream branch",
+                           "it was never set up to track a remote, so it may never leave this "
+                           "machine", f"git -C {q(top)} branch --set-upstream-to <remote>/<branch>"))
+        return out
+    ahead = read("rev-list", "--count", "@{u}..HEAD")
+    last = read("log", "-1", "--format=%ct")
+    if GIT_TIMED_OUT in (ahead, last):
+        return out + [backup_git_timeout(top)]
+    if not (ahead and ahead.isdigit() and last and last.isdigit()) or int(ahead) == 0:
+        return out
+    hours = (time.time() - int(last)) / 3600
+    if hours > UNPUSHED_HOURS:
+        out.append(finding("D-backup.unpushed", "warn",
+                           f"backup not pushed: {top} is {ahead} commit(s) ahead of "
+                           f"{upstream}, and its newest commit is {hours:.0f} h old",
+                           "the backup's push has not run or keeps failing (counted from local "
+                           "refs; nothing was fetched)",
+                           f"run your backup tool's sync, or push {top} by hand"))
+    return out
+
+
+@check("D-backup")
+def check_backup(ctx):
+    root, hint = ctx["root"], backup_hint()
+    if hint is None:
+        # info, not warn: going without a backup is the user's choice, and a warning here
+        # would keep doctor at exit 1 forever on a machine that has no backup tool.
+        return [finding("D-backup.none", "info", "the work record is not backed up: no "
+                        "backup_hint is configured", "losing this machine loses the record",
+                        "once a backup covers the record dir, set \"backup_hint\" in "
+                        "~/.config/100x/work.json (or HUNDREDX_WORK_BACKUP_HINT) to that "
+                        "backup's file list")]
+    try:
+        line = hint_entry(hint, root)
+    except OSError:
+        return [finding("D-backup.hint-missing", "error",
+                        f"the backup hint file {hint} does not exist or cannot be read",
+                        "backup_hint points at a moved or deleted file",
+                        "point backup_hint in ~/.config/100x/work.json (or "
+                        "HUNDREDX_WORK_BACKUP_HINT) at your backup's real file list")]
+    out = scan_backup_repo(hint)
+    if line is None:
+        out.insert(0, finding("D-backup.not-named", "warn",
+                              f"{hint} does not name the record dir {root}",
+                              "the backup was set up before the record existed, or names a "
+                              "different path", f"add this line to {hint}: {home_relative(root)}"
+                              " (plus any mode word your backup's other lines use)"))
     else:
-        hint = backup_hint()
-        where = f"{hint} does not name {root}" if hint else "no backup_hint is configured"
-        print(f"WARNING not backed up: {where}. Losing this machine loses the record; set "
-              "\"backup_hint\" in ~/.config/100x/work.json (or HUNDREDX_WORK_BACKUP_HINT) to "
-              "your backup's folder list once one covers it.")
+        ctx["backup"] = f"{hint}: {line}"
+    return out
+
+
+@check("D-holds")
+def check_holds(ctx):
+    out, now = [], utc_now()
+    for ws in workstreams():
+        events, _, _ = read_events(ws)
+        view = derive(ws, events)
+        for pr, hold in sorted(view["holds"].items()):
+            since = parse_at(hold.get("at"))
+            if since and age_days(since, now) > HOLD_STALE_DAYS:
+                out.append(finding("D-holds.stale", "info",
+                                   f"{ws}: #{pr} has been on hold for "
+                                   f"{age_days(since, now):.0f} days ({hold.get('reason', '')}); "
+                                   "still on hold?", f"held over {HOLD_STALE_DAYS} days ago",
+                                   f"if not: 100x work release-hold {pr} --ws {ws}"))
+        stamps = [t for t in (parse_at(e.get("at")) for e in events) if t]
+        handoffs = [t for t in (parse_at(n.get("at")) for n in view["notes"]
+                                if n["type"] == "handoff") if t]
+        if not stamps:
+            continue
+        since = max(handoffs) if handoffs else min(stamps)
+        lag = age_days(since, max(stamps))
+        if lag > HANDOFF_LAG_DAYS:
+            out.append(finding("D-holds.handoff", "info",
+                               f"{ws}: the last handoff is {lag:.0f} days older than its newest "
+                               "event" if handoffs else
+                               f"{ws}: {lag:.0f} days of events and no handoff",
+                               "sessions recorded work without leaving a handoff for the next one",
+                               f"100x work handoff TEXT --ws {ws}"))
+    return out
+
+
+def crashed(check_id, err):
+    return finding(f"{check_id}.crashed", "error",
+                   f"{check_id} could not finish: {type(err).__name__}: {err}",
+                   "a record, config or hooks file has a shape this version does not expect, "
+                   "or doctor has a bug", "re-run with --json and report this finding; the "
+                   "other checks still ran")
+
+
+def run_doctor(cwd):
+    ident = cwd_identity(cwd)
+    ctx = {"root": record_dir(), "cwd": cwd, "ident": ident, "matches": []}
+    early = {}
+    try:
+        ctx["matches"] = lookup(cwd) if ident else []
+    except Exception as err:  # doctor exists for broken records; a crash here is a finding
+        early["D-lookup"] = [crashed("D-lookup", err)]
+    findings, checks = [], []
+    for check_id, fn in CHECKS:
+        try:
+            found = early.get(check_id, []) + fn(ctx)
+        except Exception as err:  # one broken check must not hide what the others found
+            found = early.get(check_id, []) + [crashed(check_id, err)]
+        findings += found
+        worst = next((s for s in SEVERITIES if any(f["severity"] == s for f in found)), "ok")
+        checks.append({"id": check_id, "status": worst})
+    findings.sort(key=lambda f: SEVERITIES.index(f["severity"]))
+    ok = not any(f["severity"] in FAILING for f in findings)
+    return {"ok": ok, "findings": findings, "checks": checks}, ctx
+
+
+def print_doctor(result, ctx):
+    hook = ctx.get("brief_hook") or {}
+    matches = ctx["matches"]
+    where = (matches[0] if len(matches) == 1 else
+             f"{len(matches)} workstreams" if matches else "no workstream")
+    gets = "yes" if hook.get("gets_brief") else "no"
+    print("100x work doctor (read-only: nothing is written, no network)")
+    print(f"  record dir:   {ctx['root']}")
+    print(f"  plugin root:  {PLUGIN_ROOT}")
+    print(f"  cwd:          {ctx['cwd']} -> {where}")
+    print(f"  session brief here: {gets} (hook dry run, {hook.get('seconds', 0)} s)")
+    if ctx.get("backup"):
+        print(f"  backup:       {ctx['backup']}")
+    for f in result["findings"]:
+        print(f"\n{f['severity'].upper():5} {f['id']}: {f['what']}")
+        print(f"      cause: {f['cause']}")
+        print(f"      fix:   {f['fix']}")
+    counts = {s: sum(f["severity"] == s for f in result["findings"]) for s in SEVERITIES}
+    print("\nchecks: " + ", ".join(f"{c['id']} {c['status']}" for c in result["checks"]))
+    print("doctor: " + ("no problems found" if not result["findings"] else
+                        ", ".join(f"{n} {s}" for s, n in counts.items() if n)))
+
+
+def cmd_doctor(args):
+    cwd = os.path.abspath(args.cwd or os.getcwd())
+    if not os.path.isdir(cwd):
+        print(f"100x work doctor: --cwd {cwd!r} is not a directory", file=sys.stderr)
+        return 2
+    result, ctx = run_doctor(cwd)
+    if args.json:
+        gets = (ctx.get("brief_hook") or {}).get("gets_brief", False)  # absent if D-brief crashed
+        result["checks"] = [dict(c, **({"gets_brief": gets} if c["id"] == "D-brief" else {}))
+                            for c in result["checks"]]
+        print(json.dumps(result, indent=1))
+    else:
+        print_doctor(result, ctx)
+    return 0 if result["ok"] else 1
 
 
 # ---------------------------------------------------------------- CLI
@@ -580,7 +1300,11 @@ def build_parser():
     p.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     p.set_defaults(func=cmd_brief)
     sub.add_parser("list", help="list workstreams").set_defaults(func=cmd_list)
-    sub.add_parser("doctor", help="record dir, counts, backup status").set_defaults(func=cmd_doctor)
+    p = sub.add_parser("doctor", help="diagnose the record, lookup, brief hook, installed "
+                       "hooks, backup and holds (read-only)")
+    p.add_argument("--json", action="store_true", help="print {ok, findings, checks}")
+    p.add_argument("--cwd", help="diagnose as if a session started here (default: cwd)")
+    p.set_defaults(func=cmd_doctor)
     return ap
 
 
@@ -594,11 +1318,11 @@ def main(argv=None):
         print("100x work: disabled (HUNDREDX_WORK=off)", file=sys.stderr)
         return 0
     try:
-        args.func(args)
+        code = args.func(args)
     except WorkError as err:
         print(f"100x work: {err}", file=sys.stderr)
         return 1
-    return 0
+    return code if isinstance(code, int) else 0
 
 
 if __name__ == "__main__":
