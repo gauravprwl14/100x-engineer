@@ -89,7 +89,9 @@ def disabled():
 def record_dir():
     env = os.environ.get("HUNDREDX_WORK_DIR")
     if env:
-        return pathlib.Path(env).expanduser()
+        # Absolute from this process's start folder, so doctor and its hook dry run read
+        # one record whatever folder --cwd names.
+        return pathlib.Path(os.path.abspath(os.path.expanduser(env)))
     return pathlib.Path.home().joinpath(*DEFAULT_DIR_REL)
 
 
@@ -590,15 +592,18 @@ def backup_hint():
 
 
 def hint_entry(hint, root):
-    """The line of the hint file that starts with the record dir (home-relative or absolute),
-    or None. OSError when the hint file cannot be read."""
-    names = {str(root)}
+    """The first line of the hint file whose path (home-relative or absolute) is the record
+    dir or a folder holding it, or None. Links are resolved on both sides, so a linked record
+    dir matches a line naming its real path and the reverse. OSError when it cannot be read."""
     home = pathlib.Path.home()
-    if home in root.parents:
-        names.add(str(root.relative_to(home)))
+    real = root.resolve()
     for line in hint.read_text(encoding="utf-8", errors="replace").splitlines():
         words = line.split()
-        if words and words[0].rstrip("/") in names:
+        if not words:
+            continue
+        path = pathlib.Path(words[0]).expanduser()
+        named = (path if path.is_absolute() else home / path).resolve()
+        if named == real or named in real.parents:
             return line.strip()
     return None
 
@@ -866,6 +871,8 @@ def run_brief_hook_dry(cwd):
                           "cwd": str(cwd), "session_id": "doctor-dry-run"})
     # No bytecode: a dry run must not leave __pycache__ in the plugin install either.
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    if env.get("HUNDREDX_WORK_DIR"):
+        env["HUNDREDX_WORK_DIR"] = str(record_dir())
     started = time.monotonic()
     try:
         done = subprocess.run([sys.executable, str(PLUGIN_ROOT / "hooks" / BRIEF_HOOK)],
@@ -1118,7 +1125,9 @@ def scan_backup_repo(hint):
 def check_backup(ctx):
     root, hint = ctx["root"], backup_hint()
     if hint is None:
-        return [finding("D-backup.none", "warn", "the work record is not backed up: no "
+        # info, not warn: going without a backup is the user's choice, and a warning here
+        # would keep doctor at exit 1 forever on a machine that has no backup tool.
+        return [finding("D-backup.none", "info", "the work record is not backed up: no "
                         "backup_hint is configured", "losing this machine loses the record",
                         "once a backup covers the record dir, set \"backup_hint\" in "
                         "~/.config/100x/work.json (or HUNDREDX_WORK_BACKUP_HINT) to that "

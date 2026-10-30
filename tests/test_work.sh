@@ -280,6 +280,20 @@ HUNDREDX_WORK=off doc
 expect D-record.off warn
 [ "$(gets_brief)" = "False" ] && ok "  off: dry run says no brief" || bad "  off: dry run said yes"
 doc; expect D-record.mode none; expect D-record.off none
+( cd "$TMP" && HUNDREDX_WORK_DIR=rec "$W" work doctor --cwd "$TMP/wt-api" ) >"$OUT/r.out" 2>&1
+has "record dir:   $REC"; has "session brief here: yes"
+python3 - "$ROOT/scripts" "$TMP" >"$OUT/r.out" 2>&1 <<'PY2' && ok "a relative HUNDREDX_WORK_DIR reaches the hook dry run as an absolute path" || bad "relative record dir"
+import os, subprocess, sys; sys.path.insert(0, sys.argv[1]); import work
+os.chdir(sys.argv[2]); os.environ["HUNDREDX_WORK_DIR"] = "rec"
+seen = {}
+def capture(argv, **kw):
+    seen.update(kw["env"])
+    return subprocess.CompletedProcess(argv, 0, "", "")
+work.subprocess.run = capture
+work.run_brief_hook_dry(sys.argv[2])
+assert seen["HUNDREDX_WORK_DIR"] == os.path.join(sys.argv[2], "rec"), seen["HUNDREDX_WORK_DIR"]
+assert str(work.record_dir()) == os.path.join(sys.argv[2], "rec")
+PY2
 
 echo "-- D-events"
 HUNDREDX_WORK_DIR="$R2" doc
@@ -464,7 +478,10 @@ field D-hooks.installed-old what | grep -qF "installed_plugins.json is missing o
 
 echo "-- D-backup"
 HUNDREDX_WORK_BACKUP_HINT= doc
-expect D-backup.none warn
+expect D-backup.none info
+[ "$drc" -eq 0 ] && ok "  no backup is the user's choice: info, exit 0" || bad "  no-backup exit $drc"
+HUNDREDX_WORK_BACKUP_HINT= HUNDREDX_WORK_DIR="$TMP/none" doc --cwd "$TMP"
+[ "$drc" -eq 0 ] && ok "  a fresh machine (no record, no backup) exits 0" || bad "  fresh machine exit $drc"
 HUNDREDX_WORK_BACKUP_HINT="$TMP/gone.txt" doc
 expect D-backup.hint-missing error
 [ "$drc" -eq 1 ] && ok "  an error exits 1" || bad "  error exit $drc"
@@ -477,6 +494,22 @@ printf '.config/100x/work union\n' > "$TMP/home-hint.txt"
 HUNDREDX_WORK_BACKUP_HINT= HUNDREDX_WORK_DIR="$HOME/.config/100x/work" doc
 expect D-backup.none none; expect D-backup.not-named warn
 HUNDREDX_WORK_BACKUP_HINT="$TMP/home-hint.txt" HUNDREDX_WORK_DIR="$HOME/.config/100x/work" doc
+expect D-backup.not-named none
+# A line naming a folder that holds the record covers it; links resolve on both sides.
+printf '.config union\n' > "$TMP/parent-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT="$TMP/parent-hint.txt" HUNDREDX_WORK_DIR="$HOME/.config/100x/work" doc
+expect D-backup.not-named none
+printf '%s union\n' "$TMP" > "$TMP/parent-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT="$TMP/parent-hint.txt" doc
+expect D-backup.not-named none
+printf '%s union\n' "${REC%c}" > "$TMP/parent-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT="$TMP/parent-hint.txt" doc
+expect D-backup.not-named warn
+ln -s "$REC" "$TMP/reclink"
+HUNDREDX_WORK_DIR="$TMP/reclink" doc
+expect D-backup.not-named none
+printf '%s union\n' "$TMP/reclink" > "$TMP/link-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT="$TMP/link-hint.txt" doc
 expect D-backup.not-named none
 rm "$HOME/.config/100x/work.json"
 echo "recent" >> "$BK/mirrors.txt"; gc commit -q -am recent
