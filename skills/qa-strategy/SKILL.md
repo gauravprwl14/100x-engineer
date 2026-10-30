@@ -74,6 +74,14 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
    no `AC-<n>` lines, with the format to use; bare `--out` writes
    `<root>/specs/<feature>/testplan.md`, beside the spec)
 
+2b. **A plan for a screen covers its screen-pattern and role rows.** `testplan new` adds a
+   case per open UI-family or `role:*` row in spec §7 (`TC-E<n>-1`; e2e for role and
+   `destructive-action` rows, component otherwise). With no spec, list the rows with
+   `plan_feature cases --screens "<names>" --roles <a,b>` (or `--kind <family>`) and
+   write one case per row: unsaved-change prompts, delete confirmations, hidden controls.
+   *Enforced by:* `100x plan_feature cases --kind <families> --roles <a,b>` prints the
+   rows to cover; `100x testplan new <spec> --out` adds them from §7
+
 3. **Shape the portfolio by risk, not by default ratios, and never invert it.** E2E
    covers only the critical journeys (sign-in, the primary/money path, the one
    destructive action) — typically 3-10 tests, not one per AC. Google's guidance is
@@ -147,6 +155,7 @@ Tiers are `scripts/data/scale_tiers.json`'s. A cell names the level that must ex
 # beside the spec, at <root>/specs/<feature>/testplan.md
 100x testplan new <root>/specs/<feature>/spec.md --out
 100x testplan matrix --work web-ui --tier small
+100x plan_feature cases --screens "Settings" --roles admin,member   # rule 2b
 # the project's own suites, from templates/qa/ (minutes; needs Playwright, k6)
 npx playwright test --grep "@critical|@a11y|@responsive|@visual"
 k6 run -e SCENARIO=smoke -e BASE_URL=http://localhost:3000 templates/qa/load.k6.js
@@ -167,6 +176,8 @@ This skill rejects:
   count".
 - **A bare tag in a shared test tree**: `test('AC-1 …')` could be any feature's AC-1;
   `trace` lists it as not counted and asks for `<feature>/AC-1`.
+- **A settings screen tested only as an admin**: no case for a member who must not see
+  "Delete workspace", or for one who calls its API directly. Rule 2b's role rows are those cases.
 - **E2E for everything**: forty Playwright tests, one per AC, taking twenty minutes
   and failing on timing — the inverted pyramid. Move the boundary rows down to unit.
 - **Screenshot baselines updated blindly**: a PR that adds `--update-snapshots`
@@ -190,7 +201,7 @@ WCAG audit cadence; `performance-budgets` owns where the SLO numbers come from.
 
 ## Scale
 
-`solo` / prototype: rules 1, 2, 6, 7 — traceability and a11y cost minutes.
+`solo` / prototype: rules 1, 2, 2b, 6, 7 — traceability and a11y cost minutes.
 `small-team (2-10)` / small: add 3, 4, 5, 9, 10, 12, 13, 14. `org (10+)` / growth:
 add 8 and 11. `high-blast-radius` / scale: soak and stress scenarios per release,
 and exploratory charters before every change to money or permissions.
@@ -219,5 +230,7 @@ and exploratory charters before every change to money or permissions.
 - Browserslist `defaults`: `browserslist/browserslist@main:README.md`
 - Exploratory charters: Elisabeth Hendrickson, *Explore It!* (2013); session-based
   test management, Jonathan Bach and James Bach (2000).
+- Screen-pattern and role rows behind rule 2b: `scripts/data/edge_cases_ui.json`,
+  `SOURCE: original`.
 - The portfolio-by-tier table, the 3-10 critical-journey range and
   `scripts/testplan.py`: `SOURCE: original`.
