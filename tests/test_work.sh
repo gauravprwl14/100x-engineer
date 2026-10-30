@@ -415,7 +415,48 @@ work.PLUGIN_ROOT = fake
 found = work.check_hooks({})
 assert [f["severity"] for f in found if f["id"] == "D-hooks.plugin"] == ["error"], found
 assert "work_brief.py" in found[0]["what"] and "work_fork_guard.py" in found[0]["what"], found
+# An installed copy is no git repo of its own: the fix reinstalls instead of a git diff.
+assert "git -C" not in found[0]["fix"] and "claude plugin install" in found[0]["fix"], found
+import subprocess; subprocess.run(["git", "init", "-q", str(fake)], check=True)
+fix = [f for f in work.check_hooks({}) if f["id"] == "D-hooks.plugin"][0]["fix"]
+assert fix.startswith("git -C ") and "diff hooks/hooks.json" in fix, fix
 PY
+# installed_plugins.json names the copy sessions load; it wins over a newer cache folder.
+CFGM="$TMP/cfg-manifest"; C="$CFGM/plugins/cache/mkt/100x"
+mkdir -p "$C/0.2.0/hooks" "$C/0.3.0/hooks"
+cp "$CFG/plugins/cache/mkt/100x/0.1.0/hooks/hooks.json" "$C/0.2.0/hooks/"; cp "$ROOT/hooks/hooks.json" "$C/0.3.0/hooks/"
+manifest() { python3 -c 'import json,sys; print(json.dumps({"version": 2, "plugins": {k: [{"scope": "user", "installPath": p}] for k, p in zip(sys.argv[1::2], sys.argv[2::2])}}))' "$@" > "$CFGM/plugins/installed_plugins.json"; }
+manifest 100x@mkt "$C/0.2.0"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.installed-old warn
+field D-hooks.installed-old what | grep -qF "(0.2.0)" && ok "  checks the recorded 0.2.0, not the newer 0.3.0 folder" || bad "  manifest copy: $(field D-hooks.installed-old what)"
+field D-hooks.installed-old what | grep -qF "newest cache folder" && bad "  says it guessed while the manifest named it" || ok "  does not call a recorded copy a guess"
+manifest 100x@mkt "$C/0.3.0"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.installed-old none; expect D-hooks.not-installed none
+manifest 100x@mkt "$C/0.3.0" 100x@other "$C/0.2.0" helper@mkt "$C/0.2.0"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.installed-old warn
+field D-hooks.installed-old fix | grep -qF "claude plugin install 100x@other" && ok "  two marketplaces: each is checked, the old one is named" || bad "  several keys: $(field D-hooks.installed-old fix)"
+manifest helper@mkt "$C/0.2.0"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.not-installed info; expect D-hooks.installed-old none
+manifest 100x@mkt "$C/0.9.9"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.install-missing warn
+# Fallback: an unreadable manifest means the newest folder, where a release beats a sha name.
+echo 'not json' > "$CFGM/plugins/installed_plugins.json"
+rm -rf "$C/0.2.0" "$C/0.3.0"; mkdir -p "$C/0.9.1/hooks" "$C/4f2a9c1/hooks"
+cp "$ROOT/hooks/hooks.json" "$C/0.9.1/hooks/"; cp "$CFG/plugins/cache/mkt/100x/0.1.0/hooks/hooks.json" "$C/4f2a9c1/hooks/"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.installed-old none
+mv "$C/0.9.1" "$TMP/0.9.1-aside"; mkdir -p "$C/0.1.0/hooks"
+cp "$CFG/plugins/cache/mkt/100x/0.1.0/hooks/hooks.json" "$C/0.1.0/hooks/"; cp "$ROOT/hooks/hooks.json" "$C/4f2a9c1/hooks/"
+HUNDREDX_CONFIG_DIRS="$CFGM" doc
+expect D-hooks.installed-old warn
+field D-hooks.installed-old what | grep -qF "(0.1.0)" && ok "  fallback: release 0.1.0 is picked over sha folder 4f2a9c1" || bad "  fallback order: $(field D-hooks.installed-old what)"
+field D-hooks.installed-old what | grep -qF "installed_plugins.json is missing or unreadable, so this is the newest cache folder" \
+  && ok "  fallback: the finding says it is a guess" || bad "  fallback note missing"
 
 echo "-- D-backup"
 HUNDREDX_WORK_BACKUP_HINT= doc

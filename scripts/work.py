@@ -638,6 +638,8 @@ CONFIG_DIRS_ENV = "HUNDREDX_CONFIG_DIRS"
 CONFIG_DIRS_SEP = ":"
 DEFAULT_CONFIG_DIR = ".claude"
 PLACEHOLDER_MARKET = "<marketplace>"
+INSTALLED_REL = ("plugins", "installed_plugins.json")
+SEMVER_RX = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
 # docs/SAFETY.md: event files are never edited, moved or deleted, so no fix may suggest it;
 # the brief already skips a bad file, and a new event supersedes what it said.
 KEEP_EVENTS = "leave the file where it is (event files are never edited, moved or deleted)"
@@ -939,18 +941,47 @@ def list_config_dirs():
 
 
 def version_key(path):
-    parts = re.findall(r"\d+", path.name)
-    return tuple(int(p) for p in parts), path.stat().st_mtime
+    """A release name (0.10.0 > 0.9.1) always sorts above any other folder name, so a
+    commit-sha folder such as 4f2a9c1 never wins on its digits; mtime breaks ties."""
+    release = SEMVER_RX.match(path.name)
+    rank = (1, tuple(int(n) for n in release.groups())) if release else (0, ())
+    return rank, path.stat().st_mtime
 
 
-def installed_copy(config_dir):
-    """(plugin version dir, marketplace) of the newest installed 100x, or None."""
+def newest_cached_copy(config_dir):
     found = [p.parent.parent for p in
              config_dir.glob(f"plugins/cache/*/{PLUGIN_NAME}/*/hooks/hooks.json")]
     if not found:
         return None
     newest = max(found, key=version_key)
     return newest, newest.parent.parent.name
+
+
+def installed_copies(config_dir):
+    """([(plugin version dir, marketplace)], whether installed_plugins.json named them).
+    Claude Code records the copy its sessions load there, per `<name>@<marketplace>` key;
+    old version folders stay in the cache, so the newest folder is only a fallback guess."""
+    try:
+        manifest = json.loads(config_dir.joinpath(*INSTALLED_REL).read_text(encoding="utf-8"))
+        plugins = manifest["plugins"]
+        if not isinstance(plugins, dict):
+            raise TypeError("plugins is not an object")
+    except (OSError, ValueError, KeyError, TypeError):
+        newest = newest_cached_copy(config_dir)
+        return ([newest] if newest else []), False
+    copies = []
+    for key, installs in sorted(plugins.items()):
+        name, _, market = key.partition("@")
+        if name != PLUGIN_NAME or not isinstance(installs, list):
+            continue
+        for install in installs:      # one entry per scope (user, project); check each
+            path = install.get("installPath") if isinstance(install, dict) else None
+            if not isinstance(path, str) or not path:
+                continue
+            copy = (pathlib.Path(path).expanduser(), market)
+            if copy not in copies:
+                copies.append(copy)
+    return copies, True
 
 
 def reinstall_cmd(config_dir, market):
@@ -961,6 +992,16 @@ def reinstall_cmd(config_dir, market):
             f"update {market} && {prefix}claude plugin install {plugin}")
 
 
+def plugin_hooks_fix():
+    """A dev checkout can diff its hooks.json; an installed copy is not a git repo of its
+    own (or sits inside an unrelated one, such as a backed-up config dir), so reinstall it."""
+    top = git_out(PLUGIN_ROOT, "rev-parse", "--show-toplevel")
+    if top and pathlib.Path(top).resolve() == PLUGIN_ROOT:
+        return f"git -C {q(PLUGIN_ROOT)} diff hooks/hooks.json, and restore the work hook entries"
+    market = PLUGIN_ROOT.parent.parent.name if PLUGIN_ROOT.parent.name == PLUGIN_NAME else None
+    return "reinstall the plugin: " + reinstall_cmd(None, market)
+
+
 @check("D-hooks")
 def check_hooks(ctx):
     out = []
@@ -969,28 +1010,36 @@ def check_hooks(ctx):
         out.append(finding("D-hooks.plugin", "error", f"this plugin ({PLUGIN_ROOT}) does not "
                            f"register {', '.join(missing)} in hooks/hooks.json",
                            "hooks/hooks.json was edited or is from a partial copy",
-                           f"git -C {q(PLUGIN_ROOT)} diff hooks/hooks.json, and restore the "
-                           "work hook entries"))
+                           plugin_hooks_fix()))
     for config_dir in list_config_dirs():
         if not config_dir.is_dir():
             continue
-        copy = installed_copy(config_dir)
-        if copy is None:
+        copies, from_manifest = installed_copies(config_dir)
+        guess = "" if from_manifest else (f" ({config_dir.joinpath(*INSTALLED_REL)} is missing "
+                                          "or unreadable, so this is the newest cache folder)")
+        if not copies:
             out.append(finding("D-hooks.not-installed", "info",
-                               f"no installed {PLUGIN_NAME} plugin under {config_dir}",
+                               f"no installed {PLUGIN_NAME} plugin under {config_dir}{guess}",
                                "the plugin is not installed for this config dir, or is loaded "
                                "with --plugin-dir", f"CLAUDE_CONFIG_DIR={q(config_dir)} claude "
                                f"plugin install {PLUGIN_NAME}@{PLACEHOLDER_MARKET}"))
-            continue
-        version_dir, market = copy
-        gone = missing_hooks(hooks_config(version_dir))
-        if gone:
-            out.append(finding("D-hooks.installed-old", "warn",
-                               f"the installed copy in {config_dir} ({version_dir.name}) is "
-                               f"older than this plugin: it does not register {', '.join(gone)}",
-                               "the plugin cache is a snapshot taken at install time; sessions "
-                               "using this config dir run the old hooks",
-                               reinstall_cmd(config_dir, market) + "; then restart sessions"))
+        for version_dir, market in copies:
+            if not version_dir.is_dir():
+                out.append(finding("D-hooks.install-missing", "warn",
+                                   f"{config_dir.joinpath(*INSTALLED_REL)} says sessions load "
+                                   f"{version_dir}, which does not exist",
+                                   "the cache folder was deleted, or an install stopped halfway",
+                                   reinstall_cmd(config_dir, market) + "; then restart sessions"))
+                continue
+            gone = missing_hooks(hooks_config(version_dir))
+            if gone:
+                out.append(finding("D-hooks.installed-old", "warn",
+                                   f"the installed copy in {config_dir} ({version_dir.name}) is "
+                                   f"older than this plugin: it does not register "
+                                   f"{', '.join(gone)}{guess}",
+                                   "the plugin cache is a snapshot taken at install time; "
+                                   "sessions using this config dir run the old hooks",
+                                   reinstall_cmd(config_dir, market) + "; then restart sessions"))
     return out
 
 
