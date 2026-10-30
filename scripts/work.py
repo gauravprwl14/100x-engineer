@@ -27,7 +27,8 @@ directory's `origin` remote and branch.
 
 Environment: HUNDREDX_WORK_DIR (record dir, default ~/.config/100x/work),
 HUNDREDX_WORK=off (disable every command and hook), HUNDREDX_WORK_BACKUP_HINT (a file
-naming the record dir when a backup covers it; default: claude-setup's mirrors.txt).
+naming the record dir when a backup covers it; else "backup_hint" in ~/.config/100x/work.json;
+unset means doctor reports the record as not backed up).
 
 Exit codes: 0 ok, 1 refused or not found (nothing written), 2 usage error.
 Python stdlib only.
@@ -40,9 +41,9 @@ EVENT_TYPES = ("set", "note", "decision", "hold", "release-hold", "handoff")
 DIR_MODE = 0o700
 FILE_MODE = 0o600
 DEFAULT_DIR_REL = (".config", "100x", "work")
-# Default backup hint: the owner's claude-setup lists mirrored folders here (ADR-0006 A2).
-# Anyone else points HUNDREDX_WORK_BACKUP_HINT at their own tool's list.
-DEFAULT_BACKUP_HINT_REL = ("Sites", "projects", "rnd", "claude-setup", "mirrors.txt")
+# User-level config, shared with hooks/work_fork_guard.py. No backup tool is assumed: a user
+# names their own backup's file list here ("backup_hint"), which doctor greps for the record dir.
+CONFIG_REL = (".config", "100x", "work.json")
 DEFAULT_MAX_TOKENS = 3000
 CHARS_PER_TOKEN = 4
 BRIEF_RECENT = 10          # notes and handoffs shown before the token budget trims them
@@ -481,15 +482,23 @@ def cmd_list(_args):
 
 
 def backup_hint():
+    """The backup's file list to grep, or None when none is configured."""
     env = os.environ.get("HUNDREDX_WORK_BACKUP_HINT")
-    return pathlib.Path(env).expanduser() if env else \
-        pathlib.Path.home().joinpath(*DEFAULT_BACKUP_HINT_REL)
+    if env:
+        return pathlib.Path(env).expanduser()
+    try:
+        hint = json.loads(pathlib.Path.home().joinpath(*CONFIG_REL).read_text()).get("backup_hint")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return pathlib.Path(hint).expanduser() if isinstance(hint, str) and hint else None
 
 
 def backup_line(root):
     """(hint file, line) when a line of the hint file starts with the record dir, given
     home-relative or absolute; None otherwise."""
     hint = backup_hint()
+    if hint is None:
+        return None
     names = {str(root)}
     home = pathlib.Path.home()
     if home in root.parents:
@@ -525,9 +534,11 @@ def cmd_doctor(_args):
     if found:
         print(f"backup: {found[0]} names it ({found[1]})")
     else:
-        print(f"WARNING not backed up: {backup_hint()} does not name {root}. Losing this "
-              "machine loses the record; set HUNDREDX_WORK_BACKUP_HINT to your backup's "
-              "folder list once one covers it.")
+        hint = backup_hint()
+        where = f"{hint} does not name {root}" if hint else "no backup_hint is configured"
+        print(f"WARNING not backed up: {where}. Losing this machine loses the record; set "
+              "\"backup_hint\" in ~/.config/100x/work.json (or HUNDREDX_WORK_BACKUP_HINT) to "
+              "your backup's folder list once one covers it.")
 
 
 # ---------------------------------------------------------------- CLI

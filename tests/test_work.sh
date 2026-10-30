@@ -195,7 +195,13 @@ has "tagging"
 
 echo "== doctor"
 run 0 "doctor without a backup" doctor
-has "tagging:"; has "WARNING not backed up"
+has "tagging:"; has "WARNING not backed up"; has "no backup_hint is configured"
+mkdir -p "$HOME/.config/100x"
+printf '{"backup_hint": "%s"}\n' "$TMP/mirrors.txt" > "$HOME/.config/100x/work.json"
+printf '.config/100x/work union\n' > "$TMP/mirrors.txt"
+HUNDREDX_WORK_DIR="$HOME/.config/100x/work" "$W" work doctor >"$OUT/r.out" 2>&1
+has "backup: $TMP/mirrors.txt names it"
+rm "$HOME/.config/100x/work.json"
 printf '.claude/projects union\n.config/100x/work union\n' > "$TMP/mirrors.txt"
 HUNDREDX_WORK_DIR="$HOME/.config/100x/work" HUNDREDX_WORK_BACKUP_HINT="$TMP/mirrors.txt" \
   "$W" work doctor >"$OUT/r.out" 2>&1
