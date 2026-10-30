@@ -56,10 +56,14 @@ bash bench/test_bench.sh                 # offline: scaffolds build, graders pas
 bash bench/run.sh                        # prints the cost warning and stops
 bash bench/run.sh --yes                  # full bench: 15 cases x 3 runs x 3 arms
 bash bench/run.sh --yes --runs 1 --case 12-over-building --arms new   # smoke test, 2 sessions
-bash bench/run.sh --yes --old-ref main --case '1[3-5]-*'   # screen cases, OLD = current main
+bash bench/run.sh --yes --old-ref main --case 13-settings-screen-build   # one screen case, OLD = current main
 python3 bench/compare.py --new bench/results/<ts>/new.json --old bench/results/<ts>/old.json \
   --tools-root bench/results/<ts>/snapshot-new
 ```
+
+`--case` goes to `claude plugin eval`, whose glob matched no case for `1[3-5]-*` (run on
+2026-10-30, zero sessions started) although the cost warning counted 3; pass one exact
+name or a plain `*` pattern per run.
 
 `--old-ref REF` sets OLD to any commit (a branch, tag or sha). It is resolved before the
 cost warning, which prints the ref and its sha; an unknown ref exits 2 without starting a
