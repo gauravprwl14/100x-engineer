@@ -282,7 +282,60 @@ HUNDREDX_WORK_DIR="$R2" doc
 expect D-events.unreadable warn; expect D-events.newer-schema warn; expect D-events.stray info
 field D-events.unreadable what | grep -qF "20200101T000000000000Z-cli-aaaaaa.json" && ok "  names the unreadable file" || bad "  unreadable name"
 field D-events.newer-schema fix | grep -qF "claude plugin install" && ok "  newer schema: fix upgrades the plugin" || bad "  newer fix"
+field D-events.unreadable fix | grep -qE '(^|[ ;&])(mv|rm|mkdir) ' && bad "  unreadable fix moves files" || ok "  unreadable fix never moves an event file"
 doc; expect D-events.unreadable none; expect D-events.newer-schema none; expect D-events.stray none
+expect D-events.malformed none
+
+echo "-- D-events: malformed events never crash doctor, the hook or the CLI"
+# Parseable JSON with the wrong shape: a PR with no branch, prs as an object, no schema at all.
+R4="$TMP/rec4"; mkdir -p "$R4/bad/events"; chmod 700 "$R4"
+printf '{"schema": 1, "type": "set", "ws": "bad", "at": "2026-01-01T00:00:00Z", "repos": ["github.com/acme/widgets"], "goal": "kept", "prs": [{"number": 12, "role": "api"}, {"number": 15, "branch": "feat/api", "role": "api"}]}\n' \
+  > "$R4/bad/events/20260101T000000000000Z-cli-aaaaaa.json"
+printf '{"schema": 1, "type": "set", "ws": "bad", "at": "2026-01-01T00:00:01Z", "prs": {"12": "feat/api"}}\n' \
+  > "$R4/bad/events/20260101T000000000001Z-cli-bbbbbb.json"
+printf '{"type": "note", "ws": "bad", "text": "hand-made"}\n' > "$R4/bad/events/20260101T000000000002Z-cli-cccccc.json"
+HUNDREDX_WORK_DIR="$R4" doc
+expect D-events.malformed error; expect D-events.newer-schema none
+[ "$drc" -eq 1 ] && ok "  a malformed event exits 1 with JSON, not a traceback" || bad "  malformed exit $drc"
+for want in "aaaaaa.json: PR 12 has no branch" "bbbbbb.json: prs is not a list" "cccccc.json: it has no schema"; do
+  field D-events.malformed what | grep -qF "$want" && ok "  names $want" || bad "  malformed what: $(field D-events.malformed what)"
+done
+field D-events.malformed fix | grep -qE '(^|[ ;&])(mv|rm|mkdir) ' && bad "  malformed fix moves files" || ok "  malformed fix never moves an event file"
+[ "$(gets_brief)" = "True" ] && ok "  the hook still briefs from the well-formed PR (#15 feat/api)" || bad "  dry run said no on a partly malformed set"
+HUNDREDX_WORK_DIR="$R4" run 0 "brief on a malformed record" brief --ws bad
+has "3 events skipped: malformed"; has "**Goal:** kept"; has '| #15 | `feat/api` | api |'; hasnt "| #12 |"
+( cd "$TMP/wt-api" && HUNDREDX_WORK_DIR="$R4" "$W" work brief ) >"$OUT/r.out" 2>&1 \
+  && ok "brief by lookup from a worktree on a malformed record" || bad "lookup brief on a malformed record"
+HUNDREDX_WORK_DIR="$R4" run 0 "list on a malformed record" list
+has "bad"
+HUNDREDX_WORK_DIR="$R4" run 0 "start --merge-order on a malformed record" start bad --merge-order 15
+HUNDREDX_WORK_DIR="$R4" run 1 "  a PR only named by a malformed entry is not known" start bad --merge-order 12
+mkdir -p "$R4/typed/events"
+printf '{"schema": 1, "type": "note", "ws": "typed", "at": "2026-01-01T00:00:03Z", "text": 7}\n' \
+  > "$R4/typed/events/20260101T000000000003Z-cli-dddddd.json"
+HUNDREDX_WORK_DIR="$R4" doc
+grep -qF "typed: 1 event file(s) hold fields this version cannot use, and the brief skips them: 20260101T000000000003Z-cli-dddddd.json: text is not text" "$OUT/r.out" \
+  && ok "  a wrong-typed field is named, one finding per workstream" || bad "  typed field not named"
+run 0 "brief on the clean record" brief --ws tagging
+hasnt "skipped: malformed"
+python3 - "$ROOT/scripts" "$TMP/wt-api" >"$OUT/r.out" 2>&1 <<'PY' && ok "a check that raises is D-<check>.crashed; the other checks still run" || bad "crashed check"
+import contextlib, io, json, sys; sys.path.insert(0, sys.argv[1]); import work
+def boom(ctx):
+    raise RuntimeError("boom")
+work.CHECKS[:] = [(cid, boom if cid == "D-brief" else fn) for cid, fn in work.CHECKS]
+result, ctx = work.run_doctor(sys.argv[2])
+hit = [f for f in result["findings"] if f["id"] == "D-brief.crashed"]
+assert hit and hit[0]["severity"] == "error" and "RuntimeError: boom" in hit[0]["what"], result
+assert [c["id"] for c in result["checks"]] == ["D-record", "D-events", "D-lookup", "D-brief",
+                                               "D-hooks", "D-backup", "D-holds"], result
+assert {c["id"]: c["status"] for c in result["checks"]}["D-holds"] == "ok", result
+with contextlib.redirect_stdout(io.StringIO()) as out:
+    assert work.main(["doctor", "--json", "--cwd", sys.argv[2]]) == 1
+assert json.loads(out.getvalue())["ok"] is False
+work.lookup = lambda cwd: (_ for _ in ()).throw(KeyError("branch"))
+result, _ = work.run_doctor(sys.argv[2])
+assert [f["severity"] for f in result["findings"] if f["id"] == "D-lookup.crashed"] == ["error"], result
+PY
 
 echo "-- D-lookup"
 doc --cwd "$TMP"

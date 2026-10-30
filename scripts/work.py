@@ -240,12 +240,84 @@ def read_events(ws):
             continue
         if not isinstance(event, dict):
             unreadable += 1
-        elif event.get("schema") != SCHEMA:
+        elif is_newer_schema(event):
             newer += 1
-        elif event.get("type") in EVENT_TYPES:
+        else:
+            # A missing or invalid schema is passed on so derive() can skip it with a reason.
             event["_file"] = name
             events.append(event)
     return events, unreadable, newer
+
+
+def is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_newer_schema(event):
+    """Only a whole number above SCHEMA is newer; a missing or odd schema is malformed, and
+    calling it newer would send the user to reinstall a plugin that cannot help."""
+    return is_int(event.get("schema")) and event["schema"] > SCHEMA
+
+
+def is_text_list(value):
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+# field: (test, what it must be). A field may be absent; one that is present must pass.
+FIELD_SHAPES = {"at": (lambda v: isinstance(v, str), "text"),
+                "text": (lambda v: isinstance(v, str), "text"),
+                "id": (lambda v: isinstance(v, str), "text"),
+                "reason": (lambda v: isinstance(v, str), "text"),
+                "pr": (is_int, "a PR number")}
+SET_SHAPES = {"goal": (lambda v: isinstance(v, str), "text"),
+              "repos": (is_text_list, "a list of text"),
+              "conventions": (is_text_list, "a list of text"),
+              "merge_order": (lambda v: isinstance(v, list) and all(is_int(n) for n in v),
+                              "a list of PR numbers")}
+REQUIRED_FIELDS = {"note": ("text",), "handoff": ("text",), "decision": ("text",),
+                   "hold": ("pr",), "release-hold": ("pr",)}
+
+
+def pr_problem(pr):
+    if not isinstance(pr, dict):
+        return "a prs entry is not an object"
+    if not is_int(pr.get("number")) or pr["number"] < 1:
+        return "a prs entry has no positive number"
+    for key in ("branch", "role"):
+        if not isinstance(pr.get(key), str) or not pr[key].strip():
+            return f"PR {pr['number']} has no {key}"
+    return None
+
+
+def clean_event(event):
+    """(a copy holding only the fields derivation can use, or None to skip the event; what is
+    wrong). Event files can be hand-edited or written by another tool, and one bad field must
+    not take the brief, the lookup or doctor down with it."""
+    if not is_int(event.get("schema")) or event["schema"] != SCHEMA:
+        return None, ["it has no schema" if "schema" not in event else
+                      f"schema {event['schema']!r} is not {SCHEMA}"]
+    kind = event.get("type")
+    if kind not in EVENT_TYPES:
+        return None, []        # tolerant reader: a type this version does not know is ignored
+    usable, problems = dict(event), []
+    shapes = dict(FIELD_SHAPES, **SET_SHAPES) if kind == "set" else FIELD_SHAPES
+    for key, (test, shape) in shapes.items():
+        if key in usable and not test(usable[key]):
+            problems.append(f"{key} is not {shape}")
+            del usable[key]
+    if kind == "set" and "prs" in usable:
+        if not isinstance(usable["prs"], list):
+            problems.append("prs is not a list")
+            del usable["prs"]
+        else:
+            bad = [p for p in map(pr_problem, usable["prs"]) if p]
+            problems += bad
+            usable["prs"] = [pr for pr in usable["prs"] if not pr_problem(pr)]
+    absent = [key for key in REQUIRED_FIELDS.get(kind, ()) if key not in event]
+    problems += [f"{key} is missing" for key in absent]
+    if any(key not in usable for key in REQUIRED_FIELDS.get(kind, ())):
+        return None, problems
+    return usable, problems
 
 
 def workstreams():
@@ -260,9 +332,13 @@ def workstreams():
 
 def derive(ws, events):
     view = {"ws": ws, "goal": "", "repos": [], "prs": {}, "merge_order": [],
-            "conventions": [], "decisions": {}, "holds": {}, "notes": []}
+            "conventions": [], "decisions": {}, "holds": {}, "notes": [], "skipped": []}
     for event in events:
-        apply_event(view, event)
+        usable, problems = clean_event(event)
+        if problems:
+            view["skipped"].append({"file": event.get("_file", "?"), "problems": problems})
+        if usable is not None:
+            apply_event(view, usable)
     return view
 
 
@@ -389,6 +465,10 @@ def brief_text(view, notes, decisions, dropped, newer):
         or ["- none"]
     if newer:
         lines += ["", f"{newer} event(s) use a newer schema: upgrade the plugin to read them."]
+    skipped = len(view.get("skipped") or [])
+    if skipped:
+        lines += ["", f"{skipped} event{'' if skipped == 1 else 's'} skipped: malformed "
+                  "(`100x work doctor` names the file and what is wrong)."]
     return "\n".join(lines) + "\n"
 
 
@@ -550,6 +630,9 @@ CONFIG_DIRS_ENV = "HUNDREDX_CONFIG_DIRS"
 CONFIG_DIRS_SEP = ":"
 DEFAULT_CONFIG_DIR = ".claude"
 PLACEHOLDER_MARKET = "<marketplace>"
+# docs/SAFETY.md: event files are never edited, moved or deleted, so no fix may suggest it;
+# the brief already skips a bad file, and a new event supersedes what it said.
+KEEP_EVENTS = "leave the file where it is (event files are never edited, moved or deleted)"
 
 CHECKS = []
 
@@ -613,13 +696,14 @@ def check_record(ctx):
 
 
 def classify_event_files(ws):
-    """(unreadable, newer-schema, stray) file names in one workstream's events folder."""
+    """(unreadable, newer-schema, stray, malformed) in one workstream's events folder: file
+    names, and for malformed "<file>: <what is wrong>"."""
     folder = record_dir() / ws / "events"
-    unreadable, newer, stray = [], [], []
+    unreadable, newer, stray, malformed = [], [], [], []
     try:
         entries = sorted(folder.iterdir())
     except OSError:
-        return unreadable, newer, stray
+        return unreadable, newer, stray, malformed
     for path in entries:
         if not EVENT_NAME_RX.match(path.name):
             stray.append(path.name)
@@ -631,9 +715,13 @@ def classify_event_files(ws):
             continue
         if not isinstance(event, dict):
             unreadable.append(path.name)
-        elif event.get("schema") != SCHEMA:
+        elif is_newer_schema(event):
             newer.append(path.name)
-    return unreadable, newer, stray
+        else:
+            problems = clean_event(event)[1]
+            if problems:
+                malformed.append(f"{path.name}: {', '.join(problems)}")
+    return unreadable, newer, stray, malformed
 
 
 def listed(names, limit=3):
@@ -645,17 +733,25 @@ def listed(names, limit=3):
 def check_events(ctx):
     out = []
     for ws in workstreams():
-        unreadable, newer, stray = classify_event_files(ws)
+        unreadable, newer, stray, malformed = classify_event_files(ws)
         folder = record_dir() / ws / "events"
+        if malformed:
+            out.append(finding("D-events.malformed", "error",
+                               f"{ws}: {len(malformed)} event file(s) hold fields this version "
+                               f"cannot use, and the brief skips them: {'; '.join(malformed[:3])}"
+                               + (f"; and {len(malformed) - 3} more" if len(malformed) > 3 else ""),
+                               "the file was edited by hand or written by another tool",
+                               f"{KEEP_EVENTS}; if a skipped field mattered, record it again: "
+                               f"100x work start {ws} --pr <number>:<branch>:<role>, or 100x "
+                               f"work note TEXT --ws {ws}"))
         if unreadable:
-            aside = record_dir() / ws / "set-aside"
             out.append(finding("D-events.unreadable", "warn",
                                f"{ws}: {len(unreadable)} event file(s) are not readable JSON "
                                f"({listed(unreadable)}); the brief skips them",
                                "a crash or an interrupted sync truncated the file, or it was "
                                "edited by hand",
-                               f"compare with your backup copy, then mkdir -p {q(aside)} && "
-                               f"mv {q(folder / unreadable[0])} {q(aside)}/"))
+                               f"{KEEP_EVENTS}; compare it with your backup copy and record "
+                               f"anything it held again: 100x work note TEXT --ws {ws}"))
         if newer:
             out.append(finding("D-events.newer-schema", "warn",
                                f"{ws}: {len(newer)} event(s) use a schema newer than {SCHEMA} "
@@ -667,7 +763,9 @@ def check_events(ctx):
                                f"{ws}: {len(stray)} file(s) in events/ are not named like an "
                                f"event and are ignored ({listed(stray)})",
                                "a file was copied in by hand or by a sync tool's conflict copy",
-                               f"move them out of {q(folder)} if they are not needed"))
+                               f"none needed in {q(folder)}: they are ignored; if one is a "
+                               "conflict copy of an event, record what it says again with "
+                               "100x work note"))
     return out
 
 
@@ -989,13 +1087,28 @@ def check_holds(ctx):
     return out
 
 
+def crashed(check_id, err):
+    return finding(f"{check_id}.crashed", "error",
+                   f"{check_id} could not finish: {type(err).__name__}: {err}",
+                   "a record, config or hooks file has a shape this version does not expect, "
+                   "or doctor has a bug", "re-run with --json and report this finding; the "
+                   "other checks above still ran")
+
+
 def run_doctor(cwd):
     ident = cwd_identity(cwd)
-    ctx = {"root": record_dir(), "cwd": cwd, "ident": ident,
-           "matches": lookup(cwd) if ident else []}
+    ctx = {"root": record_dir(), "cwd": cwd, "ident": ident, "matches": []}
+    early = {}
+    try:
+        ctx["matches"] = lookup(cwd) if ident else []
+    except Exception as err:  # doctor exists for broken records; a crash here is a finding
+        early["D-lookup"] = [crashed("D-lookup", err)]
     findings, checks = [], []
     for check_id, fn in CHECKS:
-        found = fn(ctx)
+        try:
+            found = early.get(check_id, []) + fn(ctx)
+        except Exception as err:  # one broken check must not hide what the others found
+            found = early.get(check_id, []) + [crashed(check_id, err)]
         findings += found
         worst = next((s for s in SEVERITIES if any(f["severity"] == s for f in found)), "ok")
         checks.append({"id": check_id, "status": worst})
@@ -1034,8 +1147,8 @@ def cmd_doctor(args):
         return 2
     result, ctx = run_doctor(cwd)
     if args.json:
-        result["checks"] = [dict(c, **({"gets_brief": ctx["brief_hook"]["gets_brief"]}
-                                       if c["id"] == "D-brief" else {}))
+        gets = (ctx.get("brief_hook") or {}).get("gets_brief", False)  # absent if D-brief crashed
+        result["checks"] = [dict(c, **({"gets_brief": gets} if c["id"] == "D-brief" else {}))
                             for c in result["checks"]]
         print(json.dumps(result, indent=1))
     else:
