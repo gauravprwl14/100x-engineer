@@ -1,19 +1,17 @@
-[PRD](../../prds/work-continuity/prd.md) · [ADR-0004](../../decisions/ADR-0004-shared-work-record-lives-in-an-opt-in-private-git-ref-refs-100x-work.md) · [ADR-0005](../../decisions/ADR-0005-plugin-may-fetch-and-push-refs-100x-only-gh-stays-read-only-supersedes-adr-0002-scope.md)
+[PRD](../../prds/work-continuity/prd.md) · [ADR-0006](../../decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md)
 
 # work-continuity bench
 
-**What it answers:** does a workstream brief actually help, and is the design buildable? Results so far:
-with a ~1 KB brief injected at session start, a fresh session answered 7 of 7 workstream questions in all 3 runs,
-against 2 of 7 without it, for 20% less cost and in about half the time. Neither arm guessed. The private-ref and
-hook mechanics the design depends on all work locally. The cloud check has not run yet.
+**What it answers:** does a workstream brief actually help? With a ~1 KB brief injected at session start, a fresh
+session answered 7 of 7 workstream questions in all 3 runs, against 2 of 7 without it, for 20% less cost and in about
+half the time. Neither arm guessed. The two hook events the design adds (UserPromptSubmit context, SessionEnd) work
+in `claude -p`.
 
 | part | measures | cost | status |
 |---|---|---|---|
 | `transcript_metrics.py` | PRD M1 (restated corrections per 100 prompts), M3 (fork share), compactions, from real transcripts | free | baseline below |
 | `resume/` | PRD M2: can a fresh headless session state a multi-PR workstream's facts, with and without the brief | about $0.35 per 6-session run | run 2026-10-30, below |
-| `spike/probe_ref.sh` | the remote accepts `refs/100x/*`, a normal clone does not fetch it, append races and claim CAS behave | free, pushes and deletes test refs | 8 of 8 passed |
 | `spike/hook-probe/` | UserPromptSubmit can inject context; SessionEnd fires in `claude -p` | $0.005 | both confirmed |
-| `spike/cloud_probe.sh` | inside `claude --cloud`: plugin loaded, `gh` signed in, private-ref push works | your cloud session | **not run** |
 
 ## Baseline (real use, before any change)
 
@@ -63,7 +61,6 @@ bash tests/test_work_continuity_bench.sh                 # offline: metrics and 
 python3 bench/work-continuity/transcript_metrics.py ~/.claude/projects/<project>/<session>.jsonl
 bash bench/work-continuity/resume/run.sh                  # prints the cost and stops
 bash bench/work-continuity/resume/run.sh --yes --runs 3   # 6 sessions; results in resume/results/ (not committed)
-bash bench/work-continuity/spike/probe_ref.sh origin      # pushes refs/100x/probe-* and deletes them
 ```
 
 Hook probe, by hand:
@@ -74,7 +71,3 @@ WORK_PROBE_LOG=/tmp/probe.log claude -p --plugin-dir bench/work-continuity/spike
 ```
 
 It should print `PROBE-7731`, and the log should hold a `UserPromptSubmit` line and a `SessionEnd` line.
-
-Cloud check (phase 0, still open): start `claude --cloud` on this repo, on this branch, and ask it to run
-`bash bench/work-continuity/spike/cloud_probe.sh`. Every check passing means the PRD's phase 2 can be built as designed.
-Any failure means re-planning per PRD §8.

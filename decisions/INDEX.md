@@ -1,13 +1,14 @@
 # Decision index
 
-4 decision(s). Regenerate with `python3 scripts/decide.py index`.
+5 decision(s). Regenerate with `python3 scripts/decide.py index`.
 
 | id | title | status | date | chosen | assumptions | tags | affects |
 |---|---|---|---|---|--:|---|---|
 | [ADR-0001](ADR-0001-session-strategy-for-login.md) | Session strategy for login | accepted | 2026-09-29 | Opaque server session id in an httpOnly cookie | 3 | backend, auth | `examples/login/**` |
 | [ADR-0002](ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md) | gh CLI for pr-review, confined to skill steps | accepted | 2026-10-10 | gh CLI, called only from SKILL.md / references steps | 3 | dependency, safety | `skills/pr-review/**, docs/SAFETY.md, scripts/pr_*.py` |
-| [ADR-0004](ADR-0004-shared-work-record-lives-in-an-opt-in-private-git-ref-refs-100x-work.md) | Shared work record lives in an opt-in private git ref refs/100x/work | proposed | 2026-10-30 | opt-in private ref refs/100x/work, per-PR claim refs updated with --force-with-lease | 3 | safety, work-continuity | `prds/work-continuity/**, scripts/work*.py, hooks/**` |
-| [ADR-0005](ADR-0005-plugin-may-fetch-and-push-refs-100x-only-gh-stays-read-only-supersedes-adr-0002-scope.md) | Plugin may fetch and push refs/100x/* only; gh stays read-only (supersedes ADR-0002 scope) | proposed | 2026-10-30 | allow pushes to refs/100x/* and read-only gh in tools and hooks | 3 | safety, work-continuity | `docs/SAFETY.md, scripts/work*.py, hooks/**, skills/pr-review/**, scripts/pr_*.py` |
+| [ADR-0004](ADR-0004-shared-work-record-lives-in-an-opt-in-private-git-ref-refs-100x-work.md) | Shared work record lives in an opt-in private git ref refs/100x/work | rejected | 2026-10-30 | opt-in private ref refs/100x/work, per-PR claim refs updated with --force-with-lease | 3 | safety, work-continuity | `prds/work-continuity/**, scripts/work*.py, hooks/**` |
+| [ADR-0005](ADR-0005-plugin-may-fetch-and-push-refs-100x-only-gh-stays-read-only-supersedes-adr-0002-scope.md) | Plugin may fetch and push refs/100x/* only; gh stays read-only (supersedes ADR-0002 scope) | rejected | 2026-10-30 | allow pushes to refs/100x/* and read-only gh in tools and hooks | 3 | safety, work-continuity | `docs/SAFETY.md, scripts/work*.py, hooks/**, skills/pr-review/**, scripts/pr_*.py` |
+| [ADR-0006](ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md) | Work record is private plain files in ~/.config/100x/work, backed up by the owner's own setup; the plugin never pushes | proposed | 2026-10-30 | plain append-only files in ~/.config/100x/work, backed up by the owner's setup | 3 | safety, work-continuity | `prds/work-continuity/**, scripts/work*.py, hooks/**` |
 
 ## How to use this
 

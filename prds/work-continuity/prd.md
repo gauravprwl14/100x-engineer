@@ -1,11 +1,11 @@
 # work-continuity — PRD
 
-**Summary.** Work state should live in a shared record, not in a chat session. Today one session carries weeks of work: in two real sessions that meant 34 context summaries, about 18.4 billion re-read tokens, and the same corrections given dozens of times. This PRD proposes a **work record** kept in an opt-in private git ref (`refs/100x/work`, ADR-0004), plus live PR facts read from GitHub. Any session (an open one, a new one, a background one, a cloud one, a teammate's) can resume, claim a PR, see what changed, and leave notes, without finding the old session. Parallel work keeps using subagents, briefed with a short card instead of a copy of the whole conversation. Phase 0 is a one-day cloud spike; phase 1 needs no network at all.
+**Summary.** Work state should live in a shared record, not in a chat session. Today one session carries weeks of work: in two real sessions that meant 34 context summaries, about 18.4 billion re-read tokens, and the same corrections given dozens of times. This PRD proposes a **private work record**: plain append-only files in `~/.config/100x/work` on the owner's machine (ADR-0006). Nothing reaches any project repository, the plugin never pushes, and the owner's own backup (claude-setup) carries it to a new laptop. Any local session (old, new, background, any worktree, either config dir) resumes from a short brief, sees what changed, and respects holds and claims. Parallel work keeps using subagents, briefed with a short card instead of a copy of the conversation. Cloud sessions get the brief in their starting prompt.
 
 | field | value |
 |---|---|
 | kind | product |
-| stack | Python (100x CLI and hooks), git, GitHub CLI, Claude Code hooks |
+| stack | Python (100x CLI and hooks), git, Claude Code hooks |
 | scale tier | small |
 | risk | none |
 | linked spec | specs/work-continuity/spec.md (run `100x plan_feature new work-continuity --tier small --risk none --kind ... --work ...` for it) |
@@ -16,7 +16,7 @@ Status becomes `ready` only when `100x prd audit` passes. Every number and const
 
 **Load tier `small`** (< 10,000 users; low tens of requests/sec at peak), **risk `none`** — declared, never defaulted; see `skills/scale-appropriateness/SKILL.md`. The spec this PRD seeds must carry the same tier (`100x prd align` checks).
 
-Decisions: [ADR-0004](../../decisions/ADR-0004-shared-work-record-lives-in-an-opt-in-private-git-ref-refs-100x-work.md) (where the record lives), [ADR-0005](../../decisions/ADR-0005-plugin-may-fetch-and-push-refs-100x-only-gh-stays-read-only-supersedes-adr-0002-scope.md) (the plugin may push `refs/100x/*` only; `gh` read-only; supersedes ADR-0002).
+Decisions: [ADR-0006](../../decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md) (private files, backed up by the owner's setup). ADR-0004 and ADR-0005 are rejected: they put the record in project repositories. Depends on gauravprwl14/claude-setup#1 (union mirror, rebase before push).
 
 ## Contents
 
@@ -24,22 +24,22 @@ Decisions: [ADR-0004](../../decisions/ADR-0004-shared-work-record-lives-in-an-op
 |---|---|
 | [1. Problem](#1-problem) | what goes wrong today, with numbers from two real sessions |
 | [6. Requirements](#6-requirements) | what any session, anywhere, must be able to do |
-| [7. Options analysis](#7-options-analysis) | where the shared state could live, scored |
-| [9. Design overview](#9-design-overview) | the record, the claim lock, the hooks, how a session resumes |
-| [9b. Edge cases](#9b-edge-cases) | open + new session, cloud quick fix, crash, two sessions on one PR, no network |
+| [7. Options analysis](#7-options-analysis) | where the private state could live, scored |
+| [9. Design overview](#9-design-overview) | the private record, the claim lock, the hooks, how a session resumes |
+| [9b. Edge cases](#9b-edge-cases) | open + new session, cloud quick fix, crash, two sessions on one PR, two laptops |
 | [9c. Parallel work without forks](#9c-parallel-work-without-forks) | how parallel speed is kept while forks are dropped |
-| [11. Phasing](#11-phasing) | the cloud spike first, then a no-network phase 1 |
+| [11. Phasing](#11-phasing) | prerequisites, then brief and fork warning, then awareness and locks |
 | [21. Open questions](#21-open-questions--assumptions) | what is still unverified |
 
 ## 1. Problem
 
 | field | answer |
 |---|---|
-| who has this problem | an engineer who runs Claude Code on one feature family (several related PRs across backend and frontend) for days or weeks, sometimes from a laptop, a background session or a cloud session, and sometimes alongside teammates |
+| who has this problem | an engineer who runs Claude Code on one feature family (several related PRs across backend and frontend) for days or weeks, from several sessions, worktrees and config dirs, and sometimes from a second laptop or a cloud session |
 | what they do today | keeps one long session open per feature family so the agent "remembers"; restates branch ownership, conventions and decisions after each context summary; asks "what is the status"; answers ad-hoc question lists |
 | what "better" means, measurably | M1–M4 below: fewer restated corrections, a fresh session resumes without help, fewer fork tokens, fewer questions reaching the human |
 
-Evidence (session transcripts `7f980c91` over 5 days and `a94b2d46` over 6 weeks, measured on 2026-10-30 with `bench/work-continuity/transcript_metrics.py`; results in `bench/work-continuity/BASELINE.md`):
+Evidence (session transcripts `7f980c91` over 5 days and `a94b2d46` over 6 weeks, measured on 2026-10-30 with `bench/work-continuity/transcript_metrics.py`; results in `bench/work-continuity/README.md`):
 
 | signal | 7f980c91 | a94b2d46 |
 |---|---|---|
@@ -59,17 +59,17 @@ Audit cost (127 of 156 subagents in 7f980c91) is a separate problem caused by a 
 | # | segment | current workaround | why they would adopt this |
 |---|---|---|---|
 | U1 | solo engineer driving agents across several PRs of one feature | one long session per feature family | resume from any session in under a minute, with no restating |
-| U2 | the same engineer away from the laptop (phone, cloud session) | cannot reach local state, so waits or restates everything | cloud sessions read the same record |
-| U3 | a teammate picking up one PR | asks the owner in chat | reads the board; claims the PR; leaves notes |
+| U2 | the same engineer on a second laptop, or starting a cloud session | restates everything | the record follows the owner's backup; a cloud session starts with the brief |
 
 ## 3. Goals
 
 | # | goal | measured by |
 |---|---|---|
-| G1 | state outlives sessions: any session can resume a workstream | M1, M2 |
+| G1 | state outlives sessions: any local session can resume a workstream | M1, M2 |
 | G2 | a session that stays open sees what other sessions changed before it acts | M2 |
 | G3 | parallel work costs less without losing speed | M3 |
 | G4 | the human answers fewer, clearer questions | M4 |
+| G5 | teammates see nothing; nothing manual on a new laptop | X4, P0 |
 
 ## 4. Success metrics
 
@@ -78,7 +78,7 @@ Every metric needs a number, a way to measure it, and where the number came from
 | # | metric | target (must include a number) | baseline | measurement method | source |
 |---|---|---|---|---|---|
 | M1 | restated corrections (branch ownership, status, conventions) per 100 prompts | ≤ 3 | 11.3 (a94b2d46), 29.7 (7f980c91) | `bench/work-continuity/transcript_metrics.py` (`m1_restated_per_100`) | assumed |
-| M2 | a fresh session states a workstream's PRs, holds, open decisions and next step correctly | ≤ 60 s and a brief of ≤ 3,000 tokens | without a brief 2 of 7; with a hand-written brief 7 of 7 in 9 s (resume bench, 3 runs each, 2026-10-30) | scripted test: new local session, then (phase 2) new cloud session, compared with the record | assumed |
+| M2 | a fresh session states a workstream's PRs, holds, open decisions and next step correctly | ≤ 60 s and a brief of ≤ 3,000 tokens | without a brief 2 of 7; with a hand-written brief 7 of 7 in 9 s (resume bench, 3 runs each, 2026-10-30) | resume bench (`bench/work-continuity/resume/`), then a scripted resume on a real workstream | assumed |
 | M3 | fork agents' share of a workstream's tokens | ≤ 5% | 46% | `transcript_metrics.py` (`fork_token_share`) | assumed |
 | M4 | questions reaching the human per merged PR | ≤ 5 | not measured; prompts containing an approval phrase ("go ahead", "agreed", "yes") are common, but only 9 of 816 are approval alone | question events by class in the record | assumed |
 
@@ -87,32 +87,33 @@ Every metric needs a number, a way to measure it, and where the number came from
 | constraint | value | source |
 |---|---|---|
 | team size and skills | one owner-maintainer of the plugin; users are engineers on any stack | user |
-| existing stack | Python (100x CLI and hooks), git, GitHub CLI, Claude Code hooks | code |
+| existing stack | Python (100x CLI and hooks), git, Claude Code hooks; the owner's backup is claude-setup | code |
 | deadline | none stated | user |
 | budget | free, local, open-source tools only; no hosted services or billed APIs (G-SCO-06) | user |
-| compliance / regulatory | none for the tool; the record must not hold secrets or personal data beyond GitHub handles | default |
-| data residency | N/A because the record lives in the project's own git remote | default |
-| data retention | as long as the ref exists; old events move to an archive folder, never rewritten except to erase a leaked secret | default |
-| what cannot change | generic for any project; off unless a repo opts in (ADR-0004); pushes only `refs/100x/*` and `gh` read-only (ADR-0005); never changes branches, PR diffs or CI of the repo; GitHub stays the source of truth for PR facts; Python stdlib + git (+ read-only `gh`) | user |
+| compliance / regulatory | none for the tool; the record must not hold secrets; repository addresses are stored as `host/owner/repo`, never a URL that can carry a token | default |
+| data residency | the owner's machine, and the owner's private claude-setup repository on GitHub, which already backs up work memory (claude-setup `tools/sync.py:33-34`) | code |
+| data retention | as long as the folder exists; events are never moved or deleted by the plugin (a summary event replaces old ones in the brief) | default |
+| what cannot change | nothing in any project repository, branch, ref, git config or PR text; the plugin never pushes and never calls `gh` (ADR-0002, `docs/SAFETY.md`); generic for any project; Python stdlib + git | user |
 
 ## 6. Requirements
 
 | # | requirement | why it matters |
 |---|---|---|
-| R1 | a **workstream** (feature family) holds 0..N PRs and issues, in one or more repos; a session may work on several PRs | one session per PR is too rigid |
-| R2 | any session (open, new, `--bg`, `-p`, `--cloud`, teammate) can resume a workstream from the record alone | the old session gets lost, summarised or is on another machine |
-| R3 | PR facts (branch, base, state, CI, reviews, conflicts, merged) are read live from GitHub (read-only `gh`), never stored | stored copies go stale |
-| R4 | only non-derivable facts are stored: goal, PR roles and merge order, decisions, open questions, holds, workstream conventions, handoff notes | keeps the record small and true |
-| R5 | every write is an append of a uniquely named event; no single file is edited by two writers; the workstream view and the branch→workstream index are derived in memory | concurrent sessions never conflict |
-| R6 | a claim on a PR is a compare-and-swap: exactly one session holds it at a time | the "fix landed on the wrong branch" class |
-| R7 | an open session learns about changes made elsewhere before its next prompt and before any push or PR | open session + new session |
-| R8 | holds ("don't push PR #n", "integration worktree is merge-only") are enforced by a hook; with no network, the last fetched holds still apply, and the hook says they may be stale | prose rules were restated 62 times |
+| R1 | a **workstream** (feature family) holds 0..N PRs, in one or more repos; a session may work on several PRs | one session per PR is too rigid |
+| R2 | any local session (open, new, `--bg`, `-p`, any worktree, either config dir) resumes a workstream from the record alone | the old session gets lost, summarised, or sits in another worktree |
+| R3 | PR facts (CI, reviews, merged) are never stored; the brief lists PR numbers and branches and tells the agent to read live state itself | stored copies go stale; plugin tools do not call `gh` (ADR-0002) |
+| R4 | only non-derivable facts are stored: goal, PR roles and merge order, decisions, open questions, holds, conventions, handoff notes | keeps the record small and true |
+| R5 | every write is one new uniquely named file; no file is edited by two writers; the workstream view and the repo/branch → workstream lookup are derived in memory | concurrent sessions and two laptops never conflict |
+| R6 | a claim on a PR is an atomic create on this machine: exactly one session holds it | the "fix landed on the wrong branch" class |
+| R7 | an open session learns about changes made elsewhere before its next prompt and before any push or PR | old session + new session |
+| R8 | holds are enforced by a hook | prose rules were restated 37 times in one session |
 | R9 | questions carry class A/B/C, plain-language text, a recommendation and a default; A/B apply and are listed, only C waits | decision fatigue |
-| R10 | parallel subagents get a brief built from the record; a fork is warned on (configurable: `allow`, `warn`, `refuse`) once the session has been summarised | 46% of tokens went to forks |
-| R11 | hooks never wait on the network at session start or prompt time: they read a local cache, refreshed in the background | the SessionStart hook is killed at 10 s (`hooks/hooks.json:10`) |
-| R12 | free text in the brief is shown only from trusted authors (default: the current git user); other events show structured fields only | events are a prompt-injection channel |
-| R13 | everything is configurable per repo in `.100x.json`; nothing project-specific ships | generic workflow |
-| R14 | with no remote, no push rights or no `gh`, commands fall back to local mode with one warning; hooks never crash a session | must never break work |
+| R10 | parallel subagents get a brief built from the record; a fork is warned on (`allow`, `warn`, `refuse`) once the session has been summarised | 46% of tokens went to forks |
+| R11 | hooks read local files only and never touch the network | the SessionStart hook is killed at 10 s (`hooks/hooks.json:10`) |
+| R12 | the brief tells the agent it is private: never quote it in commits, PR text or review comments | nothing reaches teammates through the agent |
+| R13 | configuration is user-level (`HUNDREDX_WORK_DIR`, `~/.config/100x/work.json`); nothing project-specific ships | generic, and nothing in project repos |
+| R14 | with no record, or an unreadable one, every hook stays silent or fails open with one warning | must never break work |
+| R15 | text matching the backup's secret patterns is refused when an event is written | a blocked file is silently left out of the backup |
 
 ## 7. Options analysis
 
@@ -121,93 +122,87 @@ Every metric needs a number, a way to measure it, and where the number came from
 | # | option | pros | cons | reversibility x3 | blast radius x3 | moving parts x2 | already-in-use x2 | exit cost x1 | fit (pass/fail) | weighted score |
 |---|---|---|---|---|---|---|---|---|---|---|
 | O1 | Do nothing / smallest possible change | zero new moving parts; zero new blast radius; ships today | does not solve the problem — mark fit `pass` only if the status quo is now acceptable, which is itself a decision | 5 | 5 | 5 | 5 | 5 | fail | 55 |
-| O2 | local files under `~/.100x/work/<workstream>/` | simplest; private; no network | cloud sessions and teammates cannot see it (fails R2); kept as phase 1 and as the fallback mode | 5 | 5 | 5 | 3 | 5 | fail | 51 |
-| O3 | board file committed inside each feature branch | visible in the repo | every branch has its own copy, so they diverge (fails R5); shows in PR diffs | 4 | 2 | 4 | 4 | 4 | fail | 38 |
-| O4 | branch `100x/work` with event files | easy to inspect | triggers on:push CI in teammates' repos, shows in branch lists, hit by stale-branch bots, public on public repos | 4 | 2 | 2 | 2 | 4 | pass | 30 |
-| O5 | GitHub tracking issue as the store | readable on github.com | needs `gh` writes, which ADR-0005 forbids in tools; notes visible to all readers; body edits race | 4 | 3 | 3 | 3 | 3 | fail | 36 |
-| O6 | third-party orchestrator (Vibe Kanban, Claude Squad, Composio AO) | ready-made dashboard and worktree management | local database invisible to cloud sessions (fails R2); no claims, holds or decision classes | 3 | 3 | 1 | 1 | 2 | fail | 24 |
-| O7 | opt-in private ref `refs/100x/work` for events + one ref per claimed PR, updated with `--force-with-lease` | readable by every kind of session through git; no CI trigger, not in branch lists; per-PR ref is a real compare-and-swap | custom refs are unfamiliar and not shown on github.com; needs an explicit fetch refspec; hosts or proxies may refuse them (phase 0 checks) | 4 | 4 | 3 | 2 | 4 | pass | 38 |
+| O2 | Claude Code auto-memory | already injected and already backed up | one folder per working path and per config dir, so worktrees see different records; one `MEMORY.md` edited by many sessions (fails R2, R5) | 5 | 5 | 5 | 5 | 5 | fail | 55 |
+| O3 | private ref in each project repo (ADR-0004) | readable by cloud sessions | lives in the team's repository (fails a hard constraint) | 4 | 4 | 3 | 2 | 4 | fail | 38 |
+| O4 | a dedicated private repo the plugin pushes to | works from the cloud | the plugin would push (`docs/SAFETY.md`); duplicates the owner's backup | 4 | 3 | 2 | 2 | 3 | pass | 32 |
+| O5 | local git repo in `~/.config/100x/work` + backup mirror | history per event | the backup re-bundles all history whenever a ref moves (claude-setup `tools/sync.py:209-211`); restore needs the bundle path | 4 | 4 | 3 | 3 | 4 | pass | 40 |
+| O6 | plain append-only files in `~/.config/100x/work` + the owner's union backup mirror | nothing in project repos; the plugin never pushes; restore and two-laptop merge are "copy what is missing" | cloud sessions cannot read it; two laptops agree only after each syncs | 5 | 4 | 4 | 4 | 5 | pass | 48 |
+| O7 | third-party orchestrator (Vibe Kanban, Claude Squad, Composio AO) | ready-made dashboard | separate database; no holds, claims or decision classes | 3 | 3 | 1 | 1 | 2 | fail | 24 |
 
 ## 8. Recommendation
 
 | field | answer |
 |---|---|
-| chosen option | O7 |
-| single deciding factor | it is the only option that every kind of session can read and write through git without side effects on teammates (no CI runs, no branch noise), and its per-PR claim ref gives a real compare-and-swap |
-| what would change it | phase 0 shows a cloud session cannot push `refs/100x/*` or does not load plugin hooks — then local mode (O2) for the owner plus a manual `100x work push` step, and a separate decision on GitHub writes |
+| chosen option | O6 |
+| single deciding factor | it is the only option that keeps everything out of project repositories without the plugin pushing, and the owner's existing backup already restores it on a new laptop |
+| what would change it | cloud sessions become the owner's main way of working — then O4, a dedicated private repository, with a superseding ADR for the push |
 | override reason (if not the top fit-passing score) | none |
 
 ## 9. Design overview
 
-**Analogy.** A hospital patient has a chart; doctors change shifts, and whoever is on duty reads the chart, treats the patient and writes a note. The patient is not tied to one doctor. The workstream is the patient, the work record is the chart, sessions are the doctors on shift.
+**Analogy.** A hospital patient has a chart; doctors change shifts, and whoever is on duty reads the chart, treats the patient and writes a note. The chart here is a private notebook on your laptop, never in the team's files.
 
 ```mermaid
 %% level: 1
 flowchart LR
-    S1[Open session] --> H[100x hooks]
-    S2[New or cloud session] --> H
-    S3[Headless or background worker] --> H
-    H -->|read only| C[("Local cache")]
-    F[Background refresh] -->|fetch refs/100x/*, gh read| C
-    H -->|append event, claim| R[("refs/100x/work and claims")]
+    S1[Open session] --> H[Plugin hooks]
+    S2[New session, any worktree or config dir] --> H
+    H -->|read, append one file| W[("~/.config/100x/work: events")]
+    H -->|atomic create| K[("~/.cache/100x: claims, cursors")]
     H -->|check holds and claims| G[git push / gh pr]
-    C --> B[100x work brief and show]
-    B --> U[Human: one batched question list]
+    W --> B[100x work brief]
+    W -.->|owner's backup, union mirror| CS[("claude-setup, private")]
+    CS -.->|restore, other laptop| W
+    B -->|starting prompt| CL[Cloud session]
 ```
 
-**The record** (in ref `refs/100x/work`, one folder per workstream; every file is written once):
+**The record** (`~/.config/100x/work`, or `$HUNDREDX_WORK_DIR`; every file written once, never moved or deleted):
 
 | path | holds |
 |---|---|
-| `<ws>/events/<utc-ts>-<session>-<rand>.json` | one event, `"schema": 1`: `set` (goal, repos, PR roles, merge order, conventions), `note`, `decision`, `question`, `answer`, `hold`, `release-hold`, `handoff` |
-| `refs/100x/claims/<owner>/<repo>/<n>` | the current claim on one PR: holder session, author, expiry; changed only with `git push --force-with-lease` |
+| `<ws>/events/<utc-ts>-<session>-<rand>.json` | one event, `"schema": 1`: `set` (goal, repos as `host/owner/repo`, PR roles, branches, merge order, conventions), `note`, `decision`, `question`, `answer`, `hold`, `release-hold`, `handoff`, `summary` |
+| `~/.cache/100x/claims/<host-owner-repo>/<pr>` | a claim: holder session, expiry; created with `O_CREAT | O_EXCL`; not backed up |
+| `~/.cache/100x/cursors/<session>` | the last event this session saw; not backed up |
 
-The workstream view and the branch/PR → workstream index are computed from events in memory (R5).
-
-**How an append works.** Build a commit on top of the fetched `refs/100x/work` with one new file; push. If the push is rejected because someone else appended first, fetch, rebuild on the new tip (the file names never collide) and retry up to 3 times. **How a claim works.** Read the claim ref; if it is free or expired, push the new claim with `--force-with-lease=<ref>:<old sha>`. Only one of two racing claimants succeeds; the loser is told who won. Expiry is the claimer's UTC time plus the TTL, read with a 5-minute skew margin; taking over a live claim is an explicit `--steal`, logged as an event.
-
-**Commands** (`100x work …`; repo and branch come from git):
+**Commands** (`100x work …`):
 
 | command | does |
 |---|---|
-| `start <ws> --pr <owner/repo#n>...` | appends the first `set` event |
-| `brief [<ws>]` | at most 3,000 tokens: goal, live PR table, claims, holds, open questions, last N events, conventions |
-| `claim <pr> [--ttl 2h] [--steal]`, `release <pr>` | the per-PR lock |
+| `start <ws> --repo <host/owner/repo> --pr <n>:<branch>:<role>...` | appends the first `set` event |
+| `brief [<ws>]` | at most 3,000 tokens: goal, PRs and branches, holds, claims, open questions, last N events, conventions, and the line "private: never quote in commits, PR text or comments" |
 | `note`, `decide`, `ask`, `answer`, `hold`, `release-hold`, `handoff` | append one event |
-| `sync` | the background refresh (fetch `refs/100x/*`, read PR facts with `gh`) into the cache |
-| `show` | the board for humans |
-| `doctor` | last sync, unpushed events, live claims, hook timings, cloud readiness |
+| `claim <pr> [--ttl 2h] [--steal]`, `release <pr>` | the per-PR lock on this machine |
+| `cloud <pr> "<task>"` | starts `claude --cloud` with the brief and the task as its first prompt |
+| `doctor` | record found, events, live claims, backed up or not, hook timings |
 
-**Hooks** (added to `hooks/hooks.json`; each reads only the cache, has a short timeout and never crashes the session):
+**Hooks** (added to `hooks/hooks.json`; local files only; each fails open):
 
 | event | does |
 |---|---|
-| SessionStart | maps branch or PR to a workstream, injects `brief` from cache, starts `work sync` in the background, stores the session's event cursor |
-| UserPromptSubmit | injects "since you last looked: …" when the cache holds newer events (support for injecting context here is checked in phase 0) |
-| PreToolUse on Bash `git push`, `gh pr create`, `gh pr ready` | refuses when the PR is held or claimed by another session; tries a 3 s fetch first, and on failure uses the cache and says so |
-| PreToolUse on Agent | when `subagent_type` is `fork` and the transcript shows a compaction, applies `work.fork_policy` (default `warn`) and suggests a brief |
+| SessionStart | maps the repo (`host/owner/repo` from `git remote`) and branch to a workstream; injects `brief`; stores the session's cursor |
+| UserPromptSubmit | injects "since you last looked: …" when there are newer events (verified to work in `claude -p`: `bench/work-continuity/spike/hook-probe`) |
+| PreToolUse on Bash `git push`, `gh pr create`, `gh pr ready` | refuses when the PR is held, or claimed by another live session |
+| PreToolUse on Agent | when `subagent_type` is `fork` and the transcript shows a compaction, applies the fork policy (default `warn`) and suggests a brief |
 | SessionEnd, or explicit `work handoff` | appends one handoff event; never on Stop, which fires after every reply (`hooks/stop_gate.py:2`) |
-
-**Config** (`.100x.json`, all optional): `work.mode` (`off` default, `local`, `shared`), `work.remote`, `work.lease_ttl`, `work.fork_policy`, `work.trusted_authors`, `work.brief_tokens`.
 
 ## 9b. Edge cases
 
 | # | case | what happens |
 |---|---|---|
-| E1 | an old session is still open and you start a new one with new instructions | the new session appends events (a decision, a hold) or takes a claim. The old session's next prompt gets "since you last looked: …" from the cache; its next push hits the PreToolUse check, which fetches holds and claims fresh. Neither session needs the other's id. |
-| E2 | a quick fix from a cloud session | `claude --cloud "fix review comment on owner/repo#1550"`: SessionStart has no cache yet, so it runs one bounded fetch (within the hook timeout) or tells the agent to run `100x work brief`. The session claims 1550, fixes it, pushes, appends a handoff. Phase 0 checks this path really works. |
-| E3 | two sessions claim one PR at once | `--force-with-lease` lets exactly one win; the other is told who holds it and until when, and can wait, `--steal` (logged) or work read-only. |
-| E4 | a session crashes mid-work | its claim expires after the TTL; with no handoff event, `brief` says "session X ended without a handoff; uncommitted work may exist in worktree W" (local only). |
-| E5 | two sessions append events at the same moment | the second push is rejected, rebuilt on the new tip and retried; file names never collide, so nothing is lost. |
-| E6 | a PR is rebased, renamed, retargeted or merged | only its number and role are stored; `brief` shows the live state from GitHub. |
-| E7 | a workstream spans repos | the record lives in one home repo (`work.remote`); PRs are `owner/repo#n`. A session in the other repo finds the home repo from its own `.100x.json` (needs a one-line commit there, done only with that repo's agreement) or a user-level setting. |
-| E8 | no network, no push rights, no `gh`, or the host refuses custom refs | commands warn once and queue events locally; holds are enforced from the last cache with a "may be stale" note; `doctor` shows what is queued. |
-| E9 | a secret or token is written into an event | `note` refuses text matching the secret patterns `appsec_check` uses. If one gets through, the documented erasure is a rewrite of `refs/100x/work` plus asking clones to refetch; this cannot reach copies already fetched (ADR-0004 gap). |
-| E10 | the event log grows over months | `brief` reads only the derived view and the last N events; `work compact <ws>` writes a summary event and moves old events to `archive/`. |
-| E11 | a teammate without 100x | they keep using GitHub as usual; holds bind only sessions running the plugin (X4). |
-| E12 | the branch maps to no workstream | hooks stay silent. |
-| E13 | an event from an untrusted author contains instructions | the brief shows only its structured fields (type, PR, time, author), not its text (R12). |
-| E14 | an older plugin version reads a newer event | events carry `"schema"`; unknown versions are listed as "newer event, upgrade to read" and ignored. |
+| E1 | an old session is still open and you start a new one with new instructions | the new session appends events; the old session's next prompt gets "since you last looked: …"; its next push hits the PreToolUse check, which reads the holds and claims fresh from disk |
+| E2 | a quick fix from a cloud session | `100x work cloud 1550 "fix the review comment"` starts the cloud session with the brief in its first prompt. It cannot write back; what it does reaches the record through the PR and a later local note |
+| E3 | two local sessions claim one PR at once | the atomic create lets exactly one win; the other is told who holds it and until when, and can wait, `--steal` (logged) or work read-only |
+| E4 | a session crashes mid-work | its claim expires after the TTL; with no handoff event, `brief` says "session X ended without a handoff" |
+| E5 | two sessions append events at the same moment | different file names; nothing to merge |
+| E6 | a PR is rebased, renamed, retargeted or merged | only its number, branch and role are stored; the brief tells the agent to check live state |
+| E7 | a workstream spans repos | `set` lists each repo as `host/owner/repo`; a session in any of them finds the workstream from its own `git remote` and branch |
+| E8 | two laptops | the owner's backup pushes the folder as soon as it changes and copies the other laptop's new files in on its next sync (claude-setup#1); until then each laptop sees only its own events |
+| E9 | a secret is typed into a note | `note` refuses it (R15). If one gets through, erasing it means rewriting claude-setup history |
+| E10 | the record grows over months | `brief` reads the derived view and the last N events; `work summarise <ws>` appends a `summary` event that the brief uses instead of older events; nothing is moved |
+| E11 | a teammate on the same repo | sees nothing: no file, ref, config or commit text comes from the record (R12) |
+| E12 | the branch maps to no workstream | hooks stay silent |
+| E13 | the agent is tempted to paste the brief into a commit message | the brief says it is private (R12); `prose_check` already flags process narration in commits |
+| E14 | an older plugin version reads a newer event | events carry `"schema"`; unknown versions are listed as "newer event, upgrade to read" and ignored |
 
 ## 9c. Parallel work without forks
 
@@ -220,7 +215,7 @@ There are two ways to give a helper agent context:
 | cost per agent in a94b2d46 | about 25 M tokens (8.0 B / 327) | about 5 M tokens (1.7 B / 365); different tasks, so a rough comparison |
 | runs in parallel | yes | yes, the same way |
 
-Speed comes from running independent tasks at the same time. The plugin already does this: `plan_dag waves` groups tasks that can run together, each task gets its own worktree, and a wave is dispatched in one message (`skills/orchestrate/SKILL.md`). This PRD changes only how each helper is briefed. Opt-in launchers for work that should not hold the main session (`claude -p` with `--max-budget-usd`, which works only with `--print`; `claude --bg`, which has no cost cap) are a separate PRD (X7).
+Speed comes from running independent tasks at the same time. The plugin already does this: `plan_dag waves` groups tasks that can run together, each task gets its own worktree, and a wave is dispatched in one message (`skills/orchestrate/SKILL.md`). This PRD changes only how each helper is briefed. Headless and background launchers are a separate PRD (X7).
 
 ## 10. Risks
 
@@ -229,20 +224,20 @@ Likelihood and impact are integers 1-5; the audit recomputes L x I. A risk with 
 | # | risk | likelihood (1-5) | impact (1-5) | L x I | mitigation | source |
 |---|---|---|---|---|---|---|
 | RI1 | Adoption is lower than the success metric assumes | 3 | 3 | 9 | hooks surface the brief automatically; phase 1 is used on the next real feature before phase 2 is built | assumed |
-| RI2 | Effort estimate is wrong and scope grows mid-build | 3 | 3 | 9 | launchers, model routing and review modes moved to separate PRDs; phase 1 has no network code | assumed |
-| RI3 | The existing codebase makes the recommended option more expensive than scored | 2 | 3 | 6 | phase 0 spike before any sync code | assumed |
-| RI4 | the record is stale or wrong and agents trust it over reality | 3 | 4 | 12 | PR facts never stored; every stored fact shows its time and author; verification still runs against code | default |
-| RI5 | hooks slow down prompts or get killed by their timeout | 2 | 3 | 6 | hooks read the cache only; network work runs in the background; timings logged and shown by `doctor` | code |
-| RI6 | a cloud session cannot load plugin hooks, lacks `gh` auth, or cannot push `refs/100x/*` | 3 | 4 | 12 | phase 0 tests all three before anything else is built; fallback in §8 | assumed |
-| RI7 | a forged or careless hold blocks a teammate | 2 | 3 | 6 | `show` names author and time; `release-hold` and `--override` are logged events | default |
+| RI2 | Effort estimate is wrong and scope grows mid-build | 3 | 3 | 9 | launchers, model routing and review modes are separate PRDs; phase 1 is the brief, notes and the fork warning only | assumed |
+| RI3 | The existing codebase makes the recommended option more expensive than scored | 2 | 3 | 6 | phase 1 reuses `hooks/session_start.py` and the plugin's `~/.config/100x` precedent | code |
+| RI4 | the record goes stale because sessions do not write their decisions into it | 4 | 4 | 16 | SessionEnd handoff; `decide` and `hold` are one command; M1 measured on a real feature decides whether phase 2 is worth building | assumed |
+| RI5 | hooks slow down prompts | 2 | 3 | 6 | local files only; timings logged and shown by `doctor` | default |
+| RI6 | the brief leaks into commit or PR text | 2 | 4 | 8 | R12 line in every brief; reviewed in the phase 1 test plan | default |
+| RI7 | the backup loses events (delete guard, secret scan) | 2 | 4 | 8 | union mirror is never pruned (claude-setup#1); secret-like text refused at write (R15) | code |
 
 ## 11. Phasing
 
 | # | phase | ships | proves | kill criteria | source |
 |---|---|---|---|---|---|
-| P0 | Phase 0 — cloud spike (about 1 day, throwaway) | a test repo; from a `claude --cloud` session: does the plugin load and its SessionStart hook run, is `gh` authenticated, can it fetch and push `refs/100x/test`; locally: does a UserPromptSubmit hook inject context, does SessionEnd fire | the riskiest assumption (RI6) | any of the three cloud checks fails → re-plan per §8 before phase 2 | assumed |
-| P1 | Phase 1 — local brief and fork warning | `work.mode=local`: `work start/brief/note/decide/handoff` on local files; SessionStart injects the brief; PreToolUse on Agent warns on forks after a compaction | a fresh local session resumes a real multi-PR workstream unaided (M2, local) and fork share drops (M3) | the brief needs more than 3,000 tokens to be correct, or M3 does not move on one workstream | assumed |
-| P2 | Phase 2 — shared record | `work.mode=shared`: events in `refs/100x/work`, per-PR claim refs, background `sync` and cache, UserPromptSubmit "since", PreToolUse hold and claim check, trusted-author filter; `docs/SAFETY.md` revised in the same PR (ADR-0005) | E1–E8 on two machines and one cloud session; M1, M2 (cloud) | a hook adds more than 1 s to a prompt at p95, or a wrong-branch push still happens | assumed |
+| P0 | Phase 0 — prerequisites | claude-setup#1 merged and pulled once; one manual check that `claude --cloud "<text>"` starts a session with that text as its first prompt | the backup carries the folder between laptops; cloud briefing is possible | union mirror not merged → stop before phase 2 (phase 1 still works on one laptop); cloud check fails → drop `work cloud` | assumed |
+| P1 | Phase 1 — brief, notes, fork warning | `100x work start/brief/note/decide/hold/handoff/doctor`; SessionStart injects the brief; PreToolUse on Agent warns on forks after a compaction; secret refusal; a `docs/SAFETY.md` row for `~/.config/100x/work` | a fresh session resumes a real multi-PR workstream unaided (M2) and fork share drops (M3) | the brief needs more than 3,000 tokens to be correct, or M3 does not move on one workstream | assumed |
+| P2 | Phase 2 — awareness and locks | UserPromptSubmit "since"; PreToolUse hold and claim check on push and PR; `claim`/`release`; `work cloud` | E1, E3, E5 on one machine; E8 on two laptops; M1 | a hook adds more than 1 s to a prompt at p95, or M1 does not improve | assumed |
 | P3 | Phase 3 — decision queue | question events with A/B auto-apply and one batched list | M4 | M4 does not improve on one workstream | assumed |
 
 ## 12. Non-goals (out of scope)
@@ -250,28 +245,28 @@ Likelihood and impact are integers 1-5; the audit recomputes L x I. A risk with 
 | # | explicitly out of scope |
 |---|---|
 | X1 | a web dashboard or hosted service |
-| X2 | replacing GitHub as the source of truth for PRs, CI or reviews |
+| X2 | storing PR, CI or review state |
 | X3 | storing transcripts or code in the record |
-| X4 | enforcing holds on humans or tools outside Claude Code |
+| X4 | anything teammates can see: files, refs, config or text in project repositories |
 | X5 | any project's own review or audit hook; incremental review is a separate PRD |
-| X6 | automatic merging, and any GitHub write from tools (ADR-0005) |
+| X6 | the plugin pushing or calling `gh` (ADR-0002); backup is the owner's own tool's job |
 | X7 | `100x run` headless/background launchers and per-task model routing — separate PRDs |
 
 ## 13. Security
 
-Assets: the record (decisions, notes) and the power to block pushes. Trust boundary: anyone with push rights can write events, so events are data, never instructions. Hooks act only on structured fields (`type`, `pr`, `expires`); free text reaches the model only from `work.trusted_authors` (R12, E13). Abuse cases: a forged hold (RI7); a secret in a note (E9); a forged claim (`show` names the author; `--steal` is logged). Pushes are limited to `refs/100x/*` and `gh` to reads (ADR-0005).
+Assets: the record (decisions, notes) and the power to block pushes. Trust boundary: only processes running as the owner can write the folder, so events are the owner's own; hooks still act only on structured fields (`type`, `pr`, `expires`) and treat free text as data. Abuse cases: a secret in a note (R15, E9); a stale hold blocking a push (`show` names time and session; `release-hold` and `--override` are logged events).
 
 ## 14. Privacy
 
-Personal data touched: GitHub handles, git author emails and session ids in events. `note` refuses emails and tokens in free text (E9). The record is readable by anyone with read access to the repo, which is stated in `doctor` and in the opt-in prompt. Retention follows the ref (§5).
+Personal data touched: session ids and whatever the owner writes in notes. The folder is readable only by the owner (created `0700`). It leaves the machine only through the owner's own backup, to the owner's private repository, as work memory already does.
 
 ## 15. Observability
 
-`100x work doctor`: last sync, queued events, live claims, cloud readiness, and hook timings from `~/.100x/logs/work.log` (one line per hook run: event, time taken, result, fail-open reason).
+`100x work doctor`: record found, event count, live claims, whether a backup mirror covers the folder, and hook timings from `~/.cache/100x/work.log` (one line per hook run: event, time taken, result, fail-open reason).
 
 ## 16. Rollout / rollback
 
-Off by default. Phase 1 is `work.mode=local`; phase 2 adds `shared`, turned on per repo by its owner. Rollback: `work.mode=off` makes every hook a no-op. Removing shared state: `git push origin --delete refs/100x/work` and each claim ref; copies teammates already fetched stay on their machines (ADR-0004 gap).
+Off until `100x work start` creates the first workstream; with no record, every hook is silent. Rollback: `HUNDREDX_WORK=off` makes every hook a no-op, or delete the folder. Nothing to undo in any project repository, because nothing was written there.
 
 ## 17. Migration
 
@@ -279,30 +274,30 @@ N/A because there is no existing state. `100x work import <board.md>` may seed a
 
 ## 18. Test plan
 
-Unit: event naming and schema, view derivation, claim expiry with skew margin, brief token budget, trusted-author filter, secret refusal. Integration against a temporary bare remote: two writers appending at once (E5), two claimants racing (E3), held push refused (R8), cached holds enforced with no remote (E8), unknown schema version (E14). Live: phase 0 spike in a real cloud session; M2 scripted resume. Every hook is tested on a malformed payload and on a timeout.
+Unit: event naming and schema, view derivation, repo key from `git remote` (a URL with a token stored as `host/owner/repo`), claim atomic create and expiry, brief token budget, the privacy line in every brief, secret refusal. Integration in a throwaway home: two sessions appending at once (E5), two claimants (E3), held push refused (R8), a fork after a compaction warned (R10), nothing written inside the test repository (X4: `git status` clean and no new refs). Live: the resume bench (`bench/work-continuity/resume/`) with briefs produced by `100x work brief`; M1 and M3 from `transcript_metrics.py` after one real feature. Every hook is tested on a malformed payload.
 
 ## 19. Cost
 
-No recurring spend: git and read-only `gh`. Per session: one brief (≤ 3,000 tokens) and short "since" notes.
+No recurring spend. Per session: one brief (≤ 3,000 tokens) and short "since" notes.
 
 ## 20. Dependencies
 
-git ≥ 2.20 (`--force-with-lease`, custom refspecs), `gh` authenticated (phase 2), Claude Code hook events SessionStart, UserPromptSubmit, PreToolUse, SessionEnd (the last two checked in phase 0), cloud sessions with plugin hooks and git push access (phase 0).
+git (for `git remote` and branch names), Claude Code hook events SessionStart, UserPromptSubmit, PreToolUse, SessionEnd (UserPromptSubmit and SessionEnd verified in `claude -p`), the owner's claude-setup with the union mirror (gauravprwl14/claude-setup#1) for backup.
 
 ## 21. Open questions / assumptions
 
 | # | question | recommendation |
 |---|---|---|
-| Q1 | Do cloud sessions load plugin hooks, have `gh` auth, and allow pushing `refs/100x/*`? (ADR-0004 A3, unverified). Locally verified 2026-10-30: GitHub accepts `refs/100x/*`, a default clone does not fetch it, stale appends are rejected, and the claim compare-and-swap lets one claimant win (`bench/work-continuity/spike/probe_ref.sh`, 8 of 8) | run `spike/cloud_probe.sh` in a cloud session; no sync code before |
-| Q2 | Can UserPromptSubmit inject context, and does SessionEnd fire? Verified in `claude -p` on 2026-10-30 (`spike/hook-probe`: the model returned the injected marker; SessionEnd logged). Interactive and cloud sessions not yet checked | keep explicit `work handoff` as the fallback |
+| Q1 | Does `claude --cloud "<text>"` start a cloud session with that text as its first prompt? (ADR-0006 A3, unverified) | phase 0 checks it by hand |
+| Q2 | Do UserPromptSubmit and SessionEnd behave the same in interactive sessions as in `claude -p`? (verified in `-p` only, `spike/hook-probe`) | check in phase 1; explicit `work handoff` stays as the fallback |
 | Q3 | Are the M1–M4 targets right? (assumed from two sessions) | accept for now; re-baseline after phase 1 |
 | Q4 | Default claim TTL? | 2 h, renewed on each push or event |
-| Q5 | Should notes default to shared or local in shared mode? | shared, with `--private` for a local-only note |
+| Q5 | Should the fork policy default to `warn` or `refuse`? | `warn` in phase 1; `refuse` if M3 does not move |
 
 ## 22. Approvers
 
-Plugin owner (gaurav): agreed the storage choice and the safety-promise change on 2026-10-30 (ADR-0004, ADR-0005). Both stay `proposed` until phase 0 passes; they become `accepted`, and ADR-0002 `superseded`, in the PR that first ships code relying on them. Solution-architect agent reviewed the first draft on 2026-10-30; its findings F1–F11 are addressed in this revision.
+Plugin owner (gaurav): chose private local storage backed up by claude-setup, `~/.config/100x/work`, and rebase-before-push in claude-setup on 2026-10-30 (ADR-0006). Solution-architect agent reviewed both designs on 2026-10-30.
 
 ## 23. Existing-code note
 
-Written before the code. It reuses: `plan_dag waves` and worktrees for parallel tasks, `agent_report lint/replay` for worker reports, decision classes A/B/C from `docs/OPERATING-MODEL.md` §4–5, `hooks/session_start.py` and the `.100x.json` config. Constraints taken from code: the SessionStart timeout of 10 s (`hooks/hooks.json:10`), Stop firing on every reply (`hooks/stop_gate.py:2`), PreToolUse matching only Bash today, `--max-budget-usd` working only with `--print` (`claude --help`, 2.1.308). Baselines in §1 come from the transcripts of sessions 7f980c91 and a94b2d46.
+Written before the code. It reuses: `plan_dag waves` and worktrees for parallel tasks, `agent_report lint/replay` for worker reports, decision classes A/B/C from `docs/OPERATING-MODEL.md` §4–5, `hooks/session_start.py`, and the plugin's user-level `~/.config/100x/` (`hooks/recheck_gate.py:14`, `scripts/verified.py:43`). Constraints taken from code: the SessionStart timeout of 10 s (`hooks/hooks.json:10`), Stop firing on every reply (`hooks/stop_gate.py:2`), PreToolUse matching only Bash today, claude-setup's union mirror and per-area delete guard (gauravprwl14/claude-setup#1). Baselines in §1 come from the transcripts of sessions 7f980c91 and a94b2d46.

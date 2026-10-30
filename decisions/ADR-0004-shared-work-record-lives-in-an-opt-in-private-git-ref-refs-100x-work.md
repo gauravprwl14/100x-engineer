@@ -4,7 +4,7 @@
 {
   "id": "ADR-0004",
   "title": "Shared work record lives in an opt-in private git ref refs/100x/work",
-  "status": "proposed",
+  "status": "rejected",
   "date": "2026-10-30",
   "decided_by": "gaurav",
   "tags": [
@@ -72,6 +72,9 @@
 ```
 
 ## Context
+
+**Rejected 2026-10-30:** the owner requires that nothing about the work record reaches a team repository. Superseded by ADR-0006.
+
 
 The work-continuity PRD (`prds/work-continuity/prd.md`) needs state that outlives a session and is
 readable from local, background, cloud and teammate sessions. The first draft put it on a branch;

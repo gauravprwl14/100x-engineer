@@ -4,7 +4,7 @@
 {
   "id": "ADR-0005",
   "title": "Plugin may fetch and push refs/100x/* only; gh stays read-only (supersedes ADR-0002 scope)",
-  "status": "proposed",
+  "status": "rejected",
   "date": "2026-10-30",
   "decided_by": "gaurav",
   "tags": [
@@ -68,6 +68,9 @@
 ```
 
 ## Context
+
+**Rejected 2026-10-30:** the owner requires that nothing about the work record reaches a team repository. Superseded by ADR-0006.
+
 
 `docs/SAFETY.md` promises the plugin never runs `git push` and no tool sends anything off the
 machine; ADR-0002 kept `gh` inside the pr-review skill's steps. The work-continuity PRD needs hooks
