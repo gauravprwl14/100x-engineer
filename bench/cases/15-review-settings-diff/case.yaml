@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: 15-review-settings-diff
+description: Review a settings-page diff with four screen-level defects. Deterministic part is bench/checks.py check_15.
+tags: [writing, review, screens]
+context:
+  scaffold_script: scaffold.sh
