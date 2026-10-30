@@ -246,7 +246,11 @@ printf '{"schema": 1, "type": "note", "ws": "old", "session": "cli", "at": "2020
   > "$R2/old/events/20200104T000000000000Z-cli-abcdef.json"
 chmod 755 "$R2"
 git -C "$REPO" -c advice.detachedHead=false worktree add -q --detach "$TMP/wt-detached" main
-SNAP_BEFORE="$(snapshot "$REC" "$R2" "$BK" "$REPO")"
+# The suite's own in-process `import work` writes bytecode into $ROOT, so read-only is measured
+# on a copy of the plugin that only doctor runs from: its hook dry run must add no __pycache__.
+PLUG="$TMP/plugin"; mkdir -p "$PLUG/scripts" "$PLUG/hooks"
+cp "$ROOT/scripts/work.py" "$PLUG/scripts/"; cp "$ROOT/hooks/work_brief.py" "$ROOT/hooks/hooks.json" "$PLUG/hooks/"
+SNAP_BEFORE="$(snapshot "$REC" "$R2" "$BK" "$REPO" "$PLUG")"
 
 echo "-- clean: matched worktree, backed up, pushed, no stale holds"
 cd "$TMP/wt-api" || exit 1
@@ -547,11 +551,14 @@ mv "$TMP/sync-marker" "$BK/.state/remote-sync-failed"
 # The suite itself commits to the backup repo, so the first comparison leaves out what the
 # test changed there; the second, below, covers the backup repo whole across doctor runs.
 mine() { grep -v -e "$BK/.git" -e "$BK/.state" -e "$BK/mirrors.txt"; }
-diff <(printf '%s\n' "$SNAP_BEFORE" | mine) <(snapshot "$REC" "$R2" "$BK" "$REPO" | mine) >"$OUT/r.out" \
-  && ok "doctor wrote nothing in the record dirs or the repo" || bad "doctor changed a file"
-SNAP_BK="$(snapshot "$REC" "$R2" "$BK" "$REPO")"
+python3 "$PLUG/scripts/work.py" doctor --json >"$OUT/r.out" 2>&1
+[ "$(gets_brief)" = "True" ] && ok "doctor from the plugin copy dry-runs the brief hook" || bad "plugin copy dry run"
+diff <(printf '%s\n' "$SNAP_BEFORE" | mine) <(snapshot "$REC" "$R2" "$BK" "$REPO" "$PLUG" | mine) >"$OUT/r.out" \
+  && ok "doctor wrote nothing in the record dirs, the repo or the plugin" || bad "doctor changed a file"
+SNAP_BK="$(snapshot "$REC" "$R2" "$BK" "$REPO" "$PLUG")"
 doc; HUNDREDX_WORK_DIR="$R2" doc; "$W" work doctor >/dev/null 2>&1
-[ "$(snapshot "$REC" "$R2" "$BK" "$REPO")" = "$SNAP_BK" ] \
+HUNDREDX_WORK_DIR="$R2" python3 "$PLUG/scripts/work.py" doctor >/dev/null 2>&1
+[ "$(snapshot "$REC" "$R2" "$BK" "$REPO" "$PLUG")" = "$SNAP_BK" ] \
   && ok "doctor wrote nothing in the backup repo either (incl. .git)" || bad "doctor changed the backup repo"
 rm -f "$BK/.state/remote-sync-failed"
 unset HUNDREDX_WORK_BACKUP_HINT
