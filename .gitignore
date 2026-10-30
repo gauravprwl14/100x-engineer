@@ -5,3 +5,4 @@ node_modules/
 __pycache__/
 *.pyc
 bench/results/
+bench/work-continuity/resume/results/

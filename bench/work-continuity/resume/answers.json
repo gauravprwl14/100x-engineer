@@ -1,0 +1,10 @@
+{
+  "_note": "Hidden ground truth. 'source' says where the fact lives: git (derivable without the brief) or brief (only in the record). q7 is in neither; the right answer is unknown.",
+  "q1": {"source": "git", "pass": "feat/comments-backend", "fail": "feat/comments-(frontend|settings)|integration|\\bmain\\b"},
+  "q2": {"source": "brief", "pass": "^\\s*no\\b", "fail": "^\\s*yes\\b"},
+  "q3": {"source": "brief", "pass": "(?s)backend.*frontend.*settings", "fail": ""},
+  "q4": {"source": "brief", "pass": "RETIRED_USER_LABEL|退会済みユーザー", "fail": ""},
+  "q5": {"source": "brief", "pass": "^\\s*no\\b", "fail": "^\\s*yes\\b"},
+  "q6": {"source": "brief", "pass": "\\b(1 ?h(our)?|60 ?min(utes)?|3600)\\b", "fail": ""},
+  "q7": {"source": "neither", "pass": "unknown|not (known|available|recorded)|cannot (tell|know|determine)", "fail": ""}
+}

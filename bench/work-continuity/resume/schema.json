@@ -1,0 +1,4 @@
+{"type": "object", "additionalProperties": false,
+ "required": ["q1","q2","q3","q4","q5","q6","q7"],
+ "properties": {"q1":{"type":"string"},"q2":{"type":"string"},"q3":{"type":"string"},"q4":{"type":"string"},
+                "q5":{"type":"string"},"q6":{"type":"string"},"q7":{"type":"string"}}}
