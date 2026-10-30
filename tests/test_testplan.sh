@@ -128,6 +128,72 @@ has "git mv eng/testplans/legacy.md eng/specs/legacy/testplan.md"
 [ -f feat/eng/specs/legacy/testplan.md ] && grep -q "old plan" feat/eng/testplans/legacy.md && { PASS=$((PASS+1)); echo "  ok   legacy: --force writes the new location, leaves the old file"; } \
   || { FAIL=$((FAIL+1)); echo "  FAIL legacy --force"; cat $OUT/tp.out; }
 
+# ================================================ new: §7 screen-family and role rows
+# Open (TODO or covered) rows from a UI family or role:<name> get one case each; other
+# sources wait for --all-edge-cases, and closed rows (n/a, waived, ...) never get one.
+cat > edges.md <<'EOF'
+# Spec
+
+| field | value |
+|---|---|
+| feature | prefs |
+
+## 2b. Acceptance criteria
+AC-1: A member can change their display name. (S1)
+
+## 7. Edge cases
+
+| # | source | edge case | why it gets missed | status | test / reference |
+|---|---|---|---|---|---|
+| E1 | universal | Concurrent duplicate request | single-threaded head | TODO | _suggested:_ fire two requests |
+| E2 | settings | Leaving with unsaved changes discards them silently | always clicks Save | TODO | _suggested:_ edit, navigate away; assert a prompt |
+| E3 | destructive-action | Delete runs on one click | happy path | covered | tests/e2e/delete.spec.ts |
+| E4 | form | Pasted text with a pipe \| breaks nothing | ascii only | TODO | _suggested:_ paste a \| b |
+| E5 | settings | Save is enabled with nothing changed | wired once | n/a(no save button) | — |
+| E6 | role:viewer | Role viewer: a direct URL is refused | hiding feels like enforcement | TODO | _suggested:_ as viewer, request the route; assert 403 |
+| E7 | crud | Delete of a missing record | happy path | covered | tests/api/crud.test.ts |
+| E8 | form | Required field left blank | always filled | waived(ADR-0002) | — |
+EOF
+expect 0 "new: spec with §7 UI and role rows" new edges.md
+has "\| TC-E2-1 \| prefs/E2 \| component \| edge case \| Leaving with unsaved changes discards them silently \| edit, navigate away; assert a prompt \| yes \| qa-engineer \|"
+has "\| TC-E3-1 \| prefs/E3 \| e2e \| edge case \| Delete runs on one click \| tests/e2e/delete.spec.ts \| yes \|"
+has "\| TC-E4-1 \| prefs/E4 \| component \| edge case \| Pasted text with a pipe \\\\\| breaks nothing \| paste a \\\\\| b \|"
+has "\| TC-E6-1 \| prefs/E6 \| e2e \| role \| Role viewer: a direct URL is refused \| as viewer, request the route; assert 403 \|"
+has "1 acceptance criteria, 0 implicit requirements, 4 edge cases, "
+nothas "TC-E1-1"                                  # universal: only with --all-edge-cases
+nothas "TC-E7-1"                                  # crud: only with --all-edge-cases
+nothas "TC-E5-1"                                  # n/a row: nothing to test
+nothas "TC-E8-1"                                  # waived row: nothing to test
+nothas "_suggested:_"
+expect 0 "new --all-edge-cases: every open source" new edges.md --all-edge-cases
+has "\| TC-E1-1 \| prefs/E1 \| component \| edge case \| Concurrent duplicate request \| fire two requests \|"
+has "\| TC-E7-1 \| prefs/E7 \| component \| edge case \|"
+has "6 edge cases, "
+nothas "TC-E5-1"
+nothas "TC-E8-1"
+"$TX" testplan trace edges.md --tests . >$OUT/tp.out 2>&1
+nothas "prefs/E"                                  # trace still traces AC tags only
+
+# A spec with no §7 UI or role rows gets exactly the plan the pre-feature code wrote.
+OLD_REF="${SCREEN_PATTERNS_OLD_REF:-3e3baca}"
+sed 's/| E2 | settings |/| E2 | universal |/; s/| E3 | destructive-action |/| E3 | crud |/; s/| E4 | form |/| E4 | crud |/; s/| E6 | role:viewer |/| E6 | universal |/' \
+  edges.md > backend.md
+if git -C "$ROOT" cat-file -e "$OLD_REF^{commit}" 2>/dev/null; then
+  mkdir -p "$OUT/old" && git -C "$ROOT" archive "$OLD_REF" scripts | tar -x -C "$OUT/old"
+  for doc in spec.md canon.md backend.md; do
+    python3 "$OUT/old/scripts/testplan.py" new "$doc" > "$OUT/old.plan" 2>&1
+    "$TX" testplan new "$doc" > "$OUT/new.plan" 2>&1
+    diff "$OUT/old.plan" "$OUT/new.plan" > $OUT/tp.out \
+      && { PASS=$((PASS+1)); echo "  ok   $doc: same plan as $OLD_REF"; } \
+      || { FAIL=$((FAIL+1)); echo "  FAIL $doc: plan differs from $OLD_REF"; sed 's/^/       /' $OUT/tp.out | head; }
+  done
+else
+  echo "  skip golden diff: $OLD_REF not in this clone (set SCREEN_PATTERNS_OLD_REF)"
+fi
+expect 0 "new: spec with only backend §7 rows" new backend.md
+nothas "TC-E"
+nothas "edge cases, "
+
 # ===================================================================== trace
 mkdir -p t/e2e t/api src t/.maestro t/node_modules/pkg
 cat > t/e2e/tag.spec.ts <<'EOF'

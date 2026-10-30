@@ -259,7 +259,7 @@ which check this plugin itself rather than your code. Every tool runs by name ei
 | maintainer only (`100x list --all`) | `agents_lint`, `lint_skills`, `run_evals`, `safety_audit`, `skill_triggers` |
 
 ```bash
-bash tests/run_all.sh    # 52 test suites, the seeded-defect evals and the lints
+bash tests/run_all.sh    # 53 test suites, the seeded-defect evals and the lints
 ```
 
 How the diff checkers behave, whichever one runs:

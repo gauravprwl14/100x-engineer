@@ -92,6 +92,21 @@ not repeat those rules. Layering (which file fetches) is `frontend-architecture`
     not dead`) unless the user named other devices, which is a class C question.
     *Enforced by:* `test -f .browserslistrc || grep -q '"browserslist"' package.json`
 
+12. **Before building a screen, pull its screen-pattern checklist.** Run
+    `100x plan_feature cases --screens "<pattern>"` (a name such as "Settings" or
+    "Delete"; a project's own `<root>/screen_patterns.json` adds names) or
+    `--kind <family>` (`settings`, `destructive-action`, `form`, `list-table`,
+    `detail-view`, `auth-screens`, `scheduling`, `checkout`, `money-transfer`),
+    with `--roles <a,b>` naming every role the screen treats differently.
+    Implement each row, or state in the PR why it does not apply. The rows are what
+    users expect of that kind of screen: a discard prompt on unsaved settings, a
+    confirmation that names what a delete destroys, controls hidden from a role that
+    cannot use them, and a refused direct call. They do not repeat this skill:
+    states, validation and double submit stay in rules 4–6.
+    *Enforced by:* `100x plan_feature cases --screens "<pattern>" --roles <a,b>` prints
+    the rows; once seeded with `plan_feature new --screens`, `plan_feature audit`
+    exits 1 on any row left `TODO`
+
 ## Verify
 
 Diff-scoped, about a second on a typical UI PR.
@@ -102,6 +117,8 @@ Diff-scoped, about a second on a typical UI PR.
 100x ui_baseline_check --base origin/main --strict   # advisories fail too
 100x a11y_check --base origin/main                   # WCAG 2.2 AA per component
 test -f .browserslistrc || grep -q '"browserslist"' package.json
+100x plan_feature cases --screens "Settings" --roles admin,member   # rule 12
+100x plan_feature cases --kind destructive-action,form --roles owner,viewer --json
 
 # what no static check sees, before merging a new screen:
 #   1. DevTools device mode at 320px wide and at 400% zoom: no sideways scroll
@@ -134,10 +151,12 @@ This skill rejects:
 - **`color: '#3b82f6'` in a component** of a repo that has `theme.ts`: the next
   rebrand misses it.
 - **A new `ConfirmDialog.tsx`** in a repo that already exports `Dialog`.
+- **A "Delete workspace" button that deletes on one click**, or one rendered to a
+  viewer who gets a 403 on click: both are rows `plan_feature cases` would have listed.
 
 ## Scale
 
-**Every tier, `solo` included: all 11 rules.** Each is a correctness floor, not
+**Every tier, `solo` included: all 12 rules.** Each is a correctness floor, not
 a scale feature: a checkout that cannot be used on a phone is broken at any team
 size, and WCAG 2.2 AA applies regardless. What scales is the manual pass:
 `small-team (2-10)` adds the 320px, slow-network and dark-mode pass to review of
@@ -171,6 +190,9 @@ widths and a pseudo-locale build in CI.
   needs a descriptive, unique `<title>`.
 - Owner-approved defaults (WCAG 2.2 AA at every tier, Browserslist `defaults`,
   the repo's own tokens, no unrequested UI library): `scripts/data/baseline.json`.
+- Screen-behaviour families and the `{role}` templates behind rule 12:
+  `scripts/data/edge_cases_ui.json` and the generic screen-pattern vocabulary
+  `scripts/data/screen_patterns.json`, both `SOURCE: original`.
 - The 400px fixed-width threshold, the state and token heuristics, and
   `scripts/ui_baseline_check.py`: `SOURCE: original`; false-positive controls in
   `tests/test_ui_baseline_check.sh`.

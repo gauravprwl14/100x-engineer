@@ -49,6 +49,7 @@ Run `100x baseline show --work web-ui --tier <tier>` before building; its A item
 | Reflow: usable at 320 CSS px wide with no horizontal scrolling (data tables may scroll inside their own container) | WCAG 2.2 SC 1.4.10 |
 | Text resizes to 200% and survives text-spacing overrides without loss | WCAG SC 1.4.4, 1.4.12 |
 | Every view has loading, empty, error, partial and success states, each designed, not a blank box | `ui-baseline` |
+| Before building a screen, run `100x plan_feature cases --screens "<pattern>" --roles <a,b>` (or `--kind <family>`) and implement each row or record why not: a discard prompt on unsaved changes, a confirmation naming what a delete destroys, controls hidden and direct calls refused for roles not granted | `ui-baseline` rule 12; `scripts/data/edge_cases_ui.json` |
 | Reuse the design system's component and tokens before writing a custom one; no inline colour or spacing literals | `ui-baseline`; repo design docs |
 | Keyboard operable, logical focus order, visible focus, focus not obscured, focus restored after a modal | WCAG SC 2.1.1, 2.4.3, 2.4.7, 2.4.11 |
 | Semantic element first; every control and field has an accessible name and label; errors tied by `aria-describedby` | `accessibility`; WCAG SC 4.1.2, 3.3.1 |

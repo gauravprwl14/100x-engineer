@@ -31,6 +31,7 @@ they reach merge.
 |---|---|---|
 | 1 | **Correctness**: derive the expected behaviour from the spec and ACs before reading the code, then compare. Edge cases, error paths, concurrency, off-by-one, null | Google eng-practices, "What to look for" (functionality); `diff-review` rule 6 |
 | 2 | **Authorization and data scope** on every new path (object, property, tenant) | OWASP API1/API3:2023; `diff-review` rule 15 |
+| 2b | **Screen patterns**: a diff that adds or changes a screen is checked against `100x plan_feature cases --kind <kinds> --roles <roles>`, taking `kinds` and `roles` from the spec header (never its `screens`); with no spec, infer the families and roles from the diff, or run `--screens` from the repo root. Rows are numbered `C1`, `C2`, … (checklist-local, not the spec's `E<n>`). Each missed row is a finding with its scenario: a delete with no confirmation naming the resource, a control shown to a role that cannot use it, a handler with no role check | `diff-review` rule 8b |
 | 3 | **Design**: fits the approved spec, contracts and repo precedent; no speculative abstraction | Google eng-practices (design, complexity); `diff-review` |
 | 4 | **Tests can fail**: each asserts behaviour, would break if the behaviour broke, covers the ACs | `minimal-diff`; `test-design` |
 | 5 | **Minimal diff**: no drive-by refactors, formatting churn, unused code, unrequested files | `minimal-diff`; `100x bloat_check` |
