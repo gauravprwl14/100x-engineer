@@ -242,6 +242,8 @@ printf '{"schema": 1, "type": "handoff", "ws": "old", "session": "cli", "at": "2
   > "$R2/old/events/20200103T000000000000Z-cli-eeeeee.json"
 printf '{"schema": 1, "type": "note", "ws": "old", "session": "cli", "at": "2020-02-03T00:00:00.000000Z", "text": "a month later"}\n' \
   > "$R2/old/events/20200203T000000000000Z-cli-ffffff.json"
+printf '{"schema": 1, "type": "note", "ws": "old", "session": "cli", "at": "2020-01-04T00:00:00", "text": "no zone"}\n' \
+  > "$R2/old/events/20200104T000000000000Z-cli-abcdef.json"
 chmod 755 "$R2"
 git -C "$REPO" -c advice.detachedHead=false worktree add -q --detach "$TMP/wt-detached" main
 SNAP_BEFORE="$(snapshot "$REC" "$R2" "$BK" "$REPO")"

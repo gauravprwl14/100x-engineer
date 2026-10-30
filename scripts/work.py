@@ -570,10 +570,13 @@ def q(path):
 
 
 def parse_at(text):
+    """An aware UTC datetime, or None; a hand-edited stamp without a zone would otherwise
+    crash the subtraction against utc_now()."""
     try:
-        return datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+        stamp = datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
     except ValueError:
         return None
+    return stamp if stamp.tzinfo else None
 
 
 def age_days(then, now):
