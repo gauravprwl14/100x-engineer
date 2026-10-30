@@ -452,6 +452,35 @@ doc; expect D-backup.no-upstream info; expect D-backup.unpushed none
 git -C "$BK" update-ref refs/remotes/origin/main HEAD
 git -C "$BK" branch -q --set-upstream-to=origin/main main
 doc; expect D-backup.sync-failed none; expect D-backup.unpushed none; expect D-backup.no-upstream none
+expect D-backup.mid-operation none; expect D-backup.git-timeout none
+# A backup repo stopped mid-rebase, mid-merge and mid-cherry-pick, each a real git conflict.
+BK2="$TMP/backup2"; git init -q "$BK2"
+g2() { git -C "$BK2" -c user.email=t@example.test -c user.name=t "$@" >/dev/null 2>&1; }
+printf '%s union\n' "$REC" > "$BK2/mirrors.txt"; g2 add mirrors.txt; g2 commit -q -m base; g2 branch -q -M main
+g2 checkout -q -b other; echo theirs >> "$BK2/mirrors.txt"; g2 commit -q -am theirs
+g2 checkout -q main; echo ours >> "$BK2/mirrors.txt"; g2 commit -q -am ours
+git -C "$BK2" update-ref refs/remotes/origin/main HEAD; g2 branch -q --set-upstream-to=origin/main main
+for op in "rebase other" "merge other" "cherry-pick other"; do
+  g2 $op
+  HUNDREDX_WORK_BACKUP_HINT="$BK2/mirrors.txt" doc
+  expect D-backup.mid-operation error; expect D-backup.no-upstream none
+  field D-backup.mid-operation fix | grep -qF "finish or abort it in $BK2" && ok "  ${op%% *}: fix is finish or abort it in <repo>" || bad "  mid-op fix: $(field D-backup.mid-operation fix)"
+  g2 "${op%% *}" --abort
+done
+HUNDREDX_WORK_BACKUP_HINT="$BK2/mirrors.txt" doc
+expect D-backup.mid-operation none
+python3 - "$ROOT/scripts" "$BK/mirrors.txt" "$BK" >"$OUT/r.out" 2>&1 <<'PY' && ok "a git call into the backup repo that times out is a warning, not silence" || bad "git timeout"
+import pathlib, subprocess, sys; sys.path.insert(0, sys.argv[1]); import work
+real = subprocess.run
+def slow(argv, **kw):
+    if argv[:3] == ["git", "-C", sys.argv[3]] and "@{u}" in argv:
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+    return real(argv, **kw)
+work.subprocess.run = slow
+found = work.scan_backup_repo(pathlib.Path(sys.argv[2]))
+assert [(f["id"], f["severity"]) for f in found] == [("D-backup.git-timeout", "warn")], found
+assert "could not read backup repo state" in found[0]["what"], found
+PY
 
 echo "-- D-holds"
 HUNDREDX_WORK_DIR="$R2" doc

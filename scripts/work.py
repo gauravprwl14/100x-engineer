@@ -133,11 +133,15 @@ def redact(text):
     return re.sub(r"//[^/@\s]*@", "//", text)
 
 
-def git_out(cwd, *args):
+def git_out(cwd, *args, timed_out=None):
+    """stdout, None on failure, or `timed_out` when git did not answer in time (doctor
+    passes a marker so a hung repo is reported instead of read as "not set up")."""
     try:
         done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True,
                               text=True, timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        return timed_out
+    except OSError:
         return None
     return done.stdout.strip() if done.returncode == 0 else None
 
@@ -620,6 +624,10 @@ UNPUSHED_HOURS = 24
 # reason in its first lines. When present, the backup is stuck until someone resolves it.
 SYNC_FAILED_REL = (".state", "remote-sync-failed")
 SYNC_FAILED_SHOWN = 5
+# What git leaves in its git dir while a rebase, merge or cherry-pick waits on the user.
+MID_OPERATION = {"rebase-merge": "rebase", "rebase-apply": "rebase or am",
+                 "MERGE_HEAD": "merge", "CHERRY_PICK_HEAD": "cherry-pick"}
+GIT_TIMED_OUT = object()
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "100x"
 WORK_HOOKS = (("SessionStart", "work_brief.py"), ("PreToolUse", "work_fork_guard.py"))
@@ -986,12 +994,27 @@ def check_hooks(ctx):
     return out
 
 
+def backup_git_timeout(where):
+    return finding("D-backup.git-timeout", "warn",
+                   f"could not read backup repo state in {where}: git did not answer within "
+                   f"{GIT_TIMEOUT_S} s", "a very large or busy repo, a slow disk, or a stuck "
+                   "git process holding its lock", f"git -C {q(where)} status, to see what is slow")
+
+
 def scan_backup_repo(hint):
     """Findings about the git repo holding the hint file, from local refs only."""
-    top = git_out(hint.parent, "rev-parse", "--show-toplevel")
+    def read(*args):
+        return git_out(top, *args, timed_out=GIT_TIMED_OUT)
+
+    top = git_out(hint.parent, "rev-parse", "--show-toplevel", timed_out=GIT_TIMED_OUT)
+    if top is GIT_TIMED_OUT:
+        return [backup_git_timeout(hint.parent)]
     if top is None:
         return []
     out, top = [], pathlib.Path(top)
+    git_dir = read("rev-parse", "--absolute-git-dir")
+    if git_dir is GIT_TIMED_OUT:
+        return [backup_git_timeout(top)]
     marker = top.joinpath(*SYNC_FAILED_REL)
     if marker.is_file():
         try:
@@ -1005,15 +1028,30 @@ def scan_backup_repo(hint):
                            "its rebase hit a conflict, so nothing new leaves this machine",
                            f"resolve the rebase by hand in {top} (git -C {q(top)} status), "
                            "then let the backup tool clear its marker"))
-    upstream = git_out(top, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    # During a rebase HEAD is detached, so the upstream lookup below would wrongly read as
+    # "never set up"; the stuck operation is the real cause and blocks every later sync.
+    stuck = [name for name in MID_OPERATION if git_dir and (pathlib.Path(git_dir) / name).exists()]
+    if stuck:
+        out.append(finding("D-backup.mid-operation", "error",
+                           f"the backup repo {top} is in the middle of a "
+                           f"{MID_OPERATION[stuck[0]]} ({stuck[0]} in its git dir)",
+                           "a sync or a manual git command stopped on a conflict, so nothing "
+                           "new is committed or pushed",
+                           f"finish or abort it in {top} (git -C {q(top)} status shows how)"))
+        return out
+    upstream = read("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream is GIT_TIMED_OUT:
+        return out + [backup_git_timeout(top)]
     if not upstream:
         out.append(finding("D-backup.no-upstream", "info",
                            f"the backup repo {top} has no upstream branch",
                            "it was never set up to track a remote, so it may never leave this "
                            "machine", f"git -C {q(top)} branch --set-upstream-to <remote>/<branch>"))
         return out
-    ahead = git_out(top, "rev-list", "--count", "@{u}..HEAD")
-    last = git_out(top, "log", "-1", "--format=%ct")
+    ahead = read("rev-list", "--count", "@{u}..HEAD")
+    last = read("log", "-1", "--format=%ct")
+    if GIT_TIMED_OUT in (ahead, last):
+        return out + [backup_git_timeout(top)]
     if not (ahead and ahead.isdigit() and last and last.isdigit()) or int(ahead) == 0:
         return out
     hours = (time.time() - int(last)) / 3600
