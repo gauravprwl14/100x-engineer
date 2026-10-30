@@ -2,7 +2,8 @@
 # work.py and its hooks: events are write-once and uniquely named, set events merge,
 # repo URLs normalise without keeping a token, secret-like text writes nothing, the
 # brief keeps holds/PRs/privacy line under a budget, lookup works from a worktree, the
-# SessionStart brief is silent off-workstream, the fork guard follows its policy, and
+# SessionStart brief is silent off-workstream, the fork guard follows its policy, doctor
+# detects each defect it names (and nothing on a clean record) while writing nothing, and
 # nothing at all lands in the project repository (PRD X4).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,6 +25,7 @@ count_events() { find "$REC" -name '*.json' -type f 2>/dev/null | wc -l | tr -d 
 export HOME="$TMP/home" HUNDREDX_WORK_DIR="$TMP/rec"
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset CLAUDE_CODE_SESSION_ID HUNDREDX_WORK HUNDREDX_FORK_POLICY HUNDREDX_WORK_BACKUP_HINT
+unset CLAUDE_CONFIG_DIR HUNDREDX_CONFIG_DIRS
 mkdir -p "$HOME"
 REC="$HUNDREDX_WORK_DIR"
 TOKEN="ghp_abcdefghijklmnopqrstuvwxyz0123"
@@ -194,22 +196,235 @@ run 0 "list" list
 has "tagging"
 
 echo "== doctor"
-run 0 "doctor without a backup" doctor
-has "tagging:"; has "WARNING not backed up"; has "no backup_hint is configured"
+# doc [args...]: doctor --json from the current dir; sets drc, leaves the JSON in r.out.
+doc() { "$W" work doctor --json "$@" >"$OUT/r.out" 2>&1; drc=$?; }
+# sev <finding id>: the severities of that finding in the last doc run, or "none".
+sev() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(f["severity"] for f in d["findings"] if f["id"]==sys.argv[2]) or "none")' "$OUT/r.out" "$1" 2>/dev/null; }
+expect() { local got; got="$(sev "$1")"; [ "$got" = "$2" ] && ok "  $1: $2" || bad "  $1: expected $2, got $got"; }
+field() {  # field <finding id> <key>: that finding's text field
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([f[sys.argv[3]] for f in d["findings"] if f["id"]==sys.argv[2]][0])' "$OUT/r.out" "$1" "$2" 2>/dev/null
+}
+gets_brief() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([c["gets_brief"] for c in d["checks"] if c["id"]=="D-brief"][0])' "$OUT/r.out"; }
+snapshot() {  # every path, size and mtime under the given dirs: doctor must change none
+  python3 - "$@" <<'PY'
+import os, sys
+for top in sys.argv[1:]:
+    for dirpath, dirs, files in os.walk(top):
+        dirs.sort()
+        for name in sorted(dirs + files):
+            st = os.lstat(os.path.join(dirpath, name))
+            print(os.path.join(dirpath, name), st.st_size, st.st_mtime_ns, oct(st.st_mode))
+PY
+}
+# The backup repo the hint lives in; its upstream is a local ref, as doctor never fetches.
+BK="$TMP/backup"
+git init -q "$BK"
+gc() { git -C "$BK" -c user.email=t@example.test -c user.name=t "$@"; }
+printf '.claude/projects union\n%s union\n' "$REC" > "$BK/mirrors.txt"
+gc add mirrors.txt; gc commit -q -m mirrors; git -C "$BK" branch -q -M main
+git -C "$BK" remote add origin "$TMP/backup-remote.git"
+git -C "$BK" update-ref refs/remotes/origin/main HEAD
+git -C "$BK" branch -q --set-upstream-to=origin/main main
+export HUNDREDX_WORK_BACKUP_HINT="$BK/mirrors.txt"
+# A second record with every defect, so the clean record above stays clean.
+R2="$TMP/rec2"; cp -Rp "$REC" "$R2"
+E2="$R2/tagging/events"
+printf '{"schema": 1, "type": "note", "tr' > "$E2/20200101T000000000000Z-cli-aaaaaa.json"
+printf '{"schema": 2, "type": "note", "ws": "tagging", "at": "2020-01-01T00:00:00Z"}\n' \
+  > "$E2/20200101T000000000001Z-cli-bbbbbb.json"
+echo stray > "$E2/notes.txt"
+mkdir -p "$R2/old/events"
+printf '{"schema": 1, "type": "set", "ws": "old", "session": "cli", "at": "2020-01-01T00:00:00.000000Z", "repos": ["github.com/acme/widgets"], "prs": [{"number": 12, "branch": "feat/api", "role": "copy"}]}\n' \
+  > "$R2/old/events/20200101T000000000000Z-cli-cccccc.json"
+printf '{"schema": 1, "type": "hold", "ws": "old", "session": "cli", "at": "2020-01-02T00:00:00.000000Z", "pr": 12, "reason": "parked"}\n' \
+  > "$R2/old/events/20200102T000000000000Z-cli-dddddd.json"
+printf '{"schema": 1, "type": "handoff", "ws": "old", "session": "cli", "at": "2020-01-03T00:00:00.000000Z", "text": "first handoff"}\n' \
+  > "$R2/old/events/20200103T000000000000Z-cli-eeeeee.json"
+printf '{"schema": 1, "type": "note", "ws": "old", "session": "cli", "at": "2020-02-03T00:00:00.000000Z", "text": "a month later"}\n' \
+  > "$R2/old/events/20200203T000000000000Z-cli-ffffff.json"
+chmod 755 "$R2"
+SNAP_BEFORE="$(snapshot "$REC" "$R2" "$BK" "$REPO")"
+
+echo "-- clean: matched worktree, backed up, pushed, no stale holds"
+cd "$TMP/wt-api" || exit 1
+doc
+[ "$drc" -eq 0 ] && ok "clean record: exit 0" || bad "clean record exit $drc"
+python3 - "$OUT/r.out" >"$OUT/r.err" 2>&1 <<'PY' && ok "  --json: ok, findings, checks; every check ok; no finding" || { bad "  json shape"; sed 's/^/       /' "$OUT/r.err" | head -6; }
+import json, sys; d = json.load(open(sys.argv[1]))
+assert set(d) == {"ok", "findings", "checks"} and d["ok"] is True and d["findings"] == [], d
+ids = [c["id"] for c in d["checks"]]
+assert ids == ["D-record", "D-events", "D-lookup", "D-brief", "D-hooks", "D-backup", "D-holds"], ids
+assert all(c["status"] == "ok" for c in d["checks"]), d["checks"]
+PY
+[ "$(gets_brief)" = "True" ] && ok "  hook dry run: a session here gets the brief" || bad "  dry run said no in a matched worktree"
+"$W" work doctor >"$OUT/r.out" 2>&1
+has "session brief here: yes"; has "-> tagging"; has "backup:       $BK/mirrors.txt"; has "no problems found"
+
+echo "-- D-record"
+HUNDREDX_WORK_DIR="$R2" doc
+expect D-record.mode warn
+field D-record.mode fix | grep -qF "chmod 700 $R2" && ok "  fix is chmod 700 <dir>" || bad "  mode fix"
+[ "$drc" -eq 1 ] && ok "  a warning exits 1" || bad "  warning exit $drc"
+HUNDREDX_WORK_DIR="$TMP/none" doc
+expect D-record.missing info
+field D-record.missing fix | grep -qF "100x work start" && ok "  fix is 100x work start" || bad "  missing fix"
+[ ! -e "$TMP/none" ] && ok "  doctor did not create the record dir" || bad "  doctor created the record dir"
+HUNDREDX_WORK=off doc
+expect D-record.off warn
+[ "$(gets_brief)" = "False" ] && ok "  off: dry run says no brief" || bad "  off: dry run said yes"
+doc; expect D-record.mode none; expect D-record.off none
+
+echo "-- D-events"
+HUNDREDX_WORK_DIR="$R2" doc
+expect D-events.unreadable warn; expect D-events.newer-schema warn; expect D-events.stray info
+field D-events.unreadable what | grep -qF "20200101T000000000000Z-cli-aaaaaa.json" && ok "  names the unreadable file" || bad "  unreadable name"
+field D-events.newer-schema fix | grep -qF "claude plugin install" && ok "  newer schema: fix upgrades the plugin" || bad "  newer fix"
+doc; expect D-events.unreadable none; expect D-events.newer-schema none; expect D-events.stray none
+
+echo "-- D-lookup"
+doc --cwd "$TMP"
+expect D-lookup.not-repo info
+[ "$(gets_brief)" = "False" ] && ok "  outside a repo: dry run says no brief" || bad "  dry run said yes outside a repo"
+doc --cwd "$REPO"
+expect D-lookup.none info
+field D-lookup.none what | grep -qF "tagging has this repo but not this branch" && ok "  names the workstream that has the repo" || bad "  near-match"
+field D-lookup.none fix | grep -qF "100x work start tagging --pr <number>:main:<role>" && ok "  fix pre-fills workstream and branch" || bad "  none fix: $(field D-lookup.none fix)"
+[ "$(gets_brief)" = "False" ] && ok "  unmatched branch: dry run says no brief" || bad "  dry run said yes on main"
+HUNDREDX_WORK_DIR="$TMP/none" doc --cwd "$REPO"
+field D-lookup.none fix | grep -qF -- "--repo github.com/acme/widgets --pr <number>:main:<role>" && ok "  no workstream at all: fix pre-fills the repo key" || bad "  repo fix: $(field D-lookup.none fix)"
+HUNDREDX_WORK_DIR="$R2" doc
+expect D-lookup.several warn
+field D-lookup.several what | grep -qF "old, tagging" && ok "  names both workstreams" || bad "  several names"
+[ "$(gets_brief)" = "False" ] && ok "  two matches: dry run says no brief" || bad "  dry run said yes on two matches"
+git init -q "$TMP/no-origin"
+doc --cwd "$TMP/no-origin"
+expect D-lookup.no-origin warn
+doc; expect D-lookup.none none; expect D-lookup.several none
+
+echo "-- D-brief"
+R3="$TMP/rec3"
+python3 - "$ROOT/scripts" "$R3" >"$OUT/r.out" 2>&1 <<'PY' || bad "seed a large workstream"
+import os, sys; sys.path.insert(0, sys.argv[1]); os.environ["HUNDREDX_WORK_DIR"] = sys.argv[2]
+import work
+work.write_event("big", "set", {"repos": ["github.com/acme/widgets"],
+                                "prs": [{"number": 12, "branch": "feat/api", "role": "api"}]})
+for i in range(12):
+    work.write_event("big", "decision", {"id": f"D{i}", "text": f"decision {i} " + "y" * 1500})
+PY
+HUNDREDX_WORK_DIR="$R3" doc
+expect D-brief.budget warn
+field D-brief.budget what | grep -qE "[1-9][0-9]* oldest decision" && ok "  says how many decisions are cut" || bad "  budget what"
+[ "$(gets_brief)" = "True" ] && ok "  over budget: the hook still briefs" || bad "  budget: dry run said no"
+doc; expect D-brief.budget none; expect D-brief.hook-silent none
+python3 - "$ROOT/scripts" "$TMP/wt-api" >"$OUT/r.out" 2>&1 <<'PY' && ok "a matched workstream whose hook prints nothing is an error" || bad "hook-silent detection"
+import sys; sys.path.insert(0, sys.argv[1]); import work
+work.run_brief_hook_dry = lambda cwd: (None, 0.1, "boom")
+result, _ = work.run_doctor(sys.argv[2])
+hits = [f for f in result["findings"] if f["id"] == "D-brief.hook-silent"]
+assert hits and hits[0]["severity"] == "error" and "boom" in hits[0]["cause"], result
+work.run_brief_hook_dry = lambda cwd: ("brief", 9.0, None)
+result, _ = work.run_doctor(sys.argv[2])
+assert [f["severity"] for f in result["findings"] if f["id"] == "D-brief.slow"] == ["warn"], result
+PY
+
+echo "-- D-hooks"
+CFG="$TMP/cfg"; mkdir -p "$CFG/plugins/cache/mkt/100x/0.1.0/hooks"
+echo '{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py\""}]}]}}' \
+  > "$CFG/plugins/cache/mkt/100x/0.1.0/hooks/hooks.json"
+HUNDREDX_CONFIG_DIRS="$TMP/absent:$CFG" doc
+expect D-hooks.installed-old warn
+field D-hooks.installed-old fix | grep -qF "CLAUDE_CONFIG_DIR=$CFG claude plugin uninstall 100x@mkt && CLAUDE_CONFIG_DIR=$CFG claude plugin marketplace update mkt && CLAUDE_CONFIG_DIR=$CFG claude plugin install 100x@mkt" \
+  && ok "  fix: uninstall, marketplace update, install for that config dir" || bad "  reinstall fix: $(field D-hooks.installed-old fix)"
+grep -qF "$TMP/absent" "$OUT/r.out" && bad "  an absent config dir was reported" || ok "  an absent config dir is skipped silently"
+CLAUDE_CONFIG_DIR="$CFG" doc
+expect D-hooks.installed-old warn
+mkdir -p "$CFG/plugins/cache/mkt/100x/0.10.0/hooks"
+cp "$ROOT/hooks/hooks.json" "$CFG/plugins/cache/mkt/100x/0.10.0/hooks/hooks.json"
+HUNDREDX_CONFIG_DIRS="$CFG" doc
+expect D-hooks.installed-old none
+[ "$drc" -eq 0 ] && ok "  the newest installed version (0.10.0 > 0.1.0) registers them: exit 0" || bad "  newest version exit $drc"
+mkdir -p "$TMP/cfg-empty"
+HUNDREDX_CONFIG_DIRS="$TMP/cfg-empty" doc
+expect D-hooks.not-installed info
+python3 - "$ROOT/scripts" "$TMP" >"$OUT/r.out" 2>&1 <<'PY' && ok "this plugin's hooks.json without the work hooks is an error" || bad "plugin hooks detection"
+import json, pathlib, sys; sys.path.insert(0, sys.argv[1]); import work
+fake = pathlib.Path(sys.argv[2]) / "fake-plugin"; (fake / "hooks").mkdir(parents=True)
+(fake / "hooks" / "hooks.json").write_text(json.dumps({"hooks": {"SessionStart": []}}))
+work.PLUGIN_ROOT = fake
+found = work.check_hooks({})
+assert [f["severity"] for f in found if f["id"] == "D-hooks.plugin"] == ["error"], found
+assert "work_brief.py" in found[0]["what"] and "work_fork_guard.py" in found[0]["what"], found
+PY
+
+echo "-- D-backup"
+HUNDREDX_WORK_BACKUP_HINT= doc
+expect D-backup.none warn
+HUNDREDX_WORK_BACKUP_HINT="$TMP/gone.txt" doc
+expect D-backup.hint-missing error
+[ "$drc" -eq 1 ] && ok "  an error exits 1" || bad "  error exit $drc"
+HUNDREDX_WORK_DIR="$TMP/none" doc
+expect D-backup.not-named warn
+field D-backup.not-named fix | grep -qF "add this line to $BK/mirrors.txt: $TMP/none" && ok "  fix names the exact line to add" || bad "  not-named fix"
 mkdir -p "$HOME/.config/100x"
-printf '{"backup_hint": "%s"}\n' "$TMP/mirrors.txt" > "$HOME/.config/100x/work.json"
-printf '.config/100x/work union\n' > "$TMP/mirrors.txt"
-HUNDREDX_WORK_DIR="$HOME/.config/100x/work" "$W" work doctor >"$OUT/r.out" 2>&1
-has "backup: $TMP/mirrors.txt names it"
+printf '{"backup_hint": "%s"}\n' "$BK/mirrors.txt" > "$HOME/.config/100x/work.json"
+printf '.config/100x/work union\n' > "$TMP/home-hint.txt"
+HUNDREDX_WORK_BACKUP_HINT= HUNDREDX_WORK_DIR="$HOME/.config/100x/work" doc
+expect D-backup.none none; expect D-backup.not-named warn
+HUNDREDX_WORK_BACKUP_HINT="$TMP/home-hint.txt" HUNDREDX_WORK_DIR="$HOME/.config/100x/work" doc
+expect D-backup.not-named none
 rm "$HOME/.config/100x/work.json"
-printf '.claude/projects union\n.config/100x/work union\n' > "$TMP/mirrors.txt"
-HUNDREDX_WORK_DIR="$HOME/.config/100x/work" HUNDREDX_WORK_BACKUP_HINT="$TMP/mirrors.txt" \
-  "$W" work doctor >"$OUT/r.out" 2>&1
-has "backup: $TMP/mirrors.txt names it"; hasnt "not backed up"
-printf '.config/100x/other union\n' > "$TMP/mirrors2.txt"
-HUNDREDX_WORK_DIR="$HOME/.config/100x/work" HUNDREDX_WORK_BACKUP_HINT="$TMP/mirrors2.txt" \
-  "$W" work doctor >"$OUT/r.out" 2>&1
-has "WARNING not backed up"
+echo "recent" >> "$BK/mirrors.txt"; gc commit -q -am recent
+doc; expect D-backup.unpushed none
+GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" gc commit -q --allow-empty -m old
+git -C "$BK" update-ref refs/remotes/origin/main HEAD~2
+GIT_COMMITTER_DATE="2020-01-02T00:00:00Z" gc commit -q --allow-empty -m older-head
+doc
+expect D-backup.unpushed warn
+field D-backup.unpushed what | grep -qF "3 commit(s) ahead of origin/main" && ok "  counts commits ahead from local refs" || bad "  ahead count: $(field D-backup.unpushed what)"
+mkdir -p "$BK/.state"; printf 'rebase stopped: conflict in mirrors.txt\nsecond line\n' > "$BK/.state/remote-sync-failed"
+doc
+expect D-backup.sync-failed error
+field D-backup.sync-failed what | grep -qF "rebase stopped: conflict in mirrors.txt" && ok "  shows the marker's first lines" || bad "  marker text"
+mv "$BK/.state/remote-sync-failed" "$TMP/sync-marker"
+git -C "$BK" branch -q --unset-upstream
+doc; expect D-backup.no-upstream info; expect D-backup.unpushed none
+git -C "$BK" update-ref refs/remotes/origin/main HEAD
+git -C "$BK" branch -q --set-upstream-to=origin/main main
+doc; expect D-backup.sync-failed none; expect D-backup.unpushed none; expect D-backup.no-upstream none
+
+echo "-- D-holds"
+HUNDREDX_WORK_DIR="$R2" doc
+expect D-holds.stale info
+field D-holds.stale fix | grep -qF "100x work release-hold 12 --ws old" && ok "  fix releases that hold" || bad "  stale fix"
+expect D-holds.handoff info
+doc; expect D-holds.stale none; expect D-holds.handoff none
+
+echo "-- usage, text output, read-only"
+"$W" work doctor --cwd "$TMP/does-not-exist" >"$OUT/r.out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "doctor --cwd <missing dir>: usage error, exit 2" || bad "missing --cwd exit $rc"
+"$W" work doctor --bogus >"$OUT/r.out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] && ok "doctor --bogus: exit 2" || bad "bogus flag exit $rc"
+HUNDREDX_WORK_DIR="$R2" "$W" work doctor >"$OUT/r.out" 2>&1; rc=$?
+[ "$rc" -eq 1 ] && ok "text output on a broken record exits 1" || bad "text exit $rc"
+has "WARN  D-record.mode:"; has "      cause: "; has "      fix:   chmod 700"; has "INFO  D-holds.stale:"
+has "checks: D-record warn, D-events warn"
+python3 - "$OUT/r.out" <<'PY' && ok "  findings are ordered error, warn, info" || bad "  severity order"
+import re, sys; sev = re.findall(r"^(ERROR|WARN|INFO) ", open(sys.argv[1]).read(), re.M)
+assert sev == sorted(sev, key=["ERROR", "WARN", "INFO"].index), sev
+PY
+mv "$TMP/sync-marker" "$BK/.state/remote-sync-failed"
+# The suite itself commits to the backup repo, so the first comparison leaves out what the
+# test changed there; the second, below, covers the backup repo whole across doctor runs.
+mine() { grep -v -e "$BK/.git" -e "$BK/.state" -e "$BK/mirrors.txt"; }
+diff <(printf '%s\n' "$SNAP_BEFORE" | mine) <(snapshot "$REC" "$R2" "$BK" "$REPO" | mine) >"$OUT/r.out" \
+  && ok "doctor wrote nothing in the record dirs or the repo" || bad "doctor changed a file"
+SNAP_BK="$(snapshot "$REC" "$R2" "$BK" "$REPO")"
+doc; HUNDREDX_WORK_DIR="$R2" doc; "$W" work doctor >/dev/null 2>&1
+[ "$(snapshot "$REC" "$R2" "$BK" "$REPO")" = "$SNAP_BK" ] \
+  && ok "doctor wrote nothing in the backup repo either (incl. .git)" || bad "doctor changed the backup repo"
+rm -f "$BK/.state/remote-sync-failed"
+unset HUNDREDX_WORK_BACKUP_HINT
+cd "$REPO" || exit 1
 
 echo "== HUNDREDX_WORK=off"
 N0="$(count_events)"
