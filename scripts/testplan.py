@@ -24,7 +24,10 @@ rows, ownership words become authz rows, state words become transition rows). It
 a first draft for a human to prune, not a substitute for reading the AC. Each
 implicit-requirement row gets one case whose level comes from the baseline item
 (LEVEL_BY_ID, or a `level` field in baseline.json), never from its evidence text;
-ask.* rows and n/a(...), waived(...) or ASK rows get none.
+ask.* rows and n/a(...), waived(...) or ASK rows get none. Each open §7 edge case
+(status still to do, or covered) whose source is a screen family (scripts/data/edge_cases_ui.json) or
+`role:<name>` gets case `TC-E<n>-1` tagged `<feature>/E<n>`; `--all-edge-cases`
+includes every other source.
 
 `trace` counts an AC as covered only when its tag appears in a TEST file (by name
 pattern) outside a commented-out test or a skipped test; a skipped `describe` block,
@@ -386,6 +389,46 @@ def nfr_case(req_id, requirement, status=""):
     return (f"TC-{req_id}-1", req_id, level, "non-functional", how, expected)
 
 
+def _ui_kinds():
+    try:
+        return {k for k in json.loads((DATA / "edge_cases_ui.json").read_text())
+                if not k.startswith("_")}
+    except (OSError, ValueError):
+        return set()
+
+
+# Screen-behaviour families get a case by default; the universal and backend kinds are
+# seeded on most specs and would grow every plan, so they wait for --all-edge-cases.
+UI_KINDS = _ui_kinds()
+E2E_SOURCES = {"destructive-action"}
+OPEN_EDGE_STATUS = ("todo", "covered")
+SUGGESTED = "_suggested:_ "
+# #, source, edge case, why, status, test / reference (plan_feature new writes these)
+EDGE_COLUMNS = 6
+
+
+def select_edge_cases(text, every_source):
+    """[(E<n>, source, what, test)] for open §7 rows (to do, or covered) whose
+    source is a UI family or `role:<name>` (any source when `every_source`)."""
+    out = []
+    for r in md.rows_of(text, "| # | source | edge case |"):
+        if len(r) < EDGE_COLUMNS or r[4].strip().lower() not in OPEN_EDGE_STATUS:
+            continue
+        src = r[1].strip()
+        if every_source or src in UI_KINDS or src.startswith("role:"):
+            test = r[5].strip()
+            out.append((r[0].strip(), src, r[2].strip(),
+                        test[len(SUGGESTED):] if test.startswith(SUGGESTED) else test))
+    return out
+
+
+def build_edge_case(feature, eid, source, what, test):
+    is_role = source.startswith("role:")
+    level = "e2e" if is_role or source in E2E_SOURCES else "component"
+    return (f"TC-{eid}-1", f"{feature}/{eid}", level, "role" if is_role else "edge case",
+            what, test)
+
+
 def default_testplan(feature, repo):
     """(<root>/specs/<feature>/testplan.md, the legacy <root>/testplans/<feature>.md
     when one exists there, else None)."""
@@ -429,10 +472,15 @@ def cmd_new(a):
             rows.append((cid, rid, level, tech, given, exp,
                          "no" if level in ("manual-exploratory", "review") else "yes",
                          a.owner))
+    edges = select_edge_cases(text, a.all_edge_cases)
+    rows += [build_edge_case(feature, *e) + ("yes", a.owner) for e in edges]
     first = next(iter(acs))
+    # The edge-case count is named only when there is one, so a spec without §7 UI or
+    # role rows gets byte-for-byte the plan it got before.
+    n_edges = f", {len(edges)} edge cases" if edges else ""
     out = [f"# Test plan — {feature}", "",
            f"Generated from `{a.doc}` by `100x testplan new`: {len(acs)} acceptance "
-           f"criteria, {len(nfr)} implicit requirements, {len(rows)} cases. Rows are "
+           f"criteria, {len(nfr)} implicit requirements{n_edges}, {len(rows)} cases. Rows are "
            "derived from the AC wording; prune duplicates and fill concrete values before "
            f"writing tests. Tag every test with its namespaced id (`{feature}/{first}`), "
            f"then prove coverage with `100x testplan trace {a.doc} --tests <dir>`.", "",
@@ -822,6 +870,9 @@ def main():
     n.add_argument("--dry-run", action="store_true", help="say what --out would write")
     n.add_argument("--feature", help="namespace for test tags (default: the spec's "
                                      "| feature | field, else its directory name)")
+    n.add_argument("--all-edge-cases", action="store_true",
+                   help="one case per open §7 edge case of any source, not only screen "
+                        "families and role:<name> rows")
     n.set_defaults(fn=cmd_new)
     t = sub.add_parser("trace", help="report each AC as covered/uncovered by tagged tests")
     t.add_argument("doc")

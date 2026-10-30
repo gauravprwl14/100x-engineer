@@ -106,7 +106,7 @@ Back-of-book index: every term defined in bold (`**term** —`), listed in a glo
 - **BLOCKING and diff-scoped** — [research/36-findings-antibloat-in-practice.md#architectural-boundary-rules-verbatim](research/36-findings-antibloat-in-practice.md#architectural-boundary-rules-verbatim) *defined*
 - **BLOCKING only when triggered** — [research/36-findings-antibloat-in-practice.md#size-budgets-with-real-numbers](research/36-findings-antibloat-in-practice.md#size-budgets-with-real-numbers) *defined*
 - **both** — [research/32-findings-go-verification.md#3-retrybackoffcircuit-breaker-mostly-hand-rolled-third-party-libs-are-secondary](research/32-findings-go-verification.md#3-retrybackoffcircuit-breaker-mostly-hand-rolled-third-party-libs-are-secondary) *defined*
-- **Both modes** — [skills/diff-review/SKILL.md#both-modes-own-diff-all-of-18](skills/diff-review/SKILL.md#both-modes-own-diff-all-of-18)
+- **Both modes** — [skills/diff-review/SKILL.md#both-modes-own-diff-all-of-18b](skills/diff-review/SKILL.md#both-modes-own-diff-all-of-18b)
 - **both, in separate tiers** — [reviewers/nestjs.md#approach-selection](reviewers/nestjs.md#approach-selection) *defined*
 - **Bottom line for this section** — [research/34-findings-agentic-corpus.md#hooks-mechanical-enforcement-audit](research/34-findings-agentic-corpus.md#hooks-mechanical-enforcement-audit) *defined*
 - **Boundaries** — [skills/codebase-comprehension/SKILL.md#order-of-operations](skills/codebase-comprehension/SKILL.md#order-of-operations) *defined*, [skills/codebase-comprehension/references/architecture-template.md#boundaries](skills/codebase-comprehension/references/architecture-template.md#boundaries)

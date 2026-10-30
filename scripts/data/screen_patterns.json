@@ -1,0 +1,573 @@
+{
+ "_doc": "Generic screen-pattern names -> behaviour families in edge_cases_ui.json (or a kind in the other catalogues). Resolution: NFKC, casefold, '&' as 'and', collapse whitespace; exact match on a name or alias, else exit 2 with up to 3 suggestions. families is a list of kinds or _planned names, or exactly [\"baseline\"] (owned by skills/ui-baseline) or [\"none\"] (no screen behaviour to check). Names listing checkout, money-transfer or subscription also list payment; auth-screens also lists auth, so the existing risk floor applies. A project maps its own taxonomy in <records root>/screen_patterns.json (same shape); its entries are added to these, and on a name or alias clash the project's entry wins.",
+ "_source": "SOURCE: original (generic UI vocabulary)",
+ "patterns": [
+  {
+   "name": "Settings",
+   "category": "Account",
+   "aliases": [
+    "preferences",
+    "account settings",
+    "workspace settings"
+   ],
+   "families": [
+    "settings",
+    "form"
+   ]
+  },
+  {
+   "name": "Profile",
+   "category": "Account",
+   "aliases": [
+    "my account",
+    "edit profile"
+   ],
+   "families": [
+    "settings",
+    "form"
+   ]
+  },
+  {
+   "name": "Account deletion",
+   "category": "Account",
+   "aliases": [
+    "delete account",
+    "deactivate account",
+    "close account"
+   ],
+   "families": [
+    "destructive-action",
+    "settings"
+   ]
+  },
+  {
+   "name": "Password reset",
+   "category": "Account",
+   "aliases": [
+    "forgot password",
+    "reset password"
+   ],
+   "families": [
+    "auth-screens",
+    "auth"
+   ]
+  },
+  {
+   "name": "Language and theme",
+   "category": "Account",
+   "aliases": [
+    "language",
+    "locale",
+    "dark mode",
+    "theme"
+   ],
+   "families": [
+    "settings"
+   ]
+  },
+  {
+   "name": "Create",
+   "category": "Actions",
+   "aliases": [
+    "add",
+    "new record",
+    "create form"
+   ],
+   "families": [
+    "form"
+   ]
+  },
+  {
+   "name": "Edit",
+   "category": "Actions",
+   "aliases": [
+    "update",
+    "edit form"
+   ],
+   "families": [
+    "form"
+   ]
+  },
+  {
+   "name": "Delete",
+   "category": "Actions",
+   "aliases": [
+    "remove",
+    "delete confirmation"
+   ],
+   "families": [
+    "destructive-action"
+   ]
+  },
+  {
+   "name": "Cancel",
+   "category": "Actions",
+   "aliases": [
+    "cancel order",
+    "cancel booking"
+   ],
+   "families": [
+    "destructive-action"
+   ]
+  },
+  {
+   "name": "Block or ban",
+   "category": "Actions",
+   "aliases": [
+    "ban",
+    "block"
+   ],
+   "families": [
+    "destructive-action"
+   ]
+  },
+  {
+   "name": "Archive and trash",
+   "category": "Actions",
+   "aliases": [
+    "archive",
+    "trash",
+    "recycle bin"
+   ],
+   "families": [
+    "destructive-action"
+   ]
+  },
+  {
+   "name": "Bulk actions",
+   "category": "Actions",
+   "aliases": [
+    "bulk select",
+    "multi-select"
+   ],
+   "families": [
+    "list-table",
+    "destructive-action"
+   ]
+  },
+  {
+   "name": "Search",
+   "category": "Actions",
+   "aliases": [],
+   "families": [
+    "search-filter-ui"
+   ]
+  },
+  {
+   "name": "Filter and sort",
+   "category": "Actions",
+   "aliases": [
+    "filter",
+    "sort"
+   ],
+   "families": [
+    "search-filter-ui",
+    "list-table"
+   ]
+  },
+  {
+   "name": "Import and export",
+   "category": "Actions",
+   "aliases": [
+    "import",
+    "export"
+   ],
+   "families": [
+    "file-transfer",
+    "list-table"
+   ]
+  },
+  {
+   "name": "Upload and download",
+   "category": "Actions",
+   "aliases": [
+    "upload",
+    "download"
+   ],
+   "families": [
+    "file-transfer"
+   ]
+  },
+  {
+   "name": "Share",
+   "category": "Actions",
+   "aliases": [],
+   "families": [
+    "invite-share"
+   ]
+  },
+  {
+   "name": "Invite",
+   "category": "Actions",
+   "aliases": [
+    "invite members",
+    "invite users",
+    "referral"
+   ],
+   "families": [
+    "invite-share"
+   ]
+  },
+  {
+   "name": "Like and follow",
+   "category": "Actions",
+   "aliases": [
+    "like",
+    "follow",
+    "favorite",
+    "favourite",
+    "bookmark"
+   ],
+   "families": [
+    "social-actions"
+   ]
+  },
+  {
+   "name": "Comments and reviews",
+   "category": "Actions",
+   "aliases": [
+    "comments",
+    "reviews",
+    "ratings",
+    "report content"
+   ],
+   "families": [
+    "user-content"
+   ]
+  },
+  {
+   "name": "List",
+   "category": "Data",
+   "aliases": [
+    "table",
+    "data table",
+    "item list"
+   ],
+   "families": [
+    "list-table"
+   ]
+  },
+  {
+   "name": "Detail page",
+   "category": "Data",
+   "aliases": [
+    "detail",
+    "record page",
+    "product page",
+    "order detail",
+    "profile page"
+   ],
+   "families": [
+    "detail-view"
+   ]
+  },
+  {
+   "name": "Dashboard",
+   "category": "Data",
+   "aliases": [
+    "stats",
+    "analytics",
+    "charts"
+   ],
+   "families": [
+    "dashboard"
+   ]
+  },
+  {
+   "name": "History",
+   "category": "Data",
+   "aliases": [
+    "order history",
+    "activity log",
+    "timeline"
+   ],
+   "families": [
+    "list-table"
+   ]
+  },
+  {
+   "name": "Login",
+   "category": "Sign-in",
+   "aliases": [
+    "sign in",
+    "log in"
+   ],
+   "families": [
+    "auth-screens",
+    "auth"
+   ]
+  },
+  {
+   "name": "Signup",
+   "category": "Sign-in",
+   "aliases": [
+    "sign up",
+    "register",
+    "registration"
+   ],
+   "families": [
+    "auth-screens",
+    "auth"
+   ]
+  },
+  {
+   "name": "Verification code",
+   "category": "Sign-in",
+   "aliases": [
+    "otp",
+    "two-factor",
+    "verify email"
+   ],
+   "families": [
+    "auth-screens",
+    "auth"
+   ]
+  },
+  {
+   "name": "Onboarding",
+   "category": "Sign-in",
+   "aliases": [
+    "walkthrough",
+    "tutorial",
+    "welcome"
+   ],
+   "families": [
+    "onboarding"
+   ]
+  },
+  {
+   "name": "Permission and consent",
+   "category": "Sign-in",
+   "aliases": [
+    "permissions",
+    "terms",
+    "privacy policy",
+    "cookie consent"
+   ],
+   "families": [
+    "consent"
+   ]
+  },
+  {
+   "name": "Booking",
+   "category": "Scheduling",
+   "aliases": [
+    "appointment",
+    "appointments",
+    "schedule",
+    "reservation"
+   ],
+   "families": [
+    "scheduling"
+   ]
+  },
+  {
+   "name": "Calendar",
+   "category": "Scheduling",
+   "aliases": [
+    "date picker",
+    "time picker",
+    "events"
+   ],
+   "families": [
+    "scheduling"
+   ]
+  },
+  {
+   "name": "Reminders",
+   "category": "Scheduling",
+   "aliases": [
+    "reminder"
+   ],
+   "families": [
+    "notifications",
+    "scheduling"
+   ]
+  },
+  {
+   "name": "Cart",
+   "category": "Commerce",
+   "aliases": [
+    "bag",
+    "shopping cart"
+   ],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Checkout",
+   "category": "Commerce",
+   "aliases": [
+    "order review",
+    "place order"
+   ],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Order confirmation",
+   "category": "Commerce",
+   "aliases": [],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Payment method",
+   "category": "Commerce",
+   "aliases": [
+    "saved cards",
+    "payment methods"
+   ],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Pricing",
+   "category": "Commerce",
+   "aliases": [
+    "plans",
+    "pricing page"
+   ],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Coupon",
+   "category": "Commerce",
+   "aliases": [
+    "promo code",
+    "coupons",
+    "rewards"
+   ],
+   "families": [
+    "checkout",
+    "payment"
+   ]
+  },
+  {
+   "name": "Subscription",
+   "category": "Commerce",
+   "aliases": [
+    "paywall",
+    "premium"
+   ],
+   "families": [
+    "subscription",
+    "payment"
+   ]
+  },
+  {
+   "name": "Money transfer",
+   "category": "Commerce",
+   "aliases": [
+    "send money",
+    "transfer",
+    "bank transfer",
+    "scan and pay"
+   ],
+   "families": [
+    "money-transfer",
+    "payment"
+   ]
+  },
+  {
+   "name": "Wallet",
+   "category": "Commerce",
+   "aliases": [
+    "balance"
+   ],
+   "families": [
+    "money-transfer",
+    "payment"
+   ]
+  },
+  {
+   "name": "Chat",
+   "category": "Communication",
+   "aliases": [
+    "messages",
+    "inbox",
+    "chatbot",
+    "call"
+   ],
+   "families": [
+    "messaging"
+   ]
+  },
+  {
+   "name": "Notifications",
+   "category": "Communication",
+   "aliases": [
+    "activity feed"
+   ],
+   "families": [
+    "notifications"
+   ]
+  },
+  {
+   "name": "Feed",
+   "category": "Communication",
+   "aliases": [
+    "home feed",
+    "news feed",
+    "browse",
+    "explore"
+   ],
+   "families": [
+    "feed-browse"
+   ]
+  },
+  {
+   "name": "Map and address",
+   "category": "Communication",
+   "aliases": [
+    "map",
+    "address",
+    "location"
+   ],
+   "families": [
+    "location",
+    "form"
+   ]
+  },
+  {
+   "name": "Media capture",
+   "category": "Communication",
+   "aliases": [
+    "camera",
+    "scanner",
+    "qr code",
+    "recorder",
+    "media editor",
+    "video player",
+    "audio player"
+   ],
+   "families": [
+    "media-device"
+   ]
+  },
+  {
+   "name": "System states",
+   "category": "Communication",
+   "aliases": [
+    "loading",
+    "empty state",
+    "error page",
+    "success message"
+   ],
+   "families": [
+    "baseline"
+   ]
+  }
+ ]
+}

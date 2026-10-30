@@ -1,0 +1,141 @@
+diff --git a/app/settings.py b/app/settings.py
+new file mode 100644
+index 000000000000..5ca34bd385af
+--- /dev/null
++++ b/app/settings.py
+@@ -0,0 +1,69 @@
++"""Workspace settings page: view for everyone in the workspace, changes for admins."""
++from zoneinfo import available_timezones
++
++from app import store
++from app.http import BadRequest, Forbidden, Request, Response, redirect
++from app.templates import esc, page
++from app.views import member_of
++
++TIMEZONES = sorted(available_timezones())
++MAX_NAME_LENGTH = 60
++
++
++def require_admin(request: Request, workspace_id: str) -> dict:
++    workspace = member_of(request, workspace_id)
++    if request.user.role != "admin":
++        raise Forbidden("only admins can change workspace settings")
++    return workspace
++
++
++def settings_page(request: Request, workspace_id: str) -> Response:
++    workspace = member_of(request, workspace_id)
++    base = f"/workspaces/{esc(workspace_id)}"
++    controls = ""
++    if request.user.role == "admin":
++        options = "\n".join(
++            f'<option value="{esc(zone)}"{" selected" if zone == workspace["timezone"] else ""}>'
++            f"{esc(zone)}</option>" for zone in TIMEZONES)
++        controls = f"""<form method="post" action="{base}/settings/name">
++  <label>Name <input name="name" value="{esc(workspace['name'])}" maxlength="{MAX_NAME_LENGTH}" required></label>
++  <button type="submit">Rename</button>
++</form>
++<form method="post" action="{base}/settings/timezone">
++  <label>Default timezone <select name="timezone">{options}</select></label>
++  <button type="submit">Save timezone</button>
++</form>"""
++    body = f"""<h1>{esc(workspace['name'])}: settings</h1>
++<dl>
++  <dt>Name</dt><dd>{esc(workspace['name'])}</dd>
++  <dt>Default timezone</dt><dd>{esc(workspace['timezone'])}</dd>
++</dl>
++{controls}
++<form method="post" action="{base}/delete">
++  <button type="submit">Delete workspace</button>
++</form>"""
++    return Response(200, page(f"{workspace['name']} settings", body))
++
++
++def rename_workspace(request: Request, workspace_id: str) -> Response:
++    workspace = member_of(request, workspace_id)
++    name = request.form.get("name", "").strip()
++    if not name or len(name) > MAX_NAME_LENGTH:
++        raise BadRequest(f"name must be 1-{MAX_NAME_LENGTH} characters")
++    workspace["name"] = name
++    return redirect(f"/workspaces/{workspace_id}/settings")
++
++
++def set_timezone(request: Request, workspace_id: str) -> Response:
++    workspace = require_admin(request, workspace_id)
++    timezone = request.form.get("timezone", "")
++    if timezone not in TIMEZONES:
++        raise BadRequest(f"unknown timezone {timezone!r}")
++    workspace["timezone"] = timezone
++    return redirect(f"/workspaces/{workspace_id}/settings")
++
++
++def delete_workspace(request: Request, workspace_id: str) -> Response:
++    require_admin(request, workspace_id)
++    del store.WORKSPACES[workspace_id]
++    return redirect("/")
+diff --git a/app/web.py b/app/web.py
+index 6478d37c697b..76f4e1663f67 100644
+--- a/app/web.py
++++ b/app/web.py
+@@ -1,11 +1,16 @@
+ import re
+ 
+-from app import views
++from app import settings, views
+ from app.http import HttpError, Request, Response
+ from app.templates import esc, page
+ 
++WORKSPACE = r"/workspaces/(?P<workspace_id>[\w-]+)"
+ ROUTES = [
+-    ("GET", r"/workspaces/(?P<workspace_id>[\w-]+)/members", views.members_page),
++    ("GET", WORKSPACE + "/members", views.members_page),
++    ("GET", WORKSPACE + "/settings", settings.settings_page),
++    ("POST", WORKSPACE + "/settings/name", settings.rename_workspace),
++    ("POST", WORKSPACE + "/settings/timezone", settings.set_timezone),
++    ("POST", WORKSPACE + "/delete", settings.delete_workspace),
+ ]
+ 
+ 
+diff --git a/tests/test_settings.py b/tests/test_settings.py
+new file mode 100644
+index 000000000000..676258fea2af
+--- /dev/null
++++ b/tests/test_settings.py
+@@ -0,0 +1,37 @@
++import unittest
++
++from app import store
++from app.http import Request
++from app.web import handle
++
++ADMIN, MEMBER = store.USERS["u-1"], store.USERS["u-2"]
++
++
++class SettingsTest(unittest.TestCase):
++    def setUp(self):
++        store.reset()
++
++    def test_member_can_view_settings(self):
++        response = handle(Request(MEMBER, "GET", "/workspaces/w-1/settings"))
++        self.assertEqual(response.status, 200)
++        self.assertIn("Europe/London", response.body)
++
++    def test_admin_renames_workspace(self):
++        handle(Request(ADMIN, "POST", "/workspaces/w-1/settings/name", {"name": "Acme Studio"}))
++        self.assertEqual(store.WORKSPACES["w-1"]["name"], "Acme Studio")
++
++    def test_admin_changes_timezone(self):
++        handle(Request(ADMIN, "POST", "/workspaces/w-1/settings/timezone", {"timezone": "Europe/Berlin"}))
++        self.assertEqual(store.WORKSPACES["w-1"]["timezone"], "Europe/Berlin")
++
++    def test_member_cannot_change_timezone(self):
++        response = handle(Request(MEMBER, "POST", "/workspaces/w-1/settings/timezone", {"timezone": "Europe/Berlin"}))
++        self.assertEqual(response.status, 403)
++
++    def test_admin_deletes_workspace(self):
++        handle(Request(ADMIN, "POST", "/workspaces/w-1/delete"))
++        self.assertNotIn("w-1", store.WORKSPACES)
++
++
++if __name__ == "__main__":
++    unittest.main()

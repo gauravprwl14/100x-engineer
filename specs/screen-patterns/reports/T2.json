@@ -1,0 +1,64 @@
+{
+ "schema": 1,
+ "agent": "qa-engineer",
+ "task_id": "T2",
+ "status": "done",
+ "understanding": "Added bench cases 13-15 (build, test-plan and review a workspace settings screen) whose hidden checks measure the settings, destructive-action and _roles rows of scripts/data/edge_cases_ui.json; compare.py counts per arm the runs that called plan_feature; run.sh --old-ref resolves OLD before the cost warning. Conventions: AGENTS.md; analog: cases 04/05/06/08.",
+ "inputs_read": [
+  "AGENTS.md",
+  "bench/README.md",
+  "bench/run.sh",
+  "bench/checks.py",
+  "bench/compare.py",
+  "bench/test_bench.sh",
+  "analog: bench/cases/04-tests-can-fail, 05, 06, 08",
+  "instructions: AGENTS.md (stdlib only, scoped diffs)",
+  "spec: specs/screen-patterns/spec.md AC-10, AC-11",
+  "naming: existing check_NN functions and case folder names",
+  "lessons: none",
+  "decisions: ADR-0003"
+ ],
+ "assumptions": [
+  {
+   "id": "A1",
+   "class": "A",
+   "text": "Bash calls appear as tool_use blocks in the stream-json trace; inferred, not verified on a real trace."
+  }
+ ],
+ "questions": [],
+ "plan_issues": [],
+ "decisions": [],
+ "changes": [
+  {
+   "path": "bench/checks.py",
+   "summary": "check_13, check_14, check_15"
+  },
+  {
+   "path": "bench/run.sh",
+   "summary": "--old-ref"
+  },
+  {
+   "path": "bench/compare.py",
+   "summary": "plan_feature call count per arm"
+  },
+  {
+   "path": "bench/README.md",
+   "summary": "new rows and counts"
+  },
+  {
+   "path": "bench/test_bench.sh",
+   "summary": "new assertions"
+  }
+ ],
+ "evidence": [
+  {
+   "kind": "test",
+   "cmd": "bash bench/test_bench.sh",
+   "exit_code": 0,
+   "output_tail": "test_bench: all graders discriminate"
+  }
+ ],
+ "follow_ups": [
+  "no-plugin pilot to drop checks without headroom"
+ ]
+}

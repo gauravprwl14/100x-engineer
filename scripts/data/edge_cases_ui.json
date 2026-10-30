@@ -1,0 +1,355 @@
+{
+ "_doc": "Screen-behaviour families: what users expect from a kind of screen, independent of stack. Same shape as edge_cases.json: kind -> [[what, why it gets missed, the test that catches it], ...]. Merged into plan_feature.py's catalogue. Family names never collide with edge_cases.json or edge_cases_infra.json, and no `what` repeats an entry in any catalogue (gather() drops repeats silently). Items already owned by skills/ui-baseline (loading/empty/error states, field validation, double submit, optimistic rollback) and skills/accessibility (focus trap, focus return) are not repeated here. `settings` holds only settings-specific rows and builds on `form` (unsaved edits, conflicting saves), so a pattern with editable settings lists both. `_roles` rows are expanded once per --roles name; `_planned` lists families scripts/data/screen_patterns.json maps names to before they are written.",
+ "_planned": [
+  "feed-browse",
+  "modal-drawer",
+  "onboarding",
+  "consent",
+  "file-transfer",
+  "subscription",
+  "social-actions",
+  "user-content",
+  "invite-share",
+  "messaging",
+  "notifications",
+  "dashboard",
+  "location",
+  "media-device",
+  "search-filter-ui"
+ ],
+ "_roles": [
+  [
+   "Role {role}: sees and can use every control the spec grants it",
+   "the screen is only ever opened as an admin",
+   "sign in as {role}; assert each granted control is visible and enabled"
+  ],
+  [
+   "Role {role}: controls it is not granted are hidden, or disabled with the reason",
+   "the button fails on click instead of not being offered",
+   "sign in as {role}; assert ungranted controls are absent, or disabled with a reason a screen reader announces"
+  ],
+  [
+   "Role {role}: a direct URL or API call to an action it is not granted is refused and changes nothing",
+   "hiding the button feels like enforcement",
+   "as {role}, request the action's route and API directly; assert 403 or 404 and no state change"
+  ]
+ ],
+ "settings": [
+  [
+   "A destructive or irreversible setting (delete workspace, revoke keys, disable SSO, downgrade plan) applies on one click",
+   "settings are treated as plain form fields",
+   "trigger each destructive setting; assert a confirmation naming the resource and the consequence, and Cancel changes nothing"
+  ],
+  [
+   "Save is enabled with nothing changed",
+   "the save button is wired once and never revisited",
+   "load the page; assert Save is disabled until a field differs from the stored value"
+  ],
+  [
+   "A partial save failure reports success or a generic error",
+   "the backend is tested one field at a time",
+   "fail one field server-side; assert that field is named, the others show as saved, and the edits stay on screen"
+  ],
+  [
+   "Edits cannot be discarded, or a default cannot be restored",
+   "the author never needs to undo",
+   "change fields and choose Discard; assert stored values return; Reset restores the documented default"
+  ],
+  [
+   "A setting with side effects saves without saying so (signs everyone out, affects all members, needs re-verification)",
+   "side effects live in backend code the screen's author never reads",
+   "save each side-effect setting; assert the effect is stated before it is saved"
+  ],
+  [
+   "Nobody can tell who changed a setting, or when",
+   "auditing is treated as a backend concern",
+   "change a setting; assert the change, the actor and the time appear in the settings history or audit log"
+  ]
+ ],
+ "destructive-action": [
+  [
+   "An irreversible action runs on one click with no confirmation naming what is destroyed",
+   "the happy path is the author deleting test data",
+   "click delete; assert a dialog naming the resource, and Cancel leaves it intact"
+  ],
+  [
+   "The confirmation asks 'Are you sure?' and its button says OK",
+   "dialog copy is written last, and generically",
+   "assert the dialog names the object and what else is lost (\"and its 12 comments\"), the button repeats the verb (\"Delete\"), and focus starts on Cancel"
+  ],
+  [
+   "A high-impact deletion (workspace, account, production data) needs only one click on the confirmation",
+   "one dialog component is reused for every delete",
+   "assert the confirm button stays disabled until the resource name is typed exactly"
+  ],
+  [
+   "A reversible action is made permanent with no undo",
+   "soft delete exists in the database but not on the screen",
+   "delete, then assert an Undo toast or a trash with Restore brings the item back"
+  ],
+  [
+   "A bulk destructive action hides how many items it affects, or a partial failure",
+   "the bulk path reuses the single-item handler",
+   "select 3 items with 1 failing server-side; assert the dialog says 3, and the result names the failure and keeps that item"
+  ],
+  [
+   "A deleted item still shows in other views (lists, counters, badges, other tabs)",
+   "only the current view is refreshed",
+   "delete, then assert lists, counters and a second open tab no longer show it"
+  ],
+  [
+   "Deleting something another user has open breaks their screen",
+   "deletion is tested with one session",
+   "user B has the item open while A deletes it; assert B is told it was deleted, not shown an error page or allowed a stale save"
+  ]
+ ],
+ "form": [
+  [
+   "Input is lost on a server error or an expired session",
+   "errors are tested with an empty form",
+   "fill the form, force a 500 and then a 401; assert every field keeps its value after the error and after signing back in"
+  ],
+  [
+   "An edit form overwrites a newer change made by someone else",
+   "records are edited by one person in development",
+   "open the edit form, change the record elsewhere, submit; assert a conflict message, not a silent overwrite"
+  ],
+  [
+   "After saving, the user cannot tell it worked or where they are",
+   "the author watches the network tab",
+   "submit; assert a success message and a landing view that shows the saved record"
+  ],
+  [
+   "Required and optional fields look the same",
+   "the author knows which fields matter",
+   "assert required fields are marked and the marking is exposed to assistive technology"
+  ],
+  [
+   "A consequential choice (plan, recipient, amount) is pre-selected for the user",
+   "defaults are copied from the last test run",
+   "open a new form; assert documented defaults are filled and no consequential field is pre-selected"
+  ],
+  [
+   "An edit form opens empty or with stale values",
+   "the create form is reused for edit",
+   "open edit on an existing record; assert every field shows the current stored value"
+  ],
+  [
+   "Leaving a half-filled form loses the input without warning",
+   "forms are always submitted in testing",
+   "fill two fields and navigate away; assert a discard prompt, and Cancel keeps the input"
+  ]
+ ],
+ "list-table": [
+  [
+   "Sort, filter and page are lost on back, refresh or a shared link",
+   "list state lives in component memory",
+   "set a sort, a filter and page 2; refresh and go back, then open the URL in a new session; assert the same view each time"
+  ],
+  [
+   "'No records yet' and 'no results for these filters' look the same",
+   "only the empty database is tested",
+   "filter to zero results; assert a no-matches message with a clear-filters action, distinct from the first-use empty state"
+  ],
+  [
+   "A bulk selection hides its scope, or survives the action",
+   "selection is tested on one page",
+   "select rows across two pages; assert the count is shown, the action applies to all of them, and the selection clears afterwards"
+  ],
+  [
+   "Row actions are offered on records the user cannot act on",
+   "the list is built while signed in as admin",
+   "sign in as a lower role; assert actions it lacks are absent or disabled on every row"
+  ],
+  [
+   "The list is stale after a create, edit or delete made elsewhere",
+   "each view fetches once",
+   "change a record in another tab or a modal; assert the list shows the change without a full reload"
+  ],
+  [
+   "Long values break the layout or are cut off with no way to read them",
+   "sample data is short",
+   "use a 200-character name; assert it truncates and the full value is reachable on hover, focus or the detail view"
+  ],
+  [
+   "Export ignores the current filters, or exports only the visible page",
+   "export calls the unfiltered endpoint",
+   "filter, then export; assert the file holds exactly the filtered rows across all pages"
+  ]
+ ],
+ "detail-view": [
+  [
+   "A link to a deleted or forbidden record shows a blank page or a generic error",
+   "links are only followed to records that exist",
+   "open a deleted id and a forbidden id; assert distinct not-found and no-access messages, each with a way back"
+  ],
+  [
+   "Back from a record loses the list's scroll position and filters",
+   "navigation is tested from the top of an unfiltered list",
+   "scroll and filter the list, open a record, go back; assert the same position and filters"
+  ],
+  [
+   "A change made elsewhere while the page is open is invisible, then overwritten",
+   "the page is viewed by one person at a time",
+   "change the record in another session; assert the open page shows or flags the change before any save"
+  ],
+  [
+   "One failing related panel blanks the whole page",
+   "related data is fetched together with the main record",
+   "fail one related request; assert the rest of the page renders and that panel shows its own error"
+  ],
+  [
+   "Actions ignore the record's state (edit an archived record, pay a paid order)",
+   "the page is built for the record's normal state",
+   "open a record in each terminal state; assert unavailable actions are absent or disabled with the reason"
+  ],
+  [
+   "The URL and page title do not identify the record",
+   "the page is reached by clicking, never by a shared link",
+   "assert the URL is stable and shareable and the title names the record"
+  ]
+ ],
+ "auth-screens": [
+  [
+   "Password managers cannot fill or save the credentials",
+   "inputs carry no autocomplete hints",
+   "assert the inputs carry autocomplete=\"username\", \"current-password\" or \"new-password\" as appropriate"
+  ],
+  [
+   "The password cannot be revealed before submitting",
+   "masking is the default and nobody questions it",
+   "assert a show-password control toggles the field and works from the keyboard"
+  ],
+  [
+   "After signing in the user lands on home, not the page they asked for",
+   "sign-in is tested from the home page",
+   "open a protected deep link signed out, then sign in; assert arrival at that page, and only for same-origin targets"
+  ],
+  [
+   "The session expires mid-task and the work is lost",
+   "sessions never expire in development",
+   "expire the session with a form half filled; assert re-authentication returns to the form with its input intact"
+  ],
+  [
+   "An expired or already-used reset or verification link is a dead end",
+   "links are always clicked fresh",
+   "open an expired and a used link; assert a clear message and a one-step way to request a new one"
+  ],
+  [
+   "A one-time code screen has no paste, no resend and no attempts left",
+   "codes are read from the console in development",
+   "assert pasting fills every digit, resend appears after a stated wait, and a wrong code says how many tries remain"
+  ]
+ ],
+ "scheduling": [
+  [
+   "Times show in the server's or the author's time zone, not the viewer's",
+   "the whole team shares one time zone",
+   "view one booking as users in two zones; assert each sees local time with the zone named"
+  ],
+  [
+   "A recurring slot across a daylight-saving change shifts by an hour",
+   "test dates avoid March and November",
+   "book a weekly slot spanning a DST change; assert the wall-clock time stays the same"
+  ],
+  [
+   "Two people book the same slot",
+   "booking is tested by one user",
+   "submit the same slot from two sessions; assert one succeeds and the other is told it was taken and offered alternatives"
+  ],
+  [
+   "Past times or closed hours can be picked",
+   "the date picker allows any date",
+   "assert past slots and closed hours cannot be selected and are rejected server-side"
+  ],
+  [
+   "Rescheduling or cancelling skips the confirmation or the cancellation policy",
+   "only creating a booking is designed",
+   "reschedule and cancel inside the policy window; assert the consequence (fee, lost slot) is stated before confirming"
+  ],
+  [
+   "Reminders still go out for a cancelled or moved appointment",
+   "reminders are scheduled at creation and never revisited",
+   "cancel one booking and move another; assert the old reminders are not sent and the moved one gets a new reminder"
+  ],
+  [
+   "One occurrence of a recurring event cannot be changed on its own",
+   "recurrence is stored as a single row",
+   "edit one occurrence; assert the choice of this event, this and following, or all, and only the chosen ones change"
+  ]
+ ],
+ "checkout": [
+  [
+   "The total on the review screen differs from the amount charged",
+   "totals are computed separately on client and server",
+   "change the cart, then compare the review total with the charged amount; assert they are equal to the cent"
+  ],
+  [
+   "A price, stock or coupon change between cart and payment is applied silently",
+   "catalogue data is static in development",
+   "change the price and stock after adding to cart; assert the review screen flags each change before payment"
+  ],
+  [
+   "Place order shows no progress, so a slow payment invites a second click or an abandoned order",
+   "payment responds instantly in development",
+   "throttle the payment call; assert Place order disables with progress, and retrying after a timeout shows the existing order instead of creating a second"
+  ],
+  [
+   "A declined payment loses the cart or the entered address",
+   "only the success path is designed",
+   "decline the card; assert the cart and address remain and the message says what to do next"
+  ],
+  [
+   "The order confirmation has no order number, summary or next step",
+   "the confirmation is designed as a thank-you page",
+   "assert the confirmation shows the order number, items, total, delivery estimate and that a receipt was sent"
+  ],
+  [
+   "Coupon errors are generic, or a removed coupon keeps its discount",
+   "coupons are tested with one valid code",
+   "apply an expired code, a below-minimum code and a valid code, then remove it; assert a specific message each time and the total returning"
+  ],
+  [
+   "Abandoning a bank redirect (3-D Secure) leaves the order in an unknown state",
+   "the redirect always returns in testing",
+   "abandon the redirect; assert the order shows pending or failed and payment can be retried without a duplicate order"
+  ]
+ ],
+ "money-transfer": [
+  [
+   "Recipient, amount and fee are not shown together before sending",
+   "the review step is skipped for speed",
+   "assert a review step shows recipient name, account hint, amount, fee and total, and nothing is sent before Confirm"
+  ],
+  [
+   "Send fires twice on a double tap or a retry",
+   "transfers are tested one tap at a time",
+   "double-tap Send and retry after a simulated timeout; assert exactly one transfer"
+  ],
+  [
+   "Balance and daily limits are only checked after confirming",
+   "limits are a backend rule",
+   "enter an amount over the balance and one over the limit; assert the screen blocks each before review and shows the limit"
+  ],
+  [
+   "Amounts are parsed or shown with the wrong decimal separator or currency",
+   "the team uses one locale",
+   "enter 1.000,50 in a comma-decimal locale; assert the parsed amount and display match the locale and currency"
+  ],
+  [
+   "A pending or failed transfer looks completed",
+   "status comes from the request, not the ledger",
+   "simulate pending, then failed; assert each status is shown and a failed transfer says whether money left the account"
+  ],
+  [
+   "No receipt or reference is shown after sending",
+   "success is shown as a toast",
+   "assert a receipt with reference, time, amount and recipient, still available later in the history"
+  ],
+  [
+   "A new payee or a large amount needs no extra verification",
+   "step-up checks are left to the backend",
+   "add a new payee and send above the threshold; assert the step-up the spec names (one-time code, cooling-off period) is required"
+  ]
+ ]
+}

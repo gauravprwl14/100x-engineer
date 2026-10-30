@@ -1,11 +1,12 @@
 # Decision index
 
-2 decision(s). Regenerate with `python3 scripts/decide.py index`.
+3 decision(s). Regenerate with `python3 scripts/decide.py index`.
 
 | id | title | status | date | chosen | assumptions | tags | affects |
 |---|---|---|---|---|--:|---|---|
 | [ADR-0001](ADR-0001-session-strategy-for-login.md) | Session strategy for login | accepted | 2026-09-29 | Opaque server session id in an httpOnly cookie | 3 | backend, auth | `examples/login/**` |
 | [ADR-0002](ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md) | gh CLI for pr-review, confined to skill steps | accepted | 2026-10-10 | gh CLI, called only from SKILL.md / references steps | 3 | dependency, safety | `skills/pr-review/**, docs/SAFETY.md, scripts/pr_*.py` |
+| [ADR-0003](ADR-0003-screen-pattern-checklists-are-keyed-by-behaviour-family-and-role-checks-are-section-7-rows.md) | screen-pattern checklists are keyed by behaviour family, and role checks are section 7 rows | accepted | 2026-10-30 | behaviour families plus a name-to-family map; role checks as section 7 rows with source role:<name> | 2 | screen-patterns | `scripts/data/edge_cases_ui.json, scripts/data/screen_patterns.json, scripts/plan_feature.py` |
 
 ## How to use this
 
