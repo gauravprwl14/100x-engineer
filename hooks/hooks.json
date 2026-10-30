@@ -10,6 +10,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/work_brief.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -71,6 +81,16 @@
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/require_verification.py\"",
             "timeout": 30,
             "statusMessage": "Checking verification receipt..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/work_fork_guard.py\"",
+            "timeout": 10
           }
         ]
       }
