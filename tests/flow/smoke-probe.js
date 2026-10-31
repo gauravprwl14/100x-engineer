@@ -1,9 +1,10 @@
 // Injected by tests/test_flow.sh into a copy of a built page (never shipped): after boot, records
 // on <html data-probe> whether the #<id> deep-link target is shown in the viewport, every map
 // edge that passes through a box it does not connect, and in `problems` every page section that
-// breaks its contract (before-you-watch, terms, outline highlight, code pane, labels, contents,
-// folding sections, diagrams, reflow). The fold and diagram checks run after the first pass, in
-// later timers, because opening a section and loading mermaid both settle asynchronously.
+// breaks its contract (hero, legend, before-you-watch, terms, outline highlight, code pane, labels,
+// contents and side nav, Show all toggles, folding sections, diagrams, reflow). The fold, diagram
+// and side-nav checks run after the first pass, in later timers, because opening a section, loading
+// mermaid and the scroll observer all settle asynchronously.
 setTimeout(function () {
   var out = { ok: document.documentElement.getAttribute("data-flow-ok"), target: null, crossings: [], problems: [], facts: {} };
   var id = null;
@@ -42,6 +43,48 @@ setTimeout(function () {
   // Before you watch: present whenever the scenario has a context or terms.
   out.facts.before = !!document.querySelector(".before");
   if ((doc.context || (doc.terms || []).length) && !out.facts.before) problem("context or terms given but no Before you watch section");
+
+  // Hero: the purpose and at least one TL;DR card (one per tldr key when the data has tldr); each
+  // At-a-glance tile links to a section that exists; Risks and Decision appear exactly when the
+  // data has issues and a decision.
+  var heroEl = document.querySelector("header.hero"), tl = doc.tldr || {};
+  var cards = document.querySelectorAll(".hero .tldr > li");
+  out.facts.hero = { cards: cards.length, tiles: Array.prototype.map.call(document.querySelectorAll(".hero .tile a.tile-a"), function (a) { return a.getAttribute("href"); }) };
+  if (!heroEl || !heroEl.querySelector("h1")) problem("no hero with the title");
+  var purposeEl = document.querySelector(".hero .purpose-lead");
+  if (!purposeEl || !purposeEl.textContent.trim()) problem("hero has no purpose sentence");
+  if (!cards.length) problem("hero has no TL;DR card");
+  // tldr's "what" is the headline, so it is not also a card
+  var tlKeys = ["how", "watch_out"].filter(function (k) { return tl[k]; }).length;
+  var tlWhat = tl.what && (typeof tl.what === "string" ? tl.what : tl.what.en);
+  // {{name}} placeholders render as numbers, so compare the text before the first one
+  var tlLead = tlWhat ? tlWhat.split("{{")[0].trim() : "";
+  if (tlLead && purposeEl && purposeEl.textContent.trim().indexOf(tlLead) !== 0) problem("tldr.what is not the hero headline");
+  if (doc.tldr && cards.length !== tlKeys) problem("tldr has " + tlKeys + " text(s) but the hero shows " + cards.length + " card(s)");
+  out.facts.hero.tiles.forEach(function (href) {
+    var sec = document.getElementById(href.slice(1));
+    if (!sec || sec.tagName !== "DETAILS") problem("At-a-glance tile " + href + " does not point to a section");
+  });
+  var hasIssues = (doc.scenarios || []).some(function (s) { return s.severity; });
+  if (!!document.querySelector(".tile-risks") !== hasIssues) problem("Risks tile " + (hasIssues ? "missing" : "shown without issues"));
+  if (!!document.querySelector(".tile-decision") !== !!doc.decision) problem("Decision tile " + (doc.decision ? "missing" : "shown without a decision"));
+
+  // Legend: in Evidence (Numbers when there is no evidence), never above the sections; the
+  // Confidence tile's button shows it in a popover that Escape closes, returning focus.
+  var legendHost = document.getElementById(Object.keys(doc.evidence || {}).length ? "sec-evidence" : "sec-numbers");
+  var legends = document.querySelectorAll(".howto:not(.pop-legend)");
+  out.facts.legendIn = legends.length === 1 && legends[0].closest("details") ? legends[0].closest("details").id : null;
+  if (legendHost && (legends.length !== 1 || !legendHost.contains(legends[0]))) problem("the evidence legend is not (only) in " + legendHost.id);
+  var popButton = document.getElementById("conf-pop-btn"), pop = document.getElementById("conf-pop");
+  if (popButton) {
+    popButton.click();
+    var popOpen = shown(pop) && popButton.getAttribute("aria-expanded") === "true" && pop.querySelectorAll(".how").length === 5;
+    popButton.focus();
+    popButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    out.facts.popover = { opens: popOpen, closesOnEscape: !shown(pop), focusBack: document.activeElement === popButton };
+    if (!popOpen) problem("How sure is each claim? does not open the five-tag legend");
+    if (shown(pop) || document.activeElement !== popButton) problem("Escape does not close the legend popover back onto its button");
+  }
 
   // Terms: each wrapped term is a button described by a definition that exists; focus shows the
   // popup, Escape hides it, a tap pins it and a second tap closes it.
@@ -83,7 +126,7 @@ setTimeout(function () {
   }
 
   // Code: without snippets there is no Real code tab and no real-code block; on a heavy page the
-  // pane sits right of the diagram at >= 1100px and below it otherwise.
+  // pane sits right of the diagram when the content column is >= 1100px and below it otherwise.
   var realTab = document.getElementById("code-real");
   out.facts.realTab = realTab ? (shown(realTab) ? "shown" : "hidden") : "absent";
   out.facts.snippets = document.querySelectorAll(".snip").length;
@@ -91,8 +134,9 @@ setTimeout(function () {
   var pane = document.getElementById("codepane"), map = document.getElementById("svgbox");
   if (shown(pane) && shown(map)) {
     var pr = pane.getBoundingClientRect(), mr = map.getBoundingClientRect();
-    out.facts.codePane = innerWidth >= 1100 ? "right" : "below";
-    if (innerWidth >= 1100 ? pr.left < mr.right - 1 : pr.top < mr.bottom - 1) problem("code pane is not " + out.facts.codePane + " of the diagram at " + innerWidth + "px");
+    var col = (document.querySelector(".doc-main") || document.body).clientWidth;
+    out.facts.codePane = col >= 1100 ? "right" : "below";
+    if (col >= 1100 ? pr.left < mr.right - 1 : pr.top < mr.bottom - 1) problem("code pane is not " + out.facts.codePane + " of the diagram in a " + col + "px column");
   }
 
   if (/Held in memory/i.test((document.getElementById("flow-app") || document.body).innerText)) problem("old label 'Held in memory' still shown");
@@ -166,13 +210,50 @@ setTimeout(function () {
         if (card && target && !shown(target)) problem("deep link #" + card + " target is not shown");
         if (expand) expand.click();
         if (folds.some(function (d) { return !d.open; })) problem("Expand all leaves a section folded");
+        showAllChecks();
         wait(80, function () {
           out.facts.scrollW = document.documentElement.scrollWidth;
           out.facts.innerW = innerWidth;
           if (document.documentElement.scrollWidth > innerWidth + 1) problem("page scrolls sideways: " + document.documentElement.scrollWidth + "px wide at " + innerWidth + "px");
-          document.documentElement.setAttribute("data-probe", JSON.stringify(out));
+          sideNavChecks(function () { document.documentElement.setAttribute("data-probe", JSON.stringify(out)); });
         });
       });
+    });
+  }
+
+  // Show all: each toggle hides rows to start, shows every row when pressed, and hides them again.
+  function showAllChecks() {
+    var btns = document.querySelectorAll(".show-all, .terms-toggle");
+    out.facts.showAll = btns.length;
+    Array.prototype.forEach.call(btns, function (b) {
+      var holder = document.getElementById(b.getAttribute("aria-controls"));
+      var hiddenRows = function () { return holder.hidden ? 1 : holder.querySelectorAll(":scope > [hidden]").length; };
+      var before = hiddenRows();
+      b.click();
+      var open = hiddenRows(), pressed = b.getAttribute("aria-expanded");
+      b.click();
+      if (!before || open || pressed !== "true" || hiddenRows() !== before) problem("toggle '" + b.textContent + "' does not show all and hide again (" + before + "/" + open + "/" + hiddenRows() + ")");
+    });
+  }
+
+  // Contents: from 1200px a sticky nav beside the sections that marks the section being read;
+  // below that, a card above them.
+  function sideNavChecks(done) {
+    var nav = document.querySelector("nav.contents"), firstSec = folds[0];
+    if (!nav || !firstSec) { done(); return; }
+    var wide = innerWidth >= 1200, nr = nav.getBoundingClientRect(), fr = firstSec.getBoundingClientRect();
+    out.facts.sideNav = wide ? getComputedStyle(nav).position : "top";
+    if (wide && (getComputedStyle(nav).position !== "sticky" || nr.right > fr.left)) problem("Contents is not a sticky nav left of the sections at " + innerWidth + "px");
+    if (!wide && nr.bottom > fr.top) problem("Contents is not above the sections at " + innerWidth + "px");
+    var target = folds[Math.min(folds.length - 1, Math.floor(folds.length / 2))];
+    window.scrollTo(0, target.getBoundingClientRect().top + scrollY - 10);
+    window.dispatchEvent(new Event("scroll"));
+    wait(100, function () {
+      var cur = document.querySelector("nav.contents .toc a[aria-current]");
+      out.facts.currentSection = cur ? cur.getAttribute("href") : null;
+      if (!cur || cur.getAttribute("href") !== "#" + target.id) problem("scrolled to " + target.id + " but Contents marks " + (cur ? cur.getAttribute("href") : "nothing"));
+      window.scrollTo(0, 0);
+      done();
     });
   }
 }, 1500);

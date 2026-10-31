@@ -233,7 +233,49 @@ function stepSnippets(step, snippets) {
   return out;
 }
 
-const API = { reduceScenario, effectiveSteps, initialState, applyAction, newOut, ReduceError, parseAt, splitTerms, outlineHits, stepSnippets };
+function stepTag(step) { return step.tag === "inferred" || !(step.ev || []).length ? "inferred" : "verified"; }
+
+/* ============ the summary at the top: purpose, TL;DR cards, confidence (no DOM) ============ */
+
+const SEVERITY_RANK = ["critical", "high", "medium", "low"];
+// A Text (string or {en, ja}) or an outline title {code} as one comparable string; "" when empty.
+function textKey(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (own(v, "code")) { const k = textKey(v.code); return k && "code:" + k; }
+  return typeof v.en === "string" ? v.en.trim() : "";
+}
+function worstIssue(doc) {
+  let worst = null;
+  for (const s of doc.scenarios || []) {
+    const r = SEVERITY_RANK.indexOf(s.severity);
+    if (r >= 0 && (!worst || r < SEVERITY_RANK.indexOf(worst.severity))) worst = s;
+  }
+  return worst;
+}
+// The hero's texts: `tldr` when given, else the fallbacks; a text already shown above is not repeated.
+function heroSummary(doc) {
+  const sub = doc.subject || {}, ctx = doc.context || {};
+  const tldr = doc.tldr && typeof doc.tldr === "object" ? doc.tldr : {};
+  const first = (...vs) => vs.find(v => textKey(v)) || null;
+  const purpose = first(tldr.what, ctx.purpose, sub.lede); // the TL;DR's "what" is the headline, so no card repeats it
+  const used = new Set([textKey(purpose)]);
+  const fresh = v => { const k = textKey(v); if (!k || used.has(k)) return null; used.add(k); return v; };
+  const ol = (doc.outline || []).find(o => o && textKey(o.title));
+  const what = fresh(first(tldr.what, ctx.purpose, sub.lede));
+  const how = fresh(first(tldr.how, ol ? { code: ol.title } : null, sub.lede));
+  const worst = worstIssue(doc);
+  const watch = textKey(tldr.watch_out) ? { text: tldr.watch_out } : worst ? { issue: worst.id, severity: worst.severity } : null;
+  return { purpose, what, how, watch, lede: fresh(sub.lede) };
+}
+function confidenceOf(doc) {
+  let verified = 0, total = 0;
+  for (const s of doc.scenarios || []) for (const st of s.steps || []) { total++; if (stepTag(st) === "verified") verified++; }
+  return { verified, total };
+}
+
+const API = { reduceScenario, effectiveSteps, initialState, applyAction, newOut, ReduceError, parseAt, splitTerms, outlineHits, stepSnippets,
+              heroSummary, worstIssue, confidenceOf };
 if (typeof module === "object" && module && module.exports) module.exports = API;
 if (typeof document === "undefined") return;
 
@@ -340,9 +382,18 @@ const UI = {
       options: a => plural(a.n, "option", "options"), numbers: a => plural(a.n, "number", "numbers"),
       cited: a => plural(a.n, "cited line", "cited lines"), absences: a => plural(a.n, "counted absence", "counted absences"),
     },
-    dgKind: { sequence: "sequence diagram", flowchart: "flowchart", state: "state diagram", er: "ER diagram", class: "class diagram" },
+    dgKind: { sequence: "sequence diagram", flowchart: "flowchart", state: "state diagram", er: "ER diagram", class: "class diagram", mindmap: "Mind map" },
     dgLoading: "Drawing the diagram…", dgOffline: "Diagram needs the network to draw; its source is shown.",
     dgFailed: "This diagram could not be drawn; its source is shown.", dgWatch: "Watch it animated", dgWalk: "See it step by step", dgWide: "Full width", dgEv: "cited lines",
+    subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "Concept", plan: "Plan" },
+    tldr: "In short", tldrWhat: "What it does", tldrHow: "How it works", tldrWatch: "Watch out",
+    glance: "At a glance", tileChanges: "Changes", tileRisks: "Risks", tileDecision: "Decision", tileConfidence: "Confidence",
+    worst: a => `Worst: ${a.title}`, ofOptions: a => `Chosen from ${plural(a.n, "option", "options")}`,
+    confValue: a => `${a.p}% read in code`, confSteps: a => `${fmtInt(a.v)} of ${plural(a.n, "step", "steps")} verified`,
+    howSure: "How sure is each claim?", details: "Details",
+    showAll: a => `Show all ${fmtInt(a.n)}`, showFewer: "Show fewer",
+    showAllRoutes: a => `Show all ${plural(a.n, "route", "routes")}`, showAllEntries: a => `Show all ${plural(a.n, "entry point", "entry points")}`,
+    listTerms: "List all terms", hideTerms: "Hide the list", tocHide: "Hide", tocShow: "Show",
   },
   ja: {
     play: "再生", pause: "一時停止", back: "戻る", next: "次へ", replay: "最初から", speed: "速度",
@@ -429,9 +480,18 @@ const UI = {
       steps: a => `ステップ ${fmtInt(a.n)} 件`, issues: a => `問題 ${fmtInt(a.n)} 件`, options: a => `案 ${fmtInt(a.n)} 件`,
       numbers: a => `数値 ${fmtInt(a.n)} 件`, cited: a => `引用行 ${fmtInt(a.n)} 件`, absences: a => `不在の確認 ${fmtInt(a.n)} 件`,
     },
-    dgKind: { sequence: "シーケンス図", flowchart: "フローチャート", state: "状態遷移図", er: "ER 図", class: "クラス図" },
+    dgKind: { sequence: "シーケンス図", flowchart: "フローチャート", state: "状態遷移図", er: "ER 図", class: "クラス図", mindmap: "マインドマップ" },
     dgLoading: "図を描画中…", dgOffline: "図の描画にはネットワークが必要。図のソースを表示している。",
     dgFailed: "この図は描画できなかった。図のソースを表示している。", dgWatch: "アニメーションで見る", dgWalk: "ステップごとに見る", dgWide: "全幅で表示", dgEv: "件の引用行",
+    subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "概念", plan: "計画" },
+    tldr: "要約", tldrWhat: "何をするか", tldrHow: "どう動くか", tldrWatch: "注意点",
+    glance: "ひと目で", tileChanges: "変更", tileRisks: "リスク", tileDecision: "判断", tileConfidence: "確からしさ",
+    worst: a => `最も深刻: ${a.title}`, ofOptions: a => `${fmtInt(a.n)} 案から採用`,
+    confValue: a => `${a.p}% をコードで確認`, confSteps: a => `ステップ ${fmtInt(a.n)} 件中 ${fmtInt(a.v)} 件を確認`,
+    howSure: "各主張はどれほど確かか", details: "詳細",
+    showAll: a => `すべて表示 (${fmtInt(a.n)})`, showFewer: "折りたたむ",
+    showAllRoutes: a => `ルートをすべて表示 (${fmtInt(a.n)})`, showAllEntries: a => `入口をすべて表示 (${fmtInt(a.n)})`,
+    listTerms: "用語をすべて一覧", hideTerms: "一覧を閉じる", tocHide: "隠す", tocShow: "表示",
   },
 };
 
@@ -561,8 +621,6 @@ function evidenceChip(eid) {
   return href ? h("a", { class: "ev t-" + tag, href, target: "_blank", rel: "noopener", title }, body)
               : h("span", { class: "ev t-" + tag, title }, body);
 }
-function stepTag(step) { return step.tag === "inferred" || !(step.ev || []).length ? "inferred" : "verified"; }
-
 /* ============ actors: who calls the cache, the store or the queue ============ */
 
 function defaultActor(doc) {
@@ -1061,12 +1119,7 @@ function movesList(arrows) {
 
 /* ============ shared page parts ============ */
 
-function header() {
-  const sub = P.doc.subject || {};
-  const bits = [h("span", { class: "pill" }, sub.kind)];
-  if (sub.repo) bits.push(h("code", null, sub.repo));
-  if (sub.pr) bits.push(h("span", null, "#" + sub.pr));
-  if (sub.sha) bits.push(h("code", { title: sub.sha }, sub.sha.slice(0, 12)));
+function headTools() {
   const tools = h("div", { class: "tools" });
   if (P.tier === "heavy" && P.hasJa) {
     const grp = h("div", { class: "seg", role: "group", "aria-label": ui("lang") });
@@ -1076,10 +1129,95 @@ function header() {
     tools.append(grp);
   }
   tools.append(h("button", { type: "button", class: "btn", id: "theme-btn", onclick: cycleTheme }, ui("theme", { mode: ui("theme" + cap(P.theme)) })));
-  return h("header", { class: "head" },
-    h("div", { class: "top" }, h("h1", null, tx(P.doc.title)), tools),
-    h("p", { class: "lede" }, txNode(sub.lede)),
-    h("p", { class: "meta-line" }, bits));
+  return tools;
+}
+
+// The first screen: what this is, the purpose in one sentence, three TL;DR cards, then four tiles
+// that each open the section behind them. The lede follows as muted detail.
+function hero() {
+  const sub = P.doc.subject || {}, sum = heroSummary(P.doc);
+  const kicker = h("p", { class: "kicker" },
+    h("span", { class: "kchip" }, ui("subjectKind." + sub.kind, { n: sub.pr })),
+    sub.repo ? h("code", null, sub.repo) : null,
+    sub.sha ? h("code", { title: sub.sha }, sub.sha.slice(0, SHORT_SHA)) : null);
+  const card = (k, body, extra) => body ? h("li", { class: "tl tl-" + k }, h("h2", { class: "tl-k" }, ui("tldr" + cap(k))), body, extra) : null;
+  const prose = v => (v && own(v, "code") ? h("p", null, h("code", null, tx(v.code))) : v ? h("p", null, txNode(v, { terms: true })) : null);
+  const w = sum.watch, issue = w && w.issue ? P.scen[w.issue] : null;
+  const watch = w && w.text ? prose(w.text) : issue ? h("p", null, tx(issue.title)) : null;
+  const cards = [card("what", prose(sum.what)), card("how", prose(sum.how)),
+    card("watch", watch, issue ? h("p", { class: "chips" }, h("span", { class: "sev s-" + issue.severity }, ui("severity." + issue.severity)), whatIfChip(issue)) : null)].filter(Boolean);
+  return h("header", { class: "hero" },
+    h("div", { class: "hero-top" }, kicker, headTools()),
+    h("h1", null, tx(P.doc.title)),
+    sum.purpose ? h("p", { class: "purpose-lead" }, txNode(sum.purpose, { terms: true })) : null,
+    cards.length ? h("ul", { class: "tldr", "aria-label": ui("tldr") }, cards) : null,
+    glance(),
+    sum.lede ? h("p", { class: "lede" }, h("span", { class: "lede-k" }, ui("details")), " ", txNode(sum.lede, { terms: true })) : null);
+}
+const SHORT_SHA = 7;
+const TILE_DETAIL_MAX = 90;
+
+// The section a tile opens, by the data that makes the section exist (tiles are drawn first).
+function glanceTarget(key) {
+  const c = P.doc.context;
+  if (key === "changes") return c || P.terms.length ? "before" : P.tier === "heavy" ? "walk" : "steps";
+  if (key === "confidence") return Object.keys(P.doc.evidence || {}).length ? "evidence" : Object.keys(P.numbers).length ? "numbers" : null;
+  return key === "risks" ? "issues" : "decision";
+}
+function tile(key, value, detail, extra) {
+  const sec = glanceTarget(key);
+  const body = [h("span", { class: "tile-k" }, ui("tile" + cap(key))), h("span", { class: "tile-v" }, value), detail ? h("span", { class: "tile-d" }, detail) : null];
+  return h("li", { class: "tile tile-" + key },
+    sec ? h("a", { class: "tile-a", href: "#sec-" + sec }, body, h("span", { class: "tile-go", "aria-hidden": "true" }, "→")) : h("div", { class: "tile-a" }, body), extra);
+}
+function glance() {
+  const c = P.doc.context || {}, tiles = [];
+  const changes = [[(c.entry_points || []).length, "entryPoints"], [P.diagrams.length, "diagrams"], [P.doc.scenarios.length, "scenarios"]]
+    .filter(([n]) => n).map(([n, k]) => ui("count." + k, { n }));
+  if (changes.length) tiles.push(tile("changes", changes[0], changes.slice(1).join(" · ")));
+  const issues = P.doc.scenarios.filter(s => s.severity), worst = worstIssue(P.doc);
+  if (issues.length) {
+    tiles.push(tile("risks", [ui("count.issues", { n: issues.length }), " ", h("span", { class: "sev s-" + worst.severity }, ui("severity." + worst.severity))],
+      ui("worst", { title: truncate(tx(worst.title), TILE_DETAIL_MAX) })));
+  }
+  const d = P.doc.decision, chosen = d && (d.options || []).find(o => o.id === d.chosen);
+  if (chosen) tiles.push(tile("decision", truncate(tx(chosen.label), TILE_DETAIL_MAX), ui("ofOptions", { n: d.options.length })));
+  const conf = confidenceOf(P.doc);
+  if (conf.total) {
+    const pct = Math.round((100 * conf.verified) / conf.total), cited = countTags().verified;
+    tiles.push(tile("confidence", [ui("confValue", { p: fmtInt(pct) }), h("span", { class: "meter", "aria-hidden": "true" }, h("i", { style: "--p:" + pct + "%" }))],
+      [ui("confSteps", { v: conf.verified, n: conf.total }), cited ? " · " + ui("count.cited", { n: cited }) : ""],
+      h("button", { type: "button", class: "link pop-btn", id: "conf-pop-btn", "aria-expanded": "false", "aria-controls": "conf-pop" }, ui("howSure"))));
+  }
+  if (!tiles.length) return null;
+  return h("section", { class: "glance", "aria-labelledby": "glance-h" }, h("h2", { id: "glance-h", class: "eyebrow" }, ui("glance")),
+    h("ul", { class: "tiles" }, tiles),
+    conf.total ? h("div", { class: "pop", id: "conf-pop", role: "group", "aria-labelledby": "conf-pop-h", hidden: true },
+      h("h3", { id: "conf-pop-h" }, ui("howSure")), howto("pop-legend")) : null);
+}
+
+// The Confidence tile's popover: the button toggles it; Escape or a click outside closes it and
+// Escape returns focus to the button.
+function wirePopovers() {
+  const openPop = () => { const pop = $("conf-pop"); return pop && !pop.hidden ? pop : null; };
+  const closePop = pop => { pop.hidden = true; $("conf-pop-btn").setAttribute("aria-expanded", "false"); };
+  document.addEventListener("click", e => {
+    const button = e.target && e.target.closest ? e.target.closest(".pop-btn") : null;
+    if (button) {
+      const pop = $(button.getAttribute("aria-controls")), open = pop.hidden;
+      pop.hidden = !open; button.setAttribute("aria-expanded", String(open));
+      return;
+    }
+    const pop = openPop();
+    if (pop && !pop.contains(e.target)) closePop(pop);
+  });
+  document.addEventListener("keydown", e => {
+    const pop = openPop();
+    if (e.key !== "Escape" || !pop) return;
+    e.preventDefault();
+    closePop(pop);
+    $("conf-pop-btn").focus();
+  });
 }
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -1093,9 +1231,9 @@ function countTags() {
     measured: nums.filter(n => n.tag === "measured").length, estimated: nums.filter(n => n.tag === "estimated").length, inferred,
   };
 }
-function howto() {
+function howto(cls) {
   const counts = countTags();
-  return h("section", { class: "howto", "aria-label": ui("howto") },
+  return h("div", { class: "howto" + (cls ? " " + cls : ""), role: "group", "aria-label": ui("howto") },
     Object.keys(counts).map(t => h("div", { class: "how t-" + t },
       h("b", null, ui("tag." + t)), h("p", null, ui("tagHelp." + t)), h("span", { class: "count" }, ui("tagCount." + t, { n: counts[t] })))));
 }
@@ -1157,20 +1295,62 @@ function sectionCount(key) {
   return out.join(" · ");
 }
 
-// The book-index card: a row per section present on the page, in page order.
-function contentsCard(app) {
-  const keys = [...app.querySelectorAll("details.fold[data-sec]")].map(d => d.dataset.sec);
-  const setAll = open => app.querySelectorAll("details.fold").forEach(d => { d.open = open; });
-  return h("nav", { class: "panel contents", "aria-labelledby": "contents-h" },
-    h("div", { class: "toc-head" }, h("h2", { id: "contents-h" }, ui("contents")),
-      h("div", { class: "toc-tools" },
-        h("button", { type: "button", class: "btn sm", id: "expand-all", onclick: () => setAll(true) }, ui("expandAll")),
-        h("button", { type: "button", class: "btn sm", id: "collapse-all", onclick: () => setAll(false) }, ui("collapseAll")))),
-    h("ol", { class: "toc" }, keys.map(k => h("li", null, h("a", { href: "#sec-" + k },
+// The book-index card: a row per section present on the page, in page order. From SIDE_NAV_PX up it is
+// a sticky side nav (CSS); below that it sits on top and its list can be hidden.
+function contentsCard(root) {
+  const keys = [...root.querySelectorAll("details.fold[data-sec]")].map(d => d.dataset.sec);
+  const setAll = open => document.querySelectorAll("details.fold").forEach(d => { d.open = open; });
+  const nav = h("nav", { class: "panel contents", "aria-labelledby": "contents-h" });
+  const toggle = h("button", { type: "button", class: "btn sm toc-toggle", "aria-expanded": "true", "aria-controls": "toc-list" }, ui("tocHide"));
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.textContent = ui(open ? "tocHide" : "tocShow");
+    nav.classList.toggle("collapsed", !open);
+  });
+  nav.append(h("div", { class: "toc-head" }, h("h2", { id: "contents-h" }, ui("contents")), toggle),
+    h("div", { class: "toc-tools" },
+      h("button", { type: "button", class: "btn sm", id: "expand-all", onclick: () => setAll(true) }, ui("expandAll")),
+      h("button", { type: "button", class: "btn sm", id: "collapse-all", onclick: () => setAll(false) }, ui("collapseAll"))),
+    h("ol", { class: "toc", id: "toc-list" }, keys.map(k => h("li", null, h("a", { href: "#sec-" + k },
       h("span", { class: "toc-t" }, ui(SECTION_TITLE[k])), h("span", { class: "toc-lead", "aria-hidden": "true" }),
       h("span", { class: "toc-n" }, sectionCount(k)), h("span", { class: "toc-w" }, ui("answers." + k)))))));
+  return nav;
 }
-const insertContents = app => app.querySelector(".howto").after(contentsCard(app));
+// Everything after the hero moves into one column beside (or under) the Contents nav.
+function layoutDoc(app) {
+  const main = h("div", { class: "doc-main" });
+  const heroEl = app.querySelector(".hero");
+  while (heroEl.nextSibling) main.append(heroEl.nextSibling);
+  app.append(h("div", { class: "doc" }, contentsCard(main), main));
+  watchSections(main);
+}
+
+// The Contents row of the section under the reading line is marked current while the page scrolls.
+const SPY_LINE = 0.15; // fraction of the viewport height, from the top
+const SPY = { io: null, onScroll: null };
+function watchSections(root) {
+  if (SPY.io) SPY.io.disconnect();
+  if (SPY.onScroll) removeEventListener("scroll", SPY.onScroll);
+  const secs = [...root.querySelectorAll("details.fold[data-sec]")];
+  if (!secs.length) return;
+  const mark = () => {
+    const line = innerHeight * SPY_LINE;
+    let cur = secs[0];
+    for (const d of secs) if (d.isConnected && d.getBoundingClientRect().top <= line) cur = d;
+    document.querySelectorAll("nav.contents .toc a").forEach(a => {
+      if (a.getAttribute("href") === "#" + cur.id) a.setAttribute("aria-current", "location"); else a.removeAttribute("aria-current");
+    });
+  };
+  // Scrolling moves the line; the observer also catches a section folding or opening above it.
+  SPY.onScroll = mark;
+  addEventListener("scroll", mark, { passive: true });
+  if (typeof IntersectionObserver === "function") {
+    SPY.io = new IntersectionObserver(mark, { rootMargin: `0px 0px -${Math.round((1 - SPY_LINE) * 100)}% 0px` });
+    secs.forEach(d => SPY.io.observe(d));
+  }
+  mark();
+}
 
 // An in-page link into a folded section opens it before the browser scrolls to the target.
 function wireSections() {
@@ -1330,23 +1510,59 @@ function outlineAndDiagrams(jump, onShow) {
 /* ============ before you watch: purpose, scope, entry points, terms ============ */
 
 // onShow(scenarioId) switches the player to that scenario (heavy); light links to its section.
+// The hero leads with the TL;DR's "what" when there is one; the purpose then opens this section
+// unless it says the same. Each list shows its first few items behind a "Show all".
+const SCOPE_SHOWN = 4;
+const OTHER_ROUTES_SHOWN = 3;
 function beforeWatch(onShow) {
   const c = P.doc.context;
   if (!c && !P.terms.length) return null;
   const parts = [];
   if (c) {
-    parts.push(h("p", { class: "purpose" }, txNode(c.purpose)));
+    const head = heroSummary(P.doc).purpose;
+    if (c.purpose && textKey(c.purpose) !== textKey(head)) parts.push(h("p", { class: "purpose" }, txNode(c.purpose, { terms: true })));
     if (c.why_now) parts.push(h("p", { class: "why" }, h("b", null, ui("whyNow")), " ", txNode(c.why_now)));
-    const list = (k, items) => h("div", { class: "scope s-" + k }, h("h3", null, ui(k)), h("ul", null, items.map(x => h("li", null, txNode(x)))));
+    const list = (k, items) => {
+      const ul = h("ul", { id: "scope-" + k }, items.map(x => h("li", null, txNode(x))));
+      return h("div", { class: "scope s-" + k }, h("h3", null, ui(k)), ul,
+        showAll(ul, [...ul.children].map((li, i) => i < SCOPE_SHOWN), ui("showAll", { n: items.length })));
+    };
     parts.push(h("div", { class: "scopes" }, list("inScope", c.in_scope || []),
       (c.out_of_scope || []).length ? list("outScope", c.out_of_scope) : null));
     if ((c.entry_points || []).length) parts.push(entryTable(c.entry_points, onShow));
   }
-  if (P.terms.length) {
-    parts.push(h("div", { class: "terms" }, h("h3", null, ui("terms")), h("dl", null, P.terms.map((t, i) => h("div", null,
-      h("dt", null, t.term), h("dd", { id: "term-def-" + i }, txNode(t.means), t.example ? [" ", h("code", null, tx(t.example))] : null))))));
-  }
+  if (P.terms.length) parts.push(termCloud());
   return fold("before", ui("beforeWatch"), parts, "panel before");
+}
+// Hides the rows not kept and returns the button that shows them all (null when nothing is hidden).
+function showAll(holder, keep, label) {
+  const extra = [...holder.children].filter((r, i) => !keep[i]);
+  if (!extra.length) return null;
+  extra.forEach(r => { r.hidden = true; });
+  const button = h("button", { type: "button", class: "btn sm show-all", "aria-expanded": "false", "aria-controls": holder.id }, label);
+  button.addEventListener("click", () => {
+    const open = button.getAttribute("aria-expanded") !== "true";
+    button.setAttribute("aria-expanded", String(open));
+    button.textContent = open ? ui("showFewer") : label;
+    extra.forEach(r => { r.hidden = !open; });
+  });
+  return button;
+}
+// Terms as chips that show their meaning in the shared popup; the full list is one toggle away.
+function termCloud() {
+  const termList = h("dl", { id: "terms-list", hidden: true }, P.terms.map((t, i) => h("div", null,
+    h("dt", null, t.term), h("dd", { id: "term-def-" + i }, txNode(t.means), t.example ? [" ", h("code", null, tx(t.example))] : null))));
+  const button = h("button", { type: "button", class: "btn sm terms-toggle", "aria-expanded": "false", "aria-controls": "terms-list" }, ui("listTerms"));
+  button.addEventListener("click", () => {
+    const open = button.getAttribute("aria-expanded") !== "true";
+    button.setAttribute("aria-expanded", String(open));
+    button.textContent = ui(open ? "hideTerms" : "listTerms");
+    termList.hidden = !open;
+  });
+  return h("div", { class: "terms" }, h("h3", null, ui("terms")),
+    h("ul", { class: "term-cloud" }, P.terms.map((t, i) => h("li", null,
+      h("button", { type: "button", class: "term chip-term", "data-term": String(i), "aria-describedby": "term-def-" + i }, t.term)))),
+    button, termList);
 }
 
 function entryTable(eps, onShow) {
@@ -1358,12 +1574,17 @@ function entryTable(eps, onShow) {
       : h("a", { href: "#sc-" + ep.scenario }, ui("walked"));
     return [go, " ", h("span", { class: "muted" }, tx(s.title)), note ? [" · ", note] : null];
   };
+  const animated = eps.map(ep => !!(ep.scenario && P.scen[ep.scenario]));
+  let others = 0;
+  const keep = animated.map(a => a || others++ < OTHER_ROUTES_SHOWN);
+  const body = h("tbody", { id: "ep-rows" }, eps.map(ep => h("tr", null,
+    h("td", null, h("code", null, tx(ep.label)), ep.ev ? [" ", evidenceChip(ep.ev)] : null),
+    h("td", null, ep.kind ? h("span", { class: "kind" }, ui("epKind." + ep.kind)) : null),
+    h("td", null, walk(ep)))));
+  const label = ui(eps.every(ep => ep.kind === "route") ? "showAllRoutes" : "showAllEntries", { n: eps.length });
   return h("div", { class: "eps" }, h("h3", null, ui("entryPoints")), h("div", { class: "tbl" }, h("table", null,
     h("thead", null, h("tr", null, h("th", null, ui("entryCol")), h("th", null, ui("entryKindCol")), h("th", null, ui("walkCol")))),
-    h("tbody", null, eps.map(ep => h("tr", null,
-      h("td", null, h("code", null, tx(ep.label)), ep.ev ? [" ", evidenceChip(ep.ev)] : null),
-      h("td", null, ep.kind ? h("span", { class: "kind" }, ui("epKind." + ep.kind)) : null),
-      h("td", null, walk(ep))))))));
+    body)), showAll(body, keep, label));
 }
 
 // One shared popup shows a term's meaning on hover, on focus and on tap; Esc or a tap elsewhere
@@ -1560,7 +1781,9 @@ function decisionPanel(onShow) {
 function numbersPanel() {
   const names = Object.keys(P.numbers);
   if (!names.length) return null;
-  return fold("numbers", ui("numbers"),
+  // With no Evidence section the tag legend lives here, so what each tag means is never lost.
+  const legend = Object.keys(P.doc.evidence || {}).length ? null : howto();
+  return fold("numbers", ui("numbers"), [legend,
     h("div", { class: "tbl" }, h("table", null,
       h("thead", null, h("tr", null, h("th", null, ui("nameCol")), h("th", null, ui("valueCol")), h("th", null, ui("tagCol")), h("th", null, ui("backedCol")))),
       h("tbody", null, names.map(k => {
@@ -1568,20 +1791,20 @@ function numbersPanel() {
         return h("tr", null, h("td", null, h("code", null, k)), h("td", { class: "n" }, fmtNumber(n)),
           h("td", null, h("span", { class: "tagchip t-" + n.tag }, ui("tag." + n.tag))),
           h("td", null, n.tag === "verified" && n.ev ? evidenceChip(n.ev) : raw(n.tag === "measured" ? n.source : n.basis)));
-      })))), "panel");
+      }))))], "panel");
 }
 
 function evidencePanel() {
   const ids = Object.keys(P.doc.evidence || {});
   if (!ids.length) return null;
-  return fold("evidence", ui("evidence", { n: ids.length }),
+  return fold("evidence", ui("evidence", { n: ids.length }), [howto(),
     h("div", { class: "tbl" }, h("table", null,
       h("thead", null, h("tr", null, h("th", null, ui("idCol")), h("th", null, ui("whereCol")), h("th", null, ui("checkCol")))),
       h("tbody", null, ids.map(id => {
         const e = P.doc.evidence[id];
         const check = own(e, "absent") ? ui("absenceCheck", { pattern: e.git_grep, hits: e.hits }) + " · " + e.path : ui("anchorCheck", { anchor: e.anchor });
         return h("tr", null, h("td", null, h("code", null, id)), h("td", null, evidenceChip(id)), h("td", null, check));
-      })))), "panel ev-panel");
+      }))))], "panel ev-panel");
 }
 
 function footer() { return h("footer", { class: "foot" }, h("p", null, ui("footer", { tier: P.tier }))); }
@@ -1606,7 +1829,7 @@ function stepChips(step) {
 
 function renderLight(app) {
   const narrow = innerWidth < NARROW_PX;
-  app.replaceChildren(header(), howto());
+  app.replaceChildren(hero());
   for (const x of [beforeWatch(null), outlineAndDiagrams((sid, i) => showLightTarget(`${sid}.${i}`), null)]) if (x) app.append(x);
   const mapHost = h("figure", { class: "mapfig" });
   const overview = h("section", { class: "panel", id: "flow-main", tabindex: "-1" }, h("h2", null, ui("map")), mapHost, mapLegend());
@@ -1614,7 +1837,7 @@ function renderLight(app) {
   const M0 = buildMap(mapHost, { narrow });
   renderMap(M0, P.init, {});
   for (const x of [issuesPanel(null), decisionPanel(null), numbersPanel(), evidencePanel(), footer()]) if (x) app.append(x);
-  insertContents(app);
+  layoutDoc(app);
   fillDiagram();
   // Cards are drawn after they are in the document: arrow labels need path lengths.
   for (const job of P.pendingCards.splice(0)) job();
@@ -2067,9 +2290,9 @@ function renderHeavy(app) {
   };
   const jump = (id, i) => { openWalk(); selectTab(id, i, false); $("stage").scrollIntoView({ block: "nearest" }); };
   const walk = fold("walk", ui("walkthrough"), [bar, fixbar, main, compare], "bare walk");
-  app.replaceChildren(header(), howto(), ...[beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
+  app.replaceChildren(hero(), ...[beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
     issuesPanel(show), decisionPanel(show), numbersPanel(), evidencePanel()].filter(Boolean), footer());
-  insertContents(app);
+  layoutDoc(app);
   PL.M = buildMap($("svgbox"), { narrow: innerWidth < NARROW_PX });
   document.addEventListener("keydown", onKey);
   const m = STEP_HASH.exec(location.hash);
@@ -2396,6 +2619,7 @@ function boot() {
     (P.tier === "heavy" ? renderHeavy : renderLight)(app);
     wireTerms();
     wireSections();
+    wirePopovers();
     app.removeAttribute("aria-busy");
     const broken = P.order.filter(id => !Array.isArray(P.states[id]));
     root.setAttribute("data-flow-steps", P.order.map(id => id + ":" + (Array.isArray(P.states[id]) ? P.states[id].length : "error")).join(","));
