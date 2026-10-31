@@ -12,6 +12,14 @@
       "ja": "GET はキャッシュを読み、なければデータベースを読んでキャッシュを埋める。PATCH はデータベースを書いてからキャッシュキーを削除する。GET の読み取りとキャッシュ書き込みの間に PATCH が入ると、TTL {{cache_ttl}} が切れるまで古いノートが残る。"
     }
   },
+  "tldr": {
+    "what": {"en": "Shows how a reader can keep seeing a note an editor has already changed.",
+             "ja": "編集者が変更したノートを、読者が見続けてしまう仕組みを示す。"},
+    "how": {"en": "A read fills the cache from the database; an edit writes the database and then clears the cache entry.",
+            "ja": "読み取りはデータベースからキャッシュを埋め、編集はデータベースを書いてからキャッシュの項目を消す。"},
+    "watch_out": {"en": "An edit that lands between a read and its cache fill leaves the old note cached until the TTL of {{cache_ttl}} runs out.",
+                  "ja": "読み取りとキャッシュ書き込みの間に編集が入ると、TTL {{cache_ttl}} が切れるまで古いノートが残る。"}
+  },
   "context": {
     "purpose": {
       "en": "A reader sees the note an editor just saved, not the one from before the edit.",
@@ -50,7 +58,13 @@
      "caption": {"en": "Read top to bottom. The PATCH writes the database and deletes the key between the GET's database read and its cache fill, so the fill puts the old note back.",
                  "ja": "上から下へ読む。PATCH は GET のデータベース読み取りとキャッシュ書き込みの間にデータベースを書き、キーを消す。そのため書き込みが古いノートを戻す。"},
      "ev": ["e-route-get", "e-cache-get", "e-db-read", "e-route-patch", "e-db-write", "e-cache-del", "e-cache-set"],
-     "source": "sequenceDiagram\n  participant R as Reader\n  participant E as Editor\n  participant A as notes-api\n  participant C as Cache\n  participant D as Database\n  R->>A: GET /notes/:id\n  A->>C: get note:a\n  C-->>A: miss\n  A->>D: SELECT body (reads v1)\n  E->>A: PATCH /notes/:id\n  A->>D: UPDATE body = v2\n  A->>C: del note:a\n  A-->>E: 204 No Content\n  A->>C: set note:a = v1 (stale)\n  A-->>R: 200 OK, the old note"}
+     "source": "sequenceDiagram\n  participant R as Reader\n  participant E as Editor\n  participant A as notes-api\n  participant C as Cache\n  participant D as Database\n  R->>A: GET /notes/:id\n  A->>C: get note:a\n  C-->>A: miss\n  A->>D: SELECT body (reads v1)\n  E->>A: PATCH /notes/:id\n  A->>D: UPDATE body = v2\n  A->>C: del note:a\n  A-->>E: 204 No Content\n  A->>C: set note:a = v1 (stale)\n  A-->>R: 200 OK, the old note"},
+    {"id": "notes-mindmap", "kind": "mindmap",
+     "title": {"en": "The notes service at a glance: its parts, grouped", "ja": "ノートサービスの全体像：部品のまとまり"},
+     "caption": {"en": "Read from the centre out: the routes, the data they touch, the risk this page walks through and its fix.",
+                 "ja": "中心から外へ読む。ルート、それが触れるデータ、このページで追うリスクとその修正。"},
+     "ev": ["e-route-get", "e-route-patch", "e-cache-get", "e-db-read", "e-ttl", "e-fill-if-fresh"],
+     "source": "mindmap\n  %% level: 1\n  root((Notes service))\n    Routes\n      GET /notes/:id\n      PATCH /notes/:id\n    Data\n      Cache entry per note\n      Notes in the database\n    Risk\n      Stale write-back\n      Lasts until the TTL ends\n    Fix\n      Fill only if fresh"}
   ],
   "nodes": [
     {"id": "reader", "role": "client", "label": "Reader"},
