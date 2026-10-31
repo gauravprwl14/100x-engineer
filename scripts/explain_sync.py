@@ -14,8 +14,10 @@ re-checking every page from scratch.
 
 `status` lists every first-parent commit on --ref since the pin (each merge of a PR is one;
 one that changes only the docs folder, such as the sync itself, is skipped), the files it changed, and the pages that depend on any of them: a page depends on every
-path its scenario.json cites (evidence `at` and absence `path`, `reference` files, and node
-`ref`s naming a file; a box labelled with a folder such as `skills/` is display only). It also runs `flow check` on every page, so a page whose cited line moved shows up
+path its scenario.json cites. A file cited only by line (evidence `at`) counts when a change
+rewrote or deleted a line within two of a cited one; a `reference` file and an absence's `path` count on any
+change; a node `ref` naming a file counts only when the file is gone (a box labelled with a
+folder such as `skills/` is display only). It also runs `flow check` on every page, so a page whose cited line moved shows up
 even when no file it names changed in a way the path match sees, and lists changed
 plugin files (skills/, scripts/, hooks/, agents/) that no page cites: candidates for a new
 page. Exit 0 in sync (nothing since the pin and every page checks clean), 1 something to
@@ -24,12 +26,15 @@ do, 2 an error (no git, unreadable state, pin not on --ref's history).
 `pin` moves the pin to --ref's tip after a sync. It refuses while any page fails
 `flow check`, unless --force, so the pin never records a sync that did not happen.
 """
-import argparse, datetime, json, pathlib, subprocess, sys
+import argparse, datetime, json, pathlib, re, subprocess, sys
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 STATE = ".sync.json"
 SCHEMA = 1
 PLUGIN_DIRS = ("skills/", "scripts/", "hooks/", "agents/")
+WINDOW = 2  # flow check finds an anchor within two lines of the cited one
+EXISTS = "exists"
+HUNK_RX = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 
 
 class SyncError(Exception):
@@ -64,25 +69,72 @@ def pages(explain_dir):
 
 
 def page_paths(scenario):
-    """Every repo path a page's claims rest on."""
+    """Every repo path a page's claims rest on: path -> the cited line numbers, None when any
+    change to it matters (a code reference file, an absence's pathspec), or EXISTS when only its
+    existence does (a map box naming the file)."""
     try:
         doc = json.loads(scenario.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return set()
-    out = set()
+        return {}
+    lines, whole, boxes = {}, set(), set()
     for e in (doc.get("evidence") or {}).values():
         if isinstance(e, dict):
-            if isinstance(e.get("at"), str):
-                out.add(e["at"].split("@")[0].rsplit(":", 1)[0])
+            at = e.get("at")
+            if isinstance(at, str) and ":" in at:
+                path, _, line = at.split("@")[0].rpartition(":")
+                if line.isdigit():
+                    lines.setdefault(path, set()).add(int(line))
             if isinstance(e.get("path"), str):
-                out.add(e["path"])
+                whole.add(e["path"])
     for r in doc.get("reference") or []:
         if isinstance(r, dict) and isinstance(r.get("path"), str):
-            out.add(r["path"])
+            whole.add(r["path"])
     for n in doc.get("nodes") or []:  # a box labelled with a whole folder claims nothing about it
         if isinstance(n, dict) and isinstance(n.get("ref"), str) and not n["ref"].endswith("/"):
-            out.add(n["ref"].split(":")[0])
-    return {p for p in out if p}
+            boxes.add(n["ref"].split(":")[0])
+    out = {p: None for p in whole if p}
+    for p, ls in lines.items():
+        if p and p not in out:
+            out[p] = ls
+    for p in boxes:
+        out.setdefault(p, EXISTS) if p else None
+    return out
+
+
+def touched_lines(repo, pin, tip, path):
+    """Line ranges of `path` at the pin that pin..tip rewrote or deleted. An insertion between
+    lines leaves the cited text intact; if it shifts a line too far, flow check says so."""
+    ranges = []
+    for line in git(repo, "diff", "-U0", f"{pin}..{tip}", "--", path).splitlines():
+        m = HUNK_RX.match(line)
+        if m:
+            start, count = int(m.group(1)), int(m.group(2) or 1)
+            if count:
+                ranges.append((start, start + count - 1))
+    return ranges
+
+
+def affected(repo, pin, tip, deps, changed, cache):
+    """The changed files a page depends on: any change for a whole-file dependency, a change
+    within WINDOW of a cited line otherwise."""
+    hit = set()
+    for c in changed:
+        for p, cited in deps.items():
+            if not (c == p or c.startswith(p.rstrip("/") + "/")):
+                continue
+            if cited is None:
+                hit.add(c)
+                continue
+            if cited == EXISTS:
+                if subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{tip}:{c}"],
+                                  capture_output=True).returncode != 0:
+                    hit.add(c)  # the box names a file that is gone
+                continue
+            if c not in cache:
+                cache[c] = touched_lines(repo, pin, tip, c)
+            if any(a - WINDOW <= n <= b + WINDOW for n in cited for a, b in cache[c]):
+                hit.add(c)
+    return hit
 
 
 def depends(paths, changed):
@@ -138,13 +190,13 @@ def status(repo, ref, explain_dir, docs_dir):
     report = {"ref": ref, "tip": tip, "pin": pin, "merges": [], "pages": [], "uncovered": []}
     for sha, subject, files in merges:
         report["merges"].append({"sha": sha, "subject": subject, "files": files})
-    cited = set()
+    cited, hunks = set(), {}
     for page in pages(explain_dir):
-        paths = page_paths(page / "scenario.json")
-        cited |= paths
+        deps = page_paths(page / "scenario.json")
+        cited |= set(deps)
         rc, findings = flow_check(repo, page / "scenario.json")
-        touched = sorted(depends(paths, changed))
-        by = [m["sha"][:12] for m in report["merges"] if depends(paths, m["files"])]
+        touched = sorted(affected(repo, pin, tip, deps, changed, hunks)) if pin else []
+        by = [m["sha"][:12] for m in report["merges"] if set(m["files"]) & set(touched)]
         report["pages"].append({"page": page.name, "check_ok": rc == 0, "findings": findings,
                                 "changed_files": touched, "merges": by,
                                 "needs_sync": rc != 0 or bool(touched)})

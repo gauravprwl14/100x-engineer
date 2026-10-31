@@ -53,8 +53,8 @@ git commit -qam "move greet"
 git switch -q main; git merge -q --no-ff feat/app -m "Merge feat/app"
 run status; rc_is 1 $? "drift exits 1"
 has "SYNC alpha"
-has "cites changed src/app.py"
-has "flow check: 1 finding(s)"
+no "cites changed src/app.py"        # only lines were inserted above: the cited text is intact
+has "flow check: 1 finding(s)"       # but it moved more than two lines, which check catches
 has "Merge feat/app"
 run pin; rc_is 2 $? "pin refuses while a page fails flow check"
 has "alpha fail flow check"
@@ -65,6 +65,18 @@ git commit -qam "resync alpha"
 run pin; rc_is 0 $? "pin after the page checks clean"
 git commit -qam "pin"
 run status; rc_is 0 $? "in sync after the pin"
+
+echo "== line-aware: an edit far from the cited line, then a rewrite of it =="
+printf '\n\n\n\n\n\n\ndef bye():\n    return "bye"\n' >> src/app.py
+git commit -qam "add bye"
+run status; rc_is 1 $? "a merge since the pin exits 1"
+has "ok   alpha"
+no "SYNC alpha"
+sed -i.bak 's/return "hello"/return "hello there"/' src/app.py && rm src/app.py.bak
+git commit -qam "reword hello"
+run status; rc_is 1 $? "rewriting the cited line exits 1"
+has "SYNC alpha: cites changed src/app.py"
+python3 "$ES" pin --repo "$R" --force > "$TMP/out" 2>&1; git commit -qam "pin"
 
 echo "== rewritten history =="
 python3 - "$R/explain/.sync.json" <<'PY'

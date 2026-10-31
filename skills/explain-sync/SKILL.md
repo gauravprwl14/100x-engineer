@@ -87,9 +87,10 @@ This skill rejects:
   a new page is the user's call.
 - **Merging the sync PR without a yes.**
 
-**Honest limitations:** dependency is by path: a page is flagged when a file it cites changed,
-not when behaviour it describes changed in a file it does not cite (the uncovered list is the
-net for that). A rewritten history (force-push to main) breaks the pin; `status` says so and
+**Honest limitations:** dependency is by citation: a page is flagged when a merge rewrote a
+line within two of one it cites, changed a file in its Code reference or under a folder its
+absences search, or deleted a file a map box names; plus any page `flow check` fails. Behaviour
+that changed in a file the page never cites is not seen (the uncovered list is the net for that). A rewritten history (force-push to main) breaks the pin; `status` says so and
 `pin --force` resets it after every page is checked.
 
 ## Scale
