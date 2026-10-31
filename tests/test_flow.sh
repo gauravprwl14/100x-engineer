@@ -89,6 +89,9 @@ expect_bad duplicate-term       "duplicate term 'ttl' (also terms\[0\])"
 expect_bad diagram-kind-mismatch "diagram 'read': kind 'flowchart' does not match the source: check_diagrams reads a sequence diagram"
 expect_bad diagram-uncited      "diagram 'read': diagram has no evidence: cite ev ids or tag it inferred"
 expect_bad diagram-bad-mermaid  "diagram 'read': participant 'A' used before a \`participant\`/\`actor\` declaration"
+expect_bad tldr-too-long        "tldr.how: keep it to one sentence: 219 characters, max 200"
+expect_bad tldr-jargon          "tldr.how: jargon in tldr: 'getNote': add it to terms or say it in plain words"
+expect_bad mindmap-two-roots    "diagram 'parts': mindmap has more than one root: 'Storage' is not indented deeper than the root 'root((Notes))'"
 
 echo "--- context, terms, outline, origin, step code: what passes and what does not"
 # mut <name> <python statement on d>: the example with one change, written to $TMP/<name>.json
@@ -111,6 +114,28 @@ hasnt "jargon"
 mut jargon-kinds 'd["scenarios"][1]["steps"][2]["t"]="NoteStore runs Promise.all over cache_key"; d["scenarios"][1]["steps"][3]["t"]={"en": "Delete the key", "ja": "cacheKey を消す"}'
 run 1 "PascalCase, dotted and snake_case words are jargon, in ja too" check "$TMP/jargon-kinds.json" --repo "$REPO"
 has "'NoteStore'"; has "'Promise.all'"; has "'cache_key'"; has "step 3.t.ja: jargon in step title: 'cacheKey'"; count "FINDING" 4
+mut tldr-gone 'd.pop("tldr")'
+run 0 "tldr is optional" check "$TMP/tldr-gone.json" --repo "$REPO"
+mut tldr-num 'd["tldr"]["how"]["en"] = "A read fills the cache 3 times."'
+run 1 "a bare number in tldr is caught" check "$TMP/tldr-num.json" --repo "$REPO"
+has "tldr.how.en: bare number '3' in prose"; count "FINDING" 1
+mut tldr-ja-long 'd["tldr"]["what"]["ja"] = "長" * 201'
+run 1 "tldr length is checked per language" check "$TMP/tldr-ja-long.json" --repo "$REPO"
+has "tldr.what.ja: keep it to one sentence: 201 characters, max 200"; count "FINDING" 1
+mut tldr-edge 'd["tldr"]["what"]["ja"] = "長" * 200'
+run 0 "a tldr line of exactly 200 characters passes" check "$TMP/tldr-edge.json" --repo "$REPO"
+mut tldr-term 'd["tldr"]["how"] = "patchNote writes the database, then notes-api clears the cache entry."; d["terms"].append({"term": "patchNote", "means": "The function that saves a note."})'
+run 0 "an identifier listed in terms passes in tldr" check "$TMP/tldr-term.json" --repo "$REPO"
+hasnt "jargon"
+mut tldr-jargon-ja 'd["tldr"]["watch_out"]["ja"] = "cache_key が古いまま残る"'
+run 1 "jargon in a tldr ja line is caught" check "$TMP/tldr-jargon-ja.json" --repo "$REPO"
+has "tldr.watch_out.ja: jargon in tldr: 'cache_key'"; count "FINDING" 1
+mut tldr-shape 'd["tldr"] = {"what": 7, "watchout": "x"}'
+run 1 "tldr shape: required how, text values, unknown keys" check "$TMP/tldr-shape.json" --repo "$REPO"
+has "tldr: missing required key 'how'"; has "tldr: unknown key 'watchout' (did you mean 'watch_out'?)"
+mut tldr-shape-text 'd["tldr"]["what"] = 7'
+run 1 "a tldr line that is not text is a finding" check "$TMP/tldr-shape-text.json" --repo "$REPO"
+has "tldr.what: must be text"; count "FINDING" 1
 mut jargon-in-d 'd["scenarios"][1]["steps"][2]["d"]="patchNote runs here"'
 run 0 "jargon is checked in titles only, not in d" check "$TMP/jargon-in-d.json" --repo "$REPO"
 mut code-digits 'd["scenarios"][1]["steps"][2]["code"]=["if retries > 3: wait(250)"]; d["outline"][0]["lines"][0]["code"]="retry 3 times"'
@@ -158,6 +183,23 @@ has "0 finding(s)"
 mut dg-state "$DG"'.update(kind="state", source="stateDiagram-v2\n  [*] --> fresh\n  fresh --> stale: PATCH lands mid-read\n  stale --> [*]: TTL ends")'
 run 0 "a valid state diagram passes" check "$TMP/dg-state.json" --repo "$REPO"
 has "0 finding(s)"
+mut dg-er "$DG"'.update(kind="er", source="erDiagram\n  NOTE ||--o{ REVISION : has")'
+run 0 "a valid ER diagram passes" check "$TMP/dg-er.json" --repo "$REPO"
+mut dg-class "$DG"'.update(kind="class", source="classDiagram\n  class NoteStore\n  NoteStore --> Cache")'
+run 0 "a valid class diagram passes" check "$TMP/dg-class.json" --repo "$REPO"
+run 0 "the example's mindmap passes as written" check "$EX" --repo "$REPO"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if [g["kind"] for g in d["diagrams"]] == ["sequence", "mindmap"] else 1)' "$EX" \
+  && ok "  the example carries a sequence and a mindmap" || bad "  example diagram kinds"
+MM='d["diagrams"][1]'
+mut dg-mm-kind "$MM"'["kind"] = "sequence"'
+run 1 "a mindmap source declared as another kind is a finding" check "$TMP/dg-mm-kind.json" --repo "$REPO"
+has "diagram 'notes-mindmap': kind 'sequence' does not match the source: check_diagrams reads a mindmap diagram"; count "FINDING" 1
+mut dg-mm-flow "$MM"'["source"] = d["diagrams"][0]["source"]'
+run 1 "kind mindmap over a sequence source is a finding" check "$TMP/dg-mm-flow.json" --repo "$REPO"
+has "kind 'mindmap' does not match the source: check_diagrams reads a sequence diagram"; count "FINDING" 1
+mut dg-mm-indent "$MM"'["source"] = "mindmap\n  root((Notes))\n    Routes\n        GET\n      PATCH"'
+run 1 "a mindmap with an in-between dedent is a finding" check "$TMP/dg-mm-indent.json" --repo "$REPO"
+has "diagram 'notes-mindmap': mindmap indentation is inconsistent: 'PATCH'"; count "FINDING" 1
 mut dg-digits "$DG"'["source"] += "\n  A->>C: retry 3 times, 250 ms apart\n  A->>D: SELECT 1"'
 run 0 "digits in a diagram source are code, not bare numbers" check "$TMP/dg-digits.json" --repo "$REPO"
 hasnt "bare number"
@@ -181,9 +223,9 @@ has "diagram 'race-sequence': level 3 requires at least one shown branch"; count
 mut dg-untyped "$DG"'["source"] = "pie title Notes\n  \"a\" : 1"'
 run 1 "a source check_diagrams cannot type is a finding" check "$TMP/dg-untyped.json" --repo "$REPO"
 has "diagram 'race-sequence': could not identify a diagram type"; count "FINDING" 1
-mut dg-shape 'd["diagrams"].append(dict(d["diagrams"][0])); d["diagrams"][0].update(kind="gantt", scenario="nope", ev=["e-nope"], tag="verified", caption=7); d["diagrams"][1]["sourc"] = d["diagrams"][1].pop("source")'
+mut dg-shape 'd["diagrams"] = d["diagrams"][:1]; d["diagrams"].append(dict(d["diagrams"][0])); d["diagrams"][0].update(kind="gantt", scenario="nope", ev=["e-nope"], tag="verified", caption=7); d["diagrams"][1]["sourc"] = d["diagrams"][1].pop("source")'
 run 1 "kind, scenario, ev, tag, caption, a duplicate id and an unknown key are findings" check "$TMP/dg-shape.json" --repo "$REPO"
-has "diagram 'race-sequence'.kind: must be one of sequence, flowchart, state, er, class"
+has "diagram 'race-sequence'.kind: must be one of sequence, flowchart, state, er, class, mindmap"
 has "diagram 'race-sequence'.scenario: unknown scenario \"nope\""
 has "diagram 'race-sequence'.ev: unknown evidence id 'e-nope'"
 has "diagram 'race-sequence'.tag: must be 'inferred'"
@@ -415,6 +457,13 @@ for want in ("## A PATCH lands between", "| # | what happens | state after | evi
              "Step 2:\n\n```\nnote = db.query(", "Step 5:\n\n```\ncache.set(cacheKey(id)", "Step 5:\n\n```\ncached_version"):
     assert want in md, want
 assert "{{" not in md, "unfilled placeholder in explain.md"
+tldr = ("> **What:** Shows how a reader can keep seeing a note an editor has already changed.\n>\n"
+        "> **How:** A read fills the cache from the database; an edit writes the database and then clears the cache entry.\n>\n"
+        "> **Watch out:** An edit that lands between a read and its cache fill leaves the old note cached until the TTL of 300 s runs out.\n\n"
+        "GET reads the cache")
+assert md.index("\n\n") + 2 == md.index(tldr), "the tldr block sits right after the H1, then the lede"
+assert md.index(tldr) < md.index("| subject |"), "tldr before the lede table"
+assert "### The notes service at a glance: its parts, grouped\n\n```mermaid\nmindmap\n  %% level: 1\n  root((Notes service))" in md
 assert md.index("## Before you watch") < md.index("## Terms") < md.index("## Diagrams") < md.index("## Workflow outline") < md.index("## Map")
 assert md.index("| generated |") < md.index("## Contents") < md.index("## Before you watch"), "Contents sits under the lede table"
 contents = md[md.index("## Contents"):md.index("## Before you watch")]
@@ -449,6 +498,8 @@ PY7
 python3 "$F" build "$TMP/new/demo-flow.json" --out "$TMP/starter-site" >/dev/null 2>&1
 grep -q '^| \[Workflow outline\](#workflow-outline) |' "$TMP/starter-site/explain.md" && ! grep -q 'Diagrams' "$TMP/starter-site/explain.md" \
   && ok "  a page with no diagrams has no Diagrams section or row" || bad "  starter md contents"
+! grep -q '^> \*\*What:\*\*' "$TMP/starter-site/explain.md" && ok "  a page with no tldr has no tldr block" || bad "  starter md tldr"
+grep -q '^> \*\*Watch out:\*\* Both plans queue' "$TMP/real-heavy/explain.md" && ok "  bulk-import explain.md carries its plain-string tldr" || bad "  bulk md tldr"
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["scenarios"][2]["title"]="Map"; d["diagrams"][0]["source"]+="\n  %% a ``` fence in a comment"; print(json.dumps(d))' "$EX" >"$TMP/dup-heading.json"
 run 0 "build with a scenario titled like a fixed section" build "$TMP/dup-heading.json" --out "$TMP/dup-heading"
 grep -q '^| \[Map\](#map-1) | fix scenario `fix-set-if-fresh`' "$TMP/dup-heading/explain.md" && ok "  a repeated heading links to its -1 anchor" || bad "  duplicate heading anchor"

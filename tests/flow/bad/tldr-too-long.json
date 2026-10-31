@@ -1,0 +1,83 @@
+{
+ "schema": 1,
+ "tier": "light",
+ "title": "Seeded bad case",
+ "subject": {
+  "kind": "concept",
+  "lede": "One defect away from a valid scenario."
+ },
+ "nodes": [
+  {
+   "id": "client",
+   "role": "client",
+   "label": "Client"
+  },
+  {
+   "id": "api",
+   "role": "service",
+   "label": "API"
+  },
+  {
+   "id": "cache",
+   "role": "cache",
+   "label": "Cache"
+  },
+  {
+   "id": "db",
+   "role": "store",
+   "label": "Database"
+  }
+ ],
+ "evidence": {
+  "e-get": {
+   "at": "src/notes.js:7",
+   "anchor": "cache.get(cacheKey(id))"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "Read",
+   "steps": [
+    {
+     "t": "Client asks, cache misses",
+     "do": [
+      [
+       "send",
+       "client",
+       "api",
+       "GET /notes/:id"
+      ],
+      [
+       "cache.get",
+       "cache",
+       "note:a"
+      ]
+     ],
+     "expect": {
+      "hit": "miss"
+     },
+     "ev": [
+      "e-get"
+     ]
+    }
+   ]
+  }
+ ],
+ "diagrams": [
+  {
+   "id": "read",
+   "kind": "sequence",
+   "title": "The read",
+   "ev": [
+    "e-get"
+   ],
+   "source": "sequenceDiagram\n  participant C as Client\n  participant A as API\n  C->>A: GET /notes/:id\n  A-->>C: 200 OK"
+  }
+ ],
+ "tldr": {
+  "what": "Shows a client reading a note through the cache.",
+  "how": "The client asks the API, which looks in the cache first and goes to the database when the cache has nothing, then fills the cache with what it read so that the next read of the same note is quick and cheap for everyone."
+ }
+}
