@@ -1,0 +1,401 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the work record works, as built",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "A part page of the plugin overview (explain/100x-plugin). The work record is a ship's logbook for one feature that spans several PRs and many chat sessions: every decision, hold and handoff is a new line written in ink and never erased, kept in a private folder on your laptop and never in a team repository. When a new session opens, a hook reads the logbook and hands the session a short brief. This page shows what shipped in code. The plan behind it is explain/work-continuity, and finding out why a brief is missing is explain/work-doctor."
+  },
+  "tldr": {
+    "what": "Keeps the facts of a feature that spans several PRs in a private notebook that every new session reads first.",
+    "how": "Each command writes one new small file outside every repository, and a session-start hook rebuilds a short brief from those files for the repo and branch you open.",
+    "watch_out": "Text that looks like a secret or an email address is refused, and a hold only shows in the brief: nothing stops a push yet."
+  },
+  "context": {
+    "purpose": "When a feature takes several PRs and many sessions, you record its decisions, holds and handoffs once, and every later session in any worktree of those repos starts already knowing them, instead of you restating them.",
+    "why_now": "Summaries and abandoned sessions lose facts, and a forked helper copies a lossy summary; the record keeps the facts in files that no summary can rewrite.",
+    "in_scope": [
+      "The commands that write the record: start, note, decide, hold, release-hold, handoff",
+      "The commands that read it: brief and list",
+      "Events as files: one new file per write, never edited, and how the workstream view is rebuilt from them",
+      "Lookup by origin remote and branch, so any worktree of the same repo matches",
+      "How the brief is trimmed to its token budget, and what is never trimmed",
+      "Secret and email refusal, and where the record lives and why (the decision card below, and docs/SAFETY.md)",
+      "The session-start brief hook and the fork guard hook",
+      "Every function behind these, in the Code reference"
+    ],
+    "out_of_scope": [
+      "The doctor command and its checks: see explain/work-doctor",
+      "The plan, its measurements and phases: see explain/work-continuity",
+      "PR state such as CI, reviews or merged, which the record never stores",
+      "Backup itself: your own backup tool carries the folder, the plugin never pushes"
+    ],
+    "entry_points": [
+      {"label": "work start <workstream> --repo … --pr <number>:<branch>:<role>", "kind": "command", "scenario": "happy", "ev": "cli-start"},
+      {"label": "work note | decide | handoff <text>", "kind": "command", "scenario": "fix-refuse", "note": "same write path as start: one event file each", "ev": "cli-text"},
+      {"label": "work hold <pr> --reason … / work release-hold <pr>", "kind": "command", "scenario": "happy", "ev": "cli-hold"},
+      {"label": "work brief [--max-tokens N] / work list", "kind": "command", "scenario": "trim", "ev": "cli-brief"},
+      {"label": "Session-start hook (startup, resume, clear, compact)", "kind": "event", "scenario": "happy", "ev": "hook-matcher"},
+      {"label": "Fork guard hook (before an agent tool call)", "kind": "event", "scenario": "fork-guard", "ev": "fork-matcher"},
+      {"label": "work doctor", "kind": "command", "note": "read-only diagnosis, explained on explain/work-doctor", "ev": "cli-doctor"}
+    ]
+  },
+  "terms": [
+    {"term": "work record", "means": "A private folder of small event files that outlives any one chat; by default under your home's config folder, never in a repository.", "example": "~/.config/100x/work/tags/events/"},
+    {"term": "workstream", "means": "One feature family in the record: a name, a goal, the repos and the PR branches it covers.", "example": "tags: backend PR on feat/tags, frontend PR on feat/tags-ui"},
+    {"term": "event", "means": "One fact, written once as its own file: a set (start or update), note, decision, hold, release-hold or handoff."},
+    {"term": "view", "means": "The workstream's current state, rebuilt in memory by replaying every event file in name order; it is never saved."},
+    {"term": "brief", "means": "The short markdown summary of a workstream that a new session receives: PRs, holds, decisions, recent notes."},
+    {"term": "token budget", "means": "The size limit for the brief, counted roughly as characters divided by four; the oldest notes are cut first."},
+    {"term": "hold", "means": "A note on one PR saying do not push or merge it yet, with a reason. It stays in the brief until released."},
+    {"term": "handoff", "means": "A note left for the next session: where you stopped and what comes next."},
+    {"term": "origin remote", "means": "The address git calls origin for a clone. The record matches on it, reduced to host/owner/repo, plus the branch.", "example": "git@github.com:acme/shop.git becomes github.com/acme/shop"},
+    {"term": "secret filter", "means": "A set of patterns for access tokens, private keys, passwords and email addresses; a write whose text matches is refused."},
+    {"term": "fork", "means": "A helper agent that starts with a copy of the whole parent conversation, summary included."},
+    {"term": "fail open", "means": "On any error, do nothing rather than block: the hook prints no brief instead of breaking the session."}
+  ],
+  "outline": [
+    {
+      "title": "write_event(ws, kind, fields): every write command ends here",
+      "scenario": "happy",
+      "lines": [
+        {"code": "if disabled(): raise WorkError  # HUNDREDX_WORK=off", "ev": "wr-off"},
+        {"code": "check_ws_name(ws)", "ev": "wr-name"},
+        {"code": "event = {schema, type, ws, session, **fields}", "steps": [3], "ev": "wr-event"},
+        {"code": "refuse_secrets(event)               # every string field, by name", "steps": [2], "ev": "wr-refuse"},
+        {"code": "mkdir record/<ws>/events             # mode 0o700", "ev": "wr-dirs"},
+        {"code": "for _ in range(NAME_ATTEMPTS):", "ev": "wr-loop"},
+        {"code": "name = <utc time>Z-<session>-<random hex>.json", "indent": 1, "steps": [3], "ev": "wr-filename"},
+        {"code": "create_exclusive(events / name)     # O_CREAT|O_EXCL, mode 0o600", "indent": 1, "steps": [3, 4], "ev": "wr-create"},
+        {"code": "except FileExistsError: continue    # pick a new name", "indent": 1, "ev": "wr-retry"},
+        {"code": "raise WorkError(could not create a unique event file)", "ev": "wr-giveup"}
+      ]
+    },
+    {
+      "title": "hooks/work_brief.py main(payload): the session-start brief",
+      "scenario": "happy",
+      "lines": [
+        {"code": "if work.disabled() or payload is not a dict: return None", "ev": "hook-off"},
+        {"code": "cwd = payload.cwd; if not a folder: return None", "ev": "hook-cwd"},
+        {"code": "matches = work.lookup(cwd)", "steps": [6, 7], "ev": "hook-lookup"},
+        {"code": "ident = cwd_identity(cwd)   # git remote get-url origin; rev-parse HEAD", "indent": 1, "steps": [6], "ev": "id-origin"},
+        {"code": "match if repo in view.repos and some PR branch == branch", "indent": 1, "steps": [7], "ev": "lookup-match"},
+        {"code": "if len(matches) != 1: return None", "steps": [7], "ev": "hook-one"},
+        {"code": "brief = work.brief_for(matches[0])  # read_events -> derive -> render_brief", "steps": [8, 9], "ev": "hook-brief"},
+        {"code": "return {hookSpecificOutput: {additionalContext: brief}}", "steps": [10], "ev": "hook-context"},
+        {"code": "except Exception: pass   # fail open, exit success", "ev": "hook-failopen"}
+      ]
+    },
+    {
+      "title": "trim_brief(view, newer, max_tokens): fitting the budget",
+      "scenario": "trim",
+      "lines": [
+        {"code": "notes = view.notes[-BRIEF_RECENT:]   # older ones become a count", "steps": [1], "ev": "trim-recent"},
+        {"code": "decisions = list(view.decisions.values())", "steps": [1], "ev": "trim-decisions"},
+        {"code": "while True:", "ev": "trim-loop"},
+        {"code": "text = brief_text(view, notes, decisions, dropped, newer)", "indent": 1, "steps": [2], "ev": "trim-text"},
+        {"code": "fits = len(text) / CHARS_PER_TOKEN <= max_tokens", "indent": 1, "steps": [2], "ev": "trim-fits"},
+        {"code": "if fits or not (notes or decisions): return text", "indent": 1, "steps": [7], "ev": "trim-stop"},
+        {"code": "if notes: notes = notes[1:]          # oldest note first", "indent": 1, "steps": [3, 4], "ev": "trim-notes"},
+        {"code": "else: decisions = decisions[1:]      # then oldest decision", "indent": 1, "steps": [5, 6], "ev": "trim-dec"}
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What the work record is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 2\n  root((work record))\n    Write commands\n      start\n      note, decide, handoff\n      hold, release-hold\n    Read commands\n      brief\n      list\n    Storage\n      one new file per event\n      owner-only folder\n      no repository, no network\n    Hooks\n      session-start brief\n      fork guard\n    Safety\n      secret and email refusal\n      token budget\n      fail open",
+      "caption": "Read outward from the centre: what you can run, where it is kept, the two hooks that use it, and the rules that keep it private and small.",
+      "ev": ["cli-start", "cli-brief", "wr-create", "no-network", "hook-matcher", "fork-matcher", "wr-refuse", "trim-fits", "hook-failopen"]
+    },
+    {
+      "id": "session-start",
+      "title": "A new session opens: how the brief arrives",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  participant S as Claude session\n  participant H as Session-start hook\n  participant G as git\n  participant W as work command\n  participant R as Work record folder\n  %% external: G\n  S->>H: session-start payload with cwd\n  H->>G: remote get-url origin, rev-parse HEAD\n  G-->>H: repo and branch\n  H->>W: lookup(cwd)\n  W->>R: read every workstream's events\n  R-->>W: events in file-name order\n  alt exactly one workstream matches\n    W-->>H: brief_for(ws)\n    H-->>S: additionalContext = brief\n  else none, several, or any error\n    H-->>S: nothing, fail open\n  end",
+      "caption": "Top to bottom. The folder path never matters; the origin remote and branch do, which is why every worktree of the repo gets the same brief.",
+      "ev": ["hook-matcher", "id-origin", "hook-lookup", "read-sorted", "hook-one", "hook-context", "hook-failopen"]
+    },
+    {
+      "id": "fork-policy",
+      "title": "The fork guard's decision",
+      "kind": "flowchart",
+      "scenario": "fork-guard",
+      "source": "flowchart TD\n  A[agent tool call] --> B{subagent type is fork?}\n  B -- no --> OK[allow silently]\n  B -- yes --> C{transcript holds a compaction marker?}\n  C -- no --> OK\n  C -- yes --> P{policy: environment, then config file, else warn}\n  P -- allow --> OK\n  P -- warn --> W[fork runs, with a nudge to brief a fresh agent]\n  P -- refuse --> X[call blocked, message explains why]",
+      "caption": "Only a fork from a session that has already been summarised is touched. Any error on the way also ends in allow.",
+      "ev": ["fork-only", "fork-marker", "fork-env", "fork-conf", "fork-default", "fork-warn", "fork-refuse", "fork-failopen"]
+    }
+  ],
+  "nodes": [
+    {"id": "you", "role": "client", "label": "You"},
+    {"id": "session", "role": "service", "label": "Claude session (any worktree)"},
+    {"id": "cli", "role": "service", "label": "work command", "ref": "scripts/work.py:1266", "ev": "cli-start"},
+    {"id": "filter", "role": "edge", "label": "Secret filter", "ref": "scripts/work.py:165", "ev": "wr-search"},
+    {"id": "record", "role": "store", "label": "Work record folder", "ref": "scripts/work.py:89", "ev": "rec-dir"},
+    {"id": "git", "role": "external", "label": "git (origin remote, branch)", "ref": "scripts/work.py:151", "ev": "id-origin"},
+    {"id": "brief-hook", "role": "edge", "label": "Session-start hook", "ref": "hooks/work_brief.py:18", "ev": "hook-lookup"},
+    {"id": "fork-guard", "role": "edge", "label": "Fork guard hook", "ref": "hooks/work_fork_guard.py:56", "ev": "fork-only"},
+    {"id": "transcript", "role": "store", "label": "Session transcript", "ref": "hooks/work_fork_guard.py:43", "ev": "fork-marker"},
+    {"id": "cuttable", "role": "queue", "label": "Brief lines that may be cut, oldest first", "ref": "scripts/work.py:428", "ev": "trim-recent"},
+    {"id": "trimmer", "role": "worker", "label": "Budget trimmer", "slots": 1, "ref": "scripts/work.py:434", "ev": "trim-loop"},
+    {"id": "backup", "role": "external", "label": "Your own backup", "ev": "adr-backup"}
+  ],
+  "numbers": {
+    "max_tokens": {"v": 3000, "unit": "tokens", "tag": "verified", "ev": "n-max-tokens"},
+    "chars_per_token": {"v": 4, "unit": "characters per token", "tag": "verified", "ev": "n-chars"},
+    "brief_recent": {"v": 10, "unit": "notes", "tag": "verified", "ev": "n-recent"},
+    "max_text": {"v": 2000, "unit": "characters", "tag": "verified", "ev": "n-max-text"},
+    "git_timeout": {"v": 3, "unit": "s", "tag": "verified", "ev": "n-git-timeout"},
+    "hook_timeout": {"v": 10, "unit": "s", "tag": "verified", "ev": "n-hook-timeout"},
+    "name_attempts": {"v": 5, "unit": "tries", "tag": "verified", "ev": "n-attempts"},
+    "fork_share": {"v": 46, "unit": "% of the session's tokens", "tag": "measured", "source": "prds/work-continuity/prd.md section one, fork subagents row, from bench/work-continuity/transcript_metrics.py; quoted in the fork guard's docstring"}
+  },
+  "evidence": {
+    "cli-start": {"at": "scripts/work.py:1271", "anchor": "create or update a workstream"},
+    "cli-text": {"at": "scripts/work.py:1282", "anchor": "leave a handoff for the next session"},
+    "cli-hold": {"at": "scripts/work.py:1289", "anchor": "hold a PR (do not push or merge it)"},
+    "cli-brief": {"at": "scripts/work.py:1298", "anchor": "print the workstream brief"},
+    "cli-doctor": {"at": "scripts/work.py:1303", "anchor": "diagnose the record"},
+    "cli-err": {"at": "scripts/work.py:1324", "anchor": "return 1"},
+    "cli-off": {"at": "scripts/work.py:1317", "anchor": "args.cmd != \"doctor\""},
+    "append-only": {"at": "scripts/work.py:10", "anchor": "O_CREAT|O_EXCL and never edited"},
+    "rec-dir": {"at": "scripts/work.py:90", "anchor": "HUNDREDX_WORK_DIR"},
+    "rec-default": {"at": "scripts/work.py:48", "anchor": "DEFAULT_DIR_REL"},
+    "n-max-tokens": {"at": "scripts/work.py:52", "anchor": "DEFAULT_MAX_TOKENS = 3000"},
+    "n-chars": {"at": "scripts/work.py:53", "anchor": "CHARS_PER_TOKEN = 4"},
+    "n-recent": {"at": "scripts/work.py:54", "anchor": "BRIEF_RECENT = 10"},
+    "n-max-text": {"at": "scripts/work.py:55", "anchor": "MAX_TEXT = 2000"},
+    "n-git-timeout": {"at": "scripts/work.py:56", "anchor": "GIT_TIMEOUT_S = 3"},
+    "n-attempts": {"at": "scripts/work.py:57", "anchor": "NAME_ATTEMPTS = 5"},
+    "n-hook-timeout": {"at": "hooks/hooks.json:20", "anchor": "\"timeout\": 10"},
+    "privacy-line": {"at": "scripts/work.py:63", "anchor": "never quote this brief"},
+    "live-state": {"at": "scripts/work.py:64", "anchor": "PR state (CI, reviews, merged) is not stored here"},
+    "secret-why": {"at": "scripts/work.py:68", "anchor": "silently never be backed up"},
+    "secret-email": {"at": "scripts/work.py:69", "anchor": "the record leaves the machine through that backup"},
+    "norm-doc": {"at": "scripts/work.py:113", "anchor": "credentials, scheme, port and .git dropped"},
+    "id-origin": {"at": "scripts/work.py:153", "anchor": "\"remote\", \"get-url\", \"origin\""},
+    "id-branch": {"at": "scripts/work.py:154", "anchor": "\"--abbrev-ref\", \"HEAD\""},
+    "wr-search": {"at": "scripts/work.py:167", "anchor": "SECRET.search(value)"},
+    "wr-refused": {"at": "scripts/work.py:168", "anchor": "looks like a secret or an email address"},
+    "wr-walk": {"at": "scripts/work.py:172", "anchor": "def walk_strings"},
+    "wr-off": {"at": "scripts/work.py:210", "anchor": "disabled (HUNDREDX_WORK=off)"},
+    "wr-name": {"at": "scripts/work.py:211", "anchor": "check_ws_name(ws)"},
+    "wr-event": {"at": "scripts/work.py:213", "anchor": "\"session\": session"},
+    "wr-refuse": {"at": "scripts/work.py:214", "anchor": "refuse_secrets(event)"},
+    "wr-dirs": {"at": "scripts/work.py:220", "anchor": "ensure_dir(events)"},
+    "dir-mode": {"at": "scripts/work.py:46", "anchor": "DIR_MODE = 0o700"},
+    "file-mode": {"at": "scripts/work.py:47", "anchor": "FILE_MODE = 0o600"},
+    "wr-loop": {"at": "scripts/work.py:221", "anchor": "range(NAME_ATTEMPTS)"},
+    "wr-filename": {"at": "scripts/work.py:224", "anchor": "secrets.token_hex(3)"},
+    "wr-create": {"at": "scripts/work.py:226", "anchor": "create_exclusive(events / name"},
+    "wr-excl": {"at": "scripts/work.py:202", "anchor": "os.O_EXCL"},
+    "wr-retry": {"at": "scripts/work.py:228", "anchor": "except FileExistsError"},
+    "wr-giveup": {"at": "scripts/work.py:230", "anchor": "could not create a unique event file"},
+    "read-sorted": {"at": "scripts/work.py:238", "anchor": "sorted(p.name for p in folder.iterdir()"},
+    "read-skip": {"at": "scripts/work.py:245", "anchor": "unreadable += 1"},
+    "derive-clean": {"at": "scripts/work.py:344", "anchor": "clean_event(event)"},
+    "derive-apply": {"at": "scripts/work.py:348", "anchor": "apply_event(view, usable)"},
+    "apply-redecide": {"at": "scripts/work.py:358", "anchor": "a re-decided id moves to the end"},
+    "apply-hold": {"at": "scripts/work.py:361", "anchor": "view[\"holds\"][event.get(\"pr\")] = event"},
+    "apply-release": {"at": "scripts/work.py:363", "anchor": "view[\"holds\"].pop"},
+    "merge-doc": {"at": "scripts/work.py:369", "anchor": "A later set wins field by field"},
+    "lookup-match": {"at": "scripts/work.py:399", "anchor": "p[\"branch\"] == branch"},
+    "resolve-several": {"at": "scripts/work.py:414", "anchor": "belongs to several workstreams"},
+    "resolve-none": {"at": "scripts/work.py:416", "anchor": "no workstream matches this directory"},
+    "trim-doc": {"at": "scripts/work.py:424", "anchor": "Holds, PRs and the privacy line always stay"},
+    "trim-order": {"at": "scripts/work.py:423", "anchor": "oldest notes go first, then oldest decisions"},
+    "trim-recent": {"at": "scripts/work.py:430", "anchor": "view[\"notes\"][-BRIEF_RECENT:]"},
+    "trim-decisions": {"at": "scripts/work.py:431", "anchor": "decisions = list(view[\"decisions\"].values())"},
+    "trim-loop": {"at": "scripts/work.py:434", "anchor": "while True"},
+    "trim-text": {"at": "scripts/work.py:435", "anchor": "brief_text(view, notes, decisions, dropped, newer)"},
+    "trim-fits": {"at": "scripts/work.py:436", "anchor": "len(text) / CHARS_PER_TOKEN <= max_tokens"},
+    "trim-stop": {"at": "scripts/work.py:437", "anchor": "if fits or not (notes or decisions)"},
+    "trim-notes": {"at": "scripts/work.py:440", "anchor": "notes = notes[1:]"},
+    "trim-dec": {"at": "scripts/work.py:444", "anchor": "decisions = decisions[1:]"},
+    "brief-lines": {"at": "scripts/work.py:449", "anchor": "PRIVACY, LIVE_STATE"},
+    "brief-holds": {"at": "scripts/work.py:461", "anchor": "## Holds"},
+    "brief-dropped": {"at": "scripts/work.py:470", "anchor": "older not shown"},
+    "start-repo": {"at": "scripts/work.py:517", "anchor": "a new workstream needs at least one --repo"},
+    "start-norm": {"at": "scripts/work.py:518", "anchor": "normalise_repo(r) for r in args.repo"},
+    "start-set": {"at": "scripts/work.py:530", "anchor": "write_event(ws, \"set\", fields)"},
+    "hold-known": {"at": "scripts/work.py:536", "anchor": "is not in workstream"},
+    "hold-write": {"at": "scripts/work.py:554", "anchor": "known_pr(ws, args.pr)"},
+    "text-write": {"at": "scripts/work.py:548", "anchor": "write_event(ws, kind, fields)"},
+    "release-none": {"at": "scripts/work.py:561", "anchor": "has no active hold"},
+    "no-network": {"absent": "a push, an HTTP call or a requests import in the work record's code and hooks", "git_grep": "\"push\"|urlopen|import requests|http\\.client", "path": "scripts/work.py hooks/work_brief.py hooks/work_fork_guard.py", "hits": 0},
+    "hook-matcher": {"at": "hooks/hooks.json:15", "anchor": "startup|resume|clear|compact"},
+    "hook-off": {"at": "hooks/work_brief.py:20", "anchor": "work.disabled()"},
+    "hook-cwd": {"at": "hooks/work_brief.py:23", "anchor": "os.path.isdir(cwd)"},
+    "hook-lookup": {"at": "hooks/work_brief.py:25", "anchor": "work.lookup(cwd)"},
+    "hook-one": {"at": "hooks/work_brief.py:26", "anchor": "len(matches) != 1"},
+    "hook-context": {"at": "hooks/work_brief.py:28", "anchor": "additionalContext"},
+    "hook-brief": {"at": "hooks/work_brief.py:29", "anchor": "work.brief_for(matches[0])"},
+    "hook-failopen": {"at": "hooks/work_brief.py:42", "anchor": "fail-open"},
+    "fork-matcher": {"at": "hooks/hooks.json:88", "anchor": "Agent|Task"},
+    "fork-only": {"at": "hooks/work_fork_guard.py:64", "anchor": "subagent_type\") != \"fork\""},
+    "fork-marker": {"at": "hooks/work_fork_guard.py:22", "anchor": "compact_boundary"},
+    "fork-chunks": {"at": "hooks/work_fork_guard.py:24", "anchor": "OVERLAP = 64"},
+    "fork-env": {"at": "hooks/work_fork_guard.py:32", "anchor": "HUNDREDX_FORK_POLICY"},
+    "fork-conf": {"at": "hooks/work_fork_guard.py:37", "anchor": "fork_policy"},
+    "fork-default": {"at": "hooks/work_fork_guard.py:19", "anchor": "DEFAULT_POLICY = \"warn\""},
+    "fork-refuse": {"at": "hooks/work_fork_guard.py:69", "anchor": "return 2, None, MESSAGE"},
+    "fork-warn": {"at": "hooks/work_fork_guard.py:71", "anchor": "systemMessage"},
+    "fork-message": {"at": "hooks/work_fork_guard.py:26", "anchor": "Start a fresh agent instead"},
+    "fork-off": {"at": "hooks/work_fork_guard.py:58", "anchor": "HUNDREDX_WORK"},
+    "fork-failopen": {"at": "hooks/work_fork_guard.py:80", "anchor": "fail-open"},
+    "fork-why": {"at": "hooks/work_fork_guard.py:6", "anchor": "46% of all tokens"},
+    "fork-nosub": {"absent": "a subprocess call in the fork guard", "git_grep": "import subprocess|subprocess\\.(run|Popen|call)", "path": "hooks/work_fork_guard.py", "hits": 0},
+    "hold-not-enforced": {"at": "skills/work-doctor/SKILL.md:40", "anchor": "no hook blocks a push on it"},
+    "safety-row": {"at": "docs/SAFETY.md:87", "anchor": "one event file per call"},
+    "safety-brief": {"at": "docs/SAFETY.md:181", "anchor": "work_brief.py"},
+    "safety-fork": {"at": "docs/SAFETY.md:182", "anchor": "work_fork_guard.py"},
+    "adr-a1": {"at": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md:23", "anchor": "No plugin tool or hook pushes"},
+    "adr-chosen": {"at": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md:63", "anchor": "plain append-only files"},
+    "adr-backup": {"at": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md:101", "anchor": "Backup is not the plugin's job"},
+    "adr-erase": {"at": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md:110", "anchor": "refuses secret-like text"}
+  },
+  "initial": {
+    "stores": {"transcript": {"compact-boundary": true}}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "Start a workstream, record a decision and a hold, open a new session",
+      "steps": [
+        {"t": "You ask Claude to start a workstream for the tags feature", "d": "A new workstream needs at least one repo; each PR is given as number, branch and role, so the record knows which branches belong to it.", "do": [["send", "you", "session", "start a workstream for tags"], ["send", "session", "cli", "work start tags --repo … --pr …:feat/tags:backend"]], "ev": ["cli-start", "start-repo"], "code": ["if not exists and not args.repo: refuse", "prs = [parse_pr(p) for p in args.pr]"]},
+        {"t": "The repo address is reduced to host/owner/repo", "d": "Any login, port, scheme and the .git ending are dropped, so a token in a remote URL never reaches a file, and an SSH and an HTTPS address of the same repo match.", "do": [["note", "git@github.com:acme/shop.git becomes github.com/acme/shop"]], "ev": ["norm-doc", "start-norm"], "code": ["repos = [normalise_repo(r) for r in args.repo]"]},
+        {"t": "The secret filter checks every piece of text in the event", "d": "Goal, PR roles and conventions are all walked; this one is clean.", "do": [["send", "cli", "filter", "check every text field"], ["reply", "filter", "cli", "clean"]], "ev": ["wr-refuse", "wr-walk", "wr-search"], "code": ["refuse_secrets(event)"]},
+        {"t": "The event is written as a brand-new file that is never edited", "d": "The name holds the time, the session and a random part, and the file is created only if nothing has that name, so two sessions writing at once never collide. The folder is readable by you alone.", "do": [["db.write", "record", "tags/set", "set"]], "ev": ["wr-filename", "wr-excl", "dir-mode", "file-mode", "append-only"], "expect": {"store": {"record": {"tags/set": "set"}}}, "code": ["name = <time>Z-<session>-<random>.json", "create_exclusive(events / name)  # O_EXCL"]},
+        {"t": "A decision and a hold go in the same way, one file each", "d": "A hold is refused for a PR the workstream does not list; a decision may carry a short id so a later decision can replace it.", "do": [["db.write", "record", "tags/decision-D1", "decision"], ["db.write", "record", "tags/hold", "hold"]], "ev": ["text-write", "hold-known", "hold-write"], "expect": {"store": {"record": {"tags/decision-D1": "decision", "tags/hold": "hold"}}}},
+        {"t": "Days later, a new session opens in another worktree of the same repo", "d": "The session-start hook runs on startup, resume, clear and compact, and is killed after {{hook_timeout}}.", "do": [["send", "you", "session", "open a session in a second worktree"], ["send", "session", "brief-hook", "session-start, cwd = this folder"]], "ev": ["hook-matcher", "n-hook-timeout"]},
+        {"t": "The hook asks git which repo and branch this folder is", "d": "Two quick git questions, each given {{git_timeout}}. A folder outside git, with no origin, or on a detached checkout gets no brief.", "do": [["send", "brief-hook", "git", "remote get-url origin; rev-parse HEAD"], ["reply", "git", "brief-hook", "github.com/acme/shop, feat/tags"]], "ev": ["id-origin", "id-branch", "n-git-timeout"], "code": ["ident = cwd_identity(cwd)"]},
+        {"t": "Exactly one workstream lists this repo and branch, so the brief goes ahead", "d": "The folder path never matters, which is why every worktree matches. None or several matches means no brief, silently: that is what the doctor page diagnoses.", "do": [["db.read", "record", "tags/set", "found"]], "ev": ["lookup-match", "hook-one"], "expect": {"vars": {"found": "set"}}, "code": ["matches = work.lookup(cwd)", "if len(matches) != 1: return None"]},
+        {"t": "The workstream's state is rebuilt from every event, oldest first", "d": "Files are replayed in name order, which is time order. A later set wins field by field, a re-decided id moves to the end, a release removes its hold, and a malformed file is skipped and counted.", "do": [["send", "brief-hook", "cli", "brief for tags"], ["db.read", "record", "tags/hold", "hold"]], "ev": ["read-sorted", "derive-clean", "derive-apply", "merge-doc", "apply-redecide", "apply-release", "read-skip"], "expect": {"vars": {"hold": "hold"}}, "code": ["events = read_events(ws)   # sorted by file name", "view = derive(ws, events)  # apply_event per usable event"]},
+        {"t": "The brief is assembled: privacy line, PRs, holds, decisions, recent notes", "d": "It opens by telling the reader never to quote it in commits or PRs, and that PR state must be read live.", "do": [["reply", "cli", "brief-hook", "brief markdown"]], "ev": ["brief-lines", "privacy-line", "live-state", "brief-holds"], "code": ["lines = [# Workstream ws, PRIVACY, LIVE_STATE, ...]"]},
+        {"t": "The hook hands the brief to the new session as extra context", "do": [["reply", "brief-hook", "session", "additionalContext: brief"]], "ev": ["hook-context", "hook-brief"], "code": ["return {additionalContext: brief}"]},
+        {"t": "The new session starts already knowing the hold", "d": "You do not restate it. What the session does with it is up to Claude: no hook blocks a push on a held PR yet.", "do": [["reply", "session", "you", "the backend PR is on hold: wait for schema"]], "ev": ["hold-not-enforced"]}
+      ]
+    },
+    {
+      "id": "issue-secret",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the record kept any text it was given?",
+      "branch": {"from": "happy", "at": 4},
+      "fixed_by": ["fix-refuse"],
+      "steps": [
+        {"t": "A note with a pasted access token is saved as it is", "d": "Someone pastes a command line into a note, and the command line carries a token.", "do": [["send", "session", "cli", "work note \"deploy with ghp_… \""], ["db.write", "record", "tags/note-with-token", "note"]], "tag": "inferred"},
+        {"t": "Your backup refuses that file, so the note is silently never backed up", "d": "The owner's backup uses the same secret patterns and skips a matching file without saying so.", "do": [["send", "record", "backup", "sync the record folder"], ["reply", "backup", "record", "file skipped: looks like a secret"]], "ev": ["secret-why"]},
+        {"t": "A backup without that filter copies the token to another machine", "d": "Erasing it then means rewriting the backup's history, which is why the decision record puts the refusal at write time.", "do": [["fail", "backup", "token copied off the laptop"]], "ev": ["adr-erase"]}
+      ]
+    },
+    {
+      "id": "fix-refuse",
+      "kind": "fix",
+      "title": "Fix: the write is refused before any file exists",
+      "branch": {"from": "issue-secret", "at": 4},
+      "steps": [
+        {"t": "The secret filter walks every piece of text in the note event", "do": [["send", "session", "cli", "work note \"deploy with ghp_… \""], ["send", "cli", "filter", "check every text field"]], "ev": ["wr-walk", "wr-search", "wr-refuse"], "code": ["for key, value in walk_strings(event):", "  if SECRET.search(value): raise WorkError"]},
+        {"t": "A token pattern matches: the command refuses and writes nothing", "d": "The message names the field, not the value, and the command ends with a failure exit.", "do": [["reply", "filter", "cli", "refused: text looks like a secret"], ["reply", "cli", "session", "refused; nothing written"]], "ev": ["wr-refused", "cli-err"], "expect": {"store": {"record": {"tags/note-with-token": null}}}},
+        {"t": "An email address is refused the same way", "d": "The record leaves the laptop through your backup, so addresses are treated like secrets.", "do": [["note", "a note naming someone's email address is refused too"]], "ev": ["secret-email"]},
+        {"t": "You rewrite the note without the token, and it is saved", "do": [["send", "session", "cli", "work note \"deploy with the CI token\""], ["db.write", "record", "tags/note", "note"]], "ev": ["text-write", "wr-excl"], "expect": {"store": {"record": {"tags/note": "note", "tags/note-with-token": null}}}},
+        {"t": "Your own backup copies the clean file like any other", "d": "Backup is not the plugin's job: the plugin never pushes, and your setup carries the plain files to a new laptop.", "do": [["send", "record", "backup", "sync the record folder"], ["reply", "backup", "record", "copied"]], "ev": ["adr-backup", "adr-a1", "no-network"]}
+      ]
+    },
+    {
+      "id": "trim",
+      "kind": "load",
+      "title": "A long workstream on a tight budget: what the brief cuts",
+      "steps": [
+        {"t": "A brief is asked for with a very small token budget", "d": "The hook always uses the default of {{max_tokens}}; the brief command takes a smaller one, which makes the cutting easy to watch.", "do": [["send", "session", "cli", "work brief --max-tokens (small)"]], "ev": ["cli-brief", "n-max-tokens"]},
+        {"t": "Only the newest notes are candidates; older ones become a count", "d": "The newest {{brief_recent}} notes and handoffs are kept as candidates, then every decision; the rest show as a single line saying how many are not shown.", "do": [["enqueue", "cuttable", "note-03"], ["enqueue", "cuttable", "note-04"], ["enqueue", "cuttable", "note-05"], ["enqueue", "cuttable", "note-06"], ["enqueue", "cuttable", "note-07"], ["enqueue", "cuttable", "note-08"], ["enqueue", "cuttable", "note-09"], ["enqueue", "cuttable", "note-10"], ["enqueue", "cuttable", "note-11"], ["enqueue", "cuttable", "note-12"], ["enqueue", "cuttable", "D1"], ["enqueue", "cuttable", "D2"], ["counter", "not_shown", 2]], "ev": ["trim-recent", "trim-decisions", "brief-dropped", "n-recent"], "expect": {"queues": {"cuttable": 12}, "counters": {"not_shown": 2}}, "code": ["notes = view.notes[-BRIEF_RECENT:]", "decisions = list(view.decisions.values())"]},
+        {"t": "The brief is measured against the budget", "d": "Characters divided by {{chars_per_token}} is the token estimate. It is over.", "do": [["note", "over budget"]], "ev": ["trim-fits", "n-chars"], "code": ["fits = len(text) / CHARS_PER_TOKEN <= max_tokens"]},
+        {"t": "Over budget: the oldest note is cut first", "do": [["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-03"], ["counter", "not_shown", 1]], "ev": ["trim-notes", "trim-order"], "expect": {"counters": {"not_shown": 3}}, "code": ["if notes: notes = notes[1:]"]},
+        {"t": "Still over: the rest of the notes go, oldest first", "d": "Each cut rebuilds the text and measures again.", "do": [["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-04"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-05"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-06"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-07"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-08"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-09"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-10"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-11"], ["pickup", "cuttable", "trimmer"], ["free", "trimmer", "note-12"], ["counter", "not_shown", 9]], "ev": ["trim-notes", "trim-loop"], "expect": {"queues": {"cuttable": 2}, "counters": {"not_shown": 12}}},
+        {"t": "No notes left: the oldest decision goes next", "do": [["pickup", "cuttable", "trimmer"], ["free", "trimmer", "D1"]], "ev": ["trim-dec", "trim-order"], "expect": {"queues": {"cuttable": 1}}, "code": ["else: decisions = decisions[1:]"]},
+        {"t": "Still over: the last decision goes too", "do": [["pickup", "cuttable", "trimmer"], ["free", "trimmer", "D2"]], "ev": ["trim-dec"], "expect": {"queues": {"cuttable": 0}}},
+        {"t": "Nothing left to cut: the brief comes back over budget, holds and PRs intact", "d": "Holds, the PR table and the privacy line are never cut, so on a tiny budget the brief is returned anyway rather than dropping a hold. With the default budget it stops at the first measure that fits.", "do": [["reply", "cli", "session", "brief: PRs, holds, privacy line; over budget"]], "ev": ["trim-stop", "trim-doc"], "code": ["if fits or not (notes or decisions): return text"]}
+      ]
+    },
+    {
+      "id": "fork-guard",
+      "kind": "edge",
+      "title": "A summarised session tries to fork a helper",
+      "steps": [
+        {"t": "A session that was summarised earlier asks for a forked helper", "d": "A fork copies the parent's whole conversation, lossy summary included; in one measured session forks took about {{fork_share}}.", "do": [["send", "session", "fork-guard", "agent call, subagent type fork"]], "ev": ["fork-matcher", "fork-only", "fork-why"]},
+        {"t": "The guard looks for a compaction marker in the transcript", "d": "It reads the file in large chunks with a small overlap, so a marker split across two chunks is still seen, and stops at the first one.", "do": [["db.read", "transcript", "compact-boundary", "marker"]], "ev": ["fork-marker", "fork-chunks"], "expect": {"vars": {"marker": true}}},
+        {"t": "It picks the policy: environment first, then your config file, else warn", "d": "An unknown value counts as warn.", "do": [["note", "policy = warn (default)"]], "ev": ["fork-env", "fork-conf", "fork-default"]},
+        {"t": "Warn, the default: the fork runs, with a nudge to brief a fresh agent", "do": [["reply", "fork-guard", "session", "allowed, with message: start a fresh agent with the brief"]], "ev": ["fork-warn", "fork-message"]},
+        {"t": "Refuse, if you set it: the call is blocked and the message says why", "do": [["fail", "fork-guard", "fork blocked"], ["reply", "fork-guard", "session", "blocked: start a fresh agent instead"]], "ev": ["fork-refuse"]},
+        {"t": "The better path: a fresh helper given the brief and a task card", "d": "The card names the goal, owned files, worktree and verify commands; the helper starts small and from recorded facts.", "do": [["note", "fresh agent + work brief + task card"]], "ev": ["fork-message"]},
+        {"t": "Everything else passes untouched: other agent types, record off, any error", "d": "The guard reads the transcript and its config file only, writes nothing and runs no other program.", "do": [["note", "allow silently"]], "ev": ["fork-off", "fork-failopen", "fork-nosub", "safety-fork"]}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "ref", "label": "A private git ref inside each project repository", "fit": "fail", "pros": ["Travels with the repo"], "cons": ["Puts the record in the team's repository, which the owner rules out"]},
+      {"id": "memory", "label": "Claude Code's own auto-memory", "fit": "fail", "pros": ["Already backed up"], "cons": ["One folder per working path and per config home, so worktrees each see a different record", "A single shared file several sessions edit"]},
+      {"id": "repo", "label": "A dedicated private repository the plugin pushes to", "fit": "pass", "pros": ["Cloud sessions could read it"], "cons": ["The plugin would push off the machine", "More moving parts than the backup you already have"]},
+      {"id": "files", "label": "Plain append-only files in your config folder, carried by your own backup", "fit": "pass", "pros": ["Nothing in any project repository", "The plugin never pushes or uses the network", "A new laptop gets it back with no manual step"], "cons": ["A cloud session cannot read it", "Two laptops agree only after each has synced"], "scenario": "happy"}
+    ],
+    "chosen": "files",
+    "deciding_factor": "The owner requires that nothing about the record reaches a team repository and that the plugin itself never pushes.",
+    "revisit_when": "Teammates ask to see the record, or a cloud session needs to write back to it.",
+    "source": "decisions/ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md; docs/SAFETY.md"
+  },
+  "checks": [
+    {"scenario": "happy", "step": 7, "q": "The second worktree sits at a different folder path. How does the hook know it belongs to the tags workstream?", "answer": "It never looks at the path: it matches the origin remote, reduced to host/owner/repo, and the branch."},
+    {"scenario": "fix-refuse", "step": 5, "q": "The note held a token. What is on disk now?", "answer": "Nothing new: the filter refuses before the file is created."},
+    {"scenario": "trim", "step": 3, "q": "The brief is over budget. Which line is cut first?", "answer": "The oldest kept note. Decisions go only after every note is gone, and holds never go."},
+    {"scenario": "fork-guard", "step": 3, "q": "With no setting anywhere, does the fork go ahead?", "answer": "Yes: the default is warn, so it runs with a message suggesting a fresh agent."}
+  ],
+  "compare": ["issue-secret", "fix-refuse"],
+  "reference": [
+    {
+      "path": "scripts/work.py",
+      "symbols": ["disabled", "record_dir", "session_label", "normalise_repo", "redact", "cwd_identity", "refuse_secrets", "walk_strings", "check_text", "create_exclusive", "write_event", "read_events", "clean_event", "derive", "apply_event", "merge_set", "lookup", "resolve_ws", "trim_brief", "brief_text", "brief_for", "cmd_start", "known_pr", "cmd_text_event", "cmd_hold", "cmd_release_hold", "cmd_brief", "cmd_list", "build_parser", "main"],
+      "notes": {
+        "disabled": "True when HUNDREDX_WORK is set to off; the commands other than doctor then do nothing, and writes refuse.",
+        "record_dir": "The record folder: HUNDREDX_WORK_DIR made absolute, else the default work folder under your home config.",
+        "session_label": "The session id with anything but letters, digits and dashes removed, or cli when run by hand; it goes into each event's file name.",
+        "refuse_secrets": "Refuses the whole event, naming the field, when any text in it matches a secret pattern or an email address.",
+        "walk_strings": "Yields every string inside the event, nested ones included, with the name of the field that holds it.",
+        "check_text": "Strips the text and refuses it when it is empty or longer than the per-note character limit.",
+        "write_event": "Builds the event, refuses secrets, creates the owner-only folders and writes it as a new uniquely named file, retrying on a name clash.",
+        "derive": "Replays the events in order onto an empty view; a malformed event is listed as skipped instead of applied.",
+        "apply_event": "Applies one event: a set merges, a decision replaces its id and moves to the end, a hold adds, a release removes, notes and handoffs append.",
+        "resolve_ws": "The named workstream if it exists, else the single one this folder matches; refuses none or several.",
+        "brief_text": "Writes the brief markdown: privacy and live-state lines, goal, repos, PR table, merge order, holds, decisions, conventions, recent notes, skipped count.",
+        "brief_for": "Reads a workstream's events and renders its brief at the given or default token budget.",
+        "cmd_start": "start: a new workstream needs a repo; normalises repos, parses PRs, checks the merge order names known PRs, then writes a set event.",
+        "known_pr": "Refuses a PR number the workstream does not list.",
+        "cmd_text_event": "Makes the note, decide and handoff commands: checks the text and an optional decision id, then writes one event.",
+        "cmd_hold": "hold: refuses a PR the workstream does not list, then writes a hold with its reason.",
+        "cmd_release_hold": "release-hold: refuses when the PR has no active hold, then writes a release event.",
+        "cmd_brief": "brief: prints the brief for the named or matching workstream at the requested token budget.",
+        "cmd_list": "list: one line per workstream with its event count, PR count, repos and the start of its goal.",
+        "build_parser": "Declares every subcommand and its options.",
+        "main": "Parses the command, does nothing when the record is switched off (doctor excepted), and turns a refusal into a message and a failing exit."
+      }
+    },
+    {
+      "path": "hooks/work_brief.py",
+      "notes": {
+        "main": "Returns the brief as extra session context when this folder matches exactly one workstream; nothing otherwise."
+      }
+    },
+    {
+      "path": "hooks/work_fork_guard.py",
+      "notes": {
+        "policy": "The fork policy: HUNDREDX_FORK_POLICY, else fork_policy in your config file, else warn; an unknown value counts as warn."
+      }
+    }
+  ]
+}
