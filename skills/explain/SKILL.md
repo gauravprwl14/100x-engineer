@@ -84,7 +84,7 @@ from the project and which are defaults; on a conflict the project's file wins.
    scenarios (happy, the focus, the riskiest), a fix per issue, the outline, diagrams, the decision.
 3. **Write** `scenario.json` in the output dir (`100x flow new <slug>` writes a starter):
    `context`, `terms` and `outline` first, `tldr` last. Prose numbers go through `{{name}}`; every
-   step and outline line lists its evidence ids.
+   step and outline line lists its evidence ids; `reference` lists the code behind it (recipe §12).
 4. **Check.** `100x flow check <dir>/scenario.json --tier <tier> --repo <clone>` until exit 0;
    `--repo` (the cited clone, default `.`) is required when the output dir is outside it, always
    for a PR. A failing anchor means the claim is wrong or the line moved: re-read the line, never

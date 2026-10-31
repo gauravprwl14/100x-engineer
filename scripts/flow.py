@@ -28,6 +28,7 @@ Python stdlib only; git via subprocess.
 import argparse, difflib, html, json, math, pathlib, re, subprocess, sys
 
 import check_diagrams
+import code_ref
 from _mutation_guard import safe_record_name
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -94,7 +95,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline", "diagrams", "tldr"}),
+             "context", "terms", "outline", "diagrams", "tldr", "reference"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -115,7 +116,9 @@ KEYS = {
     "outline": ({"title", "scenario", "lines"}, set()),
     "outline-line": ({"code"}, {"indent", "steps", "ev", "tag"}),
     "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
+    "reference": ({"path"}, {"symbols", "notes"}),
 }
+MAX_REFERENCE_FILES = 8
 
 # action -> argument kinds; a trailing "?" marks an optional argument.
 ACTIONS = {
@@ -244,6 +247,7 @@ def validate(doc, f):
     validate_terms(doc, f)
     validate_outline(doc, ctx, f)
     validate_diagrams(doc, ctx, f)
+    validate_reference(doc, f)
     return ctx
 
 
@@ -766,6 +770,84 @@ def validate_outline_line(loc, ln, ctx, f):
         f.add(loc, "outline line has no evidence: cite an ev id or tag it inferred")
 
 
+def validate_reference(doc, f):
+    """Shape only; whether each file parses and holds each named symbol is collect_reference."""
+    refs = doc.get("reference")
+    if refs is None:
+        return
+    if not (isinstance(refs, list) and 1 <= len(refs) <= MAX_REFERENCE_FILES):
+        f.add("reference", f"must be a list of 1-{MAX_REFERENCE_FILES} files")
+        return
+    seen = set()
+    for i, r in enumerate(refs):
+        loc = f"reference[{i}]"
+        if not check_keys(r, "reference", loc, f):
+            continue
+        path = r.get("path")
+        if not (isinstance(path, str) and path.endswith(".py") and not path.startswith("/")):
+            f.add(loc + ".path", "must be a repo-relative .py path (Python only in this version)")
+        elif path in seen:
+            f.add(loc + ".path", f"duplicate file '{path}'")
+        seen.add(path)
+        symbols = r.get("symbols")
+        if symbols is not None and not (isinstance(symbols, list) and symbols
+                                        and all(isinstance(x, str) and x for x in symbols)
+                                        and len(set(symbols)) == len(symbols)):
+            f.add(loc + ".symbols", "must be a non-empty list of distinct symbol names")
+            symbols = None
+        notes = r.get("notes")
+        if notes is None:
+            continue
+        if not isinstance(notes, dict):
+            f.add(loc + ".notes", "must be an object: symbol name -> text")
+            continue
+        for name, text in notes.items():
+            if not is_text(text):
+                f.add(f"{loc}.notes.{name}", "must be text: a string or {\"en\": …, \"ja\"?: …}")
+            if isinstance(symbols, list) and name not in symbols:
+                f.add(f"{loc}.notes.{name}", "has a note but is not in symbols")
+
+
+def default_rev(doc, rev_flag):
+    sha = subject_of(doc).get("sha")
+    return (sha if isinstance(sha, str) and SHA_RX.match(sha) else None) or rev_flag or "HEAD"
+
+
+def collect_reference(doc, repo, rev_flag, f=None):
+    """The code_ref inventory of every reference file at the page's revision, narrowed to the
+    named symbols, each with its note: [{path, sha256, lines, doc, symbols}]. A file git cannot
+    read or parse, or a named symbol it does not hold, is a finding when f is given; build
+    passes no f and leaves such a file out."""
+    refs = [r for r in seq(doc.get("reference")) if isinstance(r, dict) and isinstance(r.get("path"), str)]
+    if not refs or repo is None:
+        return []
+    rc, rev, _ = git(repo, "rev-parse", "--verify", "--quiet", default_rev(doc, rev_flag) + "^{commit}")
+    if rc != 0:
+        if f is not None:
+            f.add("reference", f"revision {default_rev(doc, rev_flag)} not found in {repo}")
+        return []
+    out = []
+    for i, r in enumerate(refs):
+        try:
+            inv = code_ref.build([r["path"]], str(repo), rev.strip())["files"][0]
+        except code_ref.Unsupported as e:
+            if f is not None:
+                f.add(f"reference[{i}].path", str(e))
+            continue
+        by_name = {s["name"]: s for s in inv["symbols"]}
+        wanted = r.get("symbols") if isinstance(r.get("symbols"), list) else list(by_name)
+        notes = obj(r.get("notes"))
+        missing = [n for n in list(wanted) + list(notes) if n not in by_name]
+        for name in dict.fromkeys(missing):
+            if f is not None:
+                near = difflib.get_close_matches(name, list(by_name), n=1)
+                f.add(f"reference[{i}]", f"no symbol '{name}' in {r['path']}"
+                      + (f" (did you mean '{near[0]}'?)" if near else ""))
+        inv["symbols"] = [dict(by_name[n], note=notes.get(n)) for n in wanted if n in by_name]
+        out.append(inv)
+    return out
+
+
 def validate_diagrams(doc, ctx, f):
     diagrams = doc.get("diagrams")
     if diagrams is None:
@@ -887,6 +969,9 @@ def prose_fields(doc):
         if isinstance(dg, dict):
             yield f"diagrams[{i}].title", dg.get("title"), False
             yield f"diagrams[{i}].caption", dg.get("caption"), False
+    for i, r in enumerate(seq(doc.get("reference"))):
+        for name, text in obj(obj(r).get("notes")).items():
+            yield f"reference[{i}].notes.{name}", text, False
 
 
 def tldr_fields(doc):
@@ -895,13 +980,13 @@ def tldr_fields(doc):
         yield f"tldr.{k}", t.get(k), False
 
 
-def bare_numbers(text, allow_http_status, pr=None):
+def bare_numbers(text, allow_http_status, pr=None, names=frozenset()):
     """Digits that should be a {{name}}. Exempt: ids such as C3, an HTTP class such as 5xx,
-    the subject's own PR number, a PR or issue reference (PR 1497, #1227), and a status code
-    in a reply label."""
+    the subject's own PR number, a word of the subject's repo name (a project called 100x),
+    a PR or issue reference (PR 1497, #1227), and a status code in a reply label."""
     out = []
     for w in WORD_RX.findall(PR_REF_RX.sub(" ", PLACEHOLDER_RX.sub(" ", text))):
-        if not w[0].isdigit() or HTTP_CLASS_RX.match(w) or w == pr:
+        if not w[0].isdigit() or HTTP_CLASS_RX.match(w) or w == pr or w.lower() in names:
             continue
         if allow_http_status and w.isdigit() and HTTP_STATUS_MIN <= int(w) <= HTTP_STATUS_MAX:
             continue
@@ -912,6 +997,8 @@ def bare_numbers(text, allow_http_status, pr=None):
 def check_prose(doc, numbers, f):
     pr = subject_of(doc).get("pr")
     pr = str(pr) if is_int(pr) and pr > 0 else None
+    repo = subject_of(doc).get("repo")
+    names = frozenset(w.lower() for w in re.split(r"[/_.-]", repo)) if isinstance(repo, str) else frozenset()
     for loc, value, http in prose_fields(doc):
         if value is None or not is_text(value):
             continue
@@ -919,7 +1006,7 @@ def check_prose(doc, numbers, f):
             for name in PLACEHOLDER_RX.findall(s):
                 if name not in numbers:
                     f.add(loc + suffix, f"unknown number '{{{{{name}}}}}': add it to numbers with a tag")
-            bare = bare_numbers(s, http, pr)
+            bare = bare_numbers(s, http, pr, names)
             if bare:
                 f.add(loc + suffix, f"bare number {', '.join(repr(b) for b in bare)} in prose: "
                                     "use a {{name}} placeholder backed by numbers")
@@ -1231,8 +1318,7 @@ def check_evidence(ctx, repo, rev_flag, f):
     rc, _, err = git(repo, "rev-parse", "--show-toplevel")
     if rc != 0:
         raise Unreadable(f"not a git repository: {repo} (evidence needs --repo <clone>)")
-    sha = subject_of(ctx["doc"]).get("sha")
-    default_rev = (sha if isinstance(sha, str) and SHA_RX.match(sha) else None) or rev_flag or "HEAD"
+    base_rev = default_rev(ctx["doc"], rev_flag)
     resolved, files = {}, {}
 
     def resolve(rev):
@@ -1249,7 +1335,7 @@ def check_evidence(ctx, repo, rev_flag, f):
             if not (isinstance(e.get("git_grep"), str) and isinstance(e.get("path"), str)
                     and is_int(e.get("hits"))):
                 continue  # already a structural finding
-            rev = default_rev
+            rev = base_rev
             sha = resolve(rev)
             if sha is None:
                 f.add(loc, f"absence: revision {rev} not found in {repo}")
@@ -1266,7 +1352,7 @@ def check_evidence(ctx, repo, rev_flag, f):
         m = AT_RX.match(e["at"]) if isinstance(e.get("at"), str) else None
         if not m or not (isinstance(e.get("anchor"), str) and e["anchor"].strip()):
             continue  # already a structural finding
-        rev = m.group("rev") or default_rev
+        rev = m.group("rev") or base_rev
         sha = resolve(rev)
         if sha is None:
             f.add(loc, f"bad anchor: revision {rev} not found in {repo}")
@@ -1325,6 +1411,7 @@ def run_checks(doc, ctx, f, tier, repo, rev):
     check_budget(ctx, states, tier, f)
     if repo is not None and not structural:
         check_evidence(ctx, repo, rev, f)
+        collect_reference(doc, repo, rev, f)
     return states
 
 
@@ -1426,7 +1513,7 @@ def collect_snippets(doc, repo, rev_flag=None):
     return out
 
 
-def build(scenario, tier, out_dir, assets_dir=ASSETS, snippets=None):
+def build(scenario, tier, out_dir, assets_dir=ASSETS, snippets=None, reference=None):
     """Inline the engine assets and the scenario into <out_dir>/index.html.
 
     The shell must carry {{flow_css}}, {{flow_js}} and {{flow_data}}; it may carry
@@ -1441,7 +1528,8 @@ def build(scenario, tier, out_dir, assets_dir=ASSETS, snippets=None):
     absent = [t for t in REQUIRED_SHELL_TOKENS if "{{" + t + "}}" not in shell]
     if absent:
         raise Unreadable(f"shell.html lacks {', '.join('{{' + t + '}}' for t in absent)}")
-    payload = json.dumps({"tier": tier, "scenario": scenario, "snippets": snippets or {}},
+    payload = json.dumps({"tier": tier, "scenario": scenario, "snippets": snippets or {},
+                          "reference": reference or []},
                          ensure_ascii=False).replace("<", "\\u003c")
     table = {"flow_css": css.replace("</style", "<\\/style"),
              "flow_js": js.replace("</script", "<\\/script"),
@@ -1611,6 +1699,7 @@ MD_SECTION_ANSWERS = {
     "Map": "which boxes the scenarios use, their role and where they live in the code",
     "Decision": "which option was chosen, against what, and when to revisit it",
     "Numbers": "every number on the page and what backs it",
+    "Code reference": "every function and class in the files behind the page: lines, purpose, who uses it",
 }
 HEADING_RX = re.compile(r"^(#{1,6}) (.+)$")
 FENCE_RX = re.compile(r"^(`{3,})")
@@ -1660,7 +1749,7 @@ def render_outline_md(doc, ctx, numbers):
     return out
 
 
-def render_markdown(doc, ctx, states, tier):
+def render_markdown(doc, ctx, states, tier, reference=None):
     numbers = ctx["numbers"]
     sub = doc.get("subject") or {}
     meta = [sub.get("kind", "")] + [f"{k} `{sub[k]}`" for k in ("repo", "sha", "base", "pr") if k in sub]
@@ -1727,10 +1816,32 @@ def render_markdown(doc, ctx, states, tier):
             back = (describe_evidence_md(n["ev"], doc) if n.get("tag") == "verified" and n.get("ev")
                     else md_text(n.get("source") or n.get("basis"), {}))
             lines.append(f"| `{name}` | {fmt_number(n)} | {n.get('tag')} | {back} |")
-    return "\n".join(top + render_contents_md(top, lines, contents_answers(doc, ctx)) + lines) + "\n"
+    lines += render_reference_md(reference or [], numbers)
+    return "\n".join(top + render_contents_md(top, lines, contents_answers(doc, ctx, reference)) + lines) + "\n"
 
 
-def contents_answers(doc, ctx):
+def render_reference_md(reference, numbers):
+    """Every listed function and class, read from the code at the page's revision."""
+    if not reference:
+        return []
+    lines = ["", "## Code reference", "",
+             "Read from the code by `100x code_ref`: names, lines and docstrings are the code's own; "
+             "a note is the page author's one-line summary."]
+    for f in reference:
+        lines += ["", f"### `{f['path']}`", ""]
+        if f.get("doc"):
+            lines += [f["doc"], ""]
+        lines += ["| symbol | lines | what it does | used by | branches |", "|---|---|---|---|---|"]
+        for s in f["symbols"]:
+            what = (md_text(s["note"], numbers) if s.get("note") else (s.get("doc") or "*no docstring*")).replace("|", "\\|")
+            deco = "".join(f" `@{d}`" for d in s["decorators"])
+            used = ", ".join(f"`{u}`" for u in s["used_by"]) or "—"
+            row = f"| `{s['name']}`{deco} | {s['line']}–{s['end']} | {what} | {used} | {s['branches']} |"
+            lines.append(row.replace("\n", " "))
+    return lines
+
+
+def contents_answers(doc, ctx, reference=None):
     """What each `##` section of explain.md answers, in the order render_markdown writes them."""
     answers = [MD_SECTION_ANSWERS[k] for k, present in (
         ("Before you watch", doc.get("context")), ("Terms", doc.get("terms")),
@@ -1739,7 +1850,8 @@ def contents_answers(doc, ctx):
     answers += [f"{s.get('kind')} scenario `{sid}`: each step, what it changes and its evidence"
                 for sid, s in ctx["scenarios"].items()]
     return answers + [MD_SECTION_ANSWERS[k] for k, present in (
-        ("Decision", doc.get("decision")), ("Numbers", ctx["numbers"])) if present]
+        ("Decision", doc.get("decision")), ("Numbers", ctx["numbers"]),
+        ("Code reference", reference)) if present]
 
 
 def run_build(path, tier, out_dir, assets_dir, repo=None):
@@ -1757,9 +1869,12 @@ def run_build(path, tier, out_dir, assets_dir, repo=None):
         why = "no --repo given" if repo is None else f"git could not read {cited - len(snippets)} of them"
         print(f"flow build: real code for {len(snippets)} of {cited} cited line(s) ({why}); "
               "the page shows pseudocode for the rest", file=sys.stderr)
-    target = build(doc, tier, out_dir, assets_dir, snippets)
+    reference = collect_reference(doc, repo, None)
+    if doc.get("reference") and repo is None:
+        print("flow build: no --repo given, so the page has no code reference", file=sys.stderr)
+    target = build(doc, tier, out_dir, assets_dir, snippets, reference)
     md = pathlib.Path(out_dir) / MD_EXPORT
-    md.write_text(render_markdown(doc, ctx, states, tier), encoding="utf-8")
+    md.write_text(render_markdown(doc, ctx, states, tier, reference), encoding="utf-8")
     print(f"flow build: wrote {target} and {md} (tier {tier})")
     return 0
 

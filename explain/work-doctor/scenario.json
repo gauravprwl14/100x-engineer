@@ -1,0 +1,267 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the work-doctor skill works",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "The work record is a private notebook that hands every new session a short brief about your PRs, holds and decisions. When the brief silently stops showing up, guessing why wastes a session. work-doctor is the car's diagnostic port: one command runs seven read-only checks, each naming what broke, the likely cause and the exact command that fixes it. The skill wraps it with rules about which fixes Claude may apply on its own (one) and which it must ask about (all the rest)."
+  },
+  "tldr": {
+    "what": "Finds out why the session brief is missing, wrong or not backed up, without changing anything.",
+    "how": "One command runs seven checks in order, including a dry run of the session-start hook, and prints each problem with its cause and fix.",
+    "watch_out": "It never repairs anything itself: apart from tightening the record folder's permissions, every fix waits for your yes."
+  },
+  "context": {
+    "purpose": "When a new session should have received your work brief and did not, you can ask Claude \"work doctor\" and get the cause and the fix in one reading, instead of debugging hooks by hand.",
+    "why_now": "The work record's hook fails open on purpose, so when it breaks it breaks silently; doctor is the only place that says so.",
+    "in_scope": [
+      "The skill: when it fires, what Claude may and may not do",
+      "The doctor command: its seven checks, in order, and how it decides the exit code",
+      "The hook dry run that answers \"would a session here get the brief?\"",
+      "What happens when one check itself crashes",
+      "Every doctor function in scripts/work.py, in the Code reference"
+    ],
+    "out_of_scope": [
+      "How the work record is written (start, decide, hold, handoff)",
+      "PR state such as CI or reviews, which the record never stores",
+      "Finding a past session (the session-find skill)"
+    ],
+    "entry_points": [
+      {"label": "work doctor [--cwd DIR] [--json]", "kind": "command", "scenario": "happy", "ev": "cmd-doctor"},
+      {"label": "work-doctor skill (\"brief not showing\", \"is my record backed up\")", "kind": "command", "scenario": "happy", "ev": "skill-fire"},
+      {"label": "SessionStart hook: work_brief.py", "kind": "event", "note": "doctor runs it as a dry run; it never starts a real session", "ev": "dry-run"}
+    ]
+  },
+  "terms": [
+    {"term": "work record", "means": "A private folder of small event files (one per decision, hold, handoff) that outlives any one chat.", "example": "~/.config/100x/work/<workstream>/"},
+    {"term": "workstream", "means": "One feature family in the record: a name, the repos and the PR branches it covers."},
+    {"term": "brief", "means": "The short summary of a workstream that the session-start hook injects into a new session."},
+    {"term": "hook dry run", "means": "Doctor feeds the session-start hook the exact input a real session in that folder would send, and reads what it prints.", "example": "session brief here: no"},
+    {"term": "finding", "means": "One problem doctor reports: an id, a severity, what is wrong, the likely cause, and the fix as a command.", "example": "D-brief.hook-silent (error)"},
+    {"term": "severity", "means": "error and warn fail the run; info is something to accept or act on, and the run still passes."},
+    {"term": "fail open", "means": "When something goes wrong, do nothing rather than block: the hook prints no brief instead of breaking the session. Safe, but silent."},
+    {"term": "hold", "means": "A note on a PR saying \"do not push or merge this yet\", with a reason. Shown in the brief."},
+    {"term": "backup hint", "means": "The file list your own backup tool uses; doctor checks it names the record folder."},
+    {"term": "config dir", "means": "A Claude Code home such as ~/.claude, or a second one you point CLAUDE_CONFIG_DIR at. Each has its own installed copy of the plugin."}
+  ],
+  "outline": [
+    {
+      "title": "run_doctor(cwd): the command, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {"code": "ctx.matches = lookup(cwd)            # which workstream is this folder?", "steps": [2], "ev": "run-lookup"},
+        {"code": "for check_id, fn in CHECKS:          # registered by @check, in source order", "steps": [3], "ev": "check-register"},
+        {"code": "try: found = fn(ctx)", "indent": 1, "steps": [4, 5, 6, 7, 8], "ev": "run-loop"},
+        {"code": "except: found = [crashed(check_id)]  # one broken check never hides the rest", "indent": 1, "ev": "run-loop"},
+        {"code": "findings.sort(by severity: error, warn, info)", "steps": [9], "ev": "run-sort"},
+        {"code": "ok = no error and no warn", "steps": [9], "ev": "run-ok"},
+        {"code": "exit 0 if ok else 1", "steps": [9], "ev": "cmd-exit"}
+      ]
+    },
+    {
+      "title": "check_brief(ctx): the hook dry run, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {"code": "payload = {SessionStart, cwd, session_id: doctor-dry-run}", "steps": [6], "ev": "dry-payload"},
+        {"code": "brief = run(hooks/work_brief.py, payload, timeout=hook's own)", "steps": [6], "ev": "dry-run"},
+        {"code": "if one workstream matches and brief is empty: error hook-silent", "steps": [6], "ev": "brief-silent"},
+        {"code": "if brief is over its token budget: warn budget", "ev": "brief-silent", "tag": "inferred"}
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "checks",
+      "title": "The seven checks, in the order they run",
+      "kind": "flowchart",
+      "source": "flowchart LR\n  R[D-record: folder exists, private?] --> E[D-events: every event file readable?]\n  E --> L[D-lookup: this repo and branch match one workstream?]\n  L --> B[D-brief: would the session hook print a brief here?]\n  B --> H[D-hooks: does each installed plugin copy register the hooks?]\n  H --> K[D-backup: is the record in your backup, and pushed?]\n  K --> O[D-holds: any hold older than two weeks?]",
+      "caption": "Each check is a function registered with a decorator; the loop runs them in source order and collects findings.",
+      "ev": ["check-register", "run-loop"]
+    },
+    {
+      "id": "skill-rules",
+      "title": "What Claude may do with each finding",
+      "kind": "flowchart",
+      "source": "flowchart TD\n  F[a finding] --> C{fix is chmod 700 on the record folder?}\n  C -- yes --> A[apply it, then re-run doctor]\n  C -- no --> Q[show the exact command and ask first]\n  Q --> Y{you say yes?}\n  Y -- yes --> A\n  Y -- no --> S[leave it, say so plainly]\n  A --> D{doctor exits 0?}\n  D -- no --> F\n  D -- yes --> DONE[done, with the clean run shown]",
+      "caption": "The skill's rules on top of the read-only command: one automatic fix, everything else asked, and done means a clean re-run.",
+      "ev": ["skill-chmod", "skill-ask", "skill-exit"]
+    },
+    {
+      "id": "parts",
+      "title": "What the skill is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  root((work-doctor))\n    Skill text\n      when to fire\n      one automatic fix\n      ask before the rest\n    Command\n      seven checks\n      sorted findings\n      exit code\n    Hook dry run\n      same input as a real session\n      own timeout\n    Limits\n      no fetch\n      cannot see past sessions",
+      "caption": "The skill is rules for Claude; the command is code; the dry run is how doctor sees a hook without starting a session.",
+      "ev": ["skill-fire", "cmd-banner", "dry-run"]
+    }
+  ],
+  "nodes": [
+    {"id": "you", "role": "client", "label": "You"},
+    {"id": "claude", "role": "service", "label": "Claude with the work-doctor skill", "ref": "skills/work-doctor/SKILL.md", "ev": "skill-fire"},
+    {"id": "doctor", "role": "service", "label": "work doctor command", "ref": "scripts/work.py:1203", "ev": "run-loop"},
+    {"id": "checks", "role": "queue", "label": "Checks to run (in source order)", "ref": "scripts/work.py:659", "ev": "check-register"},
+    {"id": "runner", "role": "worker", "label": "Check runner", "slots": 1, "ref": "scripts/work.py:1213", "ev": "run-loop"},
+    {"id": "record", "role": "store", "label": "Work record folder", "ev": "record-mode"},
+    {"id": "hook", "role": "edge", "label": "Session-start hook (work_brief.py)", "ref": "hooks/work_brief.py", "ev": "dry-run"},
+    {"id": "plugins", "role": "external", "label": "Installed plugin copies (each config dir)", "ev": "hooks-plugin"},
+    {"id": "backup", "role": "external", "label": "Your backup repo (local refs only)", "ev": "backup-ahead"}
+  ],
+  "numbers": {
+    "checks_n": {"v": 7, "unit": "checks", "tag": "measured", "source": "grep -c '^@check(' scripts/work.py (at f2aebfc)"},
+    "stale_days": {"v": 14, "unit": "days", "tag": "verified", "ev": "hold-days"}
+  },
+  "evidence": {
+    "skill-fire": {"at": "skills/work-doctor/SKILL.md:20", "anchor": "Fire when"},
+    "skill-port": {"at": "skills/work-doctor/SKILL.md:15", "anchor": "diagnostic port"},
+    "skill-readonly": {"at": "skills/work-doctor/SKILL.md:50", "anchor": "Doctor is read-only"},
+    "skill-chmod": {"at": "skills/work-doctor/SKILL.md:35", "anchor": "Apply, without asking, only"},
+    "skill-ask": {"at": "skills/work-doctor/SKILL.md:58", "anchor": "Ask before any fix other than"},
+    "skill-events": {"at": "skills/work-doctor/SKILL.md:60", "anchor": "Never move, edit or delete an event file"},
+    "skill-exit": {"at": "skills/work-doctor/SKILL.md:54", "anchor": "Exit 0 means no error or warning"},
+    "skill-hold-p2": {"at": "skills/work-doctor/SKILL.md:40", "anchor": "no hook blocks a push on it"},
+    "check-register": {"at": "scripts/work.py:659", "anchor": "def check(check_id)"},
+    "checks-readonly": {"at": "scripts/work.py:623", "anchor": "Nothing here writes, fetches or calls gh"},
+    "hold-days": {"at": "scripts/work.py:628", "anchor": "HOLD_STALE_DAYS = 14"},
+    "record-mode": {"at": "scripts/work.py:709", "anchor": "D-record.mode"},
+    "events-malformed": {"at": "scripts/work.py:758", "anchor": "D-events.malformed"},
+    "lookup-none": {"at": "scripts/work.py:832", "anchor": "D-lookup.none"},
+    "dry-run": {"at": "scripts/work.py:870", "anchor": "def run_brief_hook_dry"},
+    "dry-payload": {"at": "scripts/work.py:874", "anchor": "doctor-dry-run"},
+    "brief-silent": {"at": "scripts/work.py:909", "anchor": "D-brief.hook-silent"},
+    "reinstall": {"at": "scripts/work.py:997", "anchor": "def reinstall_cmd"},
+    "hooks-plugin": {"at": "scripts/work.py:1020", "anchor": "D-hooks.plugin"},
+    "backup-ahead": {"at": "scripts/work.py:1116", "anchor": "@{u}..HEAD"},
+    "backup-nofetch": {"at": "scripts/work.py:1128", "anchor": "nothing was fetched"},
+    "holds-stale": {"at": "scripts/work.py:1173", "anchor": "D-holds.stale"},
+    "crashed": {"at": "scripts/work.py:1195", "anchor": "def crashed"},
+    "run-lookup": {"at": "scripts/work.py:1209", "anchor": "doctor exists for broken records"},
+    "run-loop": {"at": "scripts/work.py:1215", "anchor": "one broken check must not hide"},
+    "run-sort": {"at": "scripts/work.py:1220", "anchor": "findings.sort"},
+    "run-ok": {"at": "scripts/work.py:1221", "anchor": "ok = not any"},
+    "cmd-banner": {"at": "scripts/work.py:1231", "anchor": "read-only: nothing is written, no network"},
+    "cmd-doctor": {"at": "scripts/work.py:1248", "anchor": "def cmd_doctor"},
+    "cmd-exit": {"at": "scripts/work.py:1261", "anchor": "return 0 if result"},
+    "brief-hook-main": {"at": "hooks/work_brief.py:18", "anchor": "def main"},
+    "no-fetch": {"absent": "a git fetch or gh call anywhere in the doctor checks", "git_grep": "\"fetch\"|'fetch'|\\[\"gh\"", "path": "scripts/work.py", "hits": 0}
+  },
+  "initial": {
+    "stores": {"record": {"folder": "exists"}}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "\"My brief stopped showing\": doctor finds the cause",
+      "steps": [
+        {"t": "You say the session brief is not showing", "d": "That phrase is one of the skill's triggers, so Claude loads the work-doctor rules before touching anything.", "do": [["send", "you", "claude", "my brief isn't showing"]], "ev": ["skill-fire"]},
+        {"t": "Claude runs the doctor command for this folder", "d": "Diagnose first: rule one forbids guessing that the hook is broken from a missing brief alone.", "do": [["send", "claude", "doctor", "work doctor"]], "ev": ["cmd-doctor", "skill-readonly"]},
+        {"t": "Doctor works out which workstream this folder belongs to", "d": "It matches the repo's origin remote and branch against the record. A crash here becomes a finding, not a stack trace.", "do": [["db.read", "record", "folder", "where"]], "ev": ["run-lookup", "lookup-none"], "expect": {"vars": {"where": "exists"}}},
+        {"t": "The seven checks line up in source order", "d": "Each is a function marked with a decorator that adds it to one list. Adding a check is adding one function.", "do": [["enqueue", "checks", "D-record"], ["enqueue", "checks", "D-events"], ["enqueue", "checks", "D-lookup"], ["enqueue", "checks", "D-brief"], ["enqueue", "checks", "D-hooks"], ["enqueue", "checks", "D-backup"], ["enqueue", "checks", "D-holds"]], "ev": ["check-register"], "expect": {"queues": {"checks": 7}}},
+        {"t": "Record checks: is the folder private, and is every event file readable?", "d": "A folder other users can read is a warning; a broken event file is reported, never moved or deleted.", "do": [["pickup", "checks", "runner"], ["free", "runner", "D-record"], ["pickup", "checks", "runner"], ["free", "runner", "D-events"]], "ev": ["record-mode", "events-malformed", "skill-events"]},
+        {"t": "Lookup check: this repo and branch match exactly one workstream?", "d": "None or several is the usual reason for a missing brief, and the fix pre-fills the start command.", "do": [["pickup", "checks", "runner"], ["free", "runner", "D-lookup"]], "ev": ["lookup-none"]},
+        {"t": "Brief check: doctor dry-runs the session-start hook", "d": "It sends the hook the exact input a real session here would send and reads the answer, so \"would a session get the brief\" is a yes or no, not a guess.", "do": [["pickup", "checks", "runner"], ["send", "doctor", "hook", "SessionStart payload for this folder"], ["reply", "hook", "doctor", "no brief printed"], ["free", "runner", "D-brief"], ["counter", "errors", 1]], "ev": ["dry-run", "dry-payload", "brief-silent"], "expect": {"counters": {"errors": 1}}, "code": ["brief = run(work_brief.py, payload)", "if matched and not brief: error D-brief.hook-silent"]},
+        {"t": "Hooks check: does every installed plugin copy register the work hooks?", "d": "A stale copy in one config dir runs old hooks. The fix is the exact reinstall chain, prefixed with that config dir.", "do": [["pickup", "checks", "runner"], ["send", "doctor", "plugins", "read hooks.json per copy"], ["free", "runner", "D-hooks"]], "ev": ["hooks-plugin", "reinstall"]},
+        {"t": "Backup and holds checks, from local state only", "d": "Commits ahead of upstream are counted from local refs; nothing is fetched. Holds older than {{stale_days}} are listed as info.", "do": [["pickup", "checks", "runner"], ["send", "doctor", "backup", "count commits ahead (local refs)"], ["free", "runner", "D-backup"], ["pickup", "checks", "runner"], ["free", "runner", "D-holds"]], "ev": ["backup-ahead", "backup-nofetch", "holds-stale", "no-fetch"], "expect": {"queues": {"checks": 0}}},
+        {"t": "Doctor sorts findings, worst first, and sets the exit code", "d": "An error or a warning makes the run fail; info alone lets it pass.", "do": [["reply", "doctor", "claude", "error D-brief.hook-silent; run fails"]], "ev": ["run-sort", "run-ok", "cmd-exit"]},
+        {"t": "Claude explains the finding plainly and asks before fixing", "d": "One sentence each: what broke, why, what the fix does. Only a permissions fix on the record folder may be applied without asking.", "do": [["reply", "claude", "you", "the hook fails silently here; run this command?"]], "ev": ["skill-chmod", "skill-ask"]},
+        {"t": "After the fix, Claude re-runs doctor until it exits clean", "d": "Done is a clean doctor run, shown, not a claim that the fix worked.", "do": [["send", "claude", "doctor", "work doctor"], ["counter", "errors", -1], ["reply", "doctor", "claude", "no problems found; run passes"]], "ev": ["skill-exit"], "expect": {"counters": {"errors": 0}}}
+      ]
+    },
+    {
+      "id": "check-crash",
+      "kind": "failure",
+      "title": "One check crashes; the others still report",
+      "branch": {"from": "happy", "at": 6},
+      "steps": [
+        {"t": "The brief check hits a file shape it does not expect, and raises", "d": "Doctor exists for broken records, so a broken record must not break doctor.", "do": [["pickup", "checks", "runner"], ["fail", "runner", "D-brief raised"], ["free", "runner", "D-brief"]], "ev": ["run-loop"]},
+        {"t": "The crash becomes its own error finding", "d": "It says the check could not finish, names the exception, and asks for a report with the JSON output.", "do": [["counter", "errors", 1], ["note", "D-brief.crashed: could not finish"]], "ev": ["crashed"], "expect": {"counters": {"errors": 1}}},
+        {"t": "The remaining checks run as normal", "do": [["pickup", "checks", "runner"], ["free", "runner", "D-hooks"], ["pickup", "checks", "runner"], ["free", "runner", "D-backup"], ["pickup", "checks", "runner"], ["free", "runner", "D-holds"]], "ev": ["run-loop"], "expect": {"queues": {"checks": 0}}},
+        {"t": "Doctor fails the run with the crash listed first", "do": [["reply", "doctor", "claude", "error D-brief.crashed; run fails"]], "ev": ["run-sort", "cmd-exit"]}
+      ]
+    },
+    {
+      "id": "issue-autofix",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if doctor repaired things itself?",
+      "branch": {"from": "happy", "at": 4},
+      "fixed_by": ["fix-ask"],
+      "steps": [
+        {"t": "The events check finds an unreadable event file and deletes it", "d": "That file may hold the only copy of a decision; the brief already skips it safely.", "do": [["pickup", "checks", "runner"], ["free", "runner", "D-record"], ["pickup", "checks", "runner"], ["db.write", "record", "folder", "event deleted"], ["free", "runner", "D-events"]], "tag": "inferred"},
+        {"t": "The hooks check reinstalls the plugin on its own, in the wrong config dir", "d": "Uninstall succeeds, install fails: that config dir now has no plugin at all.", "do": [["send", "doctor", "plugins", "uninstall + install"], ["fail", "plugins", "no plugin installed"]], "tag": "inferred"},
+        {"t": "You find out later, with a decision gone and a session broken", "do": [["reply", "doctor", "you", "fixed!"]], "tag": "inferred"}
+      ]
+    },
+    {
+      "id": "fix-ask",
+      "kind": "fix",
+      "title": "Fix: the command is read-only, and every fix is a command you approve",
+      "branch": {"from": "issue-autofix", "at": 4},
+      "steps": [
+        {"t": "The events check only reports the broken file", "d": "Nothing in the doctor checks writes, fetches or calls GitHub; the fix is text.", "do": [["pickup", "checks", "runner"], ["free", "runner", "D-record"], ["pickup", "checks", "runner"], ["free", "runner", "D-events"], ["note", "D-events.malformed: reported, untouched"]], "ev": ["checks-readonly", "skill-events"], "expect": {"store": {"record": {"folder": "exists"}}}},
+        {"t": "The hooks check prints the reinstall chain for the exact config dir", "d": "The command carries that config dir, so it cannot land in the wrong one; Claude shows it and asks.", "do": [["send", "doctor", "plugins", "read only"], ["reply", "doctor", "claude", "fix: CLAUDE_CONFIG_DIR=… reinstall chain"]], "ev": ["reinstall", "skill-ask"]},
+        {"t": "You approve, Claude runs it, and doctor confirms", "do": [["reply", "claude", "you", "ran it; doctor run is clean"]], "ev": ["skill-exit"]}
+      ]
+    },
+    {
+      "id": "issue-hold",
+      "kind": "issue",
+      "severity": "medium",
+      "origin": "in-code",
+      "open": true,
+      "title": "A hold does not block a push yet",
+      "steps": [
+        {"t": "You put a hold on a PR: do not push until the backend lands", "do": [["send", "you", "claude", "hold the frontend PR"], ["db.write", "record", "folder", "hold recorded"]], "ev": ["skill-hold-p2"]},
+        {"t": "A later session pushes the PR anyway", "d": "The hold is shown in the brief, but no hook checks it before a push; that guard is planned for a later phase.", "do": [["note", "git push of the held PR goes through"]], "ev": ["skill-hold-p2"]},
+        {"t": "Doctor can only list the hold and its age", "do": [["send", "you", "doctor", "why didn't the hold block?"], ["reply", "doctor", "you", "D-holds: hold active, not enforced"]], "ev": ["holds-stale", "skill-hold-p2"]}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "readonly", "label": "Read-only diagnosis; every fix is a printed command", "fit": "pass", "pros": ["Safe to run any time, on any machine", "The fix is visible and reviewable before it runs"], "cons": ["Takes one more step: someone has to run the fix"]},
+      {"id": "autofix", "label": "Doctor repairs what it finds", "fit": "fail", "pros": ["One step"], "cons": ["Can delete the only copy of a decision", "A half-finished reinstall leaves no plugin"]},
+      {"id": "manual", "label": "No doctor: debug hooks by hand", "fit": "fail", "pros": ["No code to maintain"], "cons": ["The hook fails open, so nothing says it broke", "Costs a session per incident"]}
+    ],
+    "chosen": "readonly",
+    "deciding_factor": "The record is private and some repairs cannot be undone, so the diagnosis must never be the thing that breaks it.",
+    "revisit_when": "A repair proves both common and fully reversible, like the folder permissions fix already is.",
+    "source": "skills/work-doctor/SKILL.md rules 2 and 4; prds/work-continuity/prd.md §9"
+  },
+  "checks": [
+    {"scenario": "happy", "step": 6, "q": "How can doctor know whether a new session here would get the brief, without starting one?", "answer": "It runs the session-start hook itself with the exact input a real session would send, and reads what it prints."},
+    {"scenario": "check-crash", "step": 7, "q": "The brief check just crashed. Does doctor stop?", "answer": "No: the crash becomes an error finding and the other checks still run."},
+    {"scenario": "fix-ask", "step": 5, "q": "Who runs the reinstall?", "answer": "Claude, but only after showing you the exact command and you saying yes."}
+  ],
+  "compare": ["issue-autofix", "fix-ask"],
+  "reference": [
+    {
+      "path": "scripts/work.py",
+      "symbols": ["check", "finding", "check_record", "check_events", "check_lookup", "run_brief_hook_dry", "check_brief", "installed_copies", "reinstall_cmd", "check_hooks", "mid_operation", "scan_backup_repo", "check_backup", "check_holds", "crashed", "run_doctor", "print_doctor", "cmd_doctor"],
+      "notes": {
+        "check": "Decorator: adds a check function to the CHECKS list under its id, in source order.",
+        "finding": "Builds one finding: id, severity, what is wrong, the likely cause, the fix.",
+        "check_record": "D-record: is the record switched off, missing, not a folder, or readable by other users?",
+        "check_events": "D-events: reports event files that cannot be read or parsed, and never touches them.",
+        "check_lookup": "D-lookup: does this folder's repo and branch match exactly one workstream?",
+        "check_brief": "D-brief: dry-runs the session hook here; flags a silent hook, a slow one, or a brief over its token budget.",
+        "reinstall_cmd": "The exact uninstall, marketplace update and install chain, prefixed with the config dir it is for.",
+        "check_hooks": "D-hooks: do this plugin and each installed copy register the work hooks?",
+        "check_backup": "D-backup: does the backup hint name the record folder, and is the backup repo pushed and not mid-rebase?",
+        "check_holds": "D-holds: lists holds older than the stale threshold, as info.",
+        "crashed": "Turns an exception inside a check into an error finding, so the other checks still report.",
+        "run_doctor": "Runs the lookup, then every check in order; sorts findings worst first and decides ok.",
+        "print_doctor": "Prints the header (record dir, workstream, dry-run result), each finding with cause and fix, and a summary.",
+        "cmd_doctor": "The command: checks the folder argument, runs doctor, prints text or JSON, and exits with success only when nothing failed."
+      }
+    },
+    {
+      "path": "hooks/work_brief.py",
+      "notes": {
+        "main": "Returns the session-start brief for the folder when it matches exactly one workstream; nothing otherwise."
+      }
+    }
+  ]
+}

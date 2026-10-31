@@ -12,6 +12,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | [Top level](#top-level) | which keys exist, which are required, which are heavy-only | ~25 lines |
 | [Context, vocabulary, outline](#context-vocabulary-outline) | how the page answers in three lines (`tldr`), says what the PR does, defines its words and sketches the code | ~45 lines |
 | [Diagrams](#diagrams) | how a mermaid diagram, mind map included, is written, cited and checked | ~25 lines |
+| [Code reference](#code-reference) | how a page lists every function in the files behind it, read from the code | ~20 lines |
 | [Nodes, numbers, evidence](#nodes-numbers-evidence) | how boxes, tagged numbers and checkable evidence are written | ~45 lines |
 | [Scenarios and steps](#scenarios-and-steps) | how a timeline, an issue and its origin, a fix branch, a step's `expect` and `code` are written | ~50 lines |
 | [Decision, checks, compare](#decision-checks-compare) | how the trade-off card and the heavy extras are written | ~20 lines |
@@ -39,6 +40,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `terms` | no | list ≤ 12 | the words a reader outside the module needs |
 | `outline` | no | list (light ≤ 1, heavy ≤ 3) | pseudocode of the workflow, lines linked to steps |
 | `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
+| `reference` | no | list (1-8) | Python files whose functions and classes the page lists; see [Code reference](#code-reference) |
 
 Light is the subset without `checks`, `compare` and `ja` text; a light check notes and ignores
 them, so the same file upgrades with `--tier heavy`. A value in state (`initial`, `cache.set`,
@@ -112,6 +114,30 @@ not the order things happen in, e.g. a module's routes, gates, data and risks ar
 Its source starts with `mindmap`, has exactly one root at the smallest indent, uses one kind of
 indentation (all spaces or all tabs), and a line that steps back out lines up with an earlier
 sibling. Its node count takes the same level budgets as a flowchart (`%% level: 1` ≤ 12 nodes).
+
+## Code reference
+
+**`reference`** — the drill-down below the walkthrough: what each function and class in the files
+behind the page does, and who uses it. The agent names files and writes notes; the inventory
+itself is never written by hand. `flow build` reads each file at the page's revision (the same
+one evidence resolves against) with `scripts/code_ref.py` and renders a table per file: symbol,
+line span, what it does (the note, else the first docstring line, else "no docstring"), used by
+(other symbols in the same file whose body names it, matched by name, so a method called `get`
+is "used by" anything calling a `.get`; a decorator does not count), and a branch
+count (ifs, loops, boolean operators: a rough measure of logic).
+
+| key | req | notes |
+|---|---|---|
+| `path` | yes | repo-relative `.py` path; unique. Python only in this version |
+| `symbols` | no | the names to show, in order (`Class.method` for a method); default every top-level function, class and method |
+| `notes` | no | symbol name → Text: a one-line summary for a symbol with no docstring or a misleading one; prose, so the bare-number check applies; a note on a name not in `symbols` is a finding |
+
+With `--repo`, `flow check` fails a file git cannot read or parse at that revision and a symbol or
+note naming something the file does not hold (with a did-you-mean), so a page cannot describe a
+function that is not there. Like evidence, this runs only on a file with no shape findings.
+Without `--repo`, `flow build` leaves the section out and says so on stderr.
+`100x code_ref build <file>… --md` prints the same inventory for any file;
+`100x code_ref check reference.json` exits 1 once a file has changed since it was read.
 
 ## Nodes, numbers, evidence
 
@@ -212,7 +238,7 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `step has no evidence` | `ev` non-empty or `tag: inferred` |
 | `bad anchor` | the revision exists, the file exists at it, the line is in range, the anchor is within ±2 lines |
 | `absence contradicted` / `absence: git grep failed` | the stated hit count is the real one |
-| `bare number` | a word starting with a digit in any prose field (every Text, every language, `tldr`, `context`, `terms`, outline titles, diagram titles and captions; not `code` or a diagram `source`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
+| `bare number` | a word starting with a digit in any prose field (every Text, every language, `tldr`, `context`, `terms`, outline titles, diagram titles and captions, reference notes; not `code` or a diagram `source`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a word of the subject's `repo` name (a project called `100x`), a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
 | `unknown number` | every `{{name}}` is in `numbers` |
 | `issue has neither fixed_by nor open: true` | Q4: every issue says what fixes it, or that nothing does yet |
 | `expect contradicts reducer` | `expect` and a declared `hazard` match the replay |
@@ -222,6 +248,7 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `subject.kind pr needs context` | a PR page says what the PR does for a user and what it covers |
 | `issue has no origin` | every issue says whether it is in the code, a what-if, or found in review |
 | `fix for what-if issue … cites no evidence` | a counterfactual's fix shows the real design, cited |
+| `no symbol '<name>' in <path>` / `reference[i].path: …` | every `reference` file parses at the page's revision and holds every named symbol and note |
 | `jargon in step title` / `jargon in tldr` | a camelCase, PascalCase (two capitals), snake_case or dotted (`Promise.all`; both parts ≥ 2 characters) word in a step `t` or a `tldr` line, any language, that is not a word of a `terms[].term`, of a node `label` or a node `id` (case-insensitive). `PATCH`, `ACL`, `postgres`, `e.g.` pass |
 | `keep it to one sentence` | each `tldr` line is at most 200 characters in every language |
 | `duplicate term` | each term is defined once, case-insensitively |

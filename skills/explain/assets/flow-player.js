@@ -324,6 +324,10 @@ const UI = {
     theme: a => `Theme: ${a.mode}`, themeAuto: "auto", themeLight: "light", themeDark: "dark",
     lang: "Language",
     beforeWatch: "Before you watch", whyNow: "Why now", inScope: "In this PR", outScope: "Not in this PR",
+    inScopePage: "In scope", outScopePage: "Not in scope",
+    reference: "Code reference", symbolCol: "Symbol", linesCol: "Lines", whatCol: "What it does", usedCol: "Used by",
+    branchesCol: "Branches", noDoc: "no docstring",
+    refLede: "Read from the code: names, lines and docstrings are the code's own; a note is the page author's one-line summary. Branches counts ifs, loops and boolean operators, a rough measure of how much logic a symbol holds.",
     entryPoints: "Entry points", entryCol: "Entry point", entryKindCol: "Kind", walkCol: "In the walkthrough",
     animated: "animated", walked: "Walked through below", sameGates: "same gates", terms: "Terms",
     epKind: { route: "route", job: "job", event: "event", command: "command", function: "function", screen: "screen" },
@@ -373,6 +377,7 @@ const UI = {
       decision: "Which option was chosen, and why",
       numbers: "Where every number on this page comes from",
       evidence: "Which line of code backs each claim",
+      reference: "What each function and class in these files does, and who uses it",
     },
     count: {
       entryPoints: a => plural(a.n, "entry point", "entry points"), terms: a => plural(a.n, "term", "terms"),
@@ -380,6 +385,7 @@ const UI = {
       lines: a => plural(a.n, "line", "lines"), scenarios: a => plural(a.n, "scenario", "scenarios"),
       steps: a => plural(a.n, "step", "steps"), issues: a => plural(a.n, "issue", "issues"),
       options: a => plural(a.n, "option", "options"), numbers: a => plural(a.n, "number", "numbers"),
+      symbols: a => plural(a.n, "symbol", "symbols"), files: a => plural(a.n, "file", "files"),
       cited: a => plural(a.n, "cited line", "cited lines"), absences: a => plural(a.n, "counted absence", "counted absences"),
     },
     dgKind: { sequence: "sequence diagram", flowchart: "flowchart", state: "state diagram", er: "ER diagram", class: "class diagram", mindmap: "Mind map" },
@@ -424,6 +430,10 @@ const UI = {
     theme: a => `テーマ: ${a.mode}`, themeAuto: "自動", themeLight: "ライト", themeDark: "ダーク",
     lang: "言語",
     beforeWatch: "見る前に", whyNow: "なぜ今か", inScope: "この PR に含まれる", outScope: "この PR に含まれない",
+    inScopePage: "範囲内", outScopePage: "範囲外",
+    reference: "コード一覧", symbolCol: "シンボル", linesCol: "行", whatCol: "役割", usedCol: "使用元",
+    branchesCol: "分岐数", noDoc: "docstring なし",
+    refLede: "コードから読み取った一覧です。名前・行・docstring はコードそのもの、ノートはページ作者の一行要約です。分岐数は if・ループ・論理演算の数で、ロジック量の目安です。",
     entryPoints: "入口", entryCol: "入口", entryKindCol: "種類", walkCol: "ウォークスルー",
     animated: "アニメーション", walked: "下でステップごとに説明", sameGates: "同じ関門を通る", terms: "用語",
     epKind: { route: "ルート", job: "ジョブ", event: "イベント", command: "コマンド", function: "関数", screen: "画面" },
@@ -1254,7 +1264,8 @@ function mapLegend() {
 
 const CLOSED_BY_DEFAULT = ["evidence"];
 const SECTION_TITLE = { before: "beforeWatch", outline: "outline", diagrams: "diagrams", walk: "walkthrough", steps: "stepCards",
-                        issues: "issues", decision: "decision", numbers: "numbers", evidence: "evidenceTitle" };
+                        issues: "issues", decision: "decision", numbers: "numbers", evidence: "evidenceTitle",
+                        reference: "reference" };
 // A section the reader folds stays folded when the page redraws (language, narrow/wide).
 function fold(key, title, kids, cls) {
   const open = own(P.folds, key) ? P.folds[key] : !CLOSED_BY_DEFAULT.includes(key);
@@ -1288,6 +1299,7 @@ function sectionCount(key) {
     decision: [n("options", ((P.doc.decision || {}).options || []).length)],
     numbers: [n("numbers", Object.keys(P.numbers).length)],
     evidence: [ev.length - absent && n("cited", ev.length - absent), absent && n("absences", absent)],
+    reference: [n("files", P.reference.length), n("symbols", P.reference.reduce((a, f) => a + f.symbols.length, 0))],
   };
   parts.steps = parts.walk;
   const out = (parts[key] || []).filter(Boolean);
@@ -1524,7 +1536,7 @@ function beforeWatch(onShow) {
     if (c.why_now) parts.push(h("p", { class: "why" }, h("b", null, ui("whyNow")), " ", txNode(c.why_now)));
     const list = (k, items) => {
       const ul = h("ul", { id: "scope-" + k }, items.map(x => h("li", null, txNode(x))));
-      return h("div", { class: "scope s-" + k }, h("h3", null, ui(k)), ul,
+      return h("div", { class: "scope s-" + k }, h("h3", null, ui((P.doc.subject || {}).kind === "pr" ? k : k + "Page")), ul,
         showAll(ul, [...ul.children].map((li, i) => i < SCOPE_SHOWN), ui("showAll", { n: items.length })));
     };
     parts.push(h("div", { class: "scopes" }, list("inScope", c.in_scope || []),
@@ -1807,6 +1819,23 @@ function evidencePanel() {
       }))))], "panel ev-panel");
 }
 
+// Every function and class in the files behind the page, as `flow build` read them from git.
+function referencePanel() {
+  if (!P.reference.length) return null;
+  const files = P.reference.map(f => h("div", { class: "ref-file" },
+    h("h3", null, h("code", null, f.path)),
+    f.doc ? h("p", { class: "muted" }, f.doc) : null,
+    h("div", { class: "tbl" }, h("table", null,
+      h("thead", null, h("tr", null, ["symbolCol", "linesCol", "whatCol", "usedCol", "branchesCol"].map(k => h("th", null, ui(k))))),
+      h("tbody", null, f.symbols.map(s => h("tr", { id: "ref-" + f.path + ":" + s.name },
+        h("td", null, h("code", { title: s.signature }, s.name), (s.decorators || []).map(d => h("div", { class: "muted" }, h("code", null, "@" + d)))),
+        h("td", { class: "n" }, s.line + "–" + s.end),
+        h("td", null, s.note ? txNode(s.note) : s.doc ? s.doc : h("span", { class: "muted" }, ui("noDoc"))),
+        h("td", null, (s.used_by || []).length ? s.used_by.map((u, i) => [i ? ", " : "", h("code", null, u)]) : "—"),
+        h("td", { class: "n" }, String(s.branches)))))))));
+  return fold("reference", ui("reference"), [h("p", { class: "muted" }, ui("refLede")), files], "panel ref-panel");
+}
+
 function footer() { return h("footer", { class: "foot" }, h("p", null, ui("footer", { tier: P.tier }))); }
 
 function banners(st) {
@@ -1836,7 +1865,7 @@ function renderLight(app) {
   app.append(fold("steps", ui("stepCards"), [overview, P.order.map(sid => lightScenario(sid, narrow))], "bare"));
   const M0 = buildMap(mapHost, { narrow });
   renderMap(M0, P.init, {});
-  for (const x of [issuesPanel(null), decisionPanel(null), numbersPanel(), evidencePanel(), footer()]) if (x) app.append(x);
+  for (const x of [issuesPanel(null), decisionPanel(null), numbersPanel(), evidencePanel(), referencePanel(), footer()]) if (x) app.append(x);
   layoutDoc(app);
   fillDiagram();
   // Cards are drawn after they are in the document: arrow labels need path lengths.
@@ -2291,7 +2320,7 @@ function renderHeavy(app) {
   const jump = (id, i) => { openWalk(); selectTab(id, i, false); $("stage").scrollIntoView({ block: "nearest" }); };
   const walk = fold("walk", ui("walkthrough"), [bar, fixbar, main, compare], "bare walk");
   app.replaceChildren(hero(), ...[beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
-    issuesPanel(show), decisionPanel(show), numbersPanel(), evidencePanel()].filter(Boolean), footer());
+    issuesPanel(show), decisionPanel(show), numbersPanel(), evidencePanel(), referencePanel()].filter(Boolean), footer());
   layoutDoc(app);
   PL.M = buildMap($("svgbox"), { narrow: innerWidth < NARROW_PX });
   document.addEventListener("keydown", onKey);
@@ -2581,6 +2610,7 @@ function makeContext(data) {
   P.hasJa = P.tier === "heavy" && hasJa(doc);
   const snippets = data.snippets;
   P.snippets = snippets && typeof snippets === "object" && !Array.isArray(snippets) ? snippets : {};
+  P.reference = Array.isArray(data.reference) ? data.reference.filter(f => f && typeof f.path === "string" && Array.isArray(f.symbols)) : [];
   P.terms = Array.isArray(doc.terms) ? doc.terms.filter(t => t && typeof t.term === "string" && t.term) : [];
   P.outline = Array.isArray(doc.outline) ? doc.outline.filter(o => o && Array.isArray(o.lines)) : [];
   P.diagrams = Array.isArray(doc.diagrams) ? doc.diagrams.filter(d => d && typeof d.source === "string" && d.source.trim()) : [];

@@ -1,0 +1,1325 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the 100x plugin works, end to end",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "100x is a Claude Code plugin that turns a plain-English request into verified work. Think of it as a building with a front desk: the router skill is the receptionist who works out what you need, skills are the rulebooks each department follows, agents are the specialists who do the work in parallel, tools are the measuring instruments, and hooks are the security guards at the doors who check a signed receipt before anything leaves the building."
+  },
+  "tldr": {
+    "what": "It routes any engineering request to the right rulebooks and specialist agents, and refuses to call work done until a check has really passed.",
+    "how": "A front-door skill picks the plan, agents do the work, a separate verifier re-runs the checks and signs a receipt, and guards at commit time read that receipt.",
+    "watch_out": "The guards only block in a repository that turns them on; everywhere else they just warn."
+  },
+  "context": {
+    "purpose": "Anyone joining the project, or using the plugin for the first time, can see what each part is for and follow one request from the moment it is typed to the moment it is committed.",
+    "why_now": "The plugin has grown to {{skills}}, {{agents}} and {{tools}}; a newcomer needs the map before the parts make sense.",
+    "in_scope": [
+      "The five kinds of parts: router, skills, agents, tools and hooks, and how they talk",
+      "A build request end to end, with parallel agents",
+      "Why an agent's own report is never trusted, and what checks it instead",
+      "Why a receipt goes stale the moment a file changes after verifying"
+    ],
+    "out_of_scope": [
+      "How each part works on its own: one page per part, listed in explain/INDEX.md (work-doctor first)",
+      "The learn sub-plugin and the research pipeline scripts",
+      "Fork guard, work record and markdown index nudges: other hooks, same pattern",
+      "Function-by-function detail: each part page has a Code reference"
+    ],
+    "entry_points": [
+      {
+        "label": "/100x:100x <request>",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "router-classify"
+      },
+      {
+        "label": "bin dispatcher: <tool> [args]",
+        "kind": "command",
+        "note": "every tool runs through one dispatcher; the build walkthrough calls several",
+        "ev": "bin-entry"
+      },
+      {
+        "label": "git commit / push / gh pr create",
+        "kind": "command",
+        "scenario": "fix-receipt",
+        "ev": "gate-why"
+      },
+      {
+        "label": "agent report (report.json)",
+        "kind": "event",
+        "scenario": "fix-replay",
+        "ev": "report-claim"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term": "skill",
+      "means": "A rulebook in skills/<name>/SKILL.md that Claude loads for one kind of task. Each rule says what enforces it.",
+      "example": "bug-fix: reproduce first, commit the failing test, then fix."
+    },
+    {
+      "term": "router",
+      "means": "The front-door skill, invoked by the plugin's own name as a slash command. It names the kind of request, asks only questions that change the plan, and picks the skills and agents.",
+      "example": "\"add an export endpoint\" is a build."
+    },
+    {
+      "term": "agent",
+      "means": "A specialist sub-session defined in agents/<name>.md, with its own tools and preloaded skills.",
+      "example": "backend-engineer, code-reviewer, independent-verifier."
+    },
+    {
+      "term": "tool",
+      "means": "A Python script in scripts/ run through the single dispatcher in bin/. Tools check things a rule can only ask for.",
+      "example": "plan_dag lint plan.json"
+    },
+    {
+      "term": "hook",
+      "means": "A script Claude Code runs on an event (session start, before a shell command, at the end of a turn). It can add context, ask, or block.",
+      "example": "Before git commit, check the receipt."
+    },
+    {
+      "term": "task graph",
+      "means": "plan.json: the tasks of one feature, who owns which files, what each depends on, and which commands verify it.",
+      "example": "T1 backend owns src/api/**; T2 frontend depends on T1."
+    },
+    {
+      "term": "wave",
+      "means": "A group of tasks with no ordering between them and no shared files, so they can run at the same time."
+    },
+    {
+      "term": "report",
+      "means": "The JSON block an agent ends with: what it changed, the commands it ran and their exit codes, and its status."
+    },
+    {
+      "term": "replay",
+      "means": "Re-running the verify commands the plan declared for a task, instead of believing the exit codes in the report."
+    },
+    {
+      "term": "receipt",
+      "means": "A file written by the verified tool after a check passes, signed with a private key and tied to the exact content of your files."
+    },
+    {
+      "term": "fingerprint",
+      "means": "A hash of every tracked file's content. Change one byte and it changes, so an old receipt no longer matches."
+    },
+    {
+      "term": "worktree",
+      "means": "A second checkout of the same repository in its own folder, so two agents edit files without stepping on each other."
+    }
+  ],
+  "outline": [
+    {
+      "title": "route(request): the router skill, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "intent, tier = classify(request)   # build, fix, incident, understand, …",
+          "steps": [
+            2
+          ],
+          "ev": "router-classify"
+        },
+        {
+          "code": "ask(questions, max=5, only_if_plan_changes=True)",
+          "indent": 1,
+          "steps": [
+            2
+          ],
+          "ev": "router-ask"
+        },
+        {
+          "code": "skills, agents, gates = PIPELINE[intent]",
+          "steps": [
+            3
+          ],
+          "ev": "router-build"
+        },
+        {
+          "code": "if needs_parallel_specialists:",
+          "steps": [
+            4
+          ],
+          "ev": "router-orch"
+        },
+        {
+          "code": "plan = stamp(plan_json); plan_dag.lint(plan)   # cycles, shared files, unowned ACs",
+          "indent": 1,
+          "steps": [
+            4
+          ],
+          "ev": "plan-collide"
+        },
+        {
+          "code": "for wave in waves(plan): run one agent per task, own worktree",
+          "indent": 1,
+          "steps": [
+            5
+          ],
+          "ev": "router-orch"
+        },
+        {
+          "code": "for report in reports:",
+          "steps": [
+            7
+          ],
+          "ev": "router-merge"
+        },
+        {
+          "code": "agent_report.lint(report, git_diff(worktree)); replay(plan.verify)",
+          "indent": 1,
+          "steps": [
+            7
+          ],
+          "ev": "report-owned"
+        },
+        {
+          "code": "independent_verifier.rerun(); 100x verified -- <check>",
+          "steps": [
+            8,
+            9
+          ],
+          "ev": "verifier-rerun"
+        },
+        {
+          "code": "done only if receipt.fingerprint == fingerprint(files)",
+          "steps": [
+            10
+          ],
+          "ev": "router-done"
+        }
+      ]
+    },
+    {
+      "title": "require_verification(command): the commit gate, as pseudocode",
+      "scenario": "fix-receipt",
+      "lines": [
+        {
+          "code": "if not in_a_git_repo: return allow            # nothing to gate",
+          "ev": "gate-norepo"
+        },
+        {
+          "code": "policy = load(.claude/verification-policy.json)",
+          "ev": "gate-unconfigured"
+        },
+        {
+          "code": "if policy is None: return warn(\"not configured\")",
+          "indent": 1,
+          "ev": "gate-unconfigured"
+        },
+        {
+          "code": "if no receipt: return deny(\"run the checks first\")",
+          "ev": "gate-noreceipt"
+        },
+        {
+          "code": "fresh = [c for c in receipt if c.fingerprint == fingerprint(files)]",
+          "steps": [
+            2
+          ],
+          "ev": "gate-fresh"
+        },
+        {
+          "code": "if required check not fresh: return deny(\"re-run verification\")",
+          "steps": [
+            2
+          ],
+          "ev": "gate-why"
+        },
+        {
+          "code": "return pass                                   # no 'allow': your own ask rules still apply",
+          "steps": [
+            4
+          ],
+          "ev": "gate-passed"
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What is inside the plugin",
+      "kind": "mindmap",
+      "source": "mindmap\n  root((100x plugin))\n    Router\n      classify the request\n      ask at most five questions\n      pick skills and agents\n    Skills\n      rulebooks per task\n      every rule names its enforcer\n    Agents\n      engineers build\n      reviewers read only\n      verifier trusts no report\n    Tools\n      one dispatcher bin/100x\n      checks rules cannot do alone\n    Hooks\n      session start brief\n      commit and push gate\n      stop gates",
+      "caption": "Five kinds of parts. Skills and the router are text Claude reads; agents are specialists it starts; tools and hooks are code that checks what the text asks for.",
+      "ev": [
+        "manifest",
+        "hooks-events",
+        "bin-entry",
+        "lint-required"
+      ]
+    },
+    {
+      "id": "build-seq",
+      "title": "A build request, end to end",
+      "kind": "sequence",
+      "source": "sequenceDiagram\n  participant U as You\n  participant H as Hooks\n  participant S as Session\n  participant R as Router skill\n  participant A as Agents\n  participant T as 100x tools\n  participant V as Verifier\n  H->>S: session start brief\n  U->>R: add an export endpoint\n  R-->>U: build, up to five questions\n  R->>T: plan_dag lint plan.json\n  S->>A: one task per worktree\n  A-->>S: report.json\n  S->>T: agent_report lint and replay\n  S->>V: re-run declared checks\n  V->>T: 100x verified writes receipt\n  S->>H: git commit\n  H-->>S: receipt matches, pass",
+      "caption": "The same journey the animated build walkthrough plays, one arrow per hand-off.",
+      "scenario": "happy",
+      "ev": [
+        "session-brief",
+        "router-classify",
+        "router-orch",
+        "report-claim",
+        "verifier-rerun",
+        "gate-passed"
+      ]
+    },
+    {
+      "id": "gate-flow",
+      "title": "How the commit gate decides",
+      "kind": "flowchart",
+      "source": "flowchart TD\n  C[git commit, push or gh pr create] --> R{inside a git repo?}\n  R -- no --> OK[let it run]\n  R -- yes --> P{verification policy file?}\n  P -- no --> W[run it, with a warning]\n  P -- yes --> Q{signed receipt present?}\n  Q -- no --> D1[deny: run the checks first]\n  Q -- yes --> F{receipt fingerprint equals files now?}\n  F -- no --> D2[deny: re-run verification]\n  F -- yes --> PASS[pass, your own permission rules still apply]",
+      "caption": "Why this repository only warns: it has no policy file, so the second question answers no.",
+      "scenario": "fix-receipt",
+      "ev": [
+        "gate-norepo",
+        "gate-unconfigured",
+        "gate-noreceipt",
+        "gate-fresh",
+        "gate-passed"
+      ]
+    },
+    {
+      "id": "hook-events",
+      "title": "Which hook fires when",
+      "kind": "flowchart",
+      "source": "flowchart LR\n  SS[Session starts] --> B[brief: start with the router]\n  B --> W[Claude works]\n  W --> PT{shell command mentions git, gh, push or publish?}\n  PT -- yes --> G[receipt gate]\n  PT -- no --> W\n  W --> SA[a sub-agent finishes] --> RC[one second look]\n  W --> ST[the turn ends] --> SG[stop gate and second look]",
+      "caption": "Five events, each guarded by a small script that fails open: a broken guard must never lock you out of your shell.",
+      "ev": [
+        "hooks-events",
+        "hooks-pre",
+        "hooks-stop",
+        "gate-failopen",
+        "stop-why",
+        "recheck-why"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "you",
+      "role": "client",
+      "label": "You"
+    },
+    {
+      "id": "hooks",
+      "role": "edge",
+      "label": "Hooks (guards on events)",
+      "ref": "hooks/hooks.json",
+      "ev": "hooks-events"
+    },
+    {
+      "id": "session",
+      "role": "service",
+      "label": "Main Claude session"
+    },
+    {
+      "id": "router",
+      "role": "service",
+      "label": "Router skill",
+      "ref": "skills/100x/SKILL.md",
+      "ev": "router-classify"
+    },
+    {
+      "id": "skills",
+      "role": "service",
+      "label": "Skills (rulebooks)",
+      "ref": "skills/",
+      "ev": "lint-required"
+    },
+    {
+      "id": "cli",
+      "role": "service",
+      "label": "Tools (bin dispatcher)",
+      "ref": "bin/100x",
+      "ev": "bin-entry"
+    },
+    {
+      "id": "tasks",
+      "role": "queue",
+      "label": "Task graph (plan.json)",
+      "ref": "scripts/plan_dag.py",
+      "ev": "plan-collide"
+    },
+    {
+      "id": "agents",
+      "role": "worker",
+      "label": "Specialist agents",
+      "ref": "agents/",
+      "slots": 3,
+      "ev": "agent-skills"
+    },
+    {
+      "id": "verifier",
+      "role": "service",
+      "label": "Independent verifier",
+      "ref": "agents/independent-verifier.md",
+      "ev": "verifier-trust"
+    },
+    {
+      "id": "worktree",
+      "role": "store",
+      "label": "Your files"
+    },
+    {
+      "id": "receipt",
+      "role": "cache",
+      "label": "Signed receipt",
+      "ref": "scripts/verified.py",
+      "ev": "verified-receipt"
+    },
+    {
+      "id": "git",
+      "role": "external",
+      "label": "git and GitHub"
+    }
+  ],
+  "numbers": {
+    "skills": {
+      "v": 47,
+      "unit": "skills",
+      "tag": "measured",
+      "source": "ls -d skills/*/ | wc -l (at f2aebfc)"
+    },
+    "agents": {
+      "v": 11,
+      "unit": "agents",
+      "tag": "measured",
+      "source": "ls agents/*.md | wc -l (at f2aebfc)"
+    },
+    "tools": {
+      "v": 44,
+      "unit": "tools",
+      "tag": "measured",
+      "source": "100x list | grep -c '^  ' (user-facing tools, at f2aebfc)"
+    },
+    "questions": {
+      "v": 5,
+      "unit": "questions",
+      "tag": "verified",
+      "ev": "router-ask"
+    },
+    "events": {
+      "v": 5,
+      "unit": "events",
+      "tag": "measured",
+      "source": "keys of hooks/hooks.json \"hooks\" (at f2aebfc)"
+    },
+    "slots": {
+      "v": 3,
+      "unit": "slots",
+      "tag": "estimated",
+      "basis": "illustrative: one backend, one frontend and one QA agent in a wave; the real count is the wave's width"
+    }
+  },
+  "evidence": {
+    "manifest": {
+      "at": ".claude-plugin/plugin.json:4",
+      "anchor": "Plain English in, verified work out"
+    },
+    "session-brief": {
+      "at": "hooks/session_start.py:33",
+      "anchor": "Start any engineering task"
+    },
+    "session-why": {
+      "at": "hooks/session_start.py:4",
+      "anchor": "skill menu is truncated"
+    },
+    "hooks-events": {
+      "at": "hooks/hooks.json:3",
+      "anchor": "SessionStart"
+    },
+    "hooks-pre": {
+      "at": "hooks/hooks.json:25",
+      "anchor": "PreToolUse"
+    },
+    "hooks-stop": {
+      "at": "hooks/hooks.json:121",
+      "anchor": "\"Stop\""
+    },
+    "router-classify": {
+      "at": "skills/100x/SKILL.md:103",
+      "anchor": "Classify the intent and state it"
+    },
+    "router-ask": {
+      "at": "skills/100x/SKILL.md:41",
+      "anchor": "at most five questions"
+    },
+    "router-build": {
+      "at": "skills/100x/SKILL.md:72",
+      "anchor": "| build | requirements-intake"
+    },
+    "router-orch": {
+      "at": "skills/100x/SKILL.md:91",
+      "anchor": "each in its own worktree"
+    },
+    "router-merge": {
+      "at": "skills/100x/SKILL.md:120",
+      "anchor": "No agent result is merged"
+    },
+    "router-done": {
+      "at": "skills/100x/SKILL.md:128",
+      "anchor": "Nothing is called done without a fresh receipt"
+    },
+    "lint-required": {
+      "at": "scripts/lint_skills.py:26",
+      "anchor": "## Trigger"
+    },
+    "bin-entry": {
+      "at": "bin/100x:2",
+      "anchor": "Single entry point for every plugin tool"
+    },
+    "bin-exec": {
+      "at": "bin/100x:54",
+      "anchor": "exec python3"
+    },
+    "plan-collide": {
+      "at": "scripts/plan_dag.py:4",
+      "anchor": "parallel agents that collide"
+    },
+    "plan-overlap": {
+      "at": "scripts/plan_dag.py:393",
+      "anchor": "globs_overlap"
+    },
+    "agent-skills": {
+      "at": "agents/backend-engineer.md:10",
+      "anchor": "skills:"
+    },
+    "report-claim": {
+      "at": "scripts/agent_report.py:4",
+      "anchor": "claim made by the party being evaluated"
+    },
+    "report-owned": {
+      "at": "scripts/agent_report.py:11",
+      "anchor": "rejects any outside"
+    },
+    "report-replay": {
+      "at": "scripts/agent_report.py:18",
+      "anchor": "only the commands the PLAN declared"
+    },
+    "verifier-rerun": {
+      "at": "agents/independent-verifier.md:5",
+      "anchor": "re-runs each task's declared verify commands"
+    },
+    "verifier-trust": {
+      "at": "agents/independent-verifier.md:7",
+      "anchor": "Trusts no report"
+    },
+    "verified-receipt": {
+      "at": "scripts/verified.py:42",
+      "anchor": "HMAC-SHA256"
+    },
+    "verified-stale": {
+      "at": "scripts/verified.py:45",
+      "anchor": "invalidates the receipt"
+    },
+    "receipt-sign": {
+      "at": "hooks/receipts.py:86",
+      "anchor": "hmac.new"
+    },
+    "gate-why": {
+      "at": "hooks/require_verification.py:6",
+      "anchor": "editing a file after verifying"
+    },
+    "gate-prose": {
+      "at": "hooks/require_verification.py:4",
+      "anchor": "talk itself past"
+    },
+    "gate-norepo": {
+      "at": "hooks/require_verification.py:1223",
+      "anchor": "nothing to gate"
+    },
+    "gate-unconfigured": {
+      "at": "hooks/require_verification.py:1229",
+      "anchor": "NOT_CONFIGURED"
+    },
+    "gate-noreceipt": {
+      "at": "hooks/require_verification.py:1263",
+      "anchor": "no verification receipt"
+    },
+    "gate-fresh": {
+      "at": "hooks/receipts.py:251",
+      "anchor": "current_fp"
+    },
+    "gate-passed": {
+      "at": "hooks/require_verification.py:1300",
+      "anchor": "Verification gate PASSED"
+    },
+    "gate-failopen": {
+      "at": "hooks/require_verification.py:25",
+      "anchor": "Fails OPEN"
+    },
+    "stop-why": {
+      "at": "hooks/stop_gate.py:5",
+      "anchor": "never tries"
+    },
+    "recheck-why": {
+      "at": "hooks/recheck_gate.py:4",
+      "anchor": "second pass catches"
+    }
+  },
+  "initial": {
+    "stores": {
+      "worktree": {
+        "files": "v1"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "A build request, from typing it to committing it",
+      "steps": [
+        {
+          "t": "The session starts and a hook points Claude at the router",
+          "d": "With dozens of skills installed the menu gets cut off, so a hook injects a short reminder to start with the router.",
+          "do": [
+            [
+              "send",
+              "hooks",
+              "session",
+              "start with the router"
+            ]
+          ],
+          "ev": [
+            "session-brief",
+            "session-why"
+          ],
+          "code": [
+            "on SessionStart: print(brief)"
+          ]
+        },
+        {
+          "t": "You type a request in plain English",
+          "do": [
+            [
+              "send",
+              "you",
+              "router",
+              "add a CSV export endpoint"
+            ]
+          ],
+          "tag": "inferred",
+          "d": "Any wording works; the example request is made up."
+        },
+        {
+          "t": "The router names the kind of work and asks a few questions",
+          "d": "It says \"this is a build\", the scale tier, and asks at most {{questions}}, only ones whose answer changes the plan, each with a recommendation.",
+          "do": [
+            [
+              "reply",
+              "router",
+              "you",
+              "build; up to five questions"
+            ]
+          ],
+          "ev": [
+            "router-classify",
+            "router-ask"
+          ],
+          "code": [
+            "intent = classify(request)",
+            "ask(max=5, only_plan_changing)"
+          ]
+        },
+        {
+          "t": "The router loads the skills for a build, in order",
+          "d": "Requirements intake, feature planning, then per-area rulebooks such as API contract and data modelling, then code craft and review.",
+          "do": [
+            [
+              "send",
+              "router",
+              "skills",
+              "intake, planning, API contract, review"
+            ]
+          ],
+          "ev": [
+            "router-build"
+          ],
+          "code": [
+            "skills = PIPELINE[\"build\"]"
+          ]
+        },
+        {
+          "t": "The plan becomes a task graph and a tool checks it",
+          "d": "Before any agent starts, the graph is checked for loops, two tasks owning the same file, and requirements nobody owns.",
+          "do": [
+            [
+              "send",
+              "router",
+              "cli",
+              "plan_dag lint plan.json"
+            ],
+            [
+              "reply",
+              "cli",
+              "router",
+              "no clashes"
+            ],
+            [
+              "enqueue",
+              "tasks",
+              "T1 backend"
+            ],
+            [
+              "enqueue",
+              "tasks",
+              "T2 tests"
+            ]
+          ],
+          "ev": [
+            "plan-collide",
+            "plan-overlap",
+            "bin-exec"
+          ],
+          "expect": {
+            "queues": {
+              "tasks": 2
+            }
+          },
+          "code": [
+            "plan_dag lint plan.json",
+            "waves = topo_levels(tasks)"
+          ]
+        },
+        {
+          "t": "Two agents pick up a wave in parallel, each in its own worktree",
+          "d": "Each agent is a specialist with its own preloaded skills; separate worktrees keep their edits apart.",
+          "do": [
+            [
+              "pickup",
+              "tasks",
+              "agents"
+            ],
+            [
+              "pickup",
+              "tasks",
+              "agents"
+            ]
+          ],
+          "ev": [
+            "router-orch",
+            "agent-skills"
+          ],
+          "expect": {
+            "queues": {
+              "tasks": 0
+            }
+          }
+        },
+        {
+          "t": "The agents edit files and send their reports",
+          "d": "A report lists the files changed and the commands run with exit codes. It is a claim, not proof.",
+          "do": [
+            [
+              "db.write",
+              "worktree",
+              "files",
+              "v2"
+            ],
+            [
+              "free",
+              "agents",
+              "T1 backend"
+            ],
+            [
+              "free",
+              "agents",
+              "T2 tests"
+            ],
+            [
+              "send",
+              "agents",
+              "session",
+              "report.json: done, tests pass"
+            ]
+          ],
+          "ev": [
+            "report-claim"
+          ],
+          "expect": {
+            "store": {
+              "worktree": {
+                "files": "v2"
+              }
+            }
+          }
+        },
+        {
+          "t": "The main session checks each report against git and replays the checks",
+          "d": "It asks git which files really changed, rejects any outside the task's owned files, and re-runs only the verify commands the plan declared.",
+          "do": [
+            [
+              "send",
+              "session",
+              "cli",
+              "agent_report lint + replay"
+            ],
+            [
+              "reply",
+              "cli",
+              "session",
+              "changes match, all checks pass"
+            ]
+          ],
+          "ev": [
+            "report-owned",
+            "report-replay",
+            "router-merge"
+          ],
+          "code": [
+            "agent_report lint report.json --graph plan.json --cwd wt",
+            "agent_report replay report.json"
+          ]
+        },
+        {
+          "t": "A separate verifier agent re-runs everything itself",
+          "d": "It trusts no report and never fixes what it finds, so the party doing the work is not the party grading it.",
+          "do": [
+            [
+              "send",
+              "session",
+              "verifier",
+              "verify T1, T2"
+            ]
+          ],
+          "ev": [
+            "verifier-rerun",
+            "verifier-trust"
+          ]
+        },
+        {
+          "t": "The check passes and a signed receipt is written for these exact files",
+          "d": "The receipt holds a fingerprint of the file contents, signed with a key only this machine has.",
+          "do": [
+            [
+              "db.read",
+              "worktree",
+              "files"
+            ],
+            [
+              "send",
+              "verifier",
+              "cli",
+              "verified -- npm test"
+            ],
+            [
+              "cache.set",
+              "receipt",
+              "fingerprint",
+              "$read"
+            ]
+          ],
+          "ev": [
+            "verified-receipt",
+            "receipt-sign"
+          ],
+          "expect": {
+            "cache": {
+              "receipt": {
+                "fingerprint": "v2"
+              }
+            },
+            "stale": {
+              "receipt": {
+                "fingerprint": false
+              }
+            }
+          },
+          "code": [
+            "fp = fingerprint(files)",
+            "receipt = sign(key, {check, exit: 0, fp})"
+          ]
+        },
+        {
+          "t": "You commit, and the commit guard reads the receipt",
+          "d": "The receipt's fingerprint matches the files, so the guard steps aside. It never says allow, so your own permission rules still apply.",
+          "do": [
+            [
+              "send",
+              "session",
+              "hooks",
+              "git commit"
+            ],
+            [
+              "cache.get",
+              "receipt",
+              "fingerprint"
+            ],
+            [
+              "send",
+              "hooks",
+              "git",
+              "commit goes through"
+            ]
+          ],
+          "ev": [
+            "gate-fresh",
+            "gate-passed"
+          ],
+          "expect": {
+            "hit": "hit"
+          }
+        },
+        {
+          "t": "The turn ends and a stop hook asks for one second look",
+          "d": "Blind runs found a second skeptical pass catches defects the first missed, so a long or file-editing turn is held once with a re-check prompt.",
+          "do": [
+            [
+              "send",
+              "hooks",
+              "session",
+              "re-check before stopping"
+            ]
+          ],
+          "ev": [
+            "recheck-why",
+            "hooks-stop"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "issue-claim",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the session believed the agent's report?",
+      "branch": {
+        "from": "happy",
+        "at": 6
+      },
+      "fixed_by": [
+        "fix-replay"
+      ],
+      "steps": [
+        {
+          "t": "One agent also edits a shared file it does not own, and skips the tests",
+          "d": "Its report still says done, tests pass. Nothing in the report itself is false-looking.",
+          "do": [
+            [
+              "db.write",
+              "worktree",
+              "files",
+              "v2-shared-edit"
+            ],
+            [
+              "free",
+              "agents",
+              "T1 backend"
+            ],
+            [
+              "free",
+              "agents",
+              "T2 tests"
+            ],
+            [
+              "send",
+              "agents",
+              "session",
+              "report.json: done, tests pass"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "The session takes the report at its word and merges",
+          "do": [
+            [
+              "send",
+              "session",
+              "git",
+              "merge T1, T2"
+            ],
+            [
+              "note",
+              "nobody ran the tests on this content"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "A broken change lands, and it collides with the other agent's work",
+          "do": [
+            [
+              "fail",
+              "git",
+              "untested change merged"
+            ]
+          ],
+          "tag": "inferred"
+        }
+      ]
+    },
+    {
+      "id": "fix-replay",
+      "kind": "fix",
+      "title": "Fix: check the report against git, then replay the declared checks",
+      "branch": {
+        "from": "issue-claim",
+        "at": 7
+      },
+      "steps": [
+        {
+          "t": "The report is compared with what git says changed",
+          "d": "The shared file is outside the task's owned files, so the report is rejected before anything runs.",
+          "do": [
+            [
+              "send",
+              "session",
+              "cli",
+              "agent_report lint --graph plan.json"
+            ],
+            [
+              "reply",
+              "cli",
+              "session",
+              "rejected: file outside owned files"
+            ]
+          ],
+          "ev": [
+            "report-owned",
+            "report-claim"
+          ]
+        },
+        {
+          "t": "The plan's own verify commands are re-run, not the report's",
+          "d": "Commands in a report are text another agent wrote, so only the plan's declared ones run.",
+          "do": [
+            [
+              "send",
+              "session",
+              "cli",
+              "agent_report replay"
+            ],
+            [
+              "reply",
+              "cli",
+              "session",
+              "npm test fails"
+            ]
+          ],
+          "ev": [
+            "report-replay"
+          ]
+        },
+        {
+          "t": "The task goes back to its agent with the reason",
+          "do": [
+            [
+              "enqueue",
+              "tasks",
+              "T1 backend (redo)"
+            ],
+            [
+              "pickup",
+              "tasks",
+              "agents"
+            ],
+            [
+              "note",
+              "nothing merged; the agent sees the failing command"
+            ]
+          ],
+          "ev": [
+            "router-merge"
+          ],
+          "expect": {
+            "queues": {
+              "tasks": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "issue-stale",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the receipt were only a \"tests passed\" flag?",
+      "fixed_by": [
+        "fix-receipt"
+      ],
+      "steps": [
+        {
+          "t": "Checks pass and a receipt is recorded",
+          "do": [
+            [
+              "db.read",
+              "worktree",
+              "files"
+            ],
+            [
+              "cache.set",
+              "receipt",
+              "fingerprint",
+              "$read"
+            ]
+          ],
+          "ev": [
+            "verified-receipt"
+          ],
+          "expect": {
+            "stale": {
+              "receipt": {
+                "fingerprint": false
+              }
+            }
+          }
+        },
+        {
+          "t": "Claude makes one more small edit after verifying",
+          "d": "A typo fix, a renamed variable: the kind of change nobody re-tests. The receipt now describes content that no longer exists.",
+          "do": [
+            [
+              "db.write",
+              "worktree",
+              "files",
+              "v2"
+            ]
+          ],
+          "ev": [
+            "verified-stale"
+          ],
+          "expect": {
+            "stale": {
+              "receipt": {
+                "fingerprint": true
+              }
+            }
+          }
+        },
+        {
+          "t": "The commit only asks whether a receipt exists",
+          "d": "A pass or fail flag cannot tell old content from new. The real receipt stores a fingerprint with each check, which is what the fix compares.",
+          "do": [
+            [
+              "send",
+              "session",
+              "hooks",
+              "git commit"
+            ],
+            [
+              "cache.get",
+              "receipt",
+              "fingerprint"
+            ],
+            [
+              "send",
+              "hooks",
+              "git",
+              "commit goes through"
+            ]
+          ],
+          "ev": [
+            "gate-fresh"
+          ],
+          "expect": {
+            "hit": "hit"
+          }
+        },
+        {
+          "t": "Code nobody tested is committed",
+          "do": [
+            [
+              "fail",
+              "git",
+              "untested edit committed"
+            ]
+          ],
+          "tag": "inferred"
+        }
+      ]
+    },
+    {
+      "id": "fix-receipt",
+      "kind": "fix",
+      "title": "Fix: the receipt is tied to a fingerprint of the files",
+      "branch": {
+        "from": "issue-stale",
+        "at": 2
+      },
+      "steps": [
+        {
+          "t": "The commit guard compares the receipt's fingerprint with the files now",
+          "d": "They differ, so the guard denies the commit and prints the command to re-run.",
+          "do": [
+            [
+              "send",
+              "session",
+              "hooks",
+              "git commit"
+            ],
+            [
+              "db.read",
+              "worktree",
+              "files",
+              "now"
+            ],
+            [
+              "reply",
+              "hooks",
+              "session",
+              "deny: receipt is for other content"
+            ]
+          ],
+          "ev": [
+            "gate-fresh",
+            "gate-why"
+          ],
+          "expect": {
+            "vars": {
+              "now": "v2"
+            }
+          },
+          "code": [
+            "fresh = receipt.fp == fingerprint(files)",
+            "if not fresh: deny(rerun_hint)"
+          ]
+        },
+        {
+          "t": "Claude re-runs the check, which writes a fresh receipt",
+          "do": [
+            [
+              "db.read",
+              "worktree",
+              "files"
+            ],
+            [
+              "send",
+              "session",
+              "cli",
+              "verified -- npm test"
+            ],
+            [
+              "cache.set",
+              "receipt",
+              "fingerprint",
+              "$read"
+            ]
+          ],
+          "ev": [
+            "verified-receipt"
+          ],
+          "expect": {
+            "cache": {
+              "receipt": {
+                "fingerprint": "v2"
+              }
+            },
+            "stale": {
+              "receipt": {
+                "fingerprint": false
+              }
+            }
+          }
+        },
+        {
+          "t": "The commit is tried again and goes through",
+          "do": [
+            [
+              "send",
+              "session",
+              "hooks",
+              "git commit"
+            ],
+            [
+              "cache.get",
+              "receipt",
+              "fingerprint"
+            ],
+            [
+              "send",
+              "hooks",
+              "git",
+              "commit goes through"
+            ]
+          ],
+          "ev": [
+            "gate-passed"
+          ],
+          "expect": {
+            "hit": "hit"
+          }
+        }
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {
+        "id": "prose",
+        "label": "Instructions only: tell the model to verify before saying done",
+        "fit": "fail",
+        "pros": [
+          "Nothing to install",
+          "Works in every repository"
+        ],
+        "cons": [
+          "A model can talk itself past prose",
+          "No proof the check ran on the content that ships"
+        ]
+      },
+      {
+        "id": "ci",
+        "label": "Rely on CI after push",
+        "fit": "pass",
+        "pros": [
+          "Runs on a clean machine",
+          "Teams already have it"
+        ],
+        "cons": [
+          "Feedback comes after the push, not before",
+          "Does not stop a turn that just says done"
+        ]
+      },
+      {
+        "id": "receipt",
+        "label": "Signed, content-bound receipt checked by hooks at commit, push and stop",
+        "fit": "pass",
+        "pros": [
+          "Editing after verifying invalidates the proof",
+          "Agents cannot hand-write a receipt",
+          "Fails open, so a broken guard never locks the shell"
+        ],
+        "cons": [
+          "Only blocks where a policy file turns it on",
+          "Not a defence against an agent set on defeating it"
+        ]
+      }
+    ],
+    "chosen": "receipt",
+    "deciding_factor": "The check has to happen before the work leaves the machine and be tied to the exact content, which only a fingerprinted, signed receipt read by a hook gives.",
+    "revisit_when": "Claude Code gains a built-in, tamper-evident verification step, or CI becomes fast enough to run before every commit.",
+    "source": "hooks/require_verification.py docstring; docs/SAFETY.md"
+  },
+  "checks": [
+    {
+      "scenario": "happy",
+      "step": 7,
+      "q": "The agents say \"tests pass\". What does the main session do before believing it?",
+      "answer": "Asks git which files really changed, rejects anything outside the task's owned files, and re-runs the plan's own verify commands."
+    },
+    {
+      "scenario": "issue-stale",
+      "step": 2,
+      "q": "A receipt exists. Should the commit go through?",
+      "answer": "Not yet: the receipt is for the old content. Only a fingerprint comparison can tell, which is the fix."
+    },
+    {
+      "scenario": "fix-receipt",
+      "step": 2,
+      "q": "What will the guard say this time?",
+      "answer": "Nothing in the way: the fresh receipt matches the files, so it steps aside."
+    }
+  ],
+  "compare": [
+    "issue-stale",
+    "fix-receipt"
+  ]
+}

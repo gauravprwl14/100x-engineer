@@ -17,6 +17,7 @@ flowchart LR
   D --> O[9 outline<br/>pseudocode]
   O --> G[10 diagrams]
   G --> L[11 TL;DR<br/>written last]
+  L --> R[12 reference<br/>code behind it]
 ```
 
 ## 0. Context first
@@ -280,6 +281,17 @@ unless it is in `terms`. Notes-service example: what "Editing a note shows the n
 everyone who opens it next"; how "Every edit saves the note, then clears the saved copy so the
 next reader fetches it fresh"; watch out "A slow reader can put the old note back right after an
 edit, so the cache fill checks the note is still current".
+
+## 12. Drilling down: part pages and the code reference
+
+A big target reads best as a stack of pages, the way a map app zooms: an overview page for the
+whole system, one page per part (a skill, a hook, a subsystem) whose lede points back to the
+overview, and on each part page a `reference` (`schema.md`, Code reference): every function in
+the files behind it. Pick the files a reader would open next and the symbols that run the flow
+the page animates; `100x code_ref build <file> --md` shows what is there. Write a `note` only
+where the docstring is missing or misleading, after reading the function. Names, lines and
+who-uses-what come from the parse tree, so the list cannot skip or invent a function. Keep one
+output dir per page under `<root>/explain/` and list every page in that folder's `INDEX.md`.
 
 ## Numbers
 

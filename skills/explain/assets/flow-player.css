@@ -323,6 +323,10 @@ svg.map.narrow { max-height: none; }
 /* panels */
 .panel { padding: 18px 20px; display: grid; gap: var(--s3); }
 .tbl { overflow-x: auto; }
+.ref-file + .ref-file { margin-top: 1.25rem; }
+.ref-file h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.ref-file td .muted code { font-size: 0.85em; }
+.ref-file td:first-child code { white-space: nowrap; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: start; padding: 8px var(--s2); border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 12px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
