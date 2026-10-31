@@ -10,12 +10,12 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | section | answers | size |
 |---|---|---|
 | [Top level](#top-level) | which keys exist, which are required, which are heavy-only | ~25 lines |
-| [Context, vocabulary, outline](#context-vocabulary-outline) | how the page says what the PR does, defines its words and sketches the code | ~35 lines |
-| [Diagrams](#diagrams) | how a mermaid diagram is written, cited and checked | ~20 lines |
+| [Context, vocabulary, outline](#context-vocabulary-outline) | how the page answers in three lines (`tldr`), says what the PR does, defines its words and sketches the code | ~45 lines |
+| [Diagrams](#diagrams) | how a mermaid diagram, mind map included, is written, cited and checked | ~25 lines |
 | [Nodes, numbers, evidence](#nodes-numbers-evidence) | how boxes, tagged numbers and checkable evidence are written | ~45 lines |
 | [Scenarios and steps](#scenarios-and-steps) | how a timeline, an issue and its origin, a fix branch, a step's `expect` and `code` are written | ~50 lines |
 | [Decision, checks, compare](#decision-checks-compare) | how the trade-off card and the heavy extras are written | ~20 lines |
-| [Rules check enforces](#rules-check-enforces) | every finding `flow check` can raise, and the light/heavy budgets | ~45 lines |
+| [Rules check enforces](#rules-check-enforces) | every finding `flow check` can raise, and the light/heavy budgets | ~50 lines |
 | [Build contract](#build-contract) | what `flow build` reads and writes, the shell tokens, how data is escaped, where real-code snippets come from, the page's ready signal, the `explain.md` sections | ~35 lines |
 
 ## Top level
@@ -35,6 +35,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `checks` | heavy | list | predict-before-reveal prompts |
 | `compare` | heavy | list | scenario ids drawn on one clock |
 | `context` | pr | object | what the PR does for a user and what it covers; required when `subject.kind` is `pr` |
+| `tldr` | no | object | the three-line answer at the top of the page: what, how, watch out |
 | `terms` | no | list ≤ 12 | the words a reader outside the module needs |
 | `outline` | no | list (light ≤ 1, heavy ≤ 3) | pseudocode of the workflow, lines linked to steps |
 | `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
@@ -45,6 +46,17 @@ them, so the same file upgrades with `--tier heavy`. A value in state (`initial`
 reducers compare values identically.
 
 ## Context, vocabulary, outline
+
+**`tldr`** — the first thing a reader sees: `what` (Text, req: what it does), `how` (Text, req:
+how it works), `watch_out` (Text: the one risk to remember). Each is one plain sentence of at most
+200 characters per language; the bare-number and jargon rules apply as they do to a step title.
+Optional, so older files still check; a PR page should have one.
+
+```json
+"tldr": {"what": "Lets an editor tag an item from the gallery view.",
+         "how": "The route checks the editor's role, then rewrites the item's tag list in one write.",
+         "watch_out": "Two editors saving at once: the later save wins, with no warning."}
+```
 
 **`context`** — read before the player: `purpose` (Text, req: what a user can do, in their
 words), `why_now` (Text), `in_scope` (1-8 Text, req), `out_of_scope` (≤ 8 Text), `entry_points`
@@ -82,7 +94,7 @@ words), `why_now` (Text), `in_scope` (1-8 Text, req), `out_of_scope` (≤ 8 Text
 |---|---|---|
 | `id` | yes | `[a-z][a-z0-9_-]*`, unique among diagrams |
 | `title` | yes | Text |
-| `kind` | yes | `sequence` `flowchart` `state` `er` `class`; must be the type the source declares (`sequenceDiagram`, `flowchart`/`graph`, `stateDiagram`/`stateDiagram-v2`, `erDiagram`, `classDiagram`) |
+| `kind` | yes | `sequence` `flowchart` `state` `er` `class` `mindmap`; must be the type the source declares (`sequenceDiagram`, `flowchart`/`graph`, `stateDiagram`/`stateDiagram-v2`, `erDiagram`, `classDiagram`, `mindmap` as the first line after any frontmatter) |
 | `source` | yes | mermaid source string; code, not prose, so the bare-number check skips it. Never HTML: the page hands it to mermaid as text and shows it as text when mermaid cannot load |
 | `caption` | no | Text: one or two sentences on how to read it; prose, so bare numbers are checked |
 | `ev` | one of | list of evidence ids |
@@ -94,6 +106,12 @@ checker): every error it reports is a finding, except its level-3 demand for a n
 under the block, which the page's own step cards meet. A sequence participant must be declared
 before its first message, a flowchart label holding parentheses is quoted, and no placeholder text
 is left in.
+
+A **mind map** (`kind: mindmap`) is for a concept or module overview: the nouns and how they group,
+not the order things happen in, e.g. a module's routes, gates, data and risks around one root.
+Its source starts with `mindmap`, has exactly one root at the smallest indent, uses one kind of
+indentation (all spaces or all tabs), and a line that steps back out lines up with an earlier
+sibling. Its node count takes the same level budgets as a flowchart (`%% level: 1` ≤ 12 nodes).
 
 ## Nodes, numbers, evidence
 
@@ -194,7 +212,7 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `step has no evidence` | `ev` non-empty or `tag: inferred` |
 | `bad anchor` | the revision exists, the file exists at it, the line is in range, the anchor is within ±2 lines |
 | `absence contradicted` / `absence: git grep failed` | the stated hit count is the real one |
-| `bare number` | a word starting with a digit in any prose field (every Text, every language, `context`, `terms`, outline titles, diagram titles and captions; not `code` or a diagram `source`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
+| `bare number` | a word starting with a digit in any prose field (every Text, every language, `tldr`, `context`, `terms`, outline titles, diagram titles and captions; not `code` or a diagram `source`) outside `{{name}}`. Allowed: words starting with a letter (`C3`, `v2`, `sha256`), the subject's PR number, a PR or issue reference (`PR 1497`, `PR #1497`, `#1227`) and, in `reply` labels only, an HTTP status 100-599 |
 | `unknown number` | every `{{name}}` is in `numbers` |
 | `issue has neither fixed_by nor open: true` | Q4: every issue says what fixes it, or that nothing does yet |
 | `expect contradicts reducer` | `expect` and a declared `hazard` match the replay |
@@ -204,11 +222,12 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `subject.kind pr needs context` | a PR page says what the PR does for a user and what it covers |
 | `issue has no origin` | every issue says whether it is in the code, a what-if, or found in review |
 | `fix for what-if issue … cites no evidence` | a counterfactual's fix shows the real design, cited |
-| `jargon in step title` | a camelCase, PascalCase (two capitals), snake_case or dotted (`Promise.all`; both parts ≥ 2 characters) word in a step `t`, any language, that is not a word of a `terms[].term`, of a node `label` or a node `id` (case-insensitive). `PATCH`, `ACL`, `postgres`, `e.g.` pass |
+| `jargon in step title` / `jargon in tldr` | a camelCase, PascalCase (two capitals), snake_case or dotted (`Promise.all`; both parts ≥ 2 characters) word in a step `t` or a `tldr` line, any language, that is not a word of a `terms[].term`, of a node `label` or a node `id` (case-insensitive). `PATCH`, `ACL`, `postgres`, `e.g.` pass |
+| `keep it to one sentence` | each `tldr` line is at most 200 characters in every language |
 | `duplicate term` | each term is defined once, case-insensitively |
 | `outline line has no evidence` | each outline line has `ev` or `tag: inferred` |
 | `diagram has no evidence` | each diagram has `ev` or `tag: inferred` |
-| `diagram '<id>': <problem>` | a problem `scripts/check_diagrams.py` reports in the source (undeclared sequence participant, unrecognised arrow, unquoted parentheses in a flowchart label, placeholder text, a declared level's node budget, a level-3 diagram with no shown branch, no recognisable diagram type); its level-3 step-table rule does not apply |
+| `diagram '<id>': <problem>` | a problem `scripts/check_diagrams.py` reports in the source (undeclared sequence participant, unrecognised arrow, unquoted parentheses in a flowchart label, placeholder text, a declared level's node budget, a level-3 diagram with no shown branch, a mind map with no root, more than one root, inconsistent or mixed indentation, no recognisable diagram type); its level-3 step-table rule does not apply |
 | `kind '<kind>' does not match the source` | `kind` names the diagram type check_diagrams reads from the source |
 | `duplicate diagram id` | diagram ids are unique |
 | `step N is past the end of scenario` | outline `steps` and `checks[].step` index the scenario's visible steps |
@@ -247,7 +266,8 @@ citation one line off still highlights the matched code). Without `--repo`, or w
 entry is left out (`{}` with no repo), build still succeeds and prints one stderr note, and the
 player shows pseudocode only.
 
-`explain.md` is the PR-comment export: the lede table; `## Contents` (one row per `##` section
+`explain.md` is the PR-comment export: the H1; when `tldr` is present, one blockquote right under it
+(`> **What:** …`, `> **How:** …`, `> **Watch out:** …`, one per line); the lede and its table; `## Contents` (one row per `##` section
 present below it, in page order: a link to its GitHub anchor and what the section answers);
 `## Before you watch` (purpose, why now,
 in / not in this PR, entry points with the scenario that animates each), `## Terms`, `## Diagrams`

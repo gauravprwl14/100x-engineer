@@ -16,6 +16,7 @@ flowchart LR
   F --> D[8 decision]
   D --> O[9 outline<br/>pseudocode]
   O --> G[10 diagrams]
+  G --> L[11 TL;DR<br/>written last]
 ```
 
 ## 0. Context first
@@ -214,6 +215,25 @@ Pick the type and level with `skills/diagramming/SKILL.md`:
 | the gates or branches before a write, each failure's status | `flowchart` | L1/L2: one box per decision |
 | an entity's lifecycle (job, order, session states) | `state` | L2 |
 | the table or document the flow writes (columns, keys, uniqueness) | `er` | L1 for names; L2 for the columns the steps touch |
+| a concept or module overview: its parts and how they group (routes, gates, data, risks) | `mindmap` | L1: ≤ 12 nodes; L2 up to the flowchart budget |
+
+**Mind map or flowchart?** A flowchart answers "in what order, and which branch"; a mind map
+answers "what is in here, and what belongs with what". Use a mind map when the reader needs the
+inventory before the timeline (a module's routes, checks, tables and risks on one screen) and
+nothing in it has an order. The moment a branch reads "then", it is a flowchart. Rules for one:
+exactly one root (the module or concept), every child indented deeper than its parent, plain
+labels (the node labels and terms the page already uses), one branch per group, no edges.
+
+Worked mind map, the made-up notes service in `assets/examples/stale-writeback.json`; each leaf
+is something its evidence already cites:
+
+```json
+{"id": "notes-parts", "kind": "mindmap", "title": "The notes service at a glance",
+ "ev": ["e-route-get", "e-route-patch", "e-cache-get", "e-db-write", "e-cache-del",
+        "e-no-version-check", "e-fill-if-fresh"],
+ "caption": "Read outward from the centre: what the service offers, where it keeps notes, and the one risk with its fix.",
+ "source": "mindmap\n  %% level: 1\n  root((notes-api))\n    Routes\n      read a note\n      edit a note\n    Storage\n      Cache\n      Database\n    Risk\n      old note written back\n      fill only if fresh"}
+```
 
 | rule | why |
 |---|---|
@@ -242,6 +262,24 @@ drawn or written.
 
 Check a source before writing it into the JSON: put it in a ```mermaid fence in a scratch `.md`
 and run `100x check_diagrams <file>`; `flow check` runs the same check on every diagram.
+
+## 11. The TL;DR, written last
+
+`tldr` (`references/schema.md`) is three sentences at the top of the page, written after the
+scenarios, fixes and decision, because only then is the top risk known. Write it for the reader
+of `context.purpose`: someone who knows the product but not this module.
+
+| key | says | from |
+|---|---|---|
+| `what` | the outcome a user sees, not the code that changed | `context.purpose`, the happy scenario's last step |
+| `how` | the mechanism in one line: the checks in order, then the write | the outline, the gate flowchart |
+| `watch_out` | the top risk or the decision a reviewer must accept | the riskiest issue scenario and its fix or `open`, or `decision.deciding_factor` |
+
+One sentence each, plain words, no numbers (they need `{{name}}` here too) and no identifier
+unless it is in `terms`. Notes-service example: what "Editing a note shows the new text to
+everyone who opens it next"; how "Every edit saves the note, then clears the saved copy so the
+next reader fetches it fresh"; watch out "A slow reader can put the old note back right after an
+edit, so the cache fill checks the note is still current".
 
 ## Numbers
 

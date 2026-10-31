@@ -6,6 +6,11 @@
   "kind": "plan",
   "lede": "Two ways to load {{rows}} into a web app that hands follow-up work to background queues. Plan A sends one create per row through a rate-limited edge; Plan B uploads one CSV and lets workers validate and import it. Both trigger the same mail, chat and search work; the queues and worker pools decide when it is done."
  },
+ "tldr": {
+  "what": "Compares two ways to load {{rows}} into a web app: one request per row, or one file for the whole batch.",
+  "how": "Plan A sends a create per row through a rate-limited edge; Plan B uploads one CSV that workers validate and import.",
+  "watch_out": "Both plans queue the same mail, chat and search work, and the chat pool's single thread decides when either is done."
+ },
  "terms": [
   {
    "term": "worker pool",

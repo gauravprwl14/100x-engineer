@@ -37,6 +37,7 @@ the spec — redrawing an unchanged flow is decoration, not discipline.
 | **state** | the lifecycle of one entity across time: order status, session state, a retry/backoff machine | a one-shot process that never re-enters a prior state (flowchart is cheaper) | L2 typical; L1 if a decision-maker only needs *which states exist* |
 | **ER / class** | data shape: entities, fields, relationships, cardinality | control flow or timing — it shows *what*, never *when* | L1 = entity names + relationships; L3 = every field, FK, cardinality label |
 | **C4 context/container** | "where does this system sit" — boundaries, external dependencies | internal function-level logic (drop to sequence/flowchart once inside one box) | L1 by definition — this *is* the orientation level |
+| **mindmap** | a concept or module overview: the nouns and how they group around one root (routes, gates, data, risks) | anything with order or direction: a call (sequence), a branch (flowchart), a lifecycle (state) | L1 — it orients; past 12 nodes split it by branch |
 | **deployment** | infra topology: hosts, networks, regions, what sits behind what LB | application logic | L1/L2 for orientation; L3 is rare — every port and env var is a runbook |
 
 Mermaid has no dedicated deployment syntax; real repos draw it as a `flowchart`
@@ -211,6 +212,7 @@ runbook's first page — this is where the discipline pays for itself fastest.
   1/2/3 as white-box/black-box zoom, cited in full in
   `reviewers/_diagram-levels.md`. The C4 context/container/component/code hierarchy
   is `c4model.com`, fetched directly (not archived) 2026-09-29.
+- The mindmap row and its checks (one root, consistent indentation): `SOURCE: original`.
 - Node/edge budgets and the arrow whitelist: `SOURCE: original`, chosen to match
   `scripts/design_drift.py`'s existing participant/message regexes exactly, so a
   diagram that passes `check_diagrams.py` is guaranteed parseable by

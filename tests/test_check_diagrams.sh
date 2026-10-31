@@ -230,6 +230,133 @@ Just prose, no diagrams here.
 EOF
 expect 0 "file with no mermaid blocks is not a violation" "$TMP/noblocks.md"
 
+# --- mindmap: a clean one passes; icons, classes and comments are not nodes ---
+cat > "$TMP/mindok.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  %% level: 1
+  root((Notes service))
+    Routes
+      GET /notes/:id
+      PATCH /notes/:id
+    ::icon(fa fa-database)
+    Data
+      Cache
+      Database
+    Risks
+      :::urgent
+      Stale write-back
+```
+EOF
+expect 0 "clean mindmap passes" "$TMP/mindok.md"
+has "type=mindmap nodes=9 edges=8 level=L1"
+
+# --- a mindmap whose node text names another type is still a mindmap ---
+cat > "$TMP/mindwords.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  root[Diagram kinds]
+    sequenceDiagram
+    flowchart LR
+    graph TD
+```
+EOF
+expect 0 "mindmap holding other type keywords passes" "$TMP/mindwords.md"
+has "type=mindmap nodes=4"
+
+# --- mermaid frontmatter above the header does not hide the type ---
+printf '# doc\n\n```mermaid\n---\ntitle: Parts\n---\nmindmap\n  root((Notes))\n    Routes\n```\n' > "$TMP/mindfront.md"
+expect 0 "mindmap under frontmatter passes" "$TMP/mindfront.md"
+has "type=mindmap nodes=2"
+
+# --- a flowchart with a node called mindmap stays a flowchart ---
+cat > "$TMP/flowmind.md" << 'EOF'
+# doc
+
+```mermaid
+flowchart TD
+  mindmap --> B[Done]
+```
+EOF
+expect 0 "flowchart with a node named mindmap stays a flowchart" "$TMP/flowmind.md"
+has "type=flowchart"
+
+# --- two roots ---
+cat > "$TMP/mindroots.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  root((Notes))
+    Routes
+  Second root
+    Data
+```
+EOF
+expect 1 "mindmap with two roots rejected" "$TMP/mindroots.md"
+has "more than one root: 'Second root'"
+
+# --- a child that dedents to a level no sibling uses ---
+cat > "$TMP/mindindent.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  root((Notes))
+    Routes
+        GET
+      PATCH
+```
+EOF
+expect 1 "mindmap with an in-between dedent rejected" "$TMP/mindindent.md"
+has "indentation is inconsistent: 'PATCH'"
+
+# --- deeper-then-back to a sibling level is fine (no false positive) ---
+cat > "$TMP/mindback.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  root((Notes))
+    Routes
+      GET
+        cached read
+    Data
+```
+EOF
+expect 0 "mindmap stepping back to a sibling level passes" "$TMP/mindback.md"
+
+# --- tabs and spaces mixed ---
+printf '# doc\n\n```mermaid\nmindmap\n  root((Notes))\n\tRoutes\n```\n' > "$TMP/mindtabs.md"
+expect 1 "mindmap mixing tabs and spaces rejected" "$TMP/mindtabs.md"
+has "mixes tabs and spaces"
+
+# --- a header with no nodes ---
+printf '# doc\n\n```mermaid\nmindmap\n```\n' > "$TMP/mindempty.md"
+expect 1 "mindmap with no nodes rejected" "$TMP/mindempty.md"
+has "mindmap has no root node"
+
+# --- placeholder text and the declared level budget apply to mindmaps too ---
+cat > "$TMP/mindtodo.md" << 'EOF'
+# doc
+
+```mermaid
+mindmap
+  root((Notes))
+    TODO add the risks
+```
+EOF
+expect 1 "placeholder in a mindmap rejected" "$TMP/mindtodo.md"
+has "placeholder text"
+{ printf '# doc\n\n```mermaid\nmindmap\n  %%%% level: 1\n  root((Big))\n'
+  for i in $(seq 1 12); do printf '    child %s\n' "$i"; done; printf '```\n'; } > "$TMP/mindbig.md"
+expect 1 "declared L1 mindmap over the 12-node budget rejected" "$TMP/mindbig.md"
+has "allows <= 12 nodes; diagram has 13"
+
 echo
 echo "check_diagrams: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

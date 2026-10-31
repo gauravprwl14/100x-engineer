@@ -60,13 +60,17 @@ OUTLINE_BUDGET = {"light": 1, "heavy": 3}
 MAX_OUTLINE_LINES = 20
 MAX_OUTLINE_INDENT = 6
 MAX_STEP_CODE_LINES = 8
-DIAGRAM_KINDS = ("sequence", "flowchart", "state", "er", "class")
+DIAGRAM_KINDS = ("sequence", "flowchart", "state", "er", "class", "mindmap")
 DIAGRAM_BUDGET = {"light": 2, "heavy": 4}
 # check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
 # own step cards, so that one obligation is dropped here and every other problem is kept.
 DIAGRAM_STEP_TABLE_PROBLEM = "level 3 requires a numbered step table"
 # A snippet shows the cited line with a little context above and more below it.
 SNIPPET_BEFORE, SNIPPET_AFTER = 3, 5
+# A TL;DR line is one plain sentence; past this many characters, in any language, it is a
+# paragraph the reader skips.
+TLDR_MAX_CHARS = 200
+TLDR_LABELS = (("what", "What"), ("how", "How"), ("watch_out", "Watch out"))
 
 ID_RX = re.compile(r"^[a-z][a-z0-9_-]*$")
 EV_ID_RX = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
@@ -90,7 +94,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline", "diagrams"}),
+             "context", "terms", "outline", "diagrams", "tldr"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -105,6 +109,7 @@ KEYS = {
     "option": ({"id", "label", "fit", "pros", "cons"}, {"scenario"}),
     "check": ({"scenario", "step", "q", "answer"}, set()),
     "context": ({"purpose", "in_scope"}, {"why_now", "out_of_scope", "entry_points"}),
+    "tldr": ({"what", "how"}, {"watch_out"}),
     "entry-point": ({"label"}, {"kind", "scenario", "note", "ev"}),
     "term": ({"term", "means"}, {"example"}),
     "outline": ({"title", "scenario", "lines"}, set()),
@@ -235,6 +240,7 @@ def validate(doc, f):
     validate_extras(doc, ctx, f)
     validate_origins(ctx, f)
     validate_context(doc, ctx, f)
+    validate_tldr(doc, f)
     validate_terms(doc, f)
     validate_outline(doc, ctx, f)
     validate_diagrams(doc, ctx, f)
@@ -677,6 +683,24 @@ def validate_context(doc, ctx, f):
             f.add(loc + ".ev", f"unknown evidence id {json.dumps(ep['ev'])}")
 
 
+def validate_tldr(doc, f):
+    if "tldr" not in doc:
+        return
+    tldr = doc["tldr"]
+    if not check_keys(tldr, "tldr", "tldr", f):
+        return
+    for k, _ in TLDR_LABELS:
+        if k not in tldr:
+            continue
+        if not is_text(tldr[k]):
+            f.add(f"tldr.{k}", "must be text")
+            continue
+        for suffix, line in text_variants(tldr[k]):
+            length = len(line.strip())
+            if length > TLDR_MAX_CHARS:
+                f.add(f"tldr.{k}{suffix}", f"keep it to one sentence: {length} characters, max {TLDR_MAX_CHARS}")
+
+
 def validate_terms(doc, f):
     terms = doc.get("terms")
     if terms is None:
@@ -841,6 +865,7 @@ def prose_fields(doc):
         if isinstance(c, dict):
             yield f"checks[{i}].q", c.get("q"), False
             yield f"checks[{i}].answer", c.get("answer"), False
+    yield from tldr_fields(doc)
     c = obj(doc.get("context"))
     for k in ("purpose", "why_now"):
         yield f"context.{k}", c.get(k), False
@@ -862,6 +887,12 @@ def prose_fields(doc):
         if isinstance(dg, dict):
             yield f"diagrams[{i}].title", dg.get("title"), False
             yield f"diagrams[{i}].caption", dg.get("caption"), False
+
+
+def tldr_fields(doc):
+    t = obj(doc.get("tldr"))
+    for k, _ in TLDR_LABELS:
+        yield f"tldr.{k}", t.get(k), False
 
 
 def bare_numbers(text, allow_http_status, pr=None):
@@ -902,8 +933,8 @@ def words_of(value):
 
 
 def check_jargon(doc, ctx, f):
-    """A step title is read before anything else on the card: an identifier in it must be a
-    defined term or a word the map already shows."""
+    """A step title is read before anything else on the card, and the TL;DR before anything
+    else on the page: an identifier in either must be a defined term or a word the map shows."""
     plain = set()
     for t in seq(doc.get("terms")):
         if isinstance(t, dict) and isinstance(t.get("term"), str):
@@ -915,13 +946,18 @@ def check_jargon(doc, ctx, f):
             continue
         for j, st in enumerate(seq(s.get("steps"))):
             title = st.get("t") if isinstance(st, dict) else None
-            if not is_text(title):
-                continue
-            for suffix, text in text_variants(title):
-                for w in TOKEN_RX.findall(PLACEHOLDER_RX.sub(" ", text)):
-                    if JARGON_RX.fullmatch(w) and w.lower() not in plain:
-                        f.add(f"scenario {s.get('id')} step {j}.t{suffix}",
-                              f"jargon in step title: '{w}': add it to terms or say it in plain words")
+            jargon_in(f"scenario {s.get('id')} step {j}.t", title, "step title", plain, f)
+    for loc, value, _ in tldr_fields(doc):
+        jargon_in(loc, value, "tldr", plain, f)
+
+
+def jargon_in(loc, value, where, plain, f):
+    if not is_text(value):
+        return
+    for suffix, text in text_variants(value):
+        for w in TOKEN_RX.findall(PLACEHOLDER_RX.sub(" ", text)):
+            if JARGON_RX.fullmatch(w) and w.lower() not in plain:
+                f.add(f"{loc}{suffix}", f"jargon in {where}: '{w}': add it to terms or say it in plain words")
 
 
 # ---------------------------------------------------------------- reducer
@@ -1532,6 +1568,16 @@ def render_context_md(doc, ctx, numbers):
     return out
 
 
+def render_tldr_md(doc, numbers):
+    """The three-line answer, as one blockquote between the title and the lede."""
+    t = obj(doc.get("tldr"))
+    rows = [f"> **{label}:** {md_text(t[k], numbers)}" for k, label in TLDR_LABELS if is_text(t.get(k))]
+    if not rows:
+        return []
+    # a bare ">" between rows keeps each on its own line inside one quote
+    return "\n>\n".join(rows).split("\n") + [""]
+
+
 def render_terms_md(doc, numbers):
     if not doc.get("terms"):
         return []
@@ -1618,7 +1664,8 @@ def render_markdown(doc, ctx, states, tier):
     numbers = ctx["numbers"]
     sub = doc.get("subject") or {}
     meta = [sub.get("kind", "")] + [f"{k} `{sub[k]}`" for k in ("repo", "sha", "base", "pr") if k in sub]
-    lines = [f"# {md_text(doc.get('title'), numbers)}", "", md_text(sub.get("lede"), numbers), "",
+    lines = [f"# {md_text(doc.get('title'), numbers)}", ""] + render_tldr_md(doc, numbers) + [
+             md_text(sub.get("lede"), numbers), "",
              "| | |", "|---|---|", f"| subject | {' · '.join(meta)} |", f"| tier | {tier} |",
              "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |"]
     top, lines = lines, []

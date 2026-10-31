@@ -11,7 +11,7 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const require = createRequire(import.meta.url);
-const { reduceScenario, ReduceError, parseAt, splitTerms, outlineHits, stepSnippets, effectiveSteps } = require(path.join(root, "skills/explain/assets/flow-player.js"));
+const { reduceScenario, ReduceError, parseAt, splitTerms, outlineHits, stepSnippets, effectiveSteps, heroSummary, worstIssue, confidenceOf } = require(path.join(root, "skills/explain/assets/flow-player.js"));
 const golden = JSON.parse(readFileSync(path.join(here, "states.json"), "utf8"));
 const load = file => JSON.parse(readFileSync(path.join(root, file), "utf8"));
 
@@ -122,4 +122,39 @@ test("stepSnippets keeps well-formed snippets for the step's evidence and skips 
   assert.deepEqual(stepSnippets({ ev: ["e1"] }, {}), []);
   assert.deepEqual(stepSnippets({ ev: ["e1"] }, null), []);
   assert.deepEqual(stepSnippets({}, snippets), []);
+});
+
+const pr = extra => Object.assign({
+  subject: { kind: "pr", lede: "The lede." }, context: { purpose: "The purpose." },
+  outline: [{ title: "run(x)", lines: [] }],
+  scenarios: [{ id: "a", severity: "medium", title: "A" }, { id: "b", severity: "high", title: "B" }, { id: "c", severity: "high", title: "C" }],
+}, extra);
+
+test("heroSummary: tldr's what is the headline, so no What card repeats it; how and watch out are cards", () => {
+  const s = heroSummary(pr({ tldr: { what: "W", how: { en: "H", ja: "ほ" }, watch_out: "O" } }));
+  assert.deepEqual([s.purpose, s.what, s.how, s.watch, s.lede], ["W", null, { en: "H", ja: "ほ" }, { text: "O" }, "The lede."]);
+});
+
+test("heroSummary without tldr: no card repeats the purpose, how falls back to the outline, watch to the worst issue", () => {
+  const s = heroSummary(pr({}));
+  assert.equal(s.what, null); // its first text, context.purpose, is the big sentence already
+  assert.deepEqual(s.how, { code: "run(x)" });
+  assert.deepEqual(s.watch, { issue: "b", severity: "high" }); // first of the two highs
+  assert.equal(s.lede, "The lede."); // used by no card, so it stays as detail
+});
+
+test("heroSummary with only a lede: it is the purpose and no card or detail repeats it", () => {
+  const s = heroSummary({ subject: { kind: "plan", lede: "Only." }, scenarios: [{ id: "a", title: "A" }] });
+  assert.deepEqual([s.purpose, s.what, s.how, s.watch, s.lede], ["Only.", null, null, null, null]);
+});
+
+test("worstIssue ranks critical over high and ignores scenarios with no severity", () => {
+  assert.equal(worstIssue({ scenarios: [{ id: "x" }, { id: "h", severity: "high" }, { id: "k", severity: "critical" }] }).id, "k");
+  assert.equal(worstIssue({ scenarios: [{ id: "x" }] }), null);
+});
+
+test("confidenceOf counts a step verified only when it cites evidence and is not tagged inferred", () => {
+  const doc = { scenarios: [{ steps: [{ ev: ["e"] }, { ev: [] }, { ev: ["e"], tag: "inferred" }] }, { steps: [{ ev: ["f"] }] }] };
+  assert.deepEqual(confidenceOf(doc), { verified: 2, total: 4 });
+  assert.deepEqual(confidenceOf({ scenarios: [] }), { verified: 0, total: 0 });
 });
