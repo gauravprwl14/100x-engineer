@@ -9,8 +9,13 @@ mechanical detail levels, with no drift-breaking or placeholder content.
 What this checks, and why each one is here:
 
   - diagram type is recognized (sequenceDiagram / flowchart|graph / stateDiagram(-v2)
-    / classDiagram / erDiagram / C4Context|C4Container). An unrecognized block is
-    almost always a copy-paste of the fence with no real diagram inside it.
+    / classDiagram / erDiagram / C4Context|C4Container / mindmap). An unrecognized block
+    is almost always a copy-paste of the fence with no real diagram inside it.
+
+  - MINDMAP only: the first line is `mindmap`, exactly one root sits at the smallest
+    indent (mermaid refuses a second root), indentation is one character kind, and a
+    line that steps back out lands on an indent one of its ancestors uses -- an
+    in-between indent attaches to a parent the reader cannot see from the layout.
 
   - SEQUENCE diagrams only: every participant is declared with `participant`/`actor`
     BEFORE it appears in a message, and every message arrow is one of
@@ -53,6 +58,18 @@ LEVEL_DIRECTIVE = re.compile(r"%%\s*level\s*:\s*([123])")
 EXTERNAL_DIRECTIVE = re.compile(r"%%\s*external\s*:\s*(.+)")
 
 # --- diagram type detection -------------------------------------------------
+# A mindmap's node lines are free text, so any other type's keyword can appear in one: it is
+# recognised only by its first line, before the other patterns are tried.
+MINDMAP_HEADER = re.compile(r"^mindmap\s*$")
+FRONTMATTER = re.compile(r"\A\s*---\s*\n.*?\n\s*---\s*\n", re.S)
+
+
+def diagram_lines(src):
+    """Meaningful lines of a diagram: frontmatter, blank lines and %% comments dropped."""
+    return [ln for ln in FRONTMATTER.sub("", src).splitlines()
+            if ln.strip() and not ln.strip().startswith("%%")]
+
+
 TYPE_PATTERNS = [
     ("sequence", re.compile(r"^\s*sequenceDiagram\b", re.M)),
     ("state", re.compile(r"^\s*stateDiagram(?:-v2)?\b", re.M)),
@@ -238,15 +255,63 @@ def analyze_c4(src):
     return nodes, edges, findings, False
 
 
+# --- mindmap ----------------------------------------------------------------
+# `::icon(...)` and `:::class` decorate the node above them; they are not nodes.
+MINDMAP_DECORATION = re.compile(r"^:::?\S")
+MINDMAP_LABEL_MAX = 40
+
+
+def parse_mindmap_lines(src):
+    """(indent text, node text) for every node line under the `mindmap` header."""
+    out = []
+    for ln in diagram_lines(src)[1:]:
+        stripped = ln.strip()
+        if MINDMAP_DECORATION.match(stripped):
+            continue
+        out.append((ln[:len(ln) - len(ln.lstrip())], stripped[:MINDMAP_LABEL_MAX]))
+    return out
+
+
+def analyze_mindmap(src):
+    findings = []
+    lines = parse_mindmap_lines(src)
+    if not lines:
+        return 0, 0, [("ERROR", "mindmap has no root node -- expected an indented line "
+                                "under `mindmap`")], False
+    if len({ch for ws, _ in lines for ch in ws}) > 1:
+        findings.append(("ERROR", "mindmap indentation mixes tabs and spaces -- mermaid "
+                                   "reads nesting from the indent, so use one kind"))
+    root_indent, root = len(lines[0][0]), lines[0][1]
+    path = [root_indent]  # indents from the root down to the previous node
+    for ws, label in lines[1:]:
+        indent = len(ws)
+        if indent <= root_indent:
+            findings.append(("ERROR", f"mindmap has more than one root: {label!r} is not "
+                                       f"indented deeper than the root {root!r}"))
+            continue
+        popped = []
+        while path[-1] >= indent:
+            popped.append(path.pop())
+        if popped and popped[-1] != indent:
+            findings.append(("ERROR", f"mindmap indentation is inconsistent: {label!r} steps "
+                                       f"back to indent {indent}, which no earlier node at that "
+                                       f"depth uses -- line it up with its siblings"))
+        path.append(indent)
+    return len(lines), len(lines) - 1, findings, False
+
+
 ANALYZERS = {
     "sequence": analyze_sequence, "flowchart": analyze_flowchart,
     "state": analyze_state, "class": analyze_class,
-    "er": analyze_er, "c4": analyze_c4,
+    "er": analyze_er, "c4": analyze_c4, "mindmap": analyze_mindmap,
 }
 BRANCH_REQUIRED_TYPES = {"sequence", "flowchart", "state"}
 
 
 def diagram_type(src):
+    lines = diagram_lines(src)
+    if lines and MINDMAP_HEADER.match(lines[0].strip()):
+        return "mindmap"
     for name, pat in TYPE_PATTERNS:
         if pat.search(src):
             return name
@@ -299,7 +364,7 @@ def check_block(src, after_text, cli_level):
         return dtype, None, 0, 0, [(
             "ERROR", "could not identify a diagram type (expected sequenceDiagram / "
                      "flowchart|graph / stateDiagram(-v2) / classDiagram / erDiagram / "
-                     "C4Context|C4Container)")]
+                     "C4Context|C4Container / mindmap)")]
 
     findings = scan_placeholders(src)
     nodes, edges, type_findings, has_branch = ANALYZERS[dtype](src)
