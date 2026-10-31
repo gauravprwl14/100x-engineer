@@ -15,7 +15,7 @@ A Claude Code plugin. `skills/` holds SKILL.md files; `agents/` the specialist
 subagents; `scripts/` and `hooks/` the tools those skills invoke; `tests/` their
 regression suites; `research/` the evidence every claim is sourced from.
 
-Current size: **47 skills**, **11 agents**, **50 tools** (`100x list --all`), **54 test suites**
+Current size: **48 skills**, **11 agents**, **51 tools** (`100x list --all`), **55 test suites**
 (`tests/test_*.sh`). `tests/test_docs_claims.sh` fails when these drift.
 
 ## Prove-it command

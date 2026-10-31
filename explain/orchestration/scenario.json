@@ -1,0 +1,331 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How orchestration runs parallel agents safely",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "Think of a building site with several crews. Before anyone starts, the site manager checks the work orders: no two crews get the same wall at the same time, foundations go in before walls, and every item in the client's brief has a crew. When a crew says \"finished\", the inspector does not read their note: he walks the site to see which walls really changed, and re-runs the tests the work order named. In 100x the work orders are a task graph (the plan file), the manager is plan_dag, the crews are specialist agents each in their own worktree, and the inspector is agent_report plus the independent verifier. One level down from the 100x-plugin overview page."
+  },
+  "tldr": {
+    "what": "Lets several specialist agents build one feature at the same time without editing the same files, and merges nobody's work on their word.",
+    "how": "A checker refuses a bad plan before any agent starts; then each agent's report is compared with what git says changed, and its checks are re-run from the plan.",
+    "watch_out": "Replay proves a command gave the claimed result, not that the command tests anything, so the plan's verify list must be reviewed before dispatch."
+  },
+  "context": {
+    "purpose": "When one feature needs several specialist agents at once (backend, frontend, tests), this is how the main session splits the work so they never edit the same file, and how it checks each agent's \"done\" before merging instead of taking its word.",
+    "why_now": "Parallel agents fail in three predictable ways: two edit the same shared file, a consumer starts before the contract it builds on exists, and a \"tests pass\" is merged on trust. Each is visible before or after an agent runs, so each gets a mechanical check.",
+    "in_scope": [
+      "The plan file: tasks, owners, owned files, dependencies, acceptance criteria, verify commands",
+      "Stamping the plan to the approved spec, and linting it before any agent starts",
+      "Waves: which tasks run together, and what can start next",
+      "The report every agent ends with, and the two checks it must pass: lint against git, and a replay of the plan's commands",
+      "The independent verifier, which repeats the checks and never fixes",
+      "Every plan_dag and agent_report function behind it, in the Code reference"
+    ],
+    "out_of_scope": [
+      "Writing the spec and its acceptance criteria (the feature-planning skill)",
+      "Signed receipts and the commit guard (the verification gate, a planned part page)",
+      "The review agents that read the merged diff after the last wave",
+      "Batching open questions into one message: the summary command is listed in the Code reference, not animated"
+    ],
+    "entry_points": [
+      {"label": "orchestrate skill (main session only)", "kind": "command", "scenario": "happy", "ev": "skill-fire"},
+      {"label": "plan_dag stamp | lint | waves | next", "kind": "command", "scenario": "happy", "ev": "pd-stamp-refuse"},
+      {"label": "agent_report extract | lint | replay", "kind": "command", "scenario": "fix-report", "ev": "ar-mismatch"},
+      {"label": "agent_report summary", "kind": "command", "note": "merges every report's open questions into one batch of at most {{max_q}}, blocking first; not animated", "ev": "ar-max-q"},
+      {"label": "independent-verifier agent", "kind": "command", "scenario": "happy", "ev": "iv-trusts"}
+    ]
+  },
+  "terms": [
+    {"term": "main session", "means": "The Claude session you talk to. Only it plans, dispatches agents and merges their work; agents never orchestrate."},
+    {"term": "task graph", "means": "The plan file: each task's id, its owner agent, the files it may edit, what it depends on, the acceptance criteria it delivers and the commands that prove it.", "example": "T1 is the backend engineer's, owns the tagging services folder, and depends on T0."},
+    {"term": "owned files", "means": "The file patterns a task may edit. Two tasks that can run at the same time must own different files."},
+    {"term": "contract task", "means": "A task that owns what others build on: shared types, an API or database schema. Its consumers depend on it and never edit its files."},
+    {"term": "acceptance criterion", "means": "One observable outcome the spec defines, numbered AC-something. Every one must be owned by a task, and a task may claim only ones the spec defines.", "example": "The photo page lists its tags, written as one AC line in the spec's acceptance section."},
+    {"term": "stamp", "means": "Writing the approved spec's path, a hash of its exact bytes and the current commit into the plan. If the spec is edited later, lint fails until someone re-plans."},
+    {"term": "wave", "means": "A group of tasks whose dependencies are all finished, so they run at the same time."},
+    {"term": "worktree", "means": "A second checkout of the repository in its own folder. Each running task gets one, so agents never share a working copy."},
+    {"term": "report", "means": "The JSON block an agent's final message ends with: status, what it understood, what it changed, the commands it ran with their exit codes, and its questions."},
+    {"term": "lint", "means": "A mechanical check that refuses a bad file with numbered errors: here, of the plan before work starts, and of each report after."},
+    {"term": "replay", "means": "Re-running the verify commands the plan declared for a task, and comparing their exit codes with the ones the report claimed."},
+    {"term": "independent verifier", "means": "A read-only agent that re-runs every check itself, tries to make one new test fail, and reports what it finds without fixing anything."}
+  ],
+  "outline": [
+    {
+      "title": "plan_dag lint(plan, spec): the plan gate, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {"code": "for t in tasks: reject unknown fields, an unknown owner, empty files / verify / acceptance", "steps": [1], "ev": "pd-unknown-field"},
+        {"code": "for c in t.verify: reject shell syntax outside sh -c, and any commit, push, tag or publish", "steps": [1], "ev": "pd-verify-shell"},
+        {"code": "if find_cycle(by_id): error dependency cycle", "steps": [1], "ev": "pd-cycle"},
+        {"code": "for a, b in every pair of tasks:", "ev": "pd-overlap-skip"},
+        {"code": "if a in anc[b] or b in anc[a]: continue   # ordered pairs may share", "indent": 1, "ev": "pd-overlap-skip"},
+        {"code": "if any owned glob overlaps: error 'can run in parallel but both own files'", "indent": 1, "steps": [1], "ev": "pd-overlap"},
+        {"code": "for each consumer of a contract: must depend on it, must not own its files", "ev": "pd-consumes-dep"},
+        {"code": "every AC the spec defines has a task; no task claims an undefined AC", "steps": [1], "ev": "pd-ac-uncovered"},
+        {"code": "spec_gate: audit passes, status ready, sha256(spec) == stamped spec_sha256", "steps": [1], "ev": "pd-spec-changed"},
+        {"code": "return 1 if errors else 0", "steps": [1], "ev": "pd-lint-exit"}
+      ]
+    },
+    {
+      "title": "agent_report lint --graph --cwd: the report gate, as pseudocode",
+      "scenario": "fix-report",
+      "lines": [
+        {"code": "base = --base or plan.base or fork_point(worktree) or HEAD", "steps": [2], "ev": "ar-resolve-base"},
+        {"code": "actual = git diff --name-only base  +  git ls-files --others --exclude-standard", "steps": [2], "ev": "ar-actual-untracked"},
+        {"code": "if report.agent != task.owner: error", "ev": "ar-owner"},
+        {"code": "for p in actual: if not path_owned(p, task.files): error 'the worktree changed p, outside'", "steps": [2], "ev": "ar-outside-git"},
+        {"code": "for p in report.changes: if p not in actual: error 'claimed but no change'", "steps": [3], "ev": "ar-missing-claim"},
+        {"code": "if status == done: every declared verify command is in evidence with exit 0", "ev": "ar-declared-missing"}
+      ]
+    },
+    {
+      "title": "agent_report replay --graph --yes: re-run, never believe",
+      "scenario": "fix-report",
+      "lines": [
+        {"code": "declared = {argv(v): v for v in task.verify}", "ev": "ar-plan-replay"},
+        {"code": "for e in report.evidence:", "ev": "ar-plan-replay"},
+        {"code": "if argv(e.cmd) not in declared: list 'not replayed (undeclared)'", "indent": 1, "ev": "ar-undeclared"},
+        {"code": "else: run the plan's command as argv, no shell, its own process group", "indent": 1, "steps": [4], "ev": "ar-noshell"},
+        {"code": "if actual exit != e.exit_code: MISMATCH, print both output tails", "indent": 1, "steps": [4], "ev": "ar-mismatch"},
+        {"code": "return 1 on a mismatch or a missing command; 3 if anything was not replayed", "steps": [4], "ev": "ar-replay-exit"}
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What orchestration is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 2\n  root((orchestration))\n    The plan\n      tasks and owners\n      owned files\n      contract tasks\n    Before agents start\n      stamp to the spec\n      lint the plan\n      waves\n    While they run\n      one worktree each\n      report as the last block\n    After each report\n      lint against git\n      replay the declared checks\n      independent verifier",
+      "caption": "Read outward from the centre: what the plan holds, what is checked before any agent starts, how agents run, and what is checked after each one reports.",
+      "ev": ["skill-contract", "skill-stamp", "pd-levels", "skill-worktree", "om-last-json", "om-lint-git", "om-replay-plan", "iv-trusts"]
+    },
+    {
+      "id": "one-task",
+      "title": "One task, from plan to merge",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  participant Main as Main session\n  participant PD as plan_dag\n  participant Agent as Specialist agent\n  participant WT as Task worktree\n  participant AR as agent_report\n  Main->>PD: stamp, lint, waves\n  PD-->>Main: clean plan and its waves\n  Main->>Agent: dispatch prompt with owned files and verify commands\n  Agent->>WT: edit owned files, run verify commands\n  Agent-->>Main: report as the last json block\n  Main->>AR: lint --graph --cwd\n  AR->>WT: which files changed since the base?\n  alt a file outside the owned files, or a claimed change that is missing\n    AR-->>Main: numbered errors, the task goes back\n  else clean\n    AR-->>Main: no errors\n    Main->>AR: replay --yes\n    AR->>WT: run the plan's verify commands\n    AR-->>Main: reproduced, or MISMATCH\n  end\n  Main->>PD: next --done",
+      "caption": "Top to bottom: the plan is checked once, then every report is checked twice, first against git and then by re-running the plan's own commands.",
+      "ev": ["pd-stamp-write", "skill-dispatch", "ar-actual", "ar-outside-git", "ar-missing-claim", "ar-plan-replay", "pd-next-ready"]
+    },
+    {
+      "id": "catches",
+      "title": "What catches each failure, and when",
+      "kind": "flowchart",
+      "source": "flowchart LR\n  %% level: 2\n  A[Two parallel tasks own the same file] --> P{plan lint, before any agent starts}\n  B[A consumer starts before its contract] --> P\n  C[A criterion nobody owns] --> P\n  D[An agent edits outside its owned files] --> L{report lint, reads git}\n  E[A report claims a file it never changed] --> L\n  F[A report claims a check passed] --> R{replay of the plan's commands}\n  P --> X[plan refused: fix the plan]\n  L --> Y[report refused: the task goes back]\n  R --> Y",
+      "caption": "Left, the failure; middle, the check that finds it. Plan problems are caught before anyone works; report problems are caught before anything merges.",
+      "ev": ["pd-overlap", "pd-consumes-dep", "pd-ac-uncovered", "ar-outside-git", "ar-missing-claim", "ar-mismatch", "skill-rejected"]
+    },
+    {
+      "id": "task-states",
+      "title": "A task's states, as plan next sees them",
+      "kind": "state",
+      "source": "stateDiagram-v2\n  [*] --> waiting\n  waiting --> ready: every dependency done\n  waiting --> held: a dependency is blocked\n  held --> ready: the blocker is answered\n  ready --> running: dispatched with its wave\n  running --> done: report lints and replays\n  running --> ready: report rejected\n  running --> blocked: needs-decision\n  blocked --> ready: question answered\n  done --> [*]",
+      "caption": "A blocked task pauses only the tasks that depend on it; everything else keeps running.",
+      "ev": ["pd-next-held", "pd-next-ready", "skill-next", "skill-rejected", "om-pause"]
+    }
+  ],
+  "nodes": [
+    {"id": "main", "role": "client", "label": "Main session (orchestrator)", "ref": "skills/orchestrate/SKILL.md", "ev": "skill-fire"},
+    {"id": "spec", "role": "store", "label": "Approved spec", "ev": "pd-stamp-refuse"},
+    {"id": "plan", "role": "store", "label": "Plan file (task graph)", "ev": "pd-stamp-write"},
+    {"id": "plandag", "role": "service", "label": "plan_dag (plan checker)", "ref": "scripts/plan_dag.py:305", "ev": "pd-overlap"},
+    {"id": "ready", "role": "queue", "label": "Ready tasks (this wave)", "ref": "scripts/plan_dag.py:719", "ev": "pd-next-ready"},
+    {"id": "agents", "role": "worker", "label": "Specialist agents", "slots": 2, "ev": "skill-dispatch"},
+    {"id": "worktrees", "role": "store", "label": "Task worktrees (git)", "ev": "skill-worktree"},
+    {"id": "agentrep", "role": "service", "label": "agent_report (report checker)", "ref": "scripts/agent_report.py:246", "ev": "ar-actual"},
+    {"id": "verifier", "role": "service", "label": "Independent verifier (read-only)", "ref": "agents/independent-verifier.md", "ev": "iv-trusts"},
+    {"id": "merged", "role": "store", "label": "Merged branch", "ev": "skill-merge"}
+  ],
+  "numbers": {
+    "tasks_n": {"v": 4, "unit": "tasks", "tag": "measured", "source": "100x plan_dag lint examples/orchestration/plan.json (at 4bdb47e): 4 tasks, 0 errors"},
+    "waves_n": {"v": 3, "unit": "waves", "tag": "measured", "source": "100x plan_dag waves examples/orchestration/plan.json (at 4bdb47e)"},
+    "widest": {"v": 2, "unit": "tasks", "tag": "measured", "source": "100x plan_dag waves examples/orchestration/plan.json: widest wave runs 2 in parallel"},
+    "reproduced": {"v": 2, "unit": "commands", "tag": "measured", "source": "100x agent_report replay examples/orchestration/messages/done-valid.md --graph plan.json --cwd wt-T1 --yes, in a scratch repo built from the example plan"},
+    "max_q": {"v": 5, "unit": "questions", "tag": "verified", "ev": "ar-max-q"},
+    "timeout_s": {"v": 600, "unit": "s", "tag": "verified", "ev": "ar-timeout"}
+  },
+  "evidence": {
+    "skill-three": {"at": "skills/orchestrate/SKILL.md:11", "anchor": "Parallel agents fail in three predictable ways"},
+    "skill-fire": {"at": "skills/orchestrate/SKILL.md:19", "anchor": "Fire when"},
+    "skill-rejected": {"at": "skills/orchestrate/SKILL.md:39", "anchor": "rejected --> D"},
+    "skill-contract": {"at": "skills/orchestrate/SKILL.md:50", "anchor": "\"contract\": true"},
+    "skill-stamp": {"at": "skills/orchestrate/SKILL.md:54", "anchor": "Stamp, then lint"},
+    "skill-worktree": {"at": "skills/orchestrate/SKILL.md:65", "anchor": "git worktree add"},
+    "skill-dispatch": {"at": "skills/orchestrate/SKILL.md:68", "anchor": "all tasks of a"},
+    "skill-merge": {"at": "skills/orchestrate/SKILL.md:77", "anchor": "Merge"},
+    "skill-next": {"at": "skills/orchestrate/SKILL.md:79", "anchor": "--blocked T2"},
+    "skill-owned": {"at": "skills/orchestrate/SKILL.md:97", "anchor": "Owned files (edit nothing else)"},
+    "skill-rule1": {"at": "skills/orchestrate/SKILL.md:110", "anchor": "No task starts until the plan is stamped"},
+    "skill-mainmerge": {"at": "skills/orchestrate/SKILL.md:135", "anchor": "only the main session merges"},
+    "skill-conservative": {"at": "skills/orchestrate/SKILL.md:194", "anchor": "File-overlap detection is conservative"},
+    "skill-meaningful": {"at": "skills/orchestrate/SKILL.md:195", "anchor": "not that a command is meaningful"},
+    "om-protocol": {"at": "docs/OPERATING-MODEL.md:60", "anchor": "Every specialist runs these steps in order"},
+    "om-owned": {"at": "docs/OPERATING-MODEL.md:74", "anchor": "Stay inside the task's owned files"},
+    "om-last-json": {"at": "docs/OPERATING-MODEL.md:84", "anchor": "The last fenced `json` block"},
+    "om-lint-git": {"at": "docs/OPERATING-MODEL.md:95", "anchor": "git, not the report"},
+    "om-replay-plan": {"at": "docs/OPERATING-MODEL.md:97", "anchor": "the plan, not the report"},
+    "om-reject-claimed": {"at": "docs/OPERATING-MODEL.md:186", "anchor": "a claimed change git does not show"},
+    "om-pause": {"at": "docs/OPERATING-MODEL.md:328", "anchor": "pauses only its dependents"},
+    "pd-verify-shell": {"at": "scripts/plan_dag.py:205", "anchor": "uses shell syntax"},
+    "pd-levels": {"at": "scripts/plan_dag.py:286", "anchor": "wave = sorted"},
+    "pd-unknown-field": {"at": "scripts/plan_dag.py:343", "anchor": "unknown field"},
+    "pd-cycle": {"at": "scripts/plan_dag.py:382", "anchor": "dependency cycle"},
+    "pd-overlap-skip": {"at": "scripts/plan_dag.py:391", "anchor": "if a in anc[b] or b in anc[a]"},
+    "pd-overlap": {"at": "scripts/plan_dag.py:396", "anchor": "can run in parallel but both own files"},
+    "pd-overlap-fix": {"at": "scripts/plan_dag.py:397", "anchor": "make one depend on the other"},
+    "pd-consumes-dep": {"at": "scripts/plan_dag.py:411", "anchor": "but does not depend on it"},
+    "pd-consumer-owns": {"at": "scripts/plan_dag.py:416", "anchor": "consumer owns contract"},
+    "pd-ac-uncovered": {"at": "scripts/plan_dag.py:438", "anchor": "is covered by no task"},
+    "pd-spec-changed": {"at": "scripts/plan_dag.py:552", "anchor": "changed since the plan was stamped"},
+    "pd-lint-exit": {"at": "scripts/plan_dag.py:631", "anchor": "return 1 if errors else 0"},
+    "pd-stamp-refuse": {"at": "scripts/plan_dag.py:672", "anchor": "is not an approved spec"},
+    "pd-stamp-write": {"at": "scripts/plan_dag.py:681", "anchor": "file_sha256(spec)"},
+    "pd-stamp-base": {"at": "scripts/plan_dag.py:682", "anchor": "head.stdout.strip()"},
+    "pd-waves-print": {"at": "scripts/plan_dag.py:710", "anchor": "widest wave runs"},
+    "pd-next-held": {"at": "scripts/plan_dag.py:736", "anchor": "hold = sorted(anc[tid] & blocked)"},
+    "pd-next-ready": {"at": "scripts/plan_dag.py:750", "anchor": "ready now:"},
+    "ar-max-q": {"at": "scripts/agent_report.py:81", "anchor": "MAX_QUESTIONS = 5"},
+    "ar-extract-last": {"at": "scripts/agent_report.py:104", "anchor": "The LAST fenced json block"},
+    "ar-actual": {"at": "scripts/agent_report.py:149", "anchor": "def actual_changes"},
+    "ar-actual-untracked": {"at": "scripts/agent_report.py:164", "anchor": "--exclude-standard"},
+    "ar-resolve-base": {"at": "scripts/agent_report.py:210", "anchor": "def resolve_base"},
+    "ar-owner": {"at": "scripts/agent_report.py:363", "anchor": "agent != task.get(\"owner\")"},
+    "ar-outside-git": {"at": "scripts/agent_report.py:423", "anchor": "the worktree changed {p!r}, outside"},
+    "ar-missing-claim": {"at": "scripts/agent_report.py:428", "anchor": "is claimed but the worktree has no change to it"},
+    "ar-declared-missing": {"at": "scripts/agent_report.py:439", "anchor": "declared verify command"},
+    "ar-noshell": {"at": "scripts/agent_report.py:525", "anchor": "subprocess.Popen(argv"},
+    "ar-plan-replay": {"at": "scripts/agent_report.py:564", "anchor": "def plan_replay"},
+    "ar-undeclared": {"at": "scripts/agent_report.py:629", "anchor": "not replayed (undeclared)"},
+    "ar-mismatch": {"at": "scripts/agent_report.py:652", "anchor": "MISMATCH"},
+    "ar-claimed-actual": {"at": "scripts/agent_report.py:653", "anchor": "claimed exit"},
+    "ar-replay-exit": {"at": "scripts/agent_report.py:666", "anchor": "return 3 if skipped else 0"},
+    "ar-timeout": {"at": "scripts/agent_report.py:770", "anchor": "default=600"},
+    "iv-trusts": {"at": "agents/independent-verifier.md:7", "anchor": "Trusts no report"},
+    "iv-break": {"at": "agents/independent-verifier.md:30", "anchor": "break the behaviour it covers"},
+    "iv-never-repair": {"at": "agents/independent-verifier.md:37", "anchor": "You never repair"},
+    "no-shell": {"absent": "a shell run (shell=True or os.system) anywhere in the report checker", "git_grep": "shell=True|os\\.system", "path": "scripts/agent_report.py", "hits": 0}
+  },
+  "initial": {
+    "stores": {"spec": {"spec.md": "ready"}, "plan": {"tasks": "T0 to T3"}}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "One feature, three waves: plan, run in parallel, check, merge",
+      "steps": [
+        {"t": "The main session stamps the plan against the approved spec", "d": "Stamp refuses a spec that has not passed its audit, then writes the spec's path, a hash of its exact bytes and the current commit into the plan.", "do": [["send", "main", "plandag", "plan_dag stamp"], ["db.read", "spec", "spec.md", "approved"], ["db.write", "plan", "stamp", "spec hash + base commit"]], "ev": ["skill-stamp", "pd-stamp-refuse", "pd-stamp-write", "pd-stamp-base"], "expect": {"vars": {"approved": "ready"}}, "code": ["refuse unless audit_spec(spec) is clean and ready", "plan.spec, plan.spec_sha256 = rel, file_sha256(spec)", "plan.base = git rev-parse HEAD"]},
+        {"t": "Lint checks the whole plan before any agent starts", "d": "It re-hashes the spec (an edit since the stamp fails), looks for dependency cycles, checks that tasks able to run at the same time own different files, and that every acceptance criterion has an owner.", "do": [["send", "main", "plandag", "plan_dag lint"], ["db.read", "plan", "stamp", "stamp"], ["reply", "plandag", "main", "{{tasks_n}} tasks, no errors"]], "ev": ["pd-spec-changed", "pd-cycle", "pd-overlap", "pd-ac-uncovered", "skill-rule1"], "expect": {"vars": {"stamp": "spec hash + base commit"}}},
+        {"t": "Waves: the plan splits into groups that can run together", "d": "A wave is every task whose dependencies are all finished. Here the contract task T0 runs alone, then T1 and T2 together, then the end-to-end tests in T3.", "do": [["send", "main", "plandag", "plan_dag waves"], ["reply", "plandag", "main", "{{waves_n}} waves; the widest runs {{widest}} at once"], ["enqueue", "ready", "T0"]], "ev": ["pd-levels", "pd-waves-print"], "expect": {"queues": {"ready": 1}}},
+        {"t": "Wave one: the contract task runs alone and merges", "d": "The shared types and API shape land first, so neither consumer builds against a contract that does not exist yet. Its report passes the same two checks shown later for T1.", "do": [["pickup", "ready", "agents"], ["db.write", "merged", "contract", "T0 merged"], ["free", "agents", "T0"]], "ev": ["skill-contract", "pd-consumes-dep"]},
+        {"t": "Plan next: T1 and T2 are ready now", "do": [["send", "main", "plandag", "plan_dag next --done T0"], ["reply", "plandag", "main", "ready now: T1, T2"], ["enqueue", "ready", "T1"], ["enqueue", "ready", "T2"]], "ev": ["pd-next-ready", "skill-next"], "expect": {"queues": {"ready": 2}}},
+        {"t": "Both wave-two tasks are dispatched in one message, each with its own worktree", "d": "Each agent gets the dispatch prompt: its goal, its worktree, the files it may edit, the criteria it delivers and the verify commands it must run.", "do": [["pickup", "ready", "agents"], ["pickup", "ready", "agents"]], "ev": ["skill-worktree", "skill-dispatch", "skill-owned"], "expect": {"queues": {"ready": 0}}, "code": ["git worktree add ../wt-T1 -b wt/<feature>-T1", "git worktree add ../wt-T2 -b wt/<feature>-T2", "dispatch T1 and T2 in one message"]},
+        {"t": "Each agent edits only its owned files, then runs its verify commands", "d": "The protocol every specialist follows: understand, list gaps, challenge the plan, stop if blocked, do the thinnest slice, verify, report.", "do": [["db.write", "worktrees", "wt-T1", "services + module edited"], ["db.write", "worktrees", "wt-T2", "tag list page edited"]], "ev": ["om-protocol", "om-owned"]},
+        {"t": "Each agent ends with its report as the last JSON block", "d": "Earlier JSON blocks in the message are treated as drafts or examples; only the last one is the report.", "do": [["reply", "agents", "main", "T1: done"], ["reply", "agents", "main", "T2: done"], ["free", "agents", "T1"], ["free", "agents", "T2"]], "ev": ["om-last-json", "ar-extract-last"]},
+        {"t": "Report lint asks git which files changed, not the report", "d": "Committed, staged, unstaged and new files all count, measured from the commit the plan was stamped at. Each must sit inside the task's owned files, and each file the report claims must really have changed.", "do": [["send", "main", "agentrep", "agent_report lint T1 --graph --cwd wt-T1"], ["db.read", "worktrees", "wt-T1", "changed"], ["reply", "agentrep", "main", "no errors"]], "ev": ["ar-actual", "ar-actual-untracked", "ar-resolve-base", "om-lint-git"], "expect": {"vars": {"changed": "services + module edited"}}},
+        {"t": "Replay re-runs only the verify commands the plan declared", "d": "Each runs as a plain argument list with no shell, in its own process group, with a time limit of {{timeout_s}}. A command only the report mentions is never run.", "do": [["send", "main", "agentrep", "agent_report replay T1 --yes"], ["reply", "agentrep", "main", "{{reproduced}} of {{reproduced}} reproduced, no mismatch"]], "ev": ["ar-plan-replay", "ar-noshell", "om-replay-plan", "no-shell"]},
+        {"t": "The independent verifier repeats the checks and tries to break one test", "d": "It trusts no report: it re-runs the declared commands itself, breaks the behaviour one new test covers to prove that test can fail, and never repairs what it finds.", "do": [["send", "main", "verifier", "verify T1 and T2"], ["reply", "verifier", "main", "reproduced; the broken test failed as it should"]], "ev": ["iv-trusts", "iv-break", "iv-never-repair"]},
+        {"t": "Merge the wave, verify the whole, and T3 becomes ready", "d": "Only the main session merges. The project's full checks run on the merged result before the next wave starts.", "do": [["db.write", "merged", "wave two", "T1 + T2 merged"], ["send", "main", "plandag", "plan_dag next --done T0,T1,T2"], ["reply", "plandag", "main", "ready now: T3"], ["enqueue", "ready", "T3"]], "ev": ["skill-merge", "skill-mainmerge", "pd-next-ready"], "expect": {"queues": {"ready": 1}}}
+      ]
+    },
+    {
+      "id": "issue-overlap",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if two parallel tasks owned the same file?",
+      "fixed_by": ["fix-overlap"],
+      "steps": [
+        {"t": "The plan gives T1 and T2 the same module file, with no order between them", "d": "T1 owns every module file in the tagging folder; T2 also lists the one module file it wants to register its page in.", "do": [["db.write", "plan", "tasks", "T1 and T2 both own the module file"]], "tag": "inferred"},
+        {"t": "Nothing checks the plan, so both are dispatched at once", "do": [["enqueue", "ready", "T1"], ["enqueue", "ready", "T2"], ["pickup", "ready", "agents"], ["pickup", "ready", "agents"]], "tag": "inferred"},
+        {"t": "Both agents edit the same module file, each in its own worktree", "d": "Separate worktrees hide the clash while they work; it surfaces only when the branches meet.", "do": [["db.write", "worktrees", "wt-T1", "module registers the service"], ["db.write", "worktrees", "wt-T2", "module registers the page"]], "tag": "inferred"},
+        {"t": "At merge the two edits conflict, or one silently replaces the other", "do": [["free", "agents", "T1"], ["free", "agents", "T2"], ["fail", "merged", "conflict in the module file"]], "tag": "inferred"}
+      ]
+    },
+    {
+      "id": "fix-overlap",
+      "kind": "fix",
+      "title": "Fix: plan lint refuses the overlap before any agent starts",
+      "branch": {"from": "issue-overlap", "at": 1},
+      "steps": [
+        {"t": "Lint refuses the plan: T1 and T2 can run in parallel but both own files", "d": "Pairs with a dependency path between them are skipped; every other pair has its file patterns compared. The comparison can over-report, never under-report.", "do": [["send", "main", "plandag", "plan_dag lint"], ["reply", "plandag", "main", "error: T1 and T2 both own the module file"]], "ev": ["pd-overlap", "pd-overlap-skip", "skill-conservative"]},
+        {"t": "The fix goes in the plan: one task depends on the other, or the shared file moves to a contract task", "do": [["db.write", "plan", "tasks", "module file owned by T1 only"]], "ev": ["pd-overlap-fix"], "expect": {"store": {"plan": {"tasks": "module file owned by T1 only"}}}},
+        {"t": "Lint is clean again, and only then do agents start", "do": [["send", "main", "plandag", "plan_dag lint"], ["reply", "plandag", "main", "{{tasks_n}} tasks, no errors"], ["enqueue", "ready", "T1"], ["enqueue", "ready", "T2"]], "ev": ["skill-rule1", "pd-lint-exit"]}
+      ]
+    },
+    {
+      "id": "issue-report",
+      "kind": "issue",
+      "severity": "critical",
+      "origin": "what-if",
+      "title": "What if a report were merged on its word?",
+      "fixed_by": ["fix-report"],
+      "steps": [
+        {"t": "T3's agent writes no test file, and edits T1's service file instead", "d": "T3 owns only the end-to-end test file. Its edit is outside that, and nothing in the report will mention it.", "do": [["db.write", "worktrees", "wt-T3", "service file edited; no test file"]], "tag": "inferred"},
+        {"t": "Its report claims the test file and says the check passed, all green", "do": [["reply", "agents", "main", "T3: done, all green"]], "tag": "inferred"},
+        {"t": "Merged on its word: no tests exist, and T1's service changed behind its back", "do": [["db.write", "merged", "wave three", "T3 merged"], ["fail", "merged", "untested, and the service was overwritten"]], "tag": "inferred"}
+      ]
+    },
+    {
+      "id": "fix-report",
+      "kind": "fix",
+      "title": "Fix: lint compares the report with git, and replay re-runs the plan's check",
+      "branch": {"from": "issue-report", "at": 2},
+      "steps": [
+        {"t": "Lint asks git: the service file changed, outside T3's owned files", "d": "The report never mentions that file; git does. Whatever the report says, a changed file outside the task's owned files fails it.", "do": [["send", "main", "agentrep", "agent_report lint T3 --graph --cwd wt-T3"], ["db.read", "worktrees", "wt-T3", "changed"], ["reply", "agentrep", "main", "error: the worktree changed the service file, outside T3's files"]], "ev": ["ar-outside-git", "ar-actual", "om-lint-git"], "expect": {"vars": {"changed": "service file edited; no test file"}}},
+        {"t": "Lint also finds the claimed test file is not there", "do": [["reply", "agentrep", "main", "error: change claimed, but the worktree has none"]], "ev": ["ar-missing-claim", "om-reject-claimed"]},
+        {"t": "Replay re-runs the declared check: claimed success, actual failure", "d": "It runs the command the plan declared for T3, not the text in the report, and prints both output tails side by side.", "do": [["send", "main", "agentrep", "agent_report replay T3 --yes"], ["reply", "agentrep", "main", "MISMATCH: claimed exit zero, actual one"]], "ev": ["ar-mismatch", "ar-claimed-actual", "ar-plan-replay"]},
+        {"t": "Rejected: the task goes back to its agent, and nothing merges", "do": [["send", "main", "agents", "rejected: fix it and report again"]], "ev": ["skill-rejected"], "expect": {"store": {"merged": {"wave three": null}}}}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "checked", "label": "Check the plan before work, and each report against git and a replay after", "fit": "pass", "pros": ["Collisions are refused before any agent spends time", "A report's claims are tested, not believed: git for files, the plan for commands"], "cons": ["Replay checks exit codes, not that a command means anything: a plan that declares true replays fine", "File-overlap checks can over-report; split the patterns"], "scenario": "fix-report"},
+      {"id": "trust", "label": "Merge each agent's report on its word", "fit": "fail", "pros": ["Fastest"], "cons": ["A claimed pass ships untested", "An edit outside the task's files is never seen"], "scenario": "issue-report"},
+      {"id": "serial", "label": "Run one agent at a time in one checkout", "fit": "fail", "pros": ["No two agents ever touch the same file at once"], "cons": ["Wall time grows with every task", "Still merges each report on its word"]},
+      {"id": "replay-report", "label": "Re-run whatever commands the report lists", "fit": "fail", "pros": ["No plan needed"], "cons": ["Executes text another agent wrote", "A report could prove done with a command that always succeeds"]}
+    ],
+    "chosen": "checked",
+    "deciding_factor": "A report is written by the party being judged, so every claim in it is re-derived from the plan, git and a real run.",
+    "revisit_when": "A task needs proof an exit code cannot give, such as a screenshot or a live response, and that proof becomes common.",
+    "source": "docs/OPERATING-MODEL.md §3 and §6; skills/orchestrate/SKILL.md rules 2, 4 and 5"
+  },
+  "checks": [
+    {"scenario": "happy", "step": 8, "q": "The report lists the files it changed. Which list does lint trust?", "answer": "Git's: it asks git what changed in the worktree since the stamped commit, and compares that with the task's owned files and with the report's list."},
+    {"scenario": "fix-overlap", "step": 1, "q": "T1 and T2 both list the module file. When is that caught?", "answer": "Before any agent starts: plan lint refuses the plan, so nobody does work that would collide."},
+    {"scenario": "fix-report", "step": 4, "q": "The report says the check passed. Does replay run the command the report wrote?", "answer": "No: it runs the command the plan declared for that task and compares exit codes; evidence for any other command is listed as not replayed."}
+  ],
+  "compare": ["issue-report", "fix-report"],
+  "reference": [
+    {
+      "path": "scripts/plan_dag.py",
+      "symbols": ["load_plan", "graph", "find_cycle", "levels", "lint", "replay_argv_problems", "stamp_field_errors", "file_sha256", "audit_spec", "spec_gate", "cmd_lint", "cmd_stamp", "cmd_waves", "cmd_next"],
+      "notes": {
+        "load_plan": "Reads the plan file; prints why and returns nothing when it is missing, not JSON, or has no task list.",
+        "find_cycle": "Depth-first walk over the dependency edges; returns the first cycle as a list of task ids, or nothing.",
+        "lint": "The plan gate: field shapes, owners, verify commands, cycles, file overlap between unordered tasks, contract rules and acceptance coverage against the spec.",
+        "file_sha256": "The sha256 of a file's exact bytes: what stamp records and lint compares.",
+        "cmd_lint": "The lint command: finds the stamped spec (or the one given), runs lint and the spec gate, prints numbered errors, fails on any.",
+        "cmd_stamp": "The stamp command: refuses a spec that fails its audit or is not ready, then writes the spec path, its hash and the current commit into the plan.",
+        "cmd_waves": "The waves command: prints each wave's tasks, owners and titles, and how many run at once in the widest wave.",
+        "cmd_next": "The next command: given finished and blocked tasks, lists what is ready now, what is held behind a blocked task, and what is still waiting."
+      }
+    },
+    {
+      "path": "scripts/agent_report.py",
+      "symbols": ["extract_json", "load_report", "actual_changes", "cmd_key", "fork_point", "resolve_base", "lint", "_plan_checks", "quality_warnings", "run_argv", "argv_problems", "plan_replay", "cmd_extract", "cmd_lint", "cmd_replay", "cmd_summary"],
+      "notes": {
+        "_plan_checks": "The plan-aware rows: every claimed and every real changed file inside the owned files, every claimed change present, every declared verify command in the evidence.",
+        "cmd_extract": "The extract command: saves the message's last JSON block as the report file, refusing a write a planted symlink would redirect.",
+        "cmd_lint": "The lint command: with a plan it requires the worktree, resolves the base, asks git for the real changes, then prints notes, warnings and numbered errors.",
+        "cmd_replay": "The replay command: sorts evidence into declared, undeclared and refused, runs only the declared commands after a yes, and prints each mismatch with both output tails.",
+        "cmd_summary": "The summary command: merges questions (deduplicated), plan issues and findings across reports, blocking first, capped at one batch."
+      }
+    }
+  ]
+}

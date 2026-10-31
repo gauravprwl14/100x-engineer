@@ -1,0 +1,1484 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the pr-review skill works",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "Part of the 100x plugin overview (explain/100x-plugin). Think of a building inspector with a camera. First the inspector photographs the site exactly as it stands (the snapshot, pinned to one commit), so every note says \"this beam, in this photo\" and a later change to the site cannot make a note point at the wrong beam. The notes go into one logbook (review.json), and every report anyone reads is printed from it. A clerk (the gate) checks the paperwork before anything goes out. Nothing is mailed to the builder until you have read the exact letter and said yes, and even then it goes as a draft only you can see. Only one door in the building opens onto GitHub, and it is the skill's own written steps, not the tools."
+  },
+  "tldr": {
+    "what": "Turns a pull request link into review comments you read and adjust, then posts them to GitHub as a draft only after you say yes.",
+    "how": "A snapshot pins the reviewed commit, agents write findings into one record, every file is rendered from it, a gate checks it, and posting re-checks the commit first.",
+    "watch_out": "The rule that nothing posts without your yes lives in the skill's steps, not in code; the draft default is what limits a mistake."
+  },
+  "context": {
+    "purpose": "Give Claude a pull request link and get review comments you can read, change and then post to GitHub as a draft only you see, each pointing at the exact commit that was reviewed, with nothing sent until you say yes.",
+    "why_now": "This is the one part of the plugin allowed to write to GitHub, so where that door is, and what guards it, is worth seeing step by step.",
+    "in_scope": [
+      "The three commands, in order: review, adjust, post",
+      "Where the output lands, and why never inside the reviewed repo",
+      "How the snapshot pins the head commit, and how the gate holds links to it",
+      "One record per PR, and every readable file rendered from it",
+      "The post flow: the commit check, the exact payload, one explicit yes, a draft",
+      "Why gh runs only from the skill's steps (the decision record on gh in decisions/)",
+      "The snapshot, review and gate functions in the Code reference"
+    ],
+    "out_of_scope": [
+      "How reviewers judge the code (diff-review and stack-reviewer)",
+      "The adjust command's edit rules in detail",
+      "Checking that a suggested change applies (pr_suggest)",
+      "Filling the review folder's CONTEXT.md"
+    ],
+    "entry_points": [
+      {
+        "label": "/pr-review <pr-url>",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "skill-fire"
+      },
+      {
+        "label": "/pr-review post <pr-url> [draft|submit]",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "ap-ask"
+      },
+      {
+        "label": "/pr-review adjust <pr-url>",
+        "kind": "command",
+        "note": "edits only the user blocks in review.json, then renders and gates again; not animated",
+        "ev": "skill-copyforward"
+      },
+      {
+        "label": "/pr-review init",
+        "kind": "command",
+        "note": "scaffolds the review folder without reviewing a PR; the review command runs it first",
+        "ev": "skill-where"
+      },
+      {
+        "label": "pr_review_gate <run-root> --snap <snap>",
+        "kind": "command",
+        "note": "the check run before reporting and again before posting",
+        "ev": "gate-exit"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term": "head SHA",
+      "means": "The exact commit at the tip of the PR when it was reviewed, {{sha_len}} long. Every link and line claim points at it, so a later push cannot shift them."
+    },
+    {
+      "term": "snapshot",
+      "means": "Copies of the PR's files at the head, at the merge-base and on the default branch, plus the diff, exported from git into a scratch folder.",
+      "example": "<snap>/<n>/, <snap>/base-<n>/, <snap>/<n>.diff, PINS.md"
+    },
+    {
+      "term": "item",
+      "means": "One point in review.json: what is wrong, where, how sure the reviewer is, what to change and who should answer."
+    },
+    {
+      "term": "render",
+      "means": "Writing a file a person reads (README, comments to post, questions, the GitHub payload) from review.json by code, never by hand."
+    },
+    {
+      "term": "gate",
+      "means": "The checker for a review folder: shape, links, evidence labels and rendered files. It must pass before the review is reported and again before posting."
+    },
+    {
+      "term": "review folder",
+      "means": "Where every review of one repo lives: by default beside your clone, never inside it. Called CR in the skill.",
+      "example": "<parent of the clone>/code-review/<repo>/"
+    },
+    {
+      "term": "run root",
+      "means": "One review run's folder inside the review folder; a re-review of the same PR gets a new dated one."
+    },
+    {
+      "term": "reviewer agent",
+      "means": "A separate Claude agent that reviews the PR from one angle (security, design, missed scenarios) and returns its findings for merging."
+    },
+    {
+      "term": "gh",
+      "means": "GitHub's own command-line tool. It keeps your login per host, so GitHub Enterprise works the same as github.com."
+    },
+    {
+      "term": "SHA guard",
+      "means": "Before posting, the PR's current head commit is compared with the reviewed one; any difference stops the post."
+    },
+    {
+      "term": "explicit yes",
+      "means": "The only answer that posts. Anything else, a question back or silence included, posts nothing."
+    },
+    {
+      "term": "draft review",
+      "means": "A GitHub review sent without an event: it stays pending, visible only to you, until you submit it on the PR."
+    }
+  ],
+  "outline": [
+    {
+      "title": "snapshot(a) in pr_snapshot, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "remote = pick_remote(repo, --remote, --url)",
+          "steps": [
+            3
+          ],
+          "ev": "snap-pick"
+        },
+        {
+          "code": "git fetch --quiet remote                     # the only call that changes the clone",
+          "steps": [
+            3
+          ],
+          "ev": "snap-fetch-all"
+        },
+        {
+          "code": "export(remote/default) -> <dest>/<default>/",
+          "steps": [
+            3
+          ],
+          "ev": "snap-export-def"
+        },
+        {
+          "code": "for n in prs:",
+          "steps": [
+            3
+          ],
+          "ev": "snap-loop"
+        },
+        {
+          "code": "git fetch remote pull/<n>/head; sha = FETCH_HEAD",
+          "indent": 1,
+          "steps": [
+            3
+          ],
+          "ev": "snap-fetch"
+        },
+        {
+          "code": "mb = merge-base(base, sha)",
+          "indent": 1,
+          "ev": "snap-mb"
+        },
+        {
+          "code": "export(sha) -> <dest>/<n>/; export(mb) -> <dest>/base-<n>/",
+          "indent": 1,
+          "ev": "snap-export"
+        },
+        {
+          "code": "write <dest>/<n>.diff = diff base...sha",
+          "indent": 1,
+          "ev": "snap-diff"
+        },
+        {
+          "code": "write PINS.md: base, head SHA, merge-base, commits, files, behind",
+          "steps": [
+            3
+          ],
+          "ev": "snap-pins"
+        }
+      ]
+    },
+    {
+      "title": "/pr-review post <pr-url>: the steps, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "pr_review_gate(run_root, snap) must pass",
+          "steps": [
+            9
+          ],
+          "ev": "ap-gate"
+        },
+        {
+          "code": "if gh head SHA != review.json pr.head_sha: stop, re-review",
+          "steps": [
+            9
+          ],
+          "ev": "ap-guard"
+        },
+        {
+          "code": "payload = pr_review emit <pr-dir> draft      # no event -> pending",
+          "steps": [
+            10
+          ],
+          "ev": "ap-emit"
+        },
+        {
+          "code": "show every inline comment and the general ones; ask once",
+          "steps": [
+            10
+          ],
+          "ev": "ap-ask"
+        },
+        {
+          "code": "if answer is not an explicit yes: post nothing",
+          "steps": [
+            10
+          ],
+          "ev": "ap-ask"
+        },
+        {
+          "code": "gh api --hostname HOST -X POST .../pulls/<n>/reviews --input payload",
+          "steps": [
+            11
+          ],
+          "ev": "ap-post"
+        },
+        {
+          "code": "pr_review mark-posted <pr-dir> <html_url> draft; render; gate",
+          "steps": [
+            11
+          ],
+          "ev": "ap-record"
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What the pr-review skill is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 2\n  root((pr-review))\n    Skill steps\n      gh, read only while reviewing\n      post after one yes\n    Snapshot\n      head SHA pinned\n      trees and diff\n    One record\n      review.json\n      every file rendered from it\n    Gate\n      links on the pinned SHA\n      files equal a fresh render\n    Output\n      review folder beside the clone",
+      "caption": "Read outward from the centre: the skill's steps are the only part that talks to GitHub; the tools pin, record, render and check.",
+      "ev": [
+        "adr-decision",
+        "snap-sha",
+        "doc-rendered",
+        "gate-g7",
+        "gate-g11",
+        "skill-where"
+      ]
+    },
+    {
+      "id": "where-output",
+      "title": "Where the review folder lands, first match wins",
+      "kind": "flowchart",
+      "source": "flowchart TD\n  A{\"out flag given?\"} -- yes --> X[use that folder]\n  A -- no --> B{\"PR_REVIEW_OUT set?\"}\n  B -- yes --> X\n  B -- no --> C{\"git config pr-review.out set?\"}\n  C -- yes --> X\n  C -- no --> D{\"user config.json names out?\"}\n  D -- yes --> X\n  D -- no --> E{\"a local clone whose parent is not inside a repo?\"}\n  E -- yes --> F[\"beside the clone: code-review / repo\"]\n  E -- no --> G[\"user folder: reviews / host / owner / repo\"]",
+      "caption": "Every branch ends outside the reviewed repo: the fallback is the user's own folder, so a review is never written into someone else's working tree.",
+      "ev": [
+        "resolve-cr",
+        "resolve-parent",
+        "resolve-default",
+        "skill-where"
+      ]
+    },
+    {
+      "id": "post-calls",
+      "title": "Posting, call by call",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  actor You\n  participant Claude\n  participant Tool as pr_review\n  participant Gh as gh\n  participant GitHub\n  You->>Claude: post this PR\n  Claude->>Gh: head SHA of the PR now\n  Gh->>GitHub: read the PR\n  GitHub-->>Gh: current head SHA\n  Gh-->>Claude: current head SHA\n  alt head moved since the review\n    Claude-->>You: stop, re-review first\n  else head unchanged\n    Claude->>Tool: emit draft payload\n    Tool-->>Claude: review JSON and a preview\n    Claude->>You: exact text, post as a draft?\n    alt you say yes\n      Claude->>Gh: create the review with no event\n      Gh->>GitHub: pending review, visible only to you\n      Claude->>Tool: mark the items posted\n    else anything else\n      Claude-->>You: nothing posted\n    end\n  end",
+      "caption": "Two stops guard the one write: a moved head ends it before the payload is built, and anything short of a yes ends it before gh is called.",
+      "ev": [
+        "ap-guard",
+        "ap-emit",
+        "ap-ask",
+        "ap-post",
+        "emit-event",
+        "ap-record"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "you",
+      "role": "client",
+      "label": "You"
+    },
+    {
+      "id": "claude",
+      "role": "service",
+      "label": "Claude with the pr-review skill",
+      "ref": "skills/pr-review/SKILL.md",
+      "ev": "skill-fire"
+    },
+    {
+      "id": "gh",
+      "role": "edge",
+      "label": "gh, run only from the skill's steps",
+      "ev": "adr-decision"
+    },
+    {
+      "id": "github",
+      "role": "external",
+      "label": "GitHub (the PR and its draft review)"
+    },
+    {
+      "id": "clone",
+      "role": "store",
+      "label": "Your local clone (fetched into, never checked out)",
+      "ev": "snap-readonly"
+    },
+    {
+      "id": "snapshot",
+      "role": "service",
+      "label": "pr_snapshot (pins the head SHA)",
+      "ref": "scripts/pr_snapshot.py:101",
+      "ev": "snap-fn"
+    },
+    {
+      "id": "lenses",
+      "role": "queue",
+      "label": "Reviewer agents to start",
+      "ev": "wf-fanout"
+    },
+    {
+      "id": "agents",
+      "role": "worker",
+      "label": "Reviewer agents (in the background)",
+      "slots": 3,
+      "ev": "wf-fanout"
+    },
+    {
+      "id": "record",
+      "role": "store",
+      "label": "review.json (one record per PR)",
+      "ev": "doc-rendered"
+    },
+    {
+      "id": "tool",
+      "role": "service",
+      "label": "pr_review (render, find, emit, mark posted)",
+      "ref": "scripts/pr_review.py:1010",
+      "ev": "doc-postsnothing"
+    },
+    {
+      "id": "gate",
+      "role": "service",
+      "label": "pr_review_gate (the review's checks)",
+      "ref": "scripts/pr_review_gate.py:482",
+      "ev": "gate-exit"
+    },
+    {
+      "id": "cr",
+      "role": "store",
+      "label": "Review folder, beside the clone",
+      "ev": "resolve-default"
+    }
+  ],
+  "numbers": {
+    "sha_len": {
+      "v": 40,
+      "unit": "hex characters",
+      "tag": "verified",
+      "ev": "gate-sha40"
+    },
+    "max_agents": {
+      "v": 10,
+      "unit": "agents",
+      "tag": "verified",
+      "ev": "wf-fanout"
+    },
+    "lens_cap": {
+      "v": 5,
+      "unit": "new items per lens",
+      "tag": "verified",
+      "ev": "lens-cap"
+    },
+    "body_max": {
+      "v": 3000,
+      "unit": "characters",
+      "tag": "verified",
+      "ev": "body-max"
+    }
+  },
+  "evidence": {
+    "skill-fire": {
+      "at": "skills/pr-review/SKILL.md:80",
+      "anchor": "Fire when"
+    },
+    "skill-where": {
+      "at": "skills/pr-review/SKILL.md:35",
+      "anchor": "Where output goes"
+    },
+    "skill-readonly": {
+      "at": "skills/pr-review/SKILL.md:91",
+      "anchor": "Read-only until `post`"
+    },
+    "skill-onerecord": {
+      "at": "skills/pr-review/SKILL.md:97",
+      "anchor": "Every point is one item"
+    },
+    "skill-pins": {
+      "at": "skills/pr-review/SKILL.md:100",
+      "anchor": "Every link pins"
+    },
+    "skill-noposting": {
+      "at": "skills/pr-review/SKILL.md:117",
+      "anchor": "never posts and never offers to post"
+    },
+    "skill-copyforward": {
+      "at": "skills/pr-review/SKILL.md:120",
+      "anchor": "copied forward"
+    },
+    "skill-draft": {
+      "at": "skills/pr-review/SKILL.md:123",
+      "anchor": "defaults to a **draft**"
+    },
+    "skill-pending": {
+      "at": "skills/pr-review/SKILL.md:189",
+      "anchor": "PENDING"
+    },
+    "wf-where": {
+      "at": "skills/pr-review/references/workflow.md:13",
+      "anchor": "Where it goes"
+    },
+    "wf-meta": {
+      "at": "skills/pr-review/references/workflow.md:14",
+      "anchor": "Resolve + metadata"
+    },
+    "wf-snapshot": {
+      "at": "skills/pr-review/references/workflow.md:15",
+      "anchor": "| 2 | Snapshot"
+    },
+    "wf-fanout": {
+      "at": "skills/pr-review/references/workflow.md:20",
+      "anchor": "≤ 10 agents"
+    },
+    "wf-gate": {
+      "at": "skills/pr-review/references/workflow.md:25",
+      "anchor": "Render + gate"
+    },
+    "wf-report": {
+      "at": "skills/pr-review/references/workflow.md:26",
+      "anchor": "never post here"
+    },
+    "ap-gate": {
+      "at": "skills/pr-review/references/adjust-and-post.md:41",
+      "anchor": "| 2 Gate"
+    },
+    "ap-guard": {
+      "at": "skills/pr-review/references/adjust-and-post.md:42",
+      "anchor": "SHA guard"
+    },
+    "ap-emit": {
+      "at": "skills/pr-review/references/adjust-and-post.md:43",
+      "anchor": "pr_review emit"
+    },
+    "ap-ask": {
+      "at": "skills/pr-review/references/adjust-and-post.md:45",
+      "anchor": "Anything but an explicit yes = post nothing"
+    },
+    "ap-post": {
+      "at": "skills/pr-review/references/adjust-and-post.md:46",
+      "anchor": "-X POST"
+    },
+    "ap-record": {
+      "at": "skills/pr-review/references/adjust-and-post.md:47",
+      "anchor": "mark-posted"
+    },
+    "adr-optc": {
+      "at": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md:60",
+      "anchor": "gh mock"
+    },
+    "adr-decision": {
+      "at": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md:102",
+      "anchor": "allowed dependency"
+    },
+    "adr-one-place": {
+      "at": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md:104",
+      "anchor": "exactly one place"
+    },
+    "adr-cannot-see": {
+      "at": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md:111",
+      "anchor": "cannot see it"
+    },
+    "adr-gap": {
+      "at": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md:119",
+      "anchor": "the draft default limits the damage"
+    },
+    "snap-readonly": {
+      "at": "scripts/pr_snapshot.py:6",
+      "anchor": "Read-only on the clone"
+    },
+    "snap-fn": {
+      "at": "scripts/pr_snapshot.py:101",
+      "anchor": "def snapshot"
+    },
+    "snap-pick": {
+      "at": "scripts/pr_snapshot.py:104",
+      "anchor": "pick_remote(repo, a.remote, a.url)"
+    },
+    "snap-fetch-all": {
+      "at": "scripts/pr_snapshot.py:105",
+      "anchor": "\"fetch\", \"--quiet\", remote)"
+    },
+    "snap-export-def": {
+      "at": "scripts/pr_snapshot.py:111",
+      "anchor": "export(repo, def_ref"
+    },
+    "snap-loop": {
+      "at": "scripts/pr_snapshot.py:114",
+      "anchor": "for n in a.pr"
+    },
+    "snap-fetch": {
+      "at": "scripts/pr_snapshot.py:115",
+      "anchor": "PULL_REF.format(n=n)"
+    },
+    "snap-sha": {
+      "at": "scripts/pr_snapshot.py:116",
+      "anchor": "FETCH_HEAD^{commit}"
+    },
+    "snap-mb": {
+      "at": "scripts/pr_snapshot.py:119",
+      "anchor": "merge-base"
+    },
+    "snap-export": {
+      "at": "scripts/pr_snapshot.py:123",
+      "anchor": "export(repo, sha"
+    },
+    "snap-diff": {
+      "at": "scripts/pr_snapshot.py:125",
+      "anchor": ".diff"
+    },
+    "snap-pins": {
+      "at": "scripts/pr_snapshot.py:133",
+      "anchor": "PINS.md"
+    },
+    "doc-postsnothing": {
+      "at": "scripts/pr_review.py:6",
+      "anchor": "Posts nothing"
+    },
+    "doc-rendered": {
+      "at": "scripts/pr_review.py:37",
+      "anchor": "Rendered, never edit"
+    },
+    "lens-cap": {
+      "at": "scripts/pr_review.py:109",
+      "anchor": "LENS_MAX = 5"
+    },
+    "emit-event": {
+      "at": "scripts/pr_review.py:488",
+      "anchor": "if event"
+    },
+    "render-pr": {
+      "at": "scripts/pr_review.py:495",
+      "anchor": "render_readme(r)"
+    },
+    "merge-fn": {
+      "at": "scripts/pr_review.py:538",
+      "anchor": "def merge"
+    },
+    "merge-cap": {
+      "at": "scripts/pr_review.py:552",
+      "anchor": "nothing written"
+    },
+    "merge-write": {
+      "at": "scripts/pr_review.py:553",
+      "anchor": "review.json"
+    },
+    "mark-posted": {
+      "at": "scripts/pr_review.py:587",
+      "anchor": "i[\"posted\"]"
+    },
+    "body-max": {
+      "at": "scripts/pr_review.py:604",
+      "anchor": "BODY_MAX = 3000"
+    },
+    "emit-fn": {
+      "at": "scripts/pr_review.py:606",
+      "anchor": "def emit"
+    },
+    "emit-draft": {
+      "at": "scripts/pr_review.py:612",
+      "anchor": "DRAFT (pending, only you see it)"
+    },
+    "next-run": {
+      "at": "scripts/pr_review.py:675",
+      "anchor": "def next_run"
+    },
+    "resolve-cr": {
+      "at": "scripts/pr_review.py:792",
+      "anchor": "def resolve_cr"
+    },
+    "resolve-parent": {
+      "at": "scripts/pr_review.py:812",
+      "anchor": "--is-inside-work-tree"
+    },
+    "resolve-default": {
+      "at": "scripts/pr_review.py:814",
+      "anchor": "DEFAULT_DIR"
+    },
+    "gate-sha40": {
+      "at": "scripts/pr_review_gate.py:41",
+      "anchor": "SHA40"
+    },
+    "gate-g7": {
+      "at": "scripts/pr_review_gate.py:177",
+      "anchor": "G7-links"
+    },
+    "gate-g10": {
+      "at": "scripts/pr_review_gate.py:255",
+      "anchor": "does not exist at the pinned head"
+    },
+    "gate-g11": {
+      "at": "scripts/pr_review_gate.py:310",
+      "anchor": "never hand-edit"
+    },
+    "gate-exit": {
+      "at": "scripts/pr_review_gate.py:499",
+      "anchor": "return 0 if not fails and mok else 1"
+    },
+    "no-gh-scripts": {
+      "absent": "a gh call in any pr-review script",
+      "git_grep": "\\[\"gh\"",
+      "path": "scripts/pr_*.py",
+      "hits": 0
+    },
+    "no-net-scripts": {
+      "absent": "an HTTP library (urllib, http.client, requests) in any pr-review script",
+      "git_grep": "urllib|http\\.client|requests",
+      "path": "scripts/pr_*.py",
+      "hits": 0
+    },
+    "no-checkout": {
+      "absent": "a git checkout or push in the snapshot tool",
+      "git_grep": "\"checkout\"|\"push\"",
+      "path": "scripts/pr_snapshot.py",
+      "hits": 0
+    }
+  },
+  "initial": {
+    "stores": {
+      "record": {
+        "items": "none yet"
+      },
+      "cr": {
+        "files": "none"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "From a PR link to a draft review on GitHub",
+      "steps": [
+        {
+          "t": "You give Claude a pull request link",
+          "d": "Any github.com or GitHub Enterprise PR URL; host, owner and repo are read from it, never typed.",
+          "do": [
+            [
+              "send",
+              "you",
+              "claude",
+              "review <pr-url>"
+            ]
+          ],
+          "ev": [
+            "skill-fire"
+          ]
+        },
+        {
+          "t": "Claude works out the review folder, outside the reviewed repo",
+          "d": "First match wins: a flag, an environment variable, git config, your config file, else beside the clone. The answer says which rule chose it.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "paths --url <pr-url> --json"
+            ],
+            [
+              "reply",
+              "tool",
+              "claude",
+              "review folder and the rule that chose it"
+            ]
+          ],
+          "ev": [
+            "resolve-cr",
+            "resolve-default",
+            "skill-where"
+          ]
+        },
+        {
+          "t": "Claude reads the PR's details through gh, read only",
+          "d": "While reviewing, gh only reads: the PR, its checks, linked issues and existing comments.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "gh",
+              "gh pr view -R host/owner/repo"
+            ],
+            [
+              "send",
+              "gh",
+              "github",
+              "read the PR"
+            ],
+            [
+              "reply",
+              "github",
+              "gh",
+              "head SHA, base, files changed"
+            ],
+            [
+              "reply",
+              "gh",
+              "claude",
+              "PR details"
+            ]
+          ],
+          "ev": [
+            "wf-meta",
+            "skill-readonly"
+          ]
+        },
+        {
+          "t": "pr_snapshot pins the head SHA and exports the trees",
+          "d": "It fetches the PR's head from the remote, records its exact commit, and exports the head, the merge-base and the default branch, plus the diff. The clone is fetched into, never checked out.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "snapshot",
+              "pr_snapshot --pr <n> --dest <scratch>/snap"
+            ],
+            [
+              "send",
+              "snapshot",
+              "clone",
+              "git fetch pull/<n>/head"
+            ],
+            [
+              "db.write",
+              "cr",
+              "pins",
+              "head SHA pinned"
+            ]
+          ],
+          "ev": [
+            "snap-fetch",
+            "snap-sha",
+            "snap-pins",
+            "snap-readonly",
+            "no-checkout"
+          ],
+          "expect": {
+            "store": {
+              "cr": {
+                "pins": "head SHA pinned"
+              }
+            }
+          },
+          "code": [
+            "git fetch remote pull/<n>/head",
+            "sha = FETCH_HEAD",
+            "write PINS.md"
+          ]
+        },
+        {
+          "t": "Claude starts every reviewer agent in one message",
+          "d": "Up to {{max_agents}}, all in the background, each reading the snapshot rather than the moving branch.",
+          "do": [
+            [
+              "enqueue",
+              "lenses",
+              "reviewer"
+            ],
+            [
+              "enqueue",
+              "lenses",
+              "security"
+            ],
+            [
+              "enqueue",
+              "lenses",
+              "design"
+            ],
+            [
+              "pickup",
+              "lenses",
+              "agents"
+            ],
+            [
+              "pickup",
+              "lenses",
+              "agents"
+            ],
+            [
+              "pickup",
+              "lenses",
+              "agents"
+            ]
+          ],
+          "ev": [
+            "wf-fanout",
+            "wf-snapshot"
+          ],
+          "expect": {
+            "queues": {
+              "lenses": 0
+            }
+          }
+        },
+        {
+          "t": "The agents finish and their findings merge into review.json",
+          "d": "Each point becomes one item. A lens with more than {{lens_cap}} is refused, with nothing written.",
+          "do": [
+            [
+              "free",
+              "agents",
+              "reviewer"
+            ],
+            [
+              "free",
+              "agents",
+              "security"
+            ],
+            [
+              "free",
+              "agents",
+              "design"
+            ],
+            [
+              "db.write",
+              "record",
+              "items",
+              "merged"
+            ]
+          ],
+          "ev": [
+            "merge-fn",
+            "merge-cap",
+            "merge-write",
+            "skill-onerecord"
+          ],
+          "expect": {
+            "store": {
+              "record": {
+                "items": "merged"
+              }
+            }
+          }
+        },
+        {
+          "t": "pr_review renders every file a person reads from review.json",
+          "d": "README, the comments to post, the questions and the GitHub payload all come from the one record, so they cannot disagree.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "render <pr-dir>"
+            ],
+            [
+              "db.read",
+              "record",
+              "items",
+              "items"
+            ],
+            [
+              "db.write",
+              "cr",
+              "files",
+              "rendered"
+            ]
+          ],
+          "ev": [
+            "render-pr",
+            "doc-rendered"
+          ],
+          "expect": {
+            "vars": {
+              "items": "merged"
+            },
+            "store": {
+              "cr": {
+                "files": "rendered"
+              }
+            }
+          }
+        },
+        {
+          "t": "The gate checks links, the snapshot and the rendered files",
+          "d": "Every link must sit on this repo at the pinned commit, every cited line must exist in the snapshot, and every rendered file must equal a fresh render.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "gate",
+              "pr_review_gate <run-root> --snap <snap>"
+            ],
+            [
+              "reply",
+              "gate",
+              "claude",
+              "PASS rules, PASS mermaid"
+            ]
+          ],
+          "ev": [
+            "gate-g7",
+            "gate-g10",
+            "gate-g11",
+            "gate-exit",
+            "wf-gate"
+          ]
+        },
+        {
+          "t": "Claude reports and stops: a review run never posts",
+          "d": "It ends with the loop: read the README and the comments, adjust anything, then post.",
+          "do": [
+            [
+              "reply",
+              "claude",
+              "you",
+              "read, adjust, then post"
+            ]
+          ],
+          "ev": [
+            "skill-noposting",
+            "wf-report"
+          ]
+        },
+        {
+          "t": "Later you say post; the head SHA must not have moved",
+          "d": "Claude runs the gate again, then asks gh for the PR's current head and compares it with the reviewed one.",
+          "do": [
+            [
+              "send",
+              "you",
+              "claude",
+              "post <pr-url>"
+            ],
+            [
+              "send",
+              "claude",
+              "gh",
+              "current head SHA"
+            ],
+            [
+              "reply",
+              "gh",
+              "claude",
+              "same as review.json"
+            ]
+          ],
+          "ev": [
+            "ap-gate",
+            "ap-guard"
+          ],
+          "code": [
+            "pr_review_gate(run_root, snap) must pass",
+            "if gh head SHA != pr.head_sha: stop"
+          ]
+        },
+        {
+          "t": "Claude shows the exact payload and asks once",
+          "d": "The payload has no event, so GitHub keeps it pending. A summary over {{body_max}} gets a warning. Anything but an explicit yes posts nothing.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "emit <pr-dir> draft"
+            ],
+            [
+              "reply",
+              "tool",
+              "claude",
+              "payload and preview"
+            ],
+            [
+              "reply",
+              "claude",
+              "you",
+              "post this as a draft?"
+            ],
+            [
+              "send",
+              "you",
+              "claude",
+              "yes"
+            ]
+          ],
+          "ev": [
+            "emit-fn",
+            "emit-event",
+            "emit-draft",
+            "ap-ask"
+          ]
+        },
+        {
+          "t": "gh creates the draft review and the record marks each item posted",
+          "d": "The draft is visible only to you until you submit it on GitHub; posted items are never sent again.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "gh",
+              "create review, no event"
+            ],
+            [
+              "send",
+              "gh",
+              "github",
+              "pending review"
+            ],
+            [
+              "db.write",
+              "record",
+              "posted",
+              "draft"
+            ]
+          ],
+          "ev": [
+            "ap-post",
+            "ap-record",
+            "mark-posted",
+            "skill-pending",
+            "adr-one-place"
+          ],
+          "expect": {
+            "store": {
+              "record": {
+                "posted": "draft"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "head-moved",
+      "kind": "failure",
+      "title": "The author pushed after the review: post stops",
+      "branch": {
+        "from": "happy",
+        "at": 9
+      },
+      "steps": [
+        {
+          "t": "You say post, but the PR's head is a newer commit than the reviewed one",
+          "do": [
+            [
+              "send",
+              "you",
+              "claude",
+              "post <pr-url>"
+            ],
+            [
+              "send",
+              "claude",
+              "gh",
+              "current head SHA"
+            ],
+            [
+              "reply",
+              "gh",
+              "claude",
+              "differs from review.json"
+            ]
+          ],
+          "ev": [
+            "ap-guard"
+          ]
+        },
+        {
+          "t": "Claude stops; no payload is built and nothing is posted",
+          "d": "A comment pinned to the old commit could point at lines that have since changed.",
+          "do": [
+            [
+              "reply",
+              "claude",
+              "you",
+              "head moved: re-review first"
+            ]
+          ],
+          "ev": [
+            "ap-guard",
+            "skill-draft"
+          ],
+          "expect": {
+            "store": {
+              "record": {
+                "posted": null
+              }
+            }
+          }
+        },
+        {
+          "t": "A re-review gets a new dated run, carrying your edits forward",
+          "d": "Your skips and rewordings, and anything already posted, are copied into the new record unchanged.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "find, then next-run"
+            ],
+            [
+              "reply",
+              "tool",
+              "claude",
+              "a new dated run folder"
+            ]
+          ],
+          "ev": [
+            "wf-where",
+            "next-run",
+            "skill-copyforward"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "issue-gh-in-tools",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the tools called gh themselves?",
+      "fixed_by": [
+        "fix-confined"
+      ],
+      "steps": [
+        {
+          "t": "The agents' findings are merged and ready to render",
+          "do": [
+            [
+              "db.write",
+              "record",
+              "items",
+              "merged"
+            ]
+          ],
+          "ev": [
+            "merge-write"
+          ]
+        },
+        {
+          "t": "The render tool calls gh and posts as soon as the files are written",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "render <pr-dir>"
+            ],
+            [
+              "send",
+              "tool",
+              "gh",
+              "post the review"
+            ],
+            [
+              "send",
+              "gh",
+              "github",
+              "review submitted"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "The author sees comments you never read",
+          "do": [
+            [
+              "reply",
+              "github",
+              "you",
+              "comments already visible to the author"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "Every test of the tools now needs a fake gh and a login per host",
+          "do": [
+            [
+              "note",
+              "a network write inside the tools, and a gh mock in every test"
+            ]
+          ],
+          "ev": [
+            "adr-optc"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fix-confined",
+      "kind": "fix",
+      "title": "Fix: the tools only read and render; gh runs only from the skill's steps",
+      "branch": {
+        "from": "issue-gh-in-tools",
+        "at": 1
+      },
+      "steps": [
+        {
+          "t": "pr_review only renders: no gh call and no HTTP code in any pr-review script",
+          "do": [
+            [
+              "send",
+              "claude",
+              "tool",
+              "render <pr-dir>"
+            ],
+            [
+              "db.write",
+              "cr",
+              "files",
+              "rendered"
+            ]
+          ],
+          "ev": [
+            "doc-postsnothing",
+            "no-gh-scripts",
+            "no-net-scripts"
+          ],
+          "expect": {
+            "store": {
+              "cr": {
+                "files": "rendered"
+              }
+            }
+          }
+        },
+        {
+          "t": "gh is a dependency of the skill's steps only, and writes in exactly one place",
+          "d": "That place is post, after you have seen the exact payload and said yes.",
+          "do": [
+            [
+              "note",
+              "gh: read-only while reviewing; one write, in post"
+            ]
+          ],
+          "ev": [
+            "adr-decision",
+            "adr-one-place"
+          ]
+        },
+        {
+          "t": "The review run ends with you reading it",
+          "do": [
+            [
+              "reply",
+              "claude",
+              "you",
+              "read, adjust, then post"
+            ]
+          ],
+          "ev": [
+            "skill-noposting",
+            "ap-ask"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "issue-gap",
+      "kind": "issue",
+      "severity": "medium",
+      "origin": "in-code",
+      "open": true,
+      "title": "No code stops an agent that ignores the skill from posting",
+      "steps": [
+        {
+          "t": "An agent that skips the skill's rules runs the post command itself",
+          "do": [
+            [
+              "send",
+              "claude",
+              "gh",
+              "create review, no yes asked"
+            ]
+          ],
+          "ev": [
+            "adr-gap"
+          ]
+        },
+        {
+          "t": "Nothing intercepts it: the boundary is a written rule, not code",
+          "d": "The safety audit scans the tools, not the skill's steps, and the command guard does not watch review posts.",
+          "do": [
+            [
+              "note",
+              "no hook or audit sees gh posting a review"
+            ]
+          ],
+          "ev": [
+            "adr-cannot-see"
+          ]
+        },
+        {
+          "t": "The draft default limits the damage: only you see it until you submit",
+          "do": [
+            [
+              "send",
+              "gh",
+              "github",
+              "pending review"
+            ],
+            [
+              "reply",
+              "github",
+              "you",
+              "pending, visible only to you"
+            ]
+          ],
+          "ev": [
+            "adr-gap",
+            "skill-draft",
+            "skill-pending"
+          ]
+        }
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {
+        "id": "skill-steps",
+        "label": "gh, called only from the skill's written steps",
+        "fit": "pass",
+        "scenario": "fix-confined",
+        "pros": [
+          "The tools stay standard-library Python and git, testable offline",
+          "gh already owns the login per host, so GitHub Enterprise needs no token handling"
+        ],
+        "cons": [
+          "The skill does not work without gh and a login per host",
+          "No code can check that post waited for a yes"
+        ]
+      },
+      {
+        "id": "urllib",
+        "label": "Call the GitHub API from the tools with the standard library",
+        "fit": "pass",
+        "pros": [
+          "No gh needed"
+        ],
+        "cons": [
+          "Re-implements tokens and Enterprise API addresses",
+          "Puts a network-writing path inside the tools the safety audit promises never send anything"
+        ]
+      },
+      {
+        "id": "subprocess-gh",
+        "label": "Run gh from inside the tools",
+        "fit": "pass",
+        "scenario": "issue-gh-in-tools",
+        "pros": [
+          "One place for every GitHub call"
+        ],
+        "cons": [
+          "A hidden runtime dependency in tools that must run anywhere",
+          "Every test needs a fake gh"
+        ]
+      },
+      {
+        "id": "never-post",
+        "label": "Never post; you paste comments by hand",
+        "fit": "fail",
+        "pros": [
+          "Nothing can ever post by mistake"
+        ],
+        "cons": [
+          "Drops the draft review and the lost-summary recovery the workflow exists for"
+        ]
+      }
+    ],
+    "chosen": "skill-steps",
+    "deciding_factor": "The tools promise to use only the standard library and git and to send nothing, so the one GitHub write had to be admitted deliberately in the skill, where you see it, not leak into the tools.",
+    "revisit_when": "A tool needs GitHub data a skill step cannot pass it as a file or argument, or a request to post automatically is accepted.",
+    "source": "decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md"
+  },
+  "checks": [
+    {
+      "scenario": "happy",
+      "step": 9,
+      "q": "The review was written yesterday. What is checked before anything is posted?",
+      "answer": "The gate runs again, and the PR's current head commit must equal the one the review pinned; otherwise post stops."
+    },
+    {
+      "scenario": "head-moved",
+      "step": 10,
+      "q": "The head moved. Does Claude post the old comments anyway?",
+      "answer": "No: it stops before building the payload and suggests a re-review, which carries your edits forward."
+    },
+    {
+      "scenario": "fix-confined",
+      "step": 2,
+      "q": "Which part of the plugin is allowed to write to GitHub?",
+      "answer": "Only the skill's post step, through gh, after you have seen the exact payload and said yes. No script calls gh."
+    }
+  ],
+  "compare": [
+    "issue-gh-in-tools",
+    "fix-confined"
+  ],
+  "reference": [
+    {
+      "path": "scripts/pr_snapshot.py",
+      "notes": {
+        "GitError": "The one error the tool raises: a named git failure, printed and turned into exit code one.",
+        "git": "Runs one git command in the clone and returns its output, raising a named error on failure.",
+        "git_ok": "The same git call, returning nothing instead of raising when it fails.",
+        "pick_remote": "Chooses the remote: the one named, else the one whose URL matches the PR, else the only one, else upstream, else origin.",
+        "default_branch": "Finds the remote's default branch from its HEAD ref, then from the server, then main or master; otherwise fails and asks for a base.",
+        "snapshot": "Fetches, then for each PR records the head commit and merge-base, exports the head, base and default trees and the diff, and writes PINS.md.",
+        "main": "Parses the flags, runs the snapshot, prints PINS.md, and exits with failure on a git error."
+      }
+    },
+    {
+      "path": "scripts/pr_review.py",
+      "symbols": [
+        "resolve_cr",
+        "find",
+        "next_run",
+        "merge",
+        "section_of",
+        "numbered",
+        "render_pr",
+        "write_pr",
+        "github_review",
+        "posting_ids",
+        "preview",
+        "emit",
+        "mark_posted",
+        "followup_text"
+      ],
+      "notes": {
+        "find": "Prints every earlier review of a PR in the review folder, newest first; exits with failure when there is none.",
+        "next_run": "Prints the next dated run folder for a re-review, adding a counter when one already exists today.",
+        "merge": "Adds reviewer fragments' items to review.json, skipping duplicates of another item and refusing a lens over its cap.",
+        "render_pr": "Renders README, comments to post, questions and the GitHub payload from one review record.",
+        "write_pr": "Writes those rendered files into the PR folder and refreshes the rendered regions of the findings file.",
+        "github_review": "Builds the GitHub review payload: inline comments on diff lines, general ones in the body, pinned to the head commit; an event only when asked.",
+        "preview": "Prints what post would send, item by item, and what is skipped or left for you to send by hand.",
+        "emit": "Prints the payload for a draft or a submit, a preview on stderr, and a warning when the summary is long; exits early when nothing is new.",
+        "mark_posted": "Records a successful post on each sent item and in the run's post list, keeping the summary in case a draft loses it."
+      }
+    },
+    {
+      "path": "scripts/pr_review_gate.py",
+      "symbols": [
+        "check_schema",
+        "check_items",
+        "check_pr_meta",
+        "check_snapshot",
+        "check_rendered",
+        "check_readme",
+        "check_pr",
+        "check_root",
+        "main"
+      ],
+      "notes": {
+        "check_schema": "Checks the record's shape: summary, run, item ids, kinds, severities, statuses, and the user and posted blocks.",
+        "check_items": "Checks each item reads plainly, holds a real value, links only to this repo at the pinned commit, and that existing PR comments were read first.",
+        "check_pr_meta": "The PR URL must be a real pull URL whose number matches, and the head must be a full commit hash.",
+        "check_snapshot": "Against the snapshot: each cited file and line exists at the head, the in-diff flag is right, a suggestion sits on a diff line and changes something, a diff removes only real lines.",
+        "check_rendered": "Every rendered file must equal a fresh render of review.json; a hand edit fails.",
+        "check_readme": "The README's who-reviewed table is complete and its action table lists exactly the open, not-skipped items.",
+        "check_pr": "Runs every rule on one PR folder, stopping after the shape check if the shape is wrong.",
+        "check_root": "Checks a run root: its pins file, each PR folder, and that the feature README equals a fresh render.",
+        "main": "Picks a PR folder or a run root, runs the rules and the mermaid check, and passes only when both pass."
+      }
+    }
+  ]
+}

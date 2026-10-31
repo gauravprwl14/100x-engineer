@@ -1,0 +1,19 @@
+{
+ "schema": 1,
+ "pin": "4bdb47ed90b42f91fb6579aa2d2a167539192868",
+ "ref": "main",
+ "pinned_at": "2026-10-31T07:39:22Z",
+ "pages": [
+  "100x-plugin",
+  "decision-records",
+  "explain-engine",
+  "orchestration",
+  "pr-review",
+  "recheck",
+  "session-find",
+  "verification-gate",
+  "work-continuity",
+  "work-doctor",
+  "work-record"
+ ]
+}
