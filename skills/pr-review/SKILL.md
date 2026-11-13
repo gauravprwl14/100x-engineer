@@ -2,7 +2,7 @@
 name: pr-review
 description: >
   PR comments to post on GitHub or GitHub Enterprise: a PR URL becomes SHA-pinned, paste-ready
-  comments and questions you adjust, then post as a draft review only after an explicit yes. Not
+  comments and questions you adjust, then post as a draft or submitted review only after an explicit yes. Not
   for your own diff before pushing (→ diff-review).
 argument-hint: "[<folder>] <pr-url | owner/repo#n | n> [...] [--repo <dir>] [--out <dir>] [--security] [--design] [--scenarios] [--lang en|ja|auto]  |  adjust <pr-url> | adjust <folder> <n>  |  post <pr-url> | post <folder> <n> [draft|submit]"
 ---
@@ -12,14 +12,14 @@ argument-hint: "[<folder>] <pr-url | owner/repo#n | n> [...] [--repo <dir>] [--o
 A stateful GitHub workflow around a stateless judgement. `diff-review` (rules 9–16) and
 `stack-reviewer` decide *what* is wrong; this skill turns that into one `review.json` per PR,
 renders everything a person reads from it, gates it, lets the user change it, and posts it as a
-draft review only when they say yes. Three commands, always in this order, plus `init`:
+draft or submitted review only when they say yes and name the mode. Three commands, always in this order, plus `init`:
 
 | command | does | writes to GitHub? | detail |
 |---|---|---|---|
 | `/pr-review init [--repo <dir>\|--url <pr-url>]` | scaffold `CR` and fill `CONTEXT.md` without reviewing a PR | never | `references/workflow.md` step 0 |
 | `/pr-review <pr>…` | init (no-op if done), snapshot, fan out reviewers, render, gate, report | never | `references/workflow.md` |
 | `/pr-review adjust <pr-url>` | drop, reword, add, change blocking — in `review.json` `user` blocks | never | `references/adjust-and-post.md` |
-| `/pr-review post <pr-url> [draft\|submit]` | SHA guard, preview, one explicit yes, then a **draft** review | yes, once, after yes | `references/adjust-and-post.md` |
+| `/pr-review post <pr-url> [draft\|submit]` | SHA guard, preview, the mode confirmed, one explicit yes, then a draft or submitted review | yes, once, after yes | `references/adjust-and-post.md` |
 
 | arg | meaning | default |
 |---|---|---|
@@ -120,8 +120,11 @@ machinery — CODEOWNERS, required checks, PR templates (`review-gates`); the re
 11. `adjust` edits only `review.json` `user` blocks; on a re-review every `user` and `posted` block
     is copied forward unchanged, so the user's wording wins over the reviewer's.
     *Enforced by:* `100x pr_review_gate <run-root>` (G9, G14)
-12. `post` defaults to a **draft**, stops if the head SHA moved, shows the exact payload, and sends
-    only after one explicit yes per PR; never `APPROVE`/`REQUEST_CHANGES` unless named.
+12. `post` takes its mode (`draft` or `submit`) only from the user's words or `settings.json`
+    `post_mode`; "post", "add" or "comment" alone name no mode, so ask. It stops if the head SHA
+    moved, shows the exact payload and what the mode means (a draft notifies nobody until the
+    user submits it, and the Finish box then replaces its summary), and sends only after one
+    explicit yes per PR; never `APPROVE`/`REQUEST_CHANGES` unless named.
     *Enforced by:* the SHA-guard command in `references/adjust-and-post.md` step 3 + review
 13. Load conventions in the stated order and only from sources that exist; never invent a focus
     file or a profile.
