@@ -28,9 +28,11 @@ action-table numbers. Edit `review.json` only, never the rendered files.
 
 ## `post <pr-url> [draft|submit]`
 
-Default `draft` (a pending review only the user sees until they submit it in the UI), or
-`post_mode` from `<CR>/_meta/settings.json` when no mode is given — still one explicit yes. `submit` =
-`event: COMMENT`. Never `APPROVE` / `REQUEST_CHANGES` unless the user asks for that event by name.
+Mode, in this order: the user's own word (`draft` or `submit`), then `post_mode` from
+`<CR>/_meta/settings.json`, else **ask** — there is no silent default. "Post", "add" or "comment" on
+the PR names no mode. `draft` = a pending review only the user sees until they submit it in the UI;
+`submit` = `event: COMMENT`, visible to the author at once. Either way one explicit yes. Never
+`APPROVE` / `REQUEST_CHANGES` unless the user asks for that event by name.
 This is the only place the skill writes to GitHub.
 
 | Step | Action |
@@ -42,7 +44,7 @@ This is the only place the skill writes to GitHub.
 | 3 SHA guard | `gh pr view <n> -R HOST/OWNER/REPO --json headRefOid -q .headRefOid` must equal `review.json` `pr.head_sha`, else stop: "head moved — run `/pr-review <pr-url>` again to re-review" |
 | 4 Build | `100x pr_review emit <pr-dir> <draft\|submit> [--body-max N] > <scratch>/review-<n>.json` (preview on stderr; `body_max` from `settings.json`). A `WARN body is over` line → offer to post the general comments as separate PR comments instead. Exit 3 = nothing new to post (all skipped / already posted / by hand) → tell the user and stop. Skipped and already-posted items are never included |
 | 5 Show | mode, every inline `path:line` + first line, the general comments, and what is NOT posted (file 2 sections C and D — the user does those by hand) |
-| 6 Ask | AskUserQuestion once per PR naming `OWNER/REPO#n` and the mode. Anything but an explicit yes = post nothing |
+| 6 Ask | AskUserQuestion once per PR naming `OWNER/REPO#n` and the mode, in plain words: draft = "only you see it; nobody is notified until you submit it, and the Finish box replaces the summary, so the general comments need pasting back"; submit = "the author sees it now". A draft that carries general comments → recommend `submit`, or offer to post those comments as a separate PR comment right after the draft (its own explicit yes). No mode named and no `post_mode` → offer both here and wait. Anything but an explicit yes = post nothing |
 | 7 Post | `gh api --hostname HOST -X POST repos/OWNER/REPO/pulls/<n>/reviews --input <scratch>/review-<n>.json` |
 | 8 Record | `100x pr_review mark-posted <pr-dir> <html_url> <draft\|submit>`, then render + gate (workflow step 11, including `index`). README gains "Posted to GitHub"; posted items show "Posted" and are never sent again |
 | 9 Report | the review `html_url`; draft → "pending: submit it in Files changed", **plus, when the draft has general comments, this warning with the text**: "GitHub's *Finish your review* box starts empty and replaces the summary when you submit. Paste the text below into it (or leave it and run `/pr-review post <pr-url>` again after submitting — it will offer to post the general comments as a PR comment)." Print the `followup-text` output for them. If GitHub says a pending review already exists, stop and tell the user |
