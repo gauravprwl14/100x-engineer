@@ -456,6 +456,7 @@ def gen_collections():
             "security-baseline": "3 before shipping",
             "bug-fix": "4 when broken", "root-cause-analysis": "4 when broken",
             "codebase-comprehension": "5 understanding", "explain": "5 understanding",
+            "explain-sync": "5 understanding",
             "agent-instructions": "6 meta",
             "untrusted-agent-config": "6 meta",
             "100x": "0 start here", "requirements-intake": "0 start here",

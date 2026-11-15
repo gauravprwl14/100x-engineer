@@ -1,0 +1,275 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How session-find finds a past session",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "A part page of the plugin overview (explain/100x-plugin). Think of every past Claude Code chat as a notebook on a shelf: weeks later you remember the topic, not which notebook. session-find leafs through every notebook in both of your Claude Code home folders, counts only the pages where you or Claude actually wrote the phrase, and hands back the notebooks newest first with a line of context, so you can resume the right session instead of starting over. It only reads. For facts you carry forward on purpose, see the work record page (explain/work-record)."
+  },
+  "tldr": {
+    "what": "Tells you which past Claude Code session worked on a topic, so you can resume it instead of starting over.",
+    "how": "It reads every saved session transcript in both home folders, counts only what you or Claude actually said, and lists the matches newest first.",
+    "watch_out": "It is a plain text search: a phrase holding a double quote never matches, and helper agents' own transcripts are not searched."
+  },
+  "context": {
+    "purpose": "Weeks after a feature was split across several sessions and worktrees, you ask \"which session built the tagging module?\" and get the session ids, where each ran, when it was last active and a snippet, ready for claude --resume.",
+    "why_now": "Without it, the only way to find the right session was grepping raw transcript files by hand, where hook output and file paths drown the real mentions.",
+    "in_scope": [
+      "The skill: when it fires and the steps Claude follows",
+      "Where the command looks: the projects folder of each Claude Code home that exists, or the folders you name",
+      "What counts as a hit: only your turns and Claude's, only their text",
+      "How matches are ranked and cut to a limit",
+      "What it prints, as a table or JSON, and how its exit codes tell no match from broken",
+      "Two real limits: quoted phrases and helper-agent transcripts",
+      "Every function in scripts/session_find.py, in the Code reference"
+    ],
+    "out_of_scope": [
+      "Browsing sessions by date or alias (the separate sessions skill)",
+      "Resuming itself: that is claude --resume, which this page only points to",
+      "The work record, which keeps a feature's facts on purpose (explain/work-record)"
+    ],
+    "entry_points": [
+      {"label": "session-find skill (\"which session built X\", \"find the session for PR …\")", "kind": "command", "scenario": "happy", "ev": "skill-fire"},
+      {"label": "100x session_find <phrase> [--limit N] [--json] [--roots a,b] [--case-sensitive]", "kind": "command", "scenario": "happy", "ev": "cli-args"}
+    ]
+  },
+  "terms": [
+    {"term": "session", "means": "One Claude Code conversation, saved as one file named by its id; resuming it reopens that conversation."},
+    {"term": "transcript", "means": "The saved file of a session: one JSON record per line, for each turn and each piece of bookkeeping.", "example": "~/.claude/projects/-work-shop/<session id>.jsonl"},
+    {"term": "home folder", "means": "A Claude Code home such as ~/.claude. This user runs two, so both are searched by default."},
+    {"term": "project folder", "means": "The folder inside a home's projects folder that holds every session started in one working folder."},
+    {"term": "turn", "means": "One record of what you typed (user) or what Claude answered (assistant). Only these are searched."},
+    {"term": "hook output", "means": "Bookkeeping records that hooks and modes write into the transcript; they often echo tool and file names, and never count."},
+    {"term": "prefilter", "means": "A cheap check that the phrase appears anywhere in the raw line, done before the line is parsed. It only decides what to look at closely."},
+    {"term": "snippet", "means": "A short stretch of the first matching turn, around the phrase, so you can tell sessions apart."},
+    {"term": "recency", "means": "When the session file last changed on disk. It is the only ranking key; the hit count is shown but not used to rank."},
+    {"term": "helper-agent transcript", "means": "The separate file a helper agent writes, kept in a subfolder of its parent session's folder."},
+    {"term": "resume", "means": "Reopening a past session by its id, with claude --resume.", "example": "claude --resume <session id>"}
+  ],
+  "outline": [
+    {
+      "title": "run(query, roots, limit) and search_session(path): the search",
+      "scenario": "happy",
+      "lines": [
+        {"code": "roots = resolve_roots(--roots or [~/.claude/projects, ~/.cc-1/projects])", "steps": [2], "ev": "resolve-home"},
+        {"code": "roots = [r for r in roots if r.is_dir()]", "steps": [2], "ev": "resolve-exists"},
+        {"code": "if not roots: error 'no session directory found'  -> exit 2", "ev": "run-noroots"},
+        {"code": "for root in roots: for file in iter_sessions(root):  # sorted folders, top-level *.jsonl", "steps": [3], "ev": "iter-glob"},
+        {"code": "for line in file:", "indent": 1, "steps": [4, 5, 6], "ev": "scan-open"},
+        {"code": "if needle not in line.lower(): continue      # prefilter", "indent": 2, "steps": [4], "ev": "prefilter"},
+        {"code": "record = json.loads(line) except: continue", "indent": 2, "ev": "parse"},
+        {"code": "if record.type not in {user, assistant}: continue", "indent": 2, "steps": [5], "ev": "type-check"},
+        {"code": "text = extract_text(record.message)          # string, or text blocks only", "indent": 2, "steps": [6], "ev": "extract-call"},
+        {"code": "if needle not in text.lower(): continue", "indent": 2, "ev": "text-check"},
+        {"code": "hits += 1; cwd = record.cwd; snippet = snippet or make_snippet(text)", "indent": 2, "steps": [4, 6], "ev": "hits"},
+        {"code": "results.sort(key=file mtime, newest first)", "steps": [7], "ev": "sort"},
+        {"code": "results = results[:limit]                     # default 20, 0 = all", "steps": [8], "ev": "limit"},
+        {"code": "print_table(results) or print(json.dumps(results))", "steps": [9], "ev": "out-json"},
+        {"code": "exit 0 if results else 1", "steps": [9], "ev": "exit-found"}
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What session-find is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 2\n  root((session-find))\n    Where it looks\n      projects folder of each home\n      or the folders you name\n    What counts\n      your turns and Claude's\n      text pieces only\n      never hook output\n    Ranking\n      newest file first\n      cut to a limit\n    Output\n      table or JSON\n      snippet around the match\n      no match vs broken\n    Limits\n      literal phrase\n      no helper transcripts",
+      "caption": "Read outward from the centre: where it searches, what it counts, how it orders, what it prints, and the two limits worth knowing.",
+      "ev": ["default-homes", "resolve-home", "searchable", "extract-text", "sort", "limit", "out-json", "snippet-before", "exit-found", "skill-literal", "iter-glob"]
+    },
+    {
+      "id": "hit-gate",
+      "title": "Does this line count as a hit?",
+      "kind": "flowchart",
+      "scenario": "fix-turns",
+      "source": "flowchart TD\n  L[one line of a session file] --> P{phrase anywhere in the raw line?}\n  P -- no --> S[skip the line]\n  P -- yes --> J{parses as JSON?}\n  J -- no --> S\n  J -- yes --> T{a user or assistant turn?}\n  T -- no --> S\n  T -- yes --> X{phrase in the turn's text?}\n  X -- no --> S\n  X -- yes --> H[hit: count it, remember the first snippet]",
+      "caption": "Four gates, cheapest first. The first is only a prefilter; the last is what makes a hit real.",
+      "ev": ["prefilter", "parse", "type-check", "text-check", "hits"]
+    },
+    {
+      "id": "calls",
+      "title": "One search, call by call",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  actor You\n  participant C as Claude with the session-find skill\n  participant F as Session search command\n  participant T as Session transcripts\n  You->>C: which session built the tagging module?\n  C->>F: session_find \"tagging module\"\n  F->>T: read every session file in each home\n  T-->>F: lines, file change times\n  alt at least one match\n    F-->>C: ranked table, newest first\n    C-->>You: session ids, folders, snippets\n  else no match\n    F-->>C: No sessions found\n  else no home folder exists\n    F-->>C: error, the search could not run\n  end",
+      "caption": "The three ways a search ends each exit differently, so a script can tell nothing to resume from broken.",
+      "ev": ["skill-fire", "skill-step1", "iter-glob", "mtime", "print-none", "run-noroots", "exit-found", "exit-noroots"]
+    }
+  ],
+  "nodes": [
+    {"id": "you", "role": "client", "label": "You"},
+    {"id": "claude", "role": "service", "label": "Claude with the session-find skill", "ref": "skills/session-find/SKILL.md", "ev": "skill-fire"},
+    {"id": "finder", "role": "service", "label": "Session search command", "ref": "scripts/session_find.py:147", "ev": "run-def"},
+    {"id": "homes", "role": "store", "label": "Session transcripts (both home folders)", "ref": "scripts/session_find.py:34", "ev": "default-homes"},
+    {"id": "files", "role": "queue", "label": "Session files to scan, in name order", "ref": "scripts/session_find.py:133", "ev": "iter-glob"},
+    {"id": "scanner", "role": "worker", "label": "Line scanner", "slots": 1, "ref": "scripts/session_find.py:74", "ev": "scan-open"},
+    {"id": "results", "role": "store", "label": "Matches found (hits per session)", "ref": "scripts/session_find.py:118", "ev": "hits"},
+    {"id": "resume", "role": "external", "label": "claude --resume", "ev": "skill-resume"}
+  ],
+  "numbers": {
+    "limit": {"v": 20, "unit": "sessions", "tag": "verified", "ev": "limit-default"},
+    "snippet_before": {"v": 40, "unit": "characters", "tag": "verified", "ev": "snippet-before"},
+    "snippet_after": {"v": 80, "unit": "characters", "tag": "verified", "ev": "snippet-after"},
+    "helper_dirs": {"v": 68, "unit": "session folders holding helper-agent transcripts", "tag": "measured", "source": "ls -d ~/.claude/projects/*/*/subagents | wc -l, plus the same under the second home folder, summed, on this machine on the page's date; names counted only, no content read"}
+  },
+  "evidence": {
+    "skill-fire": {"at": "skills/session-find/SKILL.md:19", "anchor": "Fire when"},
+    "skill-notfire": {"at": "skills/session-find/SKILL.md:23", "anchor": "Do not fire when"},
+    "skill-step1": {"at": "skills/session-find/SKILL.md:32", "anchor": "shortest phrase that names the feature"},
+    "skill-literal": {"at": "skills/session-find/SKILL.md:34", "anchor": "matching is a literal substring, not semantic"},
+    "skill-resume": {"at": "skills/session-find/SKILL.md:35", "anchor": "claude --resume <session-id>"},
+    "skill-rule1": {"at": "skills/session-find/SKILL.md:40", "anchor": "Only `\"type\":\"user\"` and `\"type\":\"assistant\"` lines count"},
+    "skill-rule2": {"at": "skills/session-find/SKILL.md:47", "anchor": "never silently more, never silently fewer"},
+    "skill-rule3": {"at": "skills/session-find/SKILL.md:54", "anchor": "No session matched"},
+    "skill-readonly": {"at": "skills/session-find/SKILL.md:62", "anchor": "Read-only"},
+    "default-homes": {"at": "scripts/session_find.py:34", "anchor": "DEFAULT_HOME_DIRS = (\".claude\", \".cc-1\")"},
+    "searchable": {"at": "scripts/session_find.py:35", "anchor": "SEARCHABLE_TYPES = {\"user\", \"assistant\"}"},
+    "extract-doc": {"at": "scripts/session_find.py:43", "anchor": "Only `text` blocks are read"},
+    "extract-str": {"at": "scripts/session_find.py:47", "anchor": "isinstance(content, str)"},
+    "extract-text": {"at": "scripts/session_find.py:52", "anchor": "block.get(\"type\") == \"text\""},
+    "snippet-find": {"at": "scripts/session_find.py:64", "anchor": "text.lower().find(query.lower())"},
+    "snippet-before": {"at": "scripts/session_find.py:67", "anchor": "idx - 40"},
+    "snippet-after": {"at": "scripts/session_find.py:68", "anchor": "len(query) + 80"},
+    "scan-open": {"at": "scripts/session_find.py:85", "anchor": "errors=\"replace\""},
+    "prefilter": {"at": "scripts/session_find.py:88", "anchor": "if needle not in haystack"},
+    "parse": {"at": "scripts/session_find.py:91", "anchor": "json.loads(line)"},
+    "parse-skip": {"at": "scripts/session_find.py:92", "anchor": "json.JSONDecodeError"},
+    "type-check": {"at": "scripts/session_find.py:94", "anchor": "record.get(\"type\") not in SEARCHABLE_TYPES"},
+    "side-field": {"at": "scripts/session_find.py:97", "anchor": "sibling field (gitBranch, cwd, sessionId"},
+    "extract-call": {"at": "scripts/session_find.py:100", "anchor": "extract_text(record.get(\"message\")"},
+    "text-check": {"at": "scripts/session_find.py:102", "anchor": "if needle not in text_haystack"},
+    "hits": {"at": "scripts/session_find.py:104", "anchor": "hits += 1"},
+    "cwd-last": {"at": "scripts/session_find.py:107", "anchor": "cwd = record_cwd"},
+    "snippet-first": {"at": "scripts/session_find.py:108", "anchor": "if snippet is None"},
+    "unreadable": {"at": "scripts/session_find.py:110", "anchor": "except OSError"},
+    "mtime": {"at": "scripts/session_find.py:115", "anchor": "path.stat().st_mtime"},
+    "iter-sorted": {"at": "scripts/session_find.py:134", "anchor": "sorted(p for p in root.iterdir() if p.is_dir())"},
+    "iter-glob": {"at": "scripts/session_find.py:135", "anchor": "project_dir.glob(\"*.jsonl\")"},
+    "resolve-home": {"at": "scripts/session_find.py:143", "anchor": "Path.home() / home_dir / \"projects\""},
+    "resolve-exists": {"at": "scripts/session_find.py:144", "anchor": "r.is_dir()"},
+    "run-def": {"at": "scripts/session_find.py:147", "anchor": "def run(query, roots_arg, limit, case_sensitive)"},
+    "run-noroots": {"at": "scripts/session_find.py:150", "anchor": "no session directory found"},
+    "sort": {"at": "scripts/session_find.py:160", "anchor": "results.sort(key=lambda r: r[\"mtime\"], reverse=True)"},
+    "limit": {"at": "scripts/session_find.py:162", "anchor": "results[:limit]"},
+    "print-none": {"at": "scripts/session_find.py:168", "anchor": "No sessions found."},
+    "table": {"at": "scripts/session_find.py:173", "anchor": "{record['session_id']}  [{record['root']}]  {scope}"},
+    "cli-args": {"at": "scripts/session_find.py:185", "anchor": "add_argument(\"query\""},
+    "limit-default": {"at": "scripts/session_find.py:191", "anchor": "default=20"},
+    "exit-noroots": {"at": "scripts/session_find.py:204", "anchor": "return 2"},
+    "out-json": {"at": "scripts/session_find.py:207", "anchor": "json.dumps(results, indent=2)"},
+    "exit-found": {"at": "scripts/session_find.py:211", "anchor": "return 0 if results else 1"},
+    "no-unescape": {"absent": "any unescaping of the raw line, or escaping of the phrase, before the prefilter", "git_grep": "unescape|json\\.dumps\\((query|needle)|\\\\\\\\\"", "path": "scripts/session_find.py", "hits": 0},
+    "no-recurse": {"absent": "a recursive search into session subfolders", "git_grep": "rglob|subagents|\\*\\*/", "path": "scripts/session_find.py", "hits": 0},
+    "test-noise": {"at": "tests/test_session_find.sh:50", "anchor": "hook/bookkeeping noise"},
+    "test-side": {"at": "tests/test_session_find.sh:65", "anchor": "sibling `cwd` metadata field"}
+  },
+  "initial": {
+    "stores": {"homes": {"roots": "both"}}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "\"Which session built the tagging module?\"",
+      "steps": [
+        {"t": "You ask which session built the tagging module", "d": "That question is one of the skill's triggers. Browsing by date or alias is a different skill.", "do": [["send", "you", "claude", "which session built the tagging module?"]], "ev": ["skill-fire", "skill-notfire"]},
+        {"t": "Claude runs the search with the shortest phrase that names it", "d": "The match is a literal piece of text, so a short phrase finds more.", "do": [["send", "claude", "finder", "session_find \"tagging module\""]], "ev": ["skill-step1", "skill-literal", "cli-args"]},
+        {"t": "The command finds which home folders exist", "d": "By default exactly the projects folder of both homes, whichever exist, never more and never fewer; a folder list you pass replaces them.", "do": [["db.read", "homes", "roots", "roots"]], "ev": ["default-homes", "resolve-home", "resolve-exists", "skill-rule2"], "expect": {"vars": {"roots": "both"}}, "code": ["roots = resolve_roots(roots_arg)"]},
+        {"t": "Every session file lines up, folder by folder, in name order", "do": [["enqueue", "files", "s-design"], ["enqueue", "files", "s-hooks"], ["enqueue", "files", "s-backend"]], "ev": ["iter-sorted", "iter-glob"], "expect": {"queues": {"files": 3}}, "code": ["for project_dir in sorted(dirs):", "  for f in sorted(project_dir.glob(*.jsonl)): yield f"]},
+        {"t": "First file: a cheap text check, then only your turns and Claude's count", "d": "A line without the phrase is skipped unread. A line with it is parsed; a broken line is skipped, not fatal. Here two of your turns name the module.", "do": [["pickup", "files", "scanner"], ["db.write", "results", "s-design", 2], ["free", "scanner", "s-design"]], "ev": ["prefilter", "parse", "parse-skip", "type-check", "text-check", "hits"], "expect": {"store": {"results": {"s-design": 2}}}, "code": ["if needle not in line.lower(): continue", "record = json.loads(line)", "if record.type not in {user, assistant}: continue", "hits += 1"]},
+        {"t": "Second file: the phrase is only in hook output, so the session is not listed", "do": [["pickup", "files", "scanner"], ["free", "scanner", "s-hooks"]], "ev": ["type-check", "searchable", "skill-rule1"], "expect": {"store": {"results": {"s-hooks": null}}}},
+        {"t": "Third file: the phrase is in Claude's own answer text", "d": "Claude's answers are lists of pieces; only plain text pieces are read, not thinking or tool calls.", "do": [["pickup", "files", "scanner"], ["db.write", "results", "s-backend", 1], ["free", "scanner", "s-backend"]], "ev": ["extract-call", "extract-text", "extract-doc"], "expect": {"store": {"results": {"s-backend": 1}}, "queues": {"files": 0}}},
+        {"t": "Matches are ranked by when each file last changed, newest first", "d": "The hit count is printed but does not change the order.", "do": [["note", "s-backend changed last, so it ranks first"]], "ev": ["sort", "mtime"], "code": ["results.sort(key=mtime, reverse=True)"]},
+        {"t": "Only the top matches are kept", "d": "The default is {{limit}}; a limit of zero keeps them all.", "do": [["note", "limit applied"]], "ev": ["limit", "limit-default"], "code": ["results = results[:limit]"]},
+        {"t": "One line per session: id, home, folder, last active, hits, and a snippet", "d": "The snippet is the first matching turn, about {{snippet_before}} before the phrase and {{snippet_after}} after it. The folder shown is the working folder of the last matching turn. A found result ends with success, which a script can tell apart from no match.", "do": [["reply", "finder", "claude", "s-backend in the second home, then s-design in ~/.claude, each with hits and a snippet"]], "ev": ["table", "snippet-first", "snippet-before", "snippet-after", "cwd-last", "exit-found"], "code": ["print(f\"{id}  [{root}]  {cwd}  last={last_activity}  hits={hits}\")", "print(f\"    {snippet}\")"]},
+        {"t": "You pick one, and resume it", "do": [["reply", "claude", "you", "the backend session is the newest; resume it?"], ["send", "you", "resume", "claude --resume <session id>"]], "ev": ["skill-resume"]}
+      ]
+    },
+    {
+      "id": "issue-noise",
+      "kind": "issue",
+      "severity": "medium",
+      "origin": "what-if",
+      "title": "What if any line holding the phrase counted?",
+      "branch": {"from": "happy", "at": 5},
+      "fixed_by": ["fix-turns"],
+      "steps": [
+        {"t": "The hook-output line counts as a mention", "d": "Hooks echo tool and file names all the time, so the phrase turns up in sessions that never discussed it.", "do": [["pickup", "files", "scanner"], ["db.write", "results", "s-hooks", 1], ["free", "scanner", "s-hooks"]], "tag": "inferred", "expect": {"store": {"results": {"s-hooks": 1}}}},
+        {"t": "That session changed most recently, so it ranks first", "do": [["note", "s-hooks ranks first"]], "tag": "inferred"},
+        {"t": "You resume a session that never worked on the feature", "do": [["send", "you", "resume", "claude --resume <wrong session>"]], "tag": "inferred"}
+      ]
+    },
+    {
+      "id": "fix-turns",
+      "kind": "fix",
+      "title": "Fix: only the text of your turns and Claude's counts",
+      "branch": {"from": "issue-noise", "at": 5},
+      "steps": [
+        {"t": "Each candidate line is parsed and its kind checked: hook output is skipped", "do": [["pickup", "files", "scanner"], ["free", "scanner", "s-hooks"]], "ev": ["type-check", "searchable", "test-noise"], "expect": {"store": {"results": {"s-hooks": null}}}, "code": ["if record.type not in {user, assistant}: continue"]},
+        {"t": "A match only in a side field, such as the working folder or branch, does not count either", "d": "The prefilter looks at the whole line, so the phrase can sit in a field beside the message; only the message text decides.", "do": [["note", "a turn whose folder path holds the phrase is not a hit"]], "ev": ["side-field", "text-check", "test-side"], "code": ["text = extract_text(record.message)", "if needle not in text.lower(): continue"]},
+        {"t": "Only sessions that really discussed it are ranked", "do": [["pickup", "files", "scanner"], ["db.write", "results", "s-backend", 1], ["free", "scanner", "s-backend"], ["reply", "finder", "claude", "s-backend, then s-design"]], "ev": ["hits", "sort"], "expect": {"queues": {"files": 0}}}
+      ]
+    },
+    {
+      "id": "issue-quote",
+      "kind": "issue",
+      "severity": "low",
+      "origin": "in-code",
+      "open": true,
+      "title": "A phrase holding a double quote never matches",
+      "steps": [
+        {"t": "Claude searches for a phrase with a double quote in it", "d": "For example: tags say \"draft\", copied from what Claude once wrote.", "do": [["send", "claude", "finder", "session_find 'tags say \"draft\"'"]], "ev": ["cli-args"]},
+        {"t": "The cheap check compares the phrase with the raw saved line, where the quote is stored with a backslash", "d": "Nothing unescapes the line or escapes the phrase first, so the prefilter never lets the line through, even though the turn's text holds the phrase. Reproduced with a made-up transcript.", "do": [["enqueue", "files", "s-backend"], ["pickup", "files", "scanner"], ["free", "scanner", "s-backend"]], "ev": ["prefilter", "no-unescape"], "expect": {"queues": {"files": 0}}, "code": ["haystack = line.lower()   # the JSON text: \\\"draft\\\"", "if needle not in haystack: continue"]},
+        {"t": "No sessions found: the same answer as a real miss", "do": [["reply", "finder", "claude", "No sessions found."]], "ev": ["print-none", "exit-found"]},
+        {"t": "Workaround: search a shorter phrase without the quote", "d": "The skill already says to retry with a shorter phrase when nothing useful comes back. A backslash in the phrase fails the same way.", "do": [["send", "claude", "finder", "session_find \"tags say\""]], "ev": ["skill-literal"]}
+      ]
+    },
+    {
+      "id": "issue-helpers",
+      "kind": "issue",
+      "severity": "low",
+      "origin": "in-code",
+      "open": true,
+      "title": "Work done by a helper agent is invisible",
+      "steps": [
+        {"t": "Claude searches for a word that only a helper agent wrote", "do": [["send", "claude", "finder", "session_find \"refund retry\""]], "tag": "inferred"},
+        {"t": "Only session files at the top of each project folder are scanned", "d": "Helper-agent transcripts sit one level deeper, in the parent session's own folder, and nothing looks there. On this machine {{helper_dirs}} exist.", "do": [["enqueue", "files", "s-parent"]], "ev": ["iter-glob", "no-recurse"], "expect": {"queues": {"files": 1}}},
+        {"t": "The parent's file holds the call to the helper and its result, but neither is a text piece", "d": "Only plain text pieces of a turn are read, so the helper's task and answer are skipped too.", "do": [["pickup", "files", "scanner"], ["free", "scanner", "s-parent"]], "ev": ["extract-text", "extract-doc"]},
+        {"t": "No sessions found, unless the parent's own prose named the word", "d": "Workaround: search a word from the parent's request or Claude's summary of the helper's result.", "do": [["reply", "finder", "claude", "No sessions found."]], "ev": ["print-none"]}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "grep", "label": "A plain text search over the raw transcripts each time, ranked by recency", "fit": "pass", "pros": ["Standard library only, nothing to install", "Nothing to keep in sync: every session ever saved is searchable", "Read-only on the transcripts"], "cons": ["Literal match only", "Reads every file on every search"], "scenario": "happy"},
+      {"id": "index", "label": "Keep a full-text search index of the transcripts", "fit": "pass", "pros": ["Fast on a very large history", "Could rank by relevance"], "cons": ["A second copy of private transcripts to keep current and protect", "A build step before the first search"]},
+      {"id": "summaries", "label": "Search only curated session summaries", "fit": "fail", "pros": ["Short, readable results"], "cons": ["Misses every session nobody summarised, which is most of them"]},
+      {"id": "semantic", "label": "Meaning-based search with an embedding model", "fit": "fail", "pros": ["Finds a topic phrased differently"], "cons": ["Needs a model or a service; the skill is standard library only"]}
+    ],
+    "chosen": "grep",
+    "deciding_factor": "One person's own history, searched now and then: reading it all each time is quick enough and keeps no second copy of private transcripts.",
+    "revisit_when": "A search across the history takes long enough to notice, or phrasing differences make literal matching miss sessions you know exist.",
+    "source": "no recorded decision (100x decide trace scripts/session_find.py finds none); options implied by skills/session-find/SKILL.md rules and Do-not-fire list"
+  },
+  "checks": [
+    {"scenario": "happy", "step": 5, "q": "This session's file holds the phrase, but only in hook output. Will it be listed?", "answer": "No: only your turns and Claude's count, and only their text."},
+    {"scenario": "happy", "step": 7, "q": "One session has two hits, the other one. Which is listed first?", "answer": "The one whose file changed most recently; hits are shown but never used to rank."},
+    {"scenario": "issue-helpers", "step": 1, "q": "A helper agent wrote the word. Will its transcript be scanned?", "answer": "No: only files at the top of each project folder are read, and helper transcripts sit one level deeper."}
+  ],
+  "compare": ["issue-noise", "fix-turns"],
+  "reference": [
+    {
+      "path": "scripts/session_find.py",
+      "notes": {
+        "make_snippet": "Collapses whitespace and cuts a window around the first match, a short stretch before and a longer one after, with ellipses; the start of the text when the phrase is not found.",
+        "iter_sessions": "Yields each session file: project folders in name order, then the session files at the top of each; subfolders are never entered.",
+        "resolve_roots": "The folders to search: the comma-separated list you pass, else the projects folder of each default home; only those that exist.",
+        "run": "Searches every session file in every folder, sorts matches by file change time, newest first, and applies the limit; returns an error text when no folder exists.",
+        "print_table": "Prints one line per session (id, home, folder, last active, hits) with its snippet indented below, or No sessions found.",
+        "main": "Parses the options, refuses an empty phrase or a negative limit, prints a table or JSON, and exits with success on a match, one failing code for no match and another when nothing could be searched."
+      }
+    }
+  ]
+}

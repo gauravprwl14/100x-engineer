@@ -1,0 +1,362 @@
+# How decision records work: record, trace, verify, drift
+
+> **What:** Keeps the reason behind each non-obvious choice next to the code it governs, so a later change can find it and ask whether it still holds.
+>
+> **How:** Each record lists its options, the deciding factor, assumptions that each carry a check command, and the file patterns it governs; trace, verify and drift read those.
+>
+> **Watch out:** Drift says all clear when the commit a record names no longer exists, as after a squash merge, so a silent drift is not proof.
+
+A decision record is a note pinned to the code it explains, with a smoke alarm attached. The note says what was chosen, what lost and why. The alarm is each assumption's own shell command, which fails the day that assumption stops being true. The pin is a list of file patterns, so anyone about to change a file can ask which decisions govern it, and the ledger can say which decisions had their code change underneath them. In 100x this is the decide command (new, lint, trace, verify, drift, index), and the decision-records skill says when to use it. One level down from the 100x-plugin overview page.
+
+| | |
+|---|---|
+| subject | concept · repo `gauravprwl14/100x-engineer` |
+| tier | heavy |
+| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |
+
+## Contents
+
+| section | answers |
+|---|---|
+| [Before you watch](#before-you-watch) | what the change does for a user, what it covers and where it starts |
+| [Terms](#terms) | the words a reader outside the module needs |
+| [Diagrams](#diagrams) | the flow at a glance, as diagrams |
+| [Workflow outline](#workflow-outline) | the code path as pseudocode, each line linked to its step |
+| [Map](#map) | which boxes the scenarios use, their role and where they live in the code |
+| [Record a choice, trace it, and catch the day its assumption breaks](#record-a-choice-trace-it-and-catch-the-day-its-assumption-breaks) | happy scenario `happy`: each step, what it changes and its evidence |
+| [Drift says all clear when the record's commit no longer exists](#drift-says-all-clear-when-the-records-commit-no-longer-exists) | issue scenario `issue-unknown-commit`: each step, what it changes and its evidence |
+| [Trace compares paths as text, so it can miss a decision or invent one](#trace-compares-paths-as-text-so-it-can-miss-a-decision-or-invent-one) | issue scenario `issue-trace-text`: each step, what it changes and its evidence |
+| [What if a record only named the winner?](#what-if-a-record-only-named-the-winner) | issue scenario `issue-conclusion`: each step, what it changes and its evidence |
+| [Fix: lint refuses a conclusion dressed as a decision](#fix-lint-refuses-a-conclusion-dressed-as-a-decision) | fix scenario `fix-lint`: each step, what it changes and its evidence |
+| [Decision](#decision) | which option was chosen, against what, and when to revisit it |
+| [Numbers](#numbers) | every number on the page and what backs it |
+| [Code reference](#code-reference) | every function and class in the files behind the page: lines, purpose, who uses it |
+
+## Before you watch
+
+**When you or an agent picks one approach over another, this records why, in a file the code can be traced back to; months later, before changing that code, one command says which decision governs it and whether its assumptions still hold.**
+
+Why now: An agent makes dozens of silent choices per feature, none of them visible in the diff; a month later nobody can say why the code is the way it is, or whether the reason still holds.
+
+In this PR:
+
+- Writing a record: decide new, and lint, which refuses a record that only names the winner
+- Assumptions that carry their own check command, and verify, which runs them
+- Trace: which decisions govern a file
+- Drift: which decisions had their governed files change since they were recorded
+- The generated index
+- Every decide function, in the Code reference
+
+Not in this PR:
+
+- Choosing between options (the approach-selection skill)
+- Searching the whole ledger of PRDs, specs, RCAs and reviews (ledger find, gaps, and sharding past 40 records a folder)
+- Whether a code change contradicts a decision: drift only knows that governed files changed
+
+| entry point | kind | animated in | note | evidence |
+|---|---|---|---|---|
+| decide new "<title>" --affects "<glob>" | command | `happy` (Record a choice, trace it, and catch the day its assumption breaks) |  | `scripts/decide.py:136` |
+| decide lint | command | `fix-lint` (Fix: lint refuses a conclusion dressed as a decision) |  | `scripts/decide.py:409` |
+| decide trace <path> | command | `happy` (Record a choice, trace it, and catch the day its assumption breaks) |  | `scripts/decide.py:283` |
+| decide verify | command | `happy` (Record a choice, trace it, and catch the day its assumption breaks) |  | `scripts/decide.py:230` |
+| decide drift | command | `happy` (Record a choice, trace it, and catch the day its assumption breaks) |  | `scripts/decide.py:254` |
+| decide index \| check | command | not animated | index rewrites the table after every new record; check runs lint, index and drift together for CI; not animated | `scripts/decide.py:208` |
+| decision-records skill | command | `happy` (Record a choice, trace it, and catch the day its assumption breaks) |  | `skills/decision-records/SKILL.md:26` |
+
+## Terms
+
+| term | means | example |
+|---|---|---|
+| `decision record` | One file per choice, numbered in order with an ADR prefix, with a machine-readable meta block on top and the written reasoning below. | The record that keeps gh inside the pr-review skill's steps, in this repo's decisions folder. |
+| `meta block` | The fenced JSON at the top of a record that the tools read: id, status, date, options, assumptions, the file patterns it governs and the commit it was written at. |  |
+| `option` | One approach that was considered, with its fit and either why it won or why it did not. |  |
+| `fit` | A pass or fail filter applied before any scoring: an option that does not solve the problem is out, whatever it would score. |  |
+| `assumption` | Something that must stay true for the decision to stay right, written as a claim, a check command and a revisit trigger. |  |
+| `verify command` | A shell command that fails the day its assumption stops being true. | ! grep -rq jwt src/auth  (fails once the session code mentions a token library) |
+| `revisit_when` | The observable event that should make someone re-read the decision. | a mobile client needs offline sign-in |
+| `affects` | The file patterns a decision governs. Trace and drift read them. | src/auth/** |
+| `trace` | Asking which recorded decisions govern a given file, before you change it. |  |
+| `drift` | A decision whose governed files changed in a commit made after the one the record was written at. |  |
+| `supersede` | Replacing an accepted record with a new one that names it, instead of editing the old one in place. |  |
+| `gaps accepted` | The table of what a decision deliberately does not handle; lint warns when it is empty. |  |
+
+## Diagrams
+
+### What a decision record is made of
+
+```mermaid
+mindmap
+  %% level: 2
+  root((decision records))
+    Record
+      decide new
+      lint
+      index
+    Assumption
+      claim
+      verify command
+      revisit_when
+    Found from the code
+      affects patterns
+      trace
+    Still true?
+      verify
+      drift
+```
+
+Read outward from the centre: how a record is written, what an assumption carries, how a file finds its record, and how the ledger checks a record still holds.
+
+Evidence: `scripts/decide.py:136`, `scripts/decide.py:409`, `scripts/decide.py:208`, `skills/decision-records/SKILL.md:43`, `scripts/decide.py:283`, `scripts/decide.py:230`, `scripts/decide.py:254`
+
+### Before a change: trace, verify, drift
+
+```mermaid
+sequenceDiagram
+  %% level: 2
+  actor Dev as You or an agent
+  participant Decide as decide command
+  participant Records as Decision records
+  participant Shell
+  participant Git as Code and git history
+  Dev->>Decide: trace src/auth/session.ts
+  Decide->>Records: match the path against each affects pattern
+  Records-->>Decide: ADR-0001 and its assumptions
+  Decide-->>Dev: decisions governing the file
+  Dev->>Decide: verify
+  Decide->>Shell: bash -c each assumption's check
+  Shell-->>Decide: exit status
+  Decide-->>Dev: ok, or FAIL with revisit_when
+  Dev->>Decide: drift
+  Decide->>Git: git diff --name-only commit..HEAD -- affects
+  alt governed files changed
+    Git-->>Decide: changed paths
+    Decide-->>Dev: DRIFT, re-read the record
+  else nothing changed, or the commit is unknown
+    Git-->>Decide: empty output
+    Decide-->>Dev: nothing needs attention
+  end
+```
+
+Trace finds the record; verify asks whether its assumptions still hold right now; drift asks whether its files moved in later commits. The else branch is where an unknown commit hides.
+
+Animated in `happy`. Evidence: `scripts/decide.py:283`, `scripts/decide.py:292`, `scripts/decide.py:230`, `scripts/decide.py:235`, `scripts/decide.py:254`, `scripts/decide.py:258`, absent: any test of git diff's exit status in drift: the only exit-status test in the file is verify's (`git grep` finds 1 in `scripts/decide.py`)
+
+### A record's lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> proposed: decide new
+  proposed --> accepted: options and assumptions filled, lint clean
+  proposed --> rejected
+  accepted --> revisit: drift or a failed verify
+  revisit --> accepted: re-read, still holds
+  revisit --> superseded: a new record replaces it
+  accepted --> superseded: a new record replaces it
+  superseded --> [*]
+  rejected --> [*]
+```
+
+The states are the statuses lint accepts. Verify and drift stop checking a record once it is superseded or rejected.
+
+Evidence: `scripts/decide.py:39`, `scripts/decide.py:131`, `scripts/decide.py:218`, `scripts/decide.py:249`, `skills/decision-records/SKILL.md:64`
+
+### How trace decides a pattern matches a path
+
+```mermaid
+flowchart TD
+  %% level: 2
+  P[the path, exactly as typed] --> F{"fnmatch(path, pattern)?"}
+  F -- yes --> H[the decision governs the path]
+  F -- no --> S{"path starts with the pattern minus its trailing * and /?"}
+  S -- yes --> H
+  S -- no --> N[next pattern; none left: no recorded decision]
+```
+
+Both tests compare text. A leading ./ or an absolute path fails both, and the prefix test lets a folder that merely starts with the same letters match.
+
+Animated in `issue-trace-text`. Evidence: `scripts/decide.py:283`, `scripts/decide.py:287`, absent: path normalisation before trace compares (no normpath, relpath, lstrip or removeprefix) (`git grep` finds 0 in `scripts/decide.py`)
+
+## Workflow outline
+
+`cmd_drift(): which decisions had their code move`, animated in `happy`:
+
+```
+for r in load_all(): skip superseded and rejected  # step 9, 10
+if r.commit and r.affects:
+  rc, out, _ = git diff --name-only {commit}..HEAD -- affects   # rc never read  # step 9, 10
+  if changed: DRIFT, print changed[:6], 're-read ... supersede it'  # step 10
+if r.revisit_by < today: OVERDUE
+return 1 if stale else 0  # step 9, 10
+```
+
+`cmd_trace(path): which decisions govern a file`, animated in `happy`:
+
+```
+for r in load_all(): for pat in r.affects:  # step 6
+  if fnmatch(path, pat) or path.startswith(pat.rstrip('*/')): hit  # step 6
+if no hits: print 'no recorded decision governs <path>'; return 0
+for r in hits: print id, [status], title, each assumption's claim  # step 6
+```
+
+`cmd_verify(): run every assumption's own check`, animated in `happy`:
+
+```
+for r in load_all(), skipping superseded and rejected:  # step 8
+  for asm in r.assumptions:  # step 8
+    if no command, or a <placeholder>: SKIP unverifiable
+    rc = bash -c asm.verify   # not a login shell  # step 8
+    if rc != 0: FAIL, print the command, its exit status, revisit_when  # step 8
+return 1 if failed else 0   # a skip never fails  # step 8
+```
+
+## Map
+
+| node | role | code |
+|---|---|---|
+| You or an agent | client |  |
+| decision-records skill | service | `skills/decision-records/SKILL.md` |
+| decide command | service | `scripts/decide.py:456` |
+| Decision records (decisions folder) | store |  |
+| Generated index | store |  |
+| Assumptions to check | queue |  |
+| Verify runner | worker | `scripts/decide.py:214` |
+| Shell (bash, runs each check) | external |  |
+| Code and its git history | store |  |
+
+## Record a choice, trace it, and catch the day its assumption breaks
+
+`happy` · happy
+
+
+| # | what happens | state after | evidence |
+|---|---|---|---|
+| 1 | **You chose server sessions over tokens, so the skill says record it now** The choice was not forced and is not trivially reversible, and the reasoning evaporates within days. | no change | `skills/decision-records/SKILL.md:58`, `skills/decision-records/SKILL.md:26` |
+| 2 | **Decide new writes a numbered record, pinned to the current commit** The id is the next free number across the folder and its shards. The meta block records the current commit, which drift will later diff from; then the index is rewritten. | records[ADR-0001] = `"proposed, still a template"`; index[rows] = `"ADR-0001"` | `scripts/decide.py:68`, `scripts/decide.py:69`, `scripts/decide.py:131`, `scripts/decide.py:136`, `scripts/decide.py:163` |
+| 3 | **Lint refuses the untouched template with 7 errors** No option has a real fit, the winner has no reason, the loser no reason it lost, and the assumption has neither a claim nor a revisit trigger. | no change | `scripts/decide.py:332`, `scripts/decide.py:423`, `scripts/decide.py:430`, `scripts/decide.py:433` |
+| 4 | **You fill it: two options with fit and a reason each, and one assumption with its check** A record that names only the winner cannot be re-evaluated, which is the only reason to keep it. | records[ADR-0001] = `"accepted"` | `skills/decision-records/SKILL.md:39`, `skills/decision-records/SKILL.md:43` |
+| 5 | **Lint passes; an empty gaps table would only have warned** | no change | `scripts/decide.py:442`, `scripts/decide.py:409` |
+| 6 | **Before editing the session file, trace says which decision governs it** It matches the path against every record's affects patterns and prints each hit's id, status, title and assumptions. | holds governs = `"accepted"` | `scripts/decide.py:282`, `scripts/decide.py:283`, `scripts/decide.py:292` |
+| 7 | **Someone adds a token library to the session file, not yet committed** | git[src/auth/session.ts] = `"imports jwt (uncommitted)"` | *inferred* |
+| 8 | **Verify runs each assumption's own check, and this one fails at once** It prints the claim, the command, its exit status and the revisit trigger. The check runs in a plain shell, not a login one, so profile noise is never reported as the failure. | failed = 1 | `scripts/decide.py:230`, `scripts/decide.py:228`, `scripts/decide.py:235`, `scripts/decide.py:238`, `scripts/decide.py:240` |
+| 9 | **Drift is still silent: it compares commits, not your working files** It diffs from the record's commit to the last commit, so an edit nobody has committed is invisible to it. | no change | `scripts/decide.py:254`, `scripts/decide.py:274` |
+| 10 | **After the commit, drift names the decision and the file that moved** It lists up to 6 files changed files per record and says to re-read it, then supersede it if it no longer matches. Path-level only: it cannot tell whether the change contradicts the decision. | git[src/auth/session.ts] = `"imports jwt (committed)"` | `scripts/decide.py:254`, `scripts/decide.py:258`, `scripts/decide.py:260`, `scripts/decide.py:264`, `scripts/decide.py:275`, `skills/decision-records/SKILL.md:133` |
+| 11 | **A new record supersedes the old one, which is never edited in place** | records[ADR-0002] = `"accepted, supersedes ADR-0001"`; index[rows] = `"ADR-0001, ADR-0002"` | `skills/decision-records/SKILL.md:64`, `scripts/decide.py:201`, `scripts/decide.py:208` |
+
+Step 2:
+
+```
+did = next_id()   # max ADR number in the folder and its shards, plus one
+meta = {id, title, status: proposed, affects, commit: git rev-parse --short HEAD, ...}
+write decisions/ADR-0001-session-strategy.md
+cmd_index(a)
+```
+
+Step 4:
+
+```
+options: JWT (fit pass, why_not: cannot revoke), server session (fit pass, chosen, why: revocable)
+A1.claim: sessions are stored server-side, never in a JWT
+A1.verify: ! grep -rq jwt src/auth
+A1.revisit_when: a mobile client needs offline sign-in
+```
+
+## Drift says all clear when the record's commit no longer exists
+
+`issue-unknown-commit` · issue · origin: in-code · severity high
+
+Open: no fix is shown yet.
+
+Steps 1–6 are the same as `happy`; this table starts where it diverges.
+
+| # | what happens | state after | evidence |
+|---|---|---|---|
+| 7 | **The branch is squash-merged, so the commit the record names never reaches the main line** The record was written on the feature branch. After a squash merge or a rebase, a fresh clone has no commit with that id. | git[src/auth/session.ts] = `"imports jwt (squash-merged)"` | *inferred* |
+| 8 | **Drift's diff fails on the unknown commit, and the failure is thrown away** The command's exit status is read into a variable nothing checks; the empty output reads as no changed files. | no change | `scripts/decide.py:254`, absent: any test of git diff's exit status in drift: the only exit-status test in the file is verify's (`git grep` finds 1 in `scripts/decide.py`) |
+| 9 | **Drift reports nothing to attend to, and exits clean** Reproduced in a scratch repo by setting a record's commit to an id that does not exist: no drift line, success exit, while git itself exits with an error. | no change | `scripts/decide.py:274`, `scripts/decide.py:275` |
+| 10 | **Verify still catches the broken assumption, because it runs the check itself** This is why the skill pairs the two before shipping: drift asks whether files moved, verify asks whether the claim still holds. | failed = 1 | `scripts/decide.py:230`, `scripts/decide.py:235` |
+
+## Trace compares paths as text, so it can miss a decision or invent one
+
+`issue-trace-text` · issue · origin: in-code · severity medium
+
+Open: no fix is shown yet.
+
+| # | what happens | state after | evidence |
+|---|---|---|---|
+| 1 | **Trace for a path written with a leading ./ finds nothing** Measured in this repo: the work file is governed by three records, but asked as ./scripts/work.py trace says no decision governs it, and calls the choice undocumented. | no change | `scripts/decide.py:283`, `scripts/decide.py:287`, absent: path normalisation before trace compares (no normpath, relpath, lstrip or removeprefix) (`git grep` finds 0 in `scripts/decide.py`) |
+| 2 | **Trace for an unrelated folder that starts with the same letters finds 3 decisions** A pattern such as hooks/** is cut to the prefix hooks, and any path starting with those letters counts, so a folder named hooksmith inherits every hooks decision. | no change | `scripts/decide.py:283` |
+| 3 | **Rejected records are listed as governing too, marked only by their status** | a rejected record is printed beside a proposed one, its status in brackets | `scripts/decide.py:292` |
+| 4 | **The reader either skips a real decision or re-reads unrelated ones** | pass trace a path relative to the repository root, with no leading ./ | *inferred* |
+
+## What if a record only named the winner?
+
+`issue-conclusion` · issue · origin: what-if · severity high
+
+> What-if: this is not in the code. It shows why the real design is the way it is.
+
+Fixed by: `fix-lint`.
+
+| # | what happens | state after | evidence |
+|---|---|---|---|
+| 1 | **A record names one option and no assumption** | records[ADR-0001] = `"one option, no assumptions"` | *inferred* |
+| 2 | **Months later the session code is rewritten** | git[src/auth/session.ts] = `"rewritten"` | *inferred* |
+| 3 | **Verify has nothing to run, and nobody can say whether the reason still holds** | no change | *inferred* |
+
+## Fix: lint refuses a conclusion dressed as a decision
+
+`fix-lint` · fix
+
+
+Steps 1–1 are the same as `issue-conclusion`; this table starts where it diverges.
+
+| # | what happens | state after | evidence |
+|---|---|---|---|
+| 2 | **Lint refuses a record with one option: it is not a decision** | no change | `scripts/decide.py:409` |
+| 3 | **It also refuses no assumptions, and an assumption with no revisit trigger** | no change | `scripts/decide.py:426`, `scripts/decide.py:433` |
+| 4 | **Verify lists a placeholder check as unverifiable instead of passing it quietly** Verify still exits clean on a skip, so lint, not verify, is the gate that keeps empty checks out. And a weak check that always succeeds passes both. | no change | `scripts/decide.py:225`, `scripts/decide.py:240`, `skills/decision-records/SKILL.md:134` |
+
+## Decision
+
+| option | solves it | pros | cons |
+|---|---|---|---|
+| Each assumption carries its own check command; drift compares governed files since the record's commit **(chosen)** | pass | A stale assumption fails a command, not someone's memory<br>Plain files, git and bash: nothing to host, same result every run | Drift is path-level and noisy: in this repo today it flags 5 records of 6 records records<br>A weak check passes, and an unknown commit reads as no drift |
+| Plain written decision records with no checks | fail | Easy to write | Nothing ever prompts a re-check<br>Cannot be traced from a file |
+| Have an agent re-judge every decision against the code on each change | pass | Could notice a change that contradicts a decision, not just that files moved | Costs a model run per decision per change<br>A different answer on each run, so it cannot gate CI |
+
+**Deciding factor:** A check that runs the same way every time and costs nothing is one that actually gets run, before shipping and in CI.
+**Revisit when:** Drift fires on so many records that people stop reading it, or a missed drift ships a broken assumption.
+**Source:** skills/decision-records/SKILL.md rules 2, 3 and 6, and its honest limitations; SOURCE: original
+
+## Numbers
+
+| name | value | tag | backed by |
+|---|---|---|---|
+| `tmpl_errs` | 7 errors | measured | 100x decide lint on an untouched decide new record, in a scratch repo (decide.py at 4bdb47e): 1 record(s), 7 error(s) |
+| `adr_n` | 6 records | measured | ls decisions/ADR-*.md \| wc -l in this repo (at 4bdb47e) |
+| `attention_n` | 5 records | measured | 100x decide drift in this repo (at 4bdb47e): 5 decision(s) need attention, exit 1 |
+| `matched_n` | 3 decisions | measured | 100x decide trace hooksmith/notes.md in this repo (at 4bdb47e): ADR-0004, ADR-0005, ADR-0006 |
+| `shown_n` | 6 files | verified | `scripts/decide.py:260` |
+| `shard_n` | 40 records a folder | verified | `skills/decision-records/SKILL.md:51` |
+
+## Code reference
+
+Read from the code by `100x code_ref`: names, lines and docstrings are the code's own; a note is the page author's one-line summary.
+
+### `scripts/decide.py`
+
+Decision log: record what the agent decided, what it assumed, and re-verify later.
+
+| symbol | lines | what it does | used by | branches |
+|---|---|---|---|---|
+| `sh` | 42–44 | Runs a command in the repository root and returns its exit status, output and error text. | `cmd_drift`, `cmd_new`, `cmd_verify` | 0 |
+| `load_all` | 47–65 | Reads every ADR file under the decisions folder and its shards; a missing or invalid meta block becomes an error entry, not a skip. | `cmd_drift`, `cmd_index`, `cmd_lint`, `cmd_trace`, `cmd_verify` | 5 |
+| `next_id` | 68–73 | The next ADR number: the highest one in the folder and its shards, plus one, padded. | `cmd_new` | 1 |
+| `cmd_new` | 121–164 | The new command: writes a numbered record from the template with the current commit and the given patterns and tags, then rewrites the index; a dry run prints the diff. | `main` | 10 |
+| `cmd_index` | 167–211 | The index command: rewrites the decisions table from every record's meta block, and lists malformed records separately. | `cmd_check`, `cmd_new`, `main` | 19 |
+| `cmd_verify` | 214–240 | The verify command: runs each live record's assumption checks in bash; a placeholder is a visible skip, a failure prints its revisit trigger. | `main` | 11 |
+| `cmd_drift` | 243–275 | A decision is stale when the code it governs moved after it was recorded. | `cmd_check`, `main` | 15 |
+| `cmd_trace` | 278–296 | The trace command: lists records whose affects patterns match the path, by glob or by text prefix, with each assumption's claim. | `main` | 10 |
+| `option_list` | 306–309 | The record's options that are objects; anything else is reported by lint_fit. | `cmd_index`, `cmd_lint` | 3 |
+| `lint_fit` | 312–385 | Apply fit as a pass/fail filter before any weighted comparison. Returns the | `cmd_lint` | 31 |
+| `cmd_lint` | 388–445 | Reject a decision record that documents a choice without documenting the choosing. | `cmd_check`, `main` | 37 |
+| `cmd_check` | 448–453 | For CI: lint, then index, then drift, failing if any of them fails. | `main` | 0 |

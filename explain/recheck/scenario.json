@@ -1,0 +1,1450 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the re-check pass works",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "Part page of the 100x plugin overview (explain/100x-plugin). Think of a writer who reads the draft once more before sending it, on purpose looking for the mistake they assume is there. When Claude finishes a turn that changed files or gave a long answer, a Stop hook holds the turn once and hands Claude a short prompt: assume this answer still has a mistake, name the three likeliest, check each against the files, fix or cut, then answer with one Re-check line. In blind runs that one extra pass is what caught a silent money bug no first answer caught. The hook never holds the same stop twice, and on any error it gets out of the way."
+  },
+  "tldr": {
+    "what": "After a turn that edited files or gave a long answer, Claude is made to look again once, assuming it made a mistake, before the turn ends.",
+    "how": "A Stop hook reads the end of the transcript, decides whether the turn was substantive and not yet re-checked, and blocks once with the prompt file's text as the reason.",
+    "watch_out": "It is the same model checking itself, so it only helps when it actually opens the files; and manual mode still re-checks the engineer subagents."
+  },
+  "context": {
+    "purpose": "When Claude has just edited code or written a long answer, you get a second, skeptical look at it without having to ask for one, and short questions stay fast.",
+    "why_now": "Blind A/B runs found that the second pass, not its wording, is what turns a confident wrong answer into a right one; making it automatic means nobody has to remember it.",
+    "in_scope": [
+      "The hook on Stop and SubagentStop: what makes a turn substantive, and how it reads the turn",
+      "Modes auto, manual and off, the minimum answer length, and which subagents are covered",
+      "Why it never loops, and why it fails open",
+      "The prompt, kept in one file, and what Claude must do with it",
+      "The measurements behind it, and every function in the hook, in the Code reference"
+    ],
+    "out_of_scope": [
+      "Proving work is done before commit or push (the verification gate, explain/verification-gate)",
+      "Reviewing a PR or someone else's diff (the diff-review skill)",
+      "Comparing prompt wordings (the prompt-bench skill)"
+    ],
+    "entry_points": [
+      {
+        "label": "Stop hook: recheck_gate.py",
+        "kind": "event",
+        "scenario": "happy",
+        "ev": "h-stop-rc"
+      },
+      {
+        "label": "SubagentStop hook: recheck_gate.py",
+        "kind": "event",
+        "scenario": "subagent",
+        "ev": "h-sub-rc"
+      },
+      {
+        "label": "/100x:recheck typed by you",
+        "kind": "command",
+        "note": "the same prompt applied by hand; the hook then skips that turn",
+        "ev": "rc-command"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term": "re-check",
+      "means": "A second, skeptical pass over the answer Claude just gave: assume a mistake, name the likeliest ones, check each against the files, fix what is real, cut what is not needed."
+    },
+    {
+      "term": "Stop hook",
+      "means": "A script Claude Code runs when the main session tries to end its turn. It may block the stop once, with a reason Claude must act on."
+    },
+    {
+      "term": "SubagentStop",
+      "means": "The same moment for a subagent, a helper agent working on one task, when it finishes."
+    },
+    {
+      "term": "substantive turn",
+      "means": "A turn that edited a file, with an edit tool or a shell command that writes one, or that ended in an answer at least {{min_chars}} long."
+    },
+    {
+      "term": "mode",
+      "means": "auto, the default, holds substantive turns; manual leaves the main session alone; off turns it off everywhere, subagents included.",
+      "example": "HUNDREDX_RECHECK=manual"
+    },
+    {
+      "term": "subagents setting",
+      "means": "Which subagent types are re-checked: off, all, or a list. Unset, it is the backend, frontend and mobile engineer agents.",
+      "example": "HUNDREDX_RECHECK_SUBAGENTS=all"
+    },
+    {
+      "term": "stop_hook_active",
+      "means": "A flag Claude Code sets when a stop hook already blocked this stop. Seeing it, the hook lets the stop through, so it can never loop."
+    },
+    {
+      "term": "Re-check line",
+      "means": "The one line that ends a re-checked answer. The hook reads it as proof the pass already ran.",
+      "example": "Re-check: fixed the comma case in the parser"
+    },
+    {
+      "term": "prompt file",
+      "means": "The only copy of the prompt text, between two marker comments. The hook and the manual command both use it unchanged.",
+      "example": "skills/recheck/references/recheck-prompt.md"
+    },
+    {
+      "term": "transcript",
+      "means": "The session's log file, one JSON entry per message. The hook reads only its end."
+    },
+    {
+      "term": "sidechain",
+      "means": "Entries in the main transcript that belong to a subagent; the main session's turn leaves them out."
+    },
+    {
+      "term": "fail open",
+      "means": "On any error, make no decision rather than block. A Stop hook that crashed into a block would stop every session from ending."
+    }
+  ],
+  "outline": [
+    {
+      "title": "main(payload): the re-check hook, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "if stop_hook_active: return {}             # never block one stop twice",
+          "steps": [
+            2,
+            9
+          ],
+          "ev": "rc-active"
+        },
+        {
+          "code": "mode, min_chars, subagents = config()      # env beats ~/.config/100x/recheck.json",
+          "steps": [
+            2
+          ],
+          "ev": "rc-config-env"
+        },
+        {
+          "code": "if SubagentStop: skip if mode or subagents is off, or type not listed",
+          "ev": "rc-sub-off"
+        },
+        {
+          "code": "else: skip unless mode == auto",
+          "steps": [
+            2
+          ],
+          "ev": "rc-auto-only"
+        },
+        {
+          "code": "turn, asked = current_turn(transcript tail)",
+          "steps": [
+            3
+          ],
+          "ev": "rc-turn"
+        },
+        {
+          "code": "if asked or the recheck skill ran: return {}",
+          "steps": [
+            5
+          ],
+          "ev": "rc-asked"
+        },
+        {
+          "code": "final = last_assistant_message or the turn's last text",
+          "ev": "rc-last"
+        },
+        {
+          "code": "if not (edited or len(final) >= min_chars): return {}",
+          "steps": [
+            4
+          ],
+          "ev": "rc-substantive"
+        },
+        {
+          "code": "if a \"Re-check:\" line is in final: return {}",
+          "steps": [
+            5
+          ],
+          "ev": "rc-substantive"
+        },
+        {
+          "code": "return block(reason = prompt file's marked block)",
+          "steps": [
+            6
+          ],
+          "ev": "rc-block"
+        }
+      ]
+    },
+    {
+      "title": "scan(turn): did this turn edit anything?",
+      "scenario": "which",
+      "lines": [
+        {
+          "code": "for each tool call Claude made in the turn:",
+          "ev": "rc-edit"
+        },
+        {
+          "code": "if it is the recheck skill: already ran",
+          "indent": 1,
+          "steps": [
+            2
+          ],
+          "ev": "rc-ran-skill"
+        },
+        {
+          "code": "edited |= tool in {Write, Edit, MultiEdit, NotebookEdit}",
+          "indent": 1,
+          "ev": "rc-edit-tools"
+        },
+        {
+          "code": "edited |= Bash matching sed -i, tee, git commit, > path",
+          "indent": 1,
+          "steps": [
+            1
+          ],
+          "ev": "rc-bashwrite"
+        },
+        {
+          "code": "final = only the text after the last tool call",
+          "indent": 1,
+          "ev": "rc-final"
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What the re-check pass is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 1\n  root((re-check))\n    Hook\n      Stop and SubagentStop\n      blocks once\n    Prompt file\n      one source of the text\n    Settings\n      auto, manual or off\n      which subagents\n    Evidence\n      second pass found the bug",
+      "caption": "Read outward from the centre: the hook decides when, the prompt file says what, the settings say for whom, and the evidence is why.",
+      "ev": [
+        "rc-block",
+        "rc-active",
+        "p-single",
+        "rc-modes",
+        "rc-default-sub",
+        "e-verdict"
+      ]
+    },
+    {
+      "id": "decide",
+      "title": "When the hook holds a stop",
+      "kind": "flowchart",
+      "scenario": "which",
+      "source": "flowchart TD\n  %% level: 2\n  S[a stop arrives] --> A{already blocked this stop?}\n  A -- yes --> L[let it stop]\n  A -- no --> E{a subagent stopping?}\n  E -- yes --> SM{mode off, subagents off, or type not listed?}\n  SM -- yes --> L\n  SM -- no --> T[read the turn from the end of the transcript]\n  E -- no --> M{mode is auto?}\n  M -- no --> L\n  M -- yes --> T\n  T --> R{re-check already asked for or run this turn?}\n  R -- yes --> L\n  R -- no --> SB{edited a file, or a long answer?}\n  SB -- no --> L\n  SB -- yes --> D{answer ends with a Re-check line?}\n  D -- yes --> L\n  D -- no --> B[block once, reason is the prompt]",
+      "caption": "Every exit but one lets the stop through. Note the subagent branch: manual mode does not appear on it, only off does.",
+      "ev": [
+        "rc-active",
+        "rc-sub-off",
+        "rc-allowed",
+        "rc-auto-only",
+        "rc-turn",
+        "rc-asked",
+        "rc-substantive",
+        "rc-block"
+      ]
+    },
+    {
+      "id": "calls",
+      "title": "One held stop, call by call",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  actor Claude\n  participant Host as Claude Code\n  participant Hook as Re-check hook\n  participant Gate as Stop gate\n  participant Prompt as Prompt file\n  Claude->>Host: end of turn\n  Host->>Hook: Stop input\n  Host->>Gate: Stop input\n  Hook->>Prompt: read the marked block\n  Hook-->>Host: block, reason is the prompt\n  Host-->>Claude: re-check before stopping\n  Claude->>Claude: three likely faults, checked against files\n  Claude->>Host: end of turn again\n  Host->>Hook: Stop input, already blocked\n  Hook-->>Host: no decision",
+      "caption": "Both Stop hooks run side by side; when both block, their reasons arrive together, and on the next stop neither blocks again.",
+      "ev": [
+        "h-stop-rc",
+        "k-parallel",
+        "rc-prompt",
+        "rc-block",
+        "rc-active"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "you",
+      "role": "client",
+      "label": "You"
+    },
+    {
+      "id": "claude",
+      "role": "service",
+      "label": "Claude (main session)",
+      "ref": "skills/recheck/SKILL.md",
+      "ev": "k-fire"
+    },
+    {
+      "id": "engineer",
+      "role": "service",
+      "label": "Engineer subagent",
+      "ev": "rc-default-sub"
+    },
+    {
+      "id": "reviewer",
+      "role": "service",
+      "label": "Other subagent (code-reviewer)",
+      "ev": "rc-default-sub"
+    },
+    {
+      "id": "host",
+      "role": "edge",
+      "label": "Claude Code (runs the stop hooks)",
+      "ref": "hooks/hooks.json:121",
+      "ev": "h-stop-rc"
+    },
+    {
+      "id": "recheck",
+      "role": "edge",
+      "label": "Re-check hook (recheck_gate.py)",
+      "ref": "hooks/recheck_gate.py:217",
+      "ev": "rc-block"
+    },
+    {
+      "id": "stopgate",
+      "role": "edge",
+      "label": "Stop gate (stop_gate.py)",
+      "ref": "hooks/stop_gate.py",
+      "ev": "sg-active",
+      "outside_diff": true
+    },
+    {
+      "id": "settings",
+      "role": "store",
+      "label": "Mode settings (env var or recheck.json)",
+      "ref": "hooks/recheck_gate.py:61",
+      "ev": "rc-config-env"
+    },
+    {
+      "id": "transcript",
+      "role": "store",
+      "label": "Session transcript (read from the end)",
+      "ref": "hooks/recheck_gate.py:99",
+      "ev": "rc-tail"
+    },
+    {
+      "id": "prompt",
+      "role": "store",
+      "label": "Prompt file (recheck-prompt.md)",
+      "ref": "skills/recheck/references/recheck-prompt.md:13",
+      "ev": "p-single"
+    },
+    {
+      "id": "files",
+      "role": "external",
+      "label": "Your repo files",
+      "ev": "p-files"
+    }
+  ],
+  "initial": {
+    "stores": {
+      "settings": {
+        "mode": "auto"
+      },
+      "transcript": {
+        "edited": false,
+        "answer": "none"
+      },
+      "prompt": {
+        "block": "present"
+      }
+    }
+  },
+  "numbers": {
+    "min_chars": {
+      "v": 1500,
+      "unit": "characters",
+      "tag": "verified",
+      "ev": "rc-minchars"
+    },
+    "tail_mib": {
+      "v": 2,
+      "unit": "MiB",
+      "tag": "verified",
+      "ev": "rc-tail"
+    },
+    "hook_timeout": {
+      "v": 10,
+      "unit": "s",
+      "tag": "verified",
+      "ev": "h-rc-timeout"
+    },
+    "faults": {
+      "v": 3,
+      "unit": "faults",
+      "tag": "verified",
+      "ev": "p-three"
+    },
+    "engineers": {
+      "v": 3,
+      "unit": "agent types",
+      "tag": "verified",
+      "ev": "rc-default-sub"
+    },
+    "first_safe": {
+      "v": 0,
+      "unit": "of eight first answers",
+      "tag": "measured",
+      "source": "skills/recheck/references/evidence.md, Round 2, H3 table (blind A/B, answers' code run)"
+    },
+    "second_safe": {
+      "v": 7,
+      "unit": "of eight after one more pass",
+      "tag": "measured",
+      "source": "skills/recheck/references/evidence.md, Round 2, H3 table (blind A/B, answers' code run)"
+    },
+    "followup_min": {
+      "v": 91,
+      "unit": "s",
+      "tag": "measured",
+      "source": "skills/recheck/references/evidence.md, Round 2 table, follow-up time column (fastest arm)"
+    },
+    "followup_max": {
+      "v": 118,
+      "unit": "s",
+      "tag": "measured",
+      "source": "skills/recheck/references/evidence.md, Round 2 table, follow-up time column (slowest arm)"
+    }
+  },
+  "evidence": {
+    "rc-why": {
+      "at": "hooks/recheck_gate.py:4",
+      "anchor": "second pass catches real defects"
+    },
+    "rc-reads-only": {
+      "at": "hooks/recheck_gate.py:10",
+      "anchor": "reads only the tail"
+    },
+    "rc-doc-manual": {
+      "at": "hooks/recheck_gate.py:15",
+      "anchor": "manual and off"
+    },
+    "rc-doc-off": {
+      "at": "hooks/recheck_gate.py:18",
+      "anchor": "disables it too"
+    },
+    "rc-modes": {
+      "at": "hooks/recheck_gate.py:22",
+      "anchor": "MODES = (\"auto\", \"manual\", \"off\")"
+    },
+    "rc-default-mode": {
+      "at": "hooks/recheck_gate.py:23",
+      "anchor": "DEFAULT_MODE = \"auto\""
+    },
+    "rc-minchars": {
+      "at": "hooks/recheck_gate.py:24",
+      "anchor": "DEFAULT_MIN_CHARS = 1500"
+    },
+    "rc-default-sub": {
+      "at": "hooks/recheck_gate.py:28",
+      "anchor": "DEFAULT_SUBAGENTS"
+    },
+    "rc-tail": {
+      "at": "hooks/recheck_gate.py:32",
+      "anchor": "TAIL_BYTES = 2 * 1024 * 1024"
+    },
+    "rc-edit-tools": {
+      "at": "hooks/recheck_gate.py:33",
+      "anchor": "EDIT_TOOLS"
+    },
+    "rc-bashwrite": {
+      "at": "hooks/recheck_gate.py:36",
+      "anchor": "BASH_WRITE = re.compile("
+    },
+    "rc-command": {
+      "at": "hooks/recheck_gate.py:43",
+      "anchor": "COMMAND = re.compile"
+    },
+    "rc-doneline": {
+      "at": "hooks/recheck_gate.py:45",
+      "anchor": "DONE_LINE"
+    },
+    "rc-config-env": {
+      "at": "hooks/recheck_gate.py:74",
+      "anchor": "HUNDREDX_RECHECK"
+    },
+    "rc-prompt": {
+      "at": "hooks/recheck_gate.py:91",
+      "anchor": "if START in text and END in text"
+    },
+    "rc-cut": {
+      "at": "hooks/recheck_gate.py:108",
+      "anchor": "the first line was cut mid-entry"
+    },
+    "rc-turn": {
+      "at": "hooks/recheck_gate.py:139",
+      "anchor": "isMeta"
+    },
+    "rc-ran-skill": {
+      "at": "hooks/recheck_gate.py:156",
+      "anchor": "\"Skill\""
+    },
+    "rc-edit": {
+      "at": "hooks/recheck_gate.py:159",
+      "anchor": "in EDIT_TOOLS"
+    },
+    "rc-final": {
+      "at": "hooks/recheck_gate.py:162",
+      "anchor": "final = []"
+    },
+    "rc-sidechain": {
+      "at": "hooks/recheck_gate.py:175",
+      "anchor": "isSidechain"
+    },
+    "rc-allowed": {
+      "at": "hooks/recheck_gate.py:214",
+      "anchor": "split(\":\")[-1]"
+    },
+    "rc-active": {
+      "at": "hooks/recheck_gate.py:222",
+      "anchor": "stop_hook_active"
+    },
+    "rc-sub-off": {
+      "at": "hooks/recheck_gate.py:226",
+      "anchor": "if mode == \"off\" or subagents == \"off\""
+    },
+    "rc-auto-only": {
+      "at": "hooks/recheck_gate.py:232",
+      "anchor": "if mode != \"auto\""
+    },
+    "rc-asked": {
+      "at": "hooks/recheck_gate.py:238",
+      "anchor": "if asked"
+    },
+    "rc-last": {
+      "at": "hooks/recheck_gate.py:245",
+      "anchor": "last_assistant_message"
+    },
+    "rc-substantive": {
+      "at": "hooks/recheck_gate.py:248",
+      "anchor": "DONE_LINE.search(final)"
+    },
+    "rc-block": {
+      "at": "hooks/recheck_gate.py:251",
+      "anchor": "\"decision\": \"block\""
+    },
+    "rc-failopen": {
+      "at": "hooks/recheck_gate.py:257",
+      "anchor": "fail-open"
+    },
+    "h-sub-rc": {
+      "at": "hooks/hooks.json:115",
+      "anchor": "recheck_gate.py"
+    },
+    "h-rc-timeout": {
+      "at": "hooks/hooks.json:117",
+      "anchor": "\"timeout\": 10"
+    },
+    "h-stop-rc": {
+      "at": "hooks/hooks.json:131",
+      "anchor": "recheck_gate.py"
+    },
+    "sg-active": {
+      "at": "hooks/stop_gate.py:26",
+      "anchor": "stop_hook_active"
+    },
+    "k-fire": {
+      "at": "skills/recheck/SKILL.md:18",
+      "anchor": "Fire when"
+    },
+    "k-auto": {
+      "at": "skills/recheck/SKILL.md:30",
+      "anchor": "`auto` (default)"
+    },
+    "k-manual": {
+      "at": "skills/recheck/SKILL.md:31",
+      "anchor": "only when you type"
+    },
+    "k-parallel": {
+      "at": "skills/recheck/SKILL.md:38",
+      "anchor": "Stop hooks run in parallel"
+    },
+    "k-rule2": {
+      "at": "skills/recheck/SKILL.md:76",
+      "anchor": "Settle each suspected fault"
+    },
+    "k-rule3": {
+      "at": "skills/recheck/SKILL.md:81",
+      "anchor": "Fix what is real"
+    },
+    "k-rule4": {
+      "at": "skills/recheck/SKILL.md:85",
+      "anchor": "Output the final answer only"
+    },
+    "k-rule5": {
+      "at": "skills/recheck/SKILL.md:90",
+      "anchor": "One re-check per turn"
+    },
+    "k-limits": {
+      "at": "skills/recheck/SKILL.md:118",
+      "anchor": "self-review by the same model"
+    },
+    "p-single": {
+      "at": "skills/recheck/references/recheck-prompt.md:4",
+      "anchor": "verbatim"
+    },
+    "p-mistake": {
+      "at": "skills/recheck/references/recheck-prompt.md:15",
+      "anchor": "assume this answer still has at least one mistake"
+    },
+    "p-three": {
+      "at": "skills/recheck/references/recheck-prompt.md:18",
+      "anchor": "Name the 3"
+    },
+    "p-files": {
+      "at": "skills/recheck/references/recheck-prompt.md:19",
+      "anchor": "actual files"
+    },
+    "p-final": {
+      "at": "skills/recheck/references/recheck-prompt.md:24",
+      "anchor": "final answer only"
+    },
+    "e-verdict": {
+      "at": "skills/recheck/references/evidence.md:5",
+      "anchor": "big effect"
+    },
+    "e-h3": {
+      "at": "skills/recheck/references/evidence.md:58",
+      "anchor": "7/8"
+    },
+    "no-subprocess": {
+      "absent": "any subprocess the re-check hook starts",
+      "git_grep": "subprocess\\.(run|Popen|call|check_)|^import .*subprocess|os\\.system",
+      "path": "hooks/recheck_gate.py",
+      "hits": 0
+    }
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "An edit turn is held once for a second look",
+      "steps": [
+        {
+          "t": "You ask for a fix; Claude edits a file and answers in one line",
+          "do": [
+            [
+              "send",
+              "you",
+              "claude",
+              "fix the parser"
+            ],
+            [
+              "db.write",
+              "transcript",
+              "edited",
+              true
+            ],
+            [
+              "db.write",
+              "transcript",
+              "answer",
+              "Fixed."
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "Claude stops, and Claude Code runs both Stop hooks side by side",
+          "d": "The verification gate's Stop hook and this one run in parallel; if both block, both reasons arrive together.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "send",
+              "host",
+              "stopgate",
+              "Stop input"
+            ]
+          ],
+          "ev": [
+            "h-stop-rc",
+            "k-parallel"
+          ]
+        },
+        {
+          "t": "The hook checks this stop was not already blocked, and reads the mode",
+          "d": "The environment variable wins over the settings file; with neither, the mode is auto.",
+          "do": [
+            [
+              "db.read",
+              "settings",
+              "mode",
+              "mode"
+            ]
+          ],
+          "ev": [
+            "rc-active",
+            "rc-config-env",
+            "rc-default-mode"
+          ],
+          "expect": {
+            "vars": {
+              "mode": "auto"
+            }
+          },
+          "code": [
+            "if stop_hook_active: return {}",
+            "mode = env or recheck.json or auto"
+          ]
+        },
+        {
+          "t": "It reads this turn from the end of the transcript",
+          "d": "Only the last {{tail_mib}} of the file is read. The turn is everything after your last real message; tool results and loaded skill text do not count as messages.",
+          "do": [
+            [
+              "db.read",
+              "transcript",
+              "edited",
+              "edited"
+            ]
+          ],
+          "ev": [
+            "rc-tail",
+            "rc-turn",
+            "rc-reads-only"
+          ],
+          "expect": {
+            "vars": {
+              "edited": true
+            }
+          }
+        },
+        {
+          "t": "The turn edited a file, so it counts as substantive",
+          "d": "An edit alone is enough, however short the answer; without one, the answer must reach {{min_chars}}.",
+          "do": [
+            [
+              "note",
+              "edited: yes; answer length does not matter"
+            ]
+          ],
+          "ev": [
+            "rc-edit",
+            "rc-substantive",
+            "rc-minchars"
+          ],
+          "code": [
+            "if not (edited or len(final) >= min_chars): return {}"
+          ]
+        },
+        {
+          "t": "No re-check has run yet: no command, no pasted prompt, no Re-check line",
+          "do": [
+            [
+              "db.read",
+              "transcript",
+              "answer",
+              "final"
+            ]
+          ],
+          "ev": [
+            "rc-asked",
+            "rc-command",
+            "rc-doneline"
+          ],
+          "expect": {
+            "vars": {
+              "final": "Fixed."
+            }
+          }
+        },
+        {
+          "t": "The hook blocks the stop, with the prompt file's text as the reason",
+          "d": "The prompt lives in one file between two markers, so the hook and the manual command can never drift apart.",
+          "do": [
+            [
+              "db.read",
+              "prompt",
+              "block",
+              "p"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "block: assume this answer still has at least one mistake"
+            ],
+            [
+              "reply",
+              "host",
+              "claude",
+              "re-check before stopping"
+            ]
+          ],
+          "ev": [
+            "rc-prompt",
+            "rc-block",
+            "p-single",
+            "p-mistake"
+          ],
+          "code": [
+            "reason = prompt_text()",
+            "return {decision: block, reason}"
+          ]
+        },
+        {
+          "t": "Claude names the likeliest faults and checks each against the files",
+          "d": "The prompt asks for {{faults}}, each settled from a file or a command run in this pass, never from memory.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "files",
+              "read the callers, run the test"
+            ],
+            [
+              "reply",
+              "files",
+              "claude",
+              "one input shape is parsed wrong"
+            ]
+          ],
+          "ev": [
+            "p-three",
+            "p-files",
+            "k-rule2"
+          ]
+        },
+        {
+          "t": "Claude gives the corrected answer only, then one Re-check line",
+          "d": "No essay on what changed: graders marked that down, and the line is what tells the hook the pass already ran.",
+          "do": [
+            [
+              "db.write",
+              "transcript",
+              "answer",
+              "Fixed, both input shapes. Re-check: fixed the comma case"
+            ],
+            [
+              "reply",
+              "claude",
+              "you",
+              "corrected answer + Re-check line"
+            ]
+          ],
+          "ev": [
+            "k-rule4",
+            "p-final",
+            "k-rule3"
+          ]
+        },
+        {
+          "t": "Claude stops again, and this time the hook lets it through",
+          "d": "Claude Code marks this stop as already blocked, so the hook returns no decision.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input, already blocked"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-active",
+            "k-rule5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "which",
+      "kind": "edge",
+      "title": "Which stops get a re-check, and which pass quietly",
+      "steps": [
+        {
+          "t": "A short answer with no edits passes quietly",
+          "d": "Below {{min_chars}} and nothing edited: short questions cost nothing.",
+          "do": [
+            [
+              "send",
+              "you",
+              "claude",
+              "what does this flag do?"
+            ],
+            [
+              "db.write",
+              "transcript",
+              "answer",
+              "one short paragraph"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-substantive",
+            "rc-minchars"
+          ]
+        },
+        {
+          "t": "A shell command that writes a file counts as an edit",
+          "d": "In-place editors, tee, git commit, a Python file write, or output redirected to a path all count.",
+          "do": [
+            [
+              "db.write",
+              "transcript",
+              "edited",
+              true
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "block"
+            ]
+          ],
+          "ev": [
+            "rc-bashwrite",
+            "rc-edit"
+          ],
+          "code": [
+            "edited |= Bash and BASH_WRITE.search(command)"
+          ]
+        },
+        {
+          "t": "A turn that already ran the re-check passes",
+          "d": "You typed the command, the prompt was pasted, the recheck skill was loaded, or the answer has a Re-check line.",
+          "do": [
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-command",
+            "rc-asked",
+            "rc-ran-skill",
+            "rc-doneline"
+          ]
+        },
+        {
+          "t": "The last message comes straight from Claude Code, since the transcript can lag",
+          "d": "The file is written in the background and can miss the final message, so the length and Re-check line tests use the copy Claude Code passes in.",
+          "do": [
+            [
+              "note",
+              "last message from the hook input wins over the transcript"
+            ]
+          ],
+          "ev": [
+            "rc-last"
+          ]
+        },
+        {
+          "t": "In manual or off mode, the main session is never held",
+          "do": [
+            [
+              "db.write",
+              "settings",
+              "mode",
+              "manual"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "db.read",
+              "settings",
+              "mode",
+              "mode"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-auto-only",
+            "k-manual"
+          ],
+          "expect": {
+            "vars": {
+              "mode": "manual"
+            }
+          }
+        },
+        {
+          "t": "Bad input or an internal error: the hook makes no decision",
+          "d": "It starts no subprocess, and any exception prints an empty answer, so a broken hook cannot stop a session from ending.",
+          "do": [
+            [
+              "send",
+              "host",
+              "recheck",
+              "input that is not JSON"
+            ],
+            [
+              "fail",
+              "recheck",
+              "unreadable input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-failopen",
+            "no-subprocess"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "subagent",
+      "kind": "issue",
+      "severity": "low",
+      "origin": "found-in-review",
+      "open": true,
+      "title": "Manual mode still re-checks the engineer subagents",
+      "steps": [
+        {
+          "t": "You switch re-check to manual",
+          "do": [
+            [
+              "db.write",
+              "settings",
+              "mode",
+              "manual"
+            ]
+          ],
+          "ev": [
+            "rc-config-env"
+          ]
+        },
+        {
+          "t": "Your own turns now end without a re-check",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-auto-only"
+          ]
+        },
+        {
+          "t": "A backend-engineer subagent finishes an edit, and its stop is held",
+          "d": "On a subagent stop only off, for the mode or the subagents setting, skips the check; manual is not tested there. The {{engineers}} engineer types are covered by default.",
+          "do": [
+            [
+              "send",
+              "engineer",
+              "host",
+              "SubagentStop"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "SubagentStop input"
+            ],
+            [
+              "db.read",
+              "settings",
+              "mode",
+              "mode"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "block"
+            ],
+            [
+              "reply",
+              "host",
+              "engineer",
+              "re-check before stopping"
+            ]
+          ],
+          "ev": [
+            "rc-sub-off",
+            "rc-allowed",
+            "rc-default-sub"
+          ],
+          "expect": {
+            "vars": {
+              "mode": "manual"
+            }
+          },
+          "code": [
+            "if mode == off or subagents == off: return {}",
+            "if not allowed(subagents, agent_type): return {}"
+          ]
+        },
+        {
+          "t": "A subagent type not on the list, such as code-reviewer, is let through",
+          "do": [
+            [
+              "send",
+              "reviewer",
+              "host",
+              "SubagentStop"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "SubagentStop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "rc-allowed",
+            "rc-default-sub"
+          ]
+        },
+        {
+          "t": "The code says this on purpose; the skill's mode table reads otherwise",
+          "d": "The hook's own description says manual and off never block a Stop and that off also disables subagents. The skill's table says manual runs only when you type the command. One of the two should change; until then, set subagents to off as well if you want no automatic passes at all.",
+          "do": [
+            [
+              "note",
+              "for no automatic passes: mode manual and subagents off"
+            ]
+          ],
+          "ev": [
+            "rc-doc-manual",
+            "rc-doc-off",
+            "k-manual"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "loop",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the hook blocked every stop?",
+      "branch": {
+        "from": "happy",
+        "at": 9
+      },
+      "fixed_by": [
+        "fix-once"
+      ],
+      "steps": [
+        {
+          "t": "Claude stops again, and the hook blocks again",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "block"
+            ],
+            [
+              "counter",
+              "extra_passes",
+              1
+            ]
+          ],
+          "tag": "inferred",
+          "expect": {
+            "counters": {
+              "extra_passes": 1
+            }
+          }
+        },
+        {
+          "t": "And again: each pass costs another minute or two",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "reply",
+              "recheck",
+              "host",
+              "block"
+            ],
+            [
+              "counter",
+              "extra_passes",
+              1
+            ]
+          ],
+          "tag": "inferred",
+          "expect": {
+            "counters": {
+              "extra_passes": 2
+            }
+          }
+        },
+        {
+          "t": "The turn can never end on its own",
+          "do": [
+            [
+              "fail",
+              "host",
+              "turn cannot end"
+            ]
+          ],
+          "tag": "inferred"
+        }
+      ]
+    },
+    {
+      "id": "fix-once",
+      "kind": "fix",
+      "title": "Fix: block once per stop, and treat a Re-check line as done",
+      "branch": {
+        "from": "loop",
+        "at": 9
+      },
+      "steps": [
+        {
+          "t": "Claude stops again; Claude Code marks the stop as already blocked",
+          "d": "One pass is what was measured to help; a third was never measured.",
+          "do": [
+            [
+              "send",
+              "claude",
+              "host",
+              "end of turn"
+            ],
+            [
+              "send",
+              "host",
+              "recheck",
+              "Stop input, already blocked"
+            ]
+          ],
+          "ev": [
+            "rc-active",
+            "k-rule5"
+          ]
+        },
+        {
+          "t": "The hook lets it through; the Re-check line alone would have too",
+          "do": [
+            [
+              "reply",
+              "recheck",
+              "host",
+              "no decision"
+            ],
+            [
+              "reply",
+              "host",
+              "you",
+              "corrected answer delivered"
+            ]
+          ],
+          "ev": [
+            "rc-doneline",
+            "rc-substantive"
+          ],
+          "expect": {
+            "counters": {}
+          }
+        },
+        {
+          "t": "The verification gate's Stop hook follows the same once rule",
+          "d": "On the first stop both hooks may block together; on the next, neither does.",
+          "do": [
+            [
+              "send",
+              "host",
+              "stopgate",
+              "Stop input, already blocked"
+            ],
+            [
+              "reply",
+              "stopgate",
+              "host",
+              "no decision"
+            ]
+          ],
+          "ev": [
+            "sg-active",
+            "k-parallel"
+          ]
+        }
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {
+        "id": "auto-once",
+        "label": "Hold each substantive turn once, automatically",
+        "fit": "pass",
+        "pros": [
+          "The pass that caught the bug happens without anyone remembering it",
+          "Short questions pay nothing"
+        ],
+        "cons": [
+          "Each held turn takes {{followup_min}} to {{followup_max}} longer",
+          "The same model checks itself, so it helps only when it opens the files"
+        ]
+      },
+      {
+        "id": "manual",
+        "label": "Only when you type the command",
+        "fit": "pass",
+        "pros": [
+          "No cost unless asked"
+        ],
+        "cons": [
+          "The second look happens only if someone thinks to ask, which is when it is least needed"
+        ]
+      },
+      {
+        "id": "every",
+        "label": "Every turn, however short",
+        "fit": "fail",
+        "pros": [
+          "Nothing slips through"
+        ],
+        "cons": [
+          "Pays the cost on questions where nothing in code can be wrong"
+        ]
+      },
+      {
+        "id": "loop",
+        "label": "Repeat until an answer comes back unchanged",
+        "fit": "fail",
+        "pros": [
+          "Might catch a second mistake"
+        ],
+        "cons": [
+          "A third pass was never measured",
+          "A Stop hook that loops stops the session from ending"
+        ],
+        "scenario": "loop"
+      }
+    ],
+    "chosen": "auto-once",
+    "deciding_factor": "On a silent money bug, {{first_safe}} were safe and {{second_safe}} were, while the wording barely mattered, so one routine pass on turns that change things is the cheapest win.",
+    "revisit_when": "A measured third pass beats the second, or the time a held turn costs pushes people to manual.",
+    "source": "skills/recheck/references/evidence.md; skills/recheck/SKILL.md (How it runs, Rules); SOURCE: original"
+  },
+  "checks": [
+    {
+      "scenario": "happy",
+      "step": 4,
+      "q": "Claude's final answer was a single line. Will the hook still hold this stop?",
+      "answer": "Yes. The turn edited a file, and an edit alone makes a turn substantive, whatever the answer's length."
+    },
+    {
+      "scenario": "happy",
+      "step": 9,
+      "q": "Claude stops again after the re-check. Does the hook block a second time?",
+      "answer": "No. Claude Code marks the stop as already blocked, and the answer also carries a Re-check line; either one lets it through."
+    },
+    {
+      "scenario": "subagent",
+      "step": 2,
+      "q": "Re-check is set to manual. A backend-engineer subagent just finished an edit. Is its stop held?",
+      "answer": "Yes. Manual only spares the main session; only off, or subagents set to off, spares the engineers."
+    }
+  ],
+  "compare": [
+    "loop",
+    "fix-once"
+  ],
+  "reference": [
+    {
+      "path": "hooks/recheck_gate.py",
+      "notes": {
+        "config": "Reads mode, min_chars and subagents from the settings file, then lets the two environment variables override them; anything unreadable falls back to the defaults.",
+        "prompt_text": "Returns the text between the prompt file's two markers, without its code fence, from the plugin root; None when the file or a marker is missing.",
+        "blocks": "The content blocks of a transcript entry; a plain string becomes one text block.",
+        "is_file": "True when the value is a path to an existing file.",
+        "allowed": "True when subagents is all, or the agent type matches a listed name exactly or without its plugin prefix.",
+        "main": "The hook: skips an already-blocked stop, applies the mode and the subagent list, reads the turn, and blocks once with the prompt when the turn is substantive and not yet re-checked."
+      }
+    }
+  ]
+}

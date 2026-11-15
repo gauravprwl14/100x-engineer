@@ -1,0 +1,414 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the verification gate works",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "Part page of the 100x plugin overview (explain/100x-plugin). Think of a bank teller who will not hand over cash without a signed slip, and the slip names the exact amount: change the amount by a cent and the slip is void. Here the slip is a receipt that 100x verified writes after your tests pass. It is signed with a key only your account holds and stamped with a fingerprint of every file git would commit. Guards at commit, push and PR time, and at the end of Claude's turn, compare that fingerprint with the files as they are now. An edit after the tests, a hand-written receipt, or a flag that skips git's own hooks is refused."
+  },
+  "tldr": {
+    "what": "Before Claude commits, pushes or opens a PR, it must hold a signed receipt showing the required checks passed on exactly the files going out.",
+    "how": "A wrapper runs each check and signs a receipt tied to a fingerprint of the files; hooks at commit time and at the end of a turn compare it with the files now.",
+    "watch_out": "It stops a confused agent, not a determined one: a script file is never read, and an agent that reads the signing key can forge a receipt."
+  },
+  "context": {
+    "purpose": "When Claude says the tests pass and commits, you can trust the commit is the code that was tested: commit, push and PR are refused unless a signed receipt shows the required checks passed against those exact files.",
+    "why_now": "The failure no instruction reliably prevents is: run the tests, edit a file, commit. The tests did pass, the claim is technically true, and the committed code was never tested.",
+    "in_scope": [
+      "Writing a receipt: the wrapper's refusals, the fingerprint, the signature, where the file lives",
+      "The commit, push and PR gate: how it reads a command line, and when it denies, asks or stays silent",
+      "The Stop gate: why ending a turn on unverified edits is blocked once",
+      "The policy file: required checks bound to exact commands, block and off modes, and why the committed copy wins",
+      "What goes wrong (an edit after verifying, skip flags, a weakened policy, a forged receipt) and what catches each",
+      "Every function behind it, in the Code reference"
+    ],
+    "out_of_scope": [
+      "Which commands a repo should require (the language-verification skill)",
+      "How the result is merged: required checks, CODEOWNERS (the review-gates skill)",
+      "The advisory writing and scope warnings the same hook adds to PR bodies; they never change a decision",
+      "The re-check pass at the end of a turn, which has its own page (explain/recheck)"
+    ],
+    "entry_points": [
+      {"label": "100x verified --name LABEL [-- COMMAND]", "kind": "command", "scenario": "happy", "ev": "v-policy"},
+      {"label": "git commit, git push, gh pr create (PreToolUse hook on Bash)", "kind": "event", "scenario": "happy", "ev": "h-routes"},
+      {"label": "git tag, git merge, gh pr merge, npm publish and other publishers", "kind": "event", "note": "same gate and same checks as a commit; not animated", "ev": "g-ghpr"},
+      {"label": "Claude ending its turn (Stop hook)", "kind": "event", "scenario": "stale", "ev": "h-stop"},
+      {"label": "A commit message carrying [skip-verify]", "kind": "event", "scenario": "evasion", "ev": "g-j-ask"}
+    ]
+  },
+  "terms": [
+    {"term": "receipt", "means": "A small file the wrapper writes after running a check: the command, its exit code, a fingerprint of the files and a signature. It lives inside the git folder, so it is never committed.", "example": "$(git rev-parse --git-path 100x/verification-receipt.json)"},
+    {"term": "fingerprint", "means": "One hash over every file git would commit (tracked and new untracked files): its path, mode and content. Same files, same hash. Staging or committing moves no content, so it does not change.", "example": "100x verify_fingerprint"},
+    {"term": "signature", "means": "A stamp computed from the receipt entry and a secret key (HMAC-SHA256). Change one character of the entry and the stamp no longer matches."},
+    {"term": "signing key", "means": "The secret the signature is made with, kept in your home folder, readable only by you.", "example": "~/.config/100x/receipt.key"},
+    {"term": "policy file", "means": "The repo's list of required checks, each bound to its exact command, plus a mode: block (the default) or off.", "example": "{\"required_checks\": {\"test\": \"npm test\"}}"},
+    {"term": "fresh", "means": "A receipt entry whose fingerprint equals the fingerprint of the files right now. Any other entry is stale and proves nothing about the current code."},
+    {"term": "PreToolUse hook", "means": "A script Claude Code runs before a tool call, here before every Bash command that mentions git, gh, commit, push or a publisher. It can deny, ask, or say nothing."},
+    {"term": "Stop hook", "means": "A script Claude Code runs when Claude tries to end its turn. It may block the stop once, with a reason Claude must act on."},
+    {"term": "deny, ask, pass", "means": "The gate's three answers: deny refuses the command; ask hands the choice to you; pass says nothing, so your own permission rules still apply."},
+    {"term": "skip flag", "means": "An option that makes git skip its own hooks without a trace: --no-verify, -n, or core.hooksPath set on the command line. The gate denies these."},
+    {"term": "[skip-verify]", "means": "The visible way to ship without verifying: put it in the commit message and you, not Claude, are asked to approve."},
+    {"term": "fail open", "means": "On an internal error, make no decision at all instead of blocking. Safe for your shell, but a quiet gate is not proof that anything was checked."}
+  ],
+  "outline": [
+    {
+      "title": "verified(label, command): writing a receipt",
+      "scenario": "happy",
+      "lines": [
+        {"code": "policy = load_policy(root)          # committed copy if the worktree one differs", "steps": [2], "ev": "v-policy"},
+        {"code": "key = load_key(create=True)         # ~/.config/100x/receipt.key, mode 0600", "steps": [5], "ev": "v-key"},
+        {"code": "if policy binds label and command != bound: refuse", "steps": [2], "ev": "v-bound"},
+        {"code": "if runner variable set or program shadowed: refuse", "steps": [3], "ev": "v-env"},
+        {"code": "before = fingerprint(); rc = run(command); after = fingerprint()", "steps": [4], "ev": "v-after"},
+        {"code": "keep old entries only if fingerprint == after and signature ok", "ev": "v-carry"},
+        {"code": "entry = {argv, exit_code: rc, fingerprint: after, policy_sha, at}", "steps": [5], "ev": "v-policysha"},
+        {"code": "entry.sig = hmac_sha256(key, entry + label)", "steps": [5], "ev": "v-sign"},
+        {"code": "write <git dir>/100x/verification-receipt.json", "steps": [5], "ev": "v-write"},
+        {"code": "exit rc                             # the check's own exit code", "ev": "v-rc"}
+      ]
+    },
+    {
+      "title": "judge(action): the commit, push and PR gate",
+      "scenario": "happy",
+      "lines": [
+        {"code": "actions = parse_command(cmd)        # every commit, push, PR, publish in the line", "steps": [6], "ev": "g-parse"},
+        {"code": "policy = load_policy(root)          # unreadable: deny", "steps": [7], "ev": "g-j-policy"},
+        {"code": "if no policy: note(\"not configured\"); if mode off: pass", "ev": "g-j-none"},
+        {"code": "if skip flag and no [skip-verify]: deny", "ev": "g-j-evasion"},
+        {"code": "if [skip-verify]: ask a human", "ev": "g-j-ask"},
+        {"code": "if an earlier part of the line can write files: deny", "ev": "g-j-after"},
+        {"code": "if no receipt: deny(\"run the checks first\")", "ev": "g-j-noreceipt"},
+        {"code": "problems = evaluate(receipt, fingerprint now, policy)", "steps": [7, 8], "ev": "g-j-eval"},
+        {"code": "commit: policy changed in this commit -> receipt must carry it", "indent": 1, "ev": "g-j-policyprob"},
+        {"code": "push: every ref is HEAD and HEAD's tree == verified content", "indent": 1, "steps": [10], "ev": "g-j-pushprob"},
+        {"code": "problems ? deny : systemMessage(\"PASSED\")   # never \"allow\"", "steps": [9], "ev": "g-j-pass"}
+      ]
+    },
+    {
+      "title": "stop_gate(): the end-of-turn check",
+      "scenario": "stale",
+      "lines": [
+        {"code": "if stop_hook_active: let the stop through   # blocks once, never loops", "ev": "s-active"},
+        {"code": "if no policy or mode != block: let it through", "steps": [9], "ev": "s-mode"},
+        {"code": "if nothing uncommitted: let it through", "steps": [9], "ev": "s-clean"},
+        {"code": "result = evaluate(receipt, fingerprint now)", "steps": [9], "ev": "s-eval"},
+        {"code": "stale = no fresh entry or a required label missing   # exit code not read", "steps": [9], "ev": "s-stale"},
+        {"code": "if stale: block(\"re-run: 100x verified --name ...\")", "steps": [9], "ev": "s-block"}
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What the verification gate is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 1\n  root((verification gate))\n    Receipt writer\n      signs with your key\n    Fingerprint\n      every file git would commit\n    Commit gate\n      deny, ask or say nothing\n    Stop gate\n      blocks a turn once\n    Policy file\n      required checks\n      block or off",
+      "caption": "Read outward from the centre: one tool writes the receipt, one hash ties it to the files, two hooks read it, and the policy says what must be in it.",
+      "ev": ["v-sign", "f-change", "g-j-pass", "s-block", "r-modes"]
+    },
+    {
+      "id": "calls",
+      "title": "Verify, commit, push: who calls whom",
+      "kind": "sequence",
+      "scenario": "happy",
+      "source": "sequenceDiagram\n  %% level: 2\n  actor Claude\n  participant Wrapper as 100x verified\n  participant Tests as Your check command\n  participant Receipt\n  participant Gate as Commit gate\n  participant Git as git and GitHub\n  Claude->>Wrapper: 100x verified --name test\n  Wrapper->>Tests: npm test\n  Tests-->>Wrapper: exit code\n  Wrapper->>Receipt: write signed entry with fingerprint\n  Claude->>Gate: git commit\n  Gate->>Receipt: check signature and fingerprint\n  Gate-->>Claude: no decision, so it runs\n  Claude->>Git: commit\n  Claude->>Gate: git push\n  Gate-->>Claude: HEAD tree equals verified content\n  Claude->>Git: push",
+      "caption": "Top to bottom: the check runs once through the wrapper; the commit and the push each read the same receipt, because committing moves no content.",
+      "ev": ["v-policy", "v-sign", "g-j-eval", "g-j-pass", "g-push-tree"]
+    },
+    {
+      "id": "gate-order",
+      "title": "The order the commit gate decides in",
+      "kind": "flowchart",
+      "source": "flowchart TD\n  %% level: 2\n  A[git commit, push or gh pr create] --> R{inside a git repo?}\n  R -- no --> Q[no decision]\n  R -- yes --> P{policy file?}\n  P -- none --> N[note: not configured]\n  P -- unreadable --> D0[deny: fix the policy]\n  P -- mode off --> Q\n  P -- block --> E{\"skip flag such as --no-verify?\"}\n  E -- yes --> T{skip-verify tag too?}\n  T -- no --> D1[deny: say so openly instead]\n  T -- yes --> AS[ask you to approve]\n  E -- no --> S{skip-verify tag?}\n  S -- yes --> AS\n  S -- no --> W{earlier part of the line can write files?}\n  W -- yes --> D2[deny: run it separately]\n  W -- no --> RC{signed receipt fresh for every required check?}\n  RC -- no --> D3[deny: re-run verification]\n  RC -- yes --> K{commit changes the policy, or push sends more than HEAD?}\n  K -- yes --> D4[deny]\n  K -- no --> OK[say nothing: your permission rules still apply]",
+      "caption": "Each diamond is one test in the gate, in source order; the first deny wins. A pass is silence, never an allow.",
+      "ev": ["g-j-none", "g-j-off", "g-j-evasion", "g-j-ask", "g-j-after", "g-j-eval", "g-j-policyprob", "g-j-pushprob", "g-noallow"]
+    },
+    {
+      "id": "stop-order",
+      "title": "When the Stop gate holds a turn",
+      "kind": "flowchart",
+      "scenario": "stale",
+      "source": "flowchart TD\n  %% level: 2\n  S[Claude tries to end its turn] --> A{this stop already blocked once?}\n  A -- yes --> L[let it stop]\n  A -- no --> M{policy in block mode?}\n  M -- no --> L\n  M -- yes --> U{uncommitted changes?}\n  U -- no --> L\n  U -- yes --> F{a fresh entry for every required check?}\n  F -- yes, even a failing one --> L\n  F -- no --> B[block once: here are the commands to re-run]",
+      "caption": "The Stop gate asks whether the checks ran on these files, not whether they passed; a failing check still lets the turn end, and the commit gate refuses it later.",
+      "ev": ["s-active", "s-mode", "s-clean", "s-stale", "s-no-exit", "s-block"]
+    }
+  ],
+  "nodes": [
+    {"id": "you", "role": "client", "label": "You"},
+    {"id": "claude", "role": "service", "label": "Claude (the agent)", "ref": "skills/verification-gate/SKILL.md", "ev": "k-fire"},
+    {"id": "verified", "role": "service", "label": "100x verified (receipt writer)", "ref": "scripts/verified.py:212", "ev": "v-policy"},
+    {"id": "tests", "role": "external", "label": "Your check command", "ev": "v-after"},
+    {"id": "tree", "role": "store", "label": "Working tree (files git would commit)", "ref": "hooks/verify_fingerprint.py:72", "ev": "f-change"},
+    {"id": "key", "role": "store", "label": "Signing key (your home folder)", "ref": "hooks/receipts.py:49", "ev": "r-keylen"},
+    {"id": "policy", "role": "store", "label": "Policy file (.claude/verification-policy.json)", "ref": "hooks/receipts.py:120", "ev": "r-modes"},
+    {"id": "receipt", "role": "cache", "label": "Receipt (signed, in the git folder)", "ref": "hooks/receipts.py:20", "ev": "r-where"},
+    {"id": "gate", "role": "edge", "label": "Commit gate (PreToolUse hook)", "ref": "hooks/require_verification.py:1216", "ev": "g-j-pass"},
+    {"id": "stop", "role": "edge", "label": "Stop gate (Stop hook)", "ref": "hooks/stop_gate.py:18", "ev": "s-block"},
+    {"id": "git", "role": "external", "label": "git and GitHub", "ev": "g-commit"}
+  ],
+  "initial": {
+    "stores": {
+      "tree": {"files": "v1"},
+      "policy": {"test": "npm test", "mode": "block"},
+      "key": {"secret": "present"}
+    }
+  },
+  "numbers": {
+    "route_ifs": {"v": 8, "unit": "text patterns", "tag": "measured", "source": "grep -c '\"if\"' hooks/hooks.json (at 4bdb47e)"},
+    "gate_timeout": {"v": 30, "unit": "s", "tag": "verified", "ev": "h-timeout"},
+    "max_depth": {"v": 4, "unit": "levels", "tag": "verified", "ev": "g-maxdepth"},
+    "key_bytes": {"v": 32, "unit": "bytes", "tag": "verified", "ev": "r-keylen"},
+    "age_example": {"v": 120, "unit": "minutes", "tag": "verified", "ev": "k-age"}
+  },
+  "evidence": {
+    "k-fire": {"at": "skills/verification-gate/SKILL.md:16", "anchor": "Fire when"},
+    "k-problem": {"at": "skills/verification-gate/SKILL.md:29", "anchor": "edit a file"},
+    "k-rule3": {"at": "skills/verification-gate/SKILL.md:52", "anchor": "Never write or edit the receipt by hand"},
+    "k-skip": {"at": "skills/verification-gate/SKILL.md:73", "anchor": "Bypass explicitly and visibly"},
+    "k-rule7": {"at": "skills/verification-gate/SKILL.md:80", "anchor": "Never chain an edit"},
+    "k-modes": {"at": "skills/verification-gate/SKILL.md:92", "anchor": "| policy file |"},
+    "k-quiet": {"at": "skills/verification-gate/SKILL.md:106", "anchor": "a quiet gate is not proof"},
+    "k-age": {"at": "skills/verification-gate/SKILL.md:114", "anchor": "max_age_minutes"},
+    "k-cannot-fail": {"at": "skills/verification-gate/SKILL.md:163", "anchor": "A green suite that cannot fail"},
+    "k-gaps": {"at": "skills/verification-gate/SKILL.md:168", "anchor": "Residual bypass classes"},
+    "v-envlist": {"at": "scripts/verified.py:20", "anchor": "RUNNER_ENV"},
+    "v-shadow": {"at": "scripts/verified.py:118", "anchor": "can fake a pass"},
+    "v-policy": {"at": "scripts/verified.py:233", "anchor": "policy = load_policy(root)"},
+    "v-key": {"at": "scripts/verified.py:234", "anchor": "load_key(create=True)"},
+    "v-bound": {"at": "scripts/verified.py:251", "anchor": "cmd != bound"},
+    "v-env": {"at": "scripts/verified.py:259", "anchor": "runner_env_set()"},
+    "v-exe": {"at": "scripts/verified.py:265", "anchor": "check_executable"},
+    "v-before": {"at": "scripts/verified.py:270", "anchor": "before = fingerprint()"},
+    "v-after": {"at": "scripts/verified.py:278", "anchor": "after = fingerprint()"},
+    "v-post": {"at": "scripts/verified.py:281", "anchor": "Bind to the POST state"},
+    "v-carry": {"at": "scripts/verified.py:290", "anchor": "Carry forward only entries"},
+    "v-policysha": {"at": "scripts/verified.py:298", "anchor": "policy_sha"},
+    "v-sign": {"at": "scripts/verified.py:301", "anchor": "entry[\"sig\"] = sign"},
+    "v-write": {"at": "scripts/verified.py:304", "anchor": "_write_receipt"},
+    "v-rc": {"at": "scripts/verified.py:311", "anchor": "return rc"},
+    "r-threat-hand": {"at": "hooks/receipts.py:7", "anchor": "writing JSON by hand"},
+    "r-threat-key": {"at": "hooks/receipts.py:9", "anchor": "deliberately reads the key"},
+    "r-where": {"at": "hooks/receipts.py:20", "anchor": "RECEIPT_GIT_PATH"},
+    "r-modes": {"at": "hooks/receipts.py:25", "anchor": "MODES = (\"block\", \"off\")"},
+    "r-keylen": {"at": "hooks/receipts.py:73", "anchor": "len(key) < 32"},
+    "r-label": {"at": "hooks/receipts.py:81", "anchor": "body[\"label\"] = label"},
+    "r-hmac": {"at": "hooks/receipts.py:86", "anchor": "hmac.new"},
+    "r-compare": {"at": "hooks/receipts.py:91", "anchor": "compare_digest"},
+    "r-committed": {"at": "hooks/receipts.py:111", "anchor": "Enforcing"},
+    "r-noguess": {"at": "hooks/receipts.py:124", "anchor": "the gate will not"},
+    "r-default": {"at": "hooks/receipts.py:134", "anchor": "pol.get(\"mode\", \"block\")"},
+    "r-forged": {"at": "hooks/receipts.py:245", "anchor": "failed signature verification"},
+    "r-fresh": {"at": "hooks/receipts.py:251", "anchor": "fresh = {n: c"},
+    "r-stale": {"at": "hooks/receipts.py:258", "anchor": "the code changed after verification"},
+    "r-failed": {"at": "hooks/receipts.py:264", "anchor": "FAILED:"},
+    "r-binding": {"at": "hooks/receipts.py:274", "anchor": "policy binds"},
+    "r-missing": {"at": "hooks/receipts.py:276", "anchor": "required check(s) not run"},
+    "f-change": {"at": "hooks/verify_fingerprint.py:4", "anchor": "The fingerprint must change"},
+    "f-nobytes": {"at": "hooks/verify_fingerprint.py:6", "anchor": "moves no bytes"},
+    "f-head": {"at": "hooks/verify_fingerprint.py:11", "anchor": "HEAD is deliberately absent"},
+    "f-exclude": {"at": "hooks/verify_fingerprint.py:20", "anchor": ".claude/verification-policy.json"},
+    "f-untracked": {"at": "hooks/verify_fingerprint.py:91", "anchor": "--others"},
+    "f-tree": {"at": "hooks/verify_fingerprint.py:143", "anchor": "def tree_fingerprint"},
+    "g-prose": {"at": "hooks/require_verification.py:4", "anchor": "prose the model can"},
+    "g-gates": {"at": "hooks/require_verification.py:13", "anchor": "it gates rather than guesses"},
+    "g-noallow": {"at": "hooks/require_verification.py:22", "anchor": "skip the user's own"},
+    "g-failopen": {"at": "hooks/require_verification.py:25", "anchor": "Fails OPEN"},
+    "g-skiptoken": {"at": "hooks/require_verification.py:38", "anchor": "SKIP_TOKEN"},
+    "g-maxdepth": {"at": "hooks/require_verification.py:51", "anchor": "MAX_DEPTH = 4"},
+    "g-noverify": {"at": "hooks/require_verification.py:487", "anchor": "\"--no-verify\".startswith(a)"},
+    "g-commitflags": {"at": "hooks/require_verification.py:509", "anchor": "if ch == \"n\""},
+    "g-hookspath": {"at": "hooks/require_verification.py:669", "anchor": "core.hookspath"},
+    "g-alias": {"at": "hooks/require_verification.py:675", "anchor": "_resolve_alias(sub"},
+    "g-commit": {"at": "hooks/require_verification.py:747", "anchor": "elif sub == \"commit\""},
+    "g-push": {"at": "hooks/require_verification.py:750", "anchor": "elif sub == \"push\""},
+    "g-ghpr": {"at": "hooks/require_verification.py:782", "anchor": "[\"pr\", \"create\"]"},
+    "g-scriptfile": {"at": "hooks/require_verification.py:890", "anchor": "a script file: not parsed"},
+    "g-dirty": {"at": "hooks/require_verification.py:1051", "anchor": "state.dirty_by = "},
+    "g-fallback": {"at": "hooks/require_verification.py:1081", "anchor": "def _fallback_actions"},
+    "g-j-policy": {"at": "hooks/require_verification.py:1225", "anchor": "load_policy(root, git_args)"},
+    "g-j-none": {"at": "hooks/require_verification.py:1229", "anchor": "NOT_CONFIGURED.format"},
+    "g-j-off": {"at": "hooks/require_verification.py:1230", "anchor": "policy[\"mode\"] == \"off\""},
+    "g-j-evasion": {"at": "hooks/require_verification.py:1235", "anchor": "if action.evasion and not skip"},
+    "g-j-ask": {"at": "hooks/require_verification.py:1243", "anchor": "return 2, ask("},
+    "g-j-envskip": {"at": "hooks/require_verification.py:1247", "anchor": "VERIFY_SKIP"},
+    "g-j-after": {"at": "hooks/require_verification.py:1250", "anchor": "if action.after_write"},
+    "g-j-noreceipt": {"at": "hooks/require_verification.py:1263", "anchor": "no verification receipt"},
+    "g-j-eval": {"at": "hooks/require_verification.py:1275", "anchor": "result = evaluate(root"},
+    "g-j-policyprob": {"at": "hooks/require_verification.py:1281", "anchor": "_policy_problems(action"},
+    "g-j-pushprob": {"at": "hooks/require_verification.py:1283", "anchor": "_push_problems(action"},
+    "g-j-pass": {"at": "hooks/require_verification.py:1300", "anchor": "Verification gate PASSED"},
+    "g-pp-stale": {"at": "hooks/require_verification.py:1154", "anchor": "get(\"policy_sha\") != want"},
+    "g-push-head": {"at": "hooks/require_verification.py:1190", "anchor": "elif sha != head"},
+    "g-push-prior": {"at": "hooks/require_verification.py:1194", "anchor": "action.prior_commits"},
+    "g-push-tree": {"at": "hooks/require_verification.py:1202", "anchor": "tree_fingerprint(root, git_args, \"HEAD\")"},
+    "g-parse": {"at": "hooks/require_verification.py:1476", "anchor": "actions = parse_command(cmd, state)"},
+    "g-worst": {"at": "hooks/require_verification.py:1492", "anchor": "if worst >= 2"},
+    "g-main-failopen": {"at": "hooks/require_verification.py:1505", "anchor": "failing open"},
+    "h-routes": {"at": "hooks/hooks.json:31", "anchor": "Bash(*git*)"},
+    "h-timeout": {"at": "hooks/hooks.json:33", "anchor": "\"timeout\": 30"},
+    "h-stop": {"at": "hooks/hooks.json:126", "anchor": "stop_gate.py"},
+    "s-why": {"at": "hooks/stop_gate.py:5", "anchor": "simply reports"},
+    "s-active": {"at": "hooks/stop_gate.py:26", "anchor": "stop_hook_active"},
+    "s-mode": {"at": "hooks/stop_gate.py:38", "anchor": "policy[\"mode\"] != \"block\""},
+    "s-clean": {"at": "hooks/stop_gate.py:44", "anchor": "nothing uncommitted"},
+    "s-eval": {"at": "hooks/stop_gate.py:51", "anchor": "evaluate(root, policy"},
+    "s-stale": {"at": "hooks/stop_gate.py:55", "anchor": "stale = (not result"},
+    "s-block": {"at": "hooks/stop_gate.py:58", "anchor": "\"decision\": \"block\""},
+    "s-failopen": {"at": "hooks/stop_gate.py:69", "anchor": "fail-open"},
+    "s-no-exit": {"absent": "any read of a check's exit code in the Stop gate", "git_grep": "exit_code", "path": "hooks/stop_gate.py", "hits": 0},
+    "safety-key": {"at": "docs/SAFETY.md:254", "anchor": "Forgery by reading the key"},
+    "safety-script": {"at": "docs/SAFETY.md:262", "anchor": "Code the parser never sees"}
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "Verify, commit, push: one receipt carries all the way",
+      "steps": [
+        {"t": "You ask Claude to fix a bug and ship it", "d": "Committing, pushing and reporting work done are the moments the verification-gate skill fires for.", "do": [["send", "you", "claude", "fix the bug and push"]], "ev": ["k-fire"]},
+        {"t": "Claude edits a file", "do": [["db.write", "tree", "files", "v2"]], "tag": "inferred"},
+        {"t": "Claude runs the check through the receipt writer", "d": "The policy binds the label test to one exact command, so recording anything else under that label is refused.", "do": [["send", "claude", "verified", "100x verified --name test"], ["db.read", "policy", "test", "bound"]], "ev": ["v-policy", "v-bound"], "expect": {"vars": {"bound": "npm test"}}, "code": ["policy = load_policy(root)", "if cmd != policy.required[label]: refuse"]},
+        {"t": "The writer refuses tricks that could fake a pass", "d": "Variables such as PYTEST_ADDOPTS or NODE_OPTIONS change what a check runs without changing its command line; a program first on the PATH from inside the repo or a temp folder could just exit cleanly.", "do": [["note", "no runner variables set; npm resolves outside the repo"]], "ev": ["v-env", "v-envlist", "v-shadow", "v-exe"]},
+        {"t": "Fingerprint before, run the check, fingerprint after", "d": "If the check itself rewrites files (a formatter, a snapshot), the receipt is bound to the files after the run, since that is what would be committed.", "do": [["db.read", "tree", "files", "before"], ["send", "verified", "tests", "npm test"], ["reply", "tests", "verified", "exit code zero"], ["db.read", "tree", "files", "after"]], "ev": ["v-before", "v-after", "v-post"], "expect": {"vars": {"after": "v2"}}},
+        {"t": "The writer signs the entry and stores the receipt in the git folder", "d": "The signature covers the command, exit code, fingerprint, the policy's hash and the label. The file sits in the git folder, so it is never a change git add could commit.", "do": [["db.read", "key", "secret", "k"], ["cache.set", "receipt", "test", "$after"]], "ev": ["v-sign", "r-hmac", "r-label", "v-write", "r-where"], "expect": {"cache": {"receipt": {"test": "v2"}}, "stale": {"receipt": {"test": false}}}, "code": ["entry = {argv, exit_code, fingerprint: after, policy_sha, at}", "entry.sig = hmac_sha256(key, entry + label)", "write <git dir>/100x/verification-receipt.json"]},
+        {"t": "Claude runs git commit; the gate reads the command line first", "d": "The hook is routed on any of {{route_ifs}} words, then parses the line the way a shell would and lists every commit, push, PR or publish it would perform.", "do": [["send", "claude", "gate", "git commit -am fix"]], "ev": ["h-routes", "g-parse", "g-commit"], "code": ["actions = parse_command(cmd)", "for action in actions: judge(action)"]},
+        {"t": "The gate loads the committed policy and the receipt, and checks the signature", "d": "A policy that cannot be parsed is a deny: the gate will not guess what it meant.", "do": [["db.read", "policy", "mode", "mode"], ["cache.get", "receipt", "test"]], "ev": ["g-j-policy", "r-noguess", "r-compare"], "expect": {"hit": "hit", "vars": {"mode": "block"}}},
+        {"t": "The gate fingerprints the files now and finds the receipt fresh", "do": [["db.read", "tree", "files", "now"]], "ev": ["g-j-eval", "r-fresh"], "expect": {"stale": {"receipt": {"test": false}}}},
+        {"t": "The gate passes by saying nothing, and git commits", "d": "It never answers allow: that would also skip your own ask rules for the command, and a verification gate has no business granting permissions.", "do": [["reply", "gate", "claude", "Verification gate PASSED: test(ok)"], ["send", "claude", "git", "commit"]], "ev": ["g-j-pass", "g-noallow"]},
+        {"t": "The push reuses the same receipt, because committing moved no content", "d": "The fingerprint ignores HEAD and staging. The push gate also checks that each pushed branch is the checked-out commit and that its tree equals the verified files.", "do": [["send", "claude", "gate", "git push"], ["db.read", "tree", "files", "now"], ["reply", "gate", "claude", "PASSED"], ["send", "claude", "git", "push"]], "ev": ["f-head", "f-nobytes", "g-push-head", "g-push-tree"], "expect": {"stale": {"receipt": {"test": false}}}}
+      ]
+    },
+    {
+      "id": "stale",
+      "kind": "failure",
+      "title": "An edit after verifying: the commit and the stop are both held",
+      "branch": {"from": "happy", "at": 6},
+      "steps": [
+        {"t": "Claude makes one more small edit after the check passed", "d": "Any change to content git would commit, tracked or a new untracked file, changes the fingerprint.", "do": [["db.write", "tree", "files", "v3"]], "ev": ["f-change", "f-untracked"], "expect": {"stale": {"receipt": {"test": true}}}},
+        {"t": "The commit is denied: the code changed after verification", "d": "The receipt is still there and still signed, but it describes different files. A pass from before an edit proves nothing about the edit.", "do": [["send", "claude", "gate", "git commit -am fix"], ["cache.get", "receipt", "test"], ["db.read", "tree", "files", "now"], ["reply", "gate", "claude", "deny: the code changed after verification"], ["counter", "denied", 1]], "ev": ["r-stale", "g-j-eval"], "expect": {"hit": "hit", "stale": {"receipt": {"test": true}}, "counters": {"denied": 1}}},
+        {"t": "Claude tries to end the turn and report done instead", "d": "The commit gate only fires when Claude tries to ship. An agent that edits and simply says done never tries, so this second hook exists.", "do": [["send", "claude", "stop", "end of turn"]], "ev": ["s-why", "h-stop"]},
+        {"t": "The Stop gate blocks once and names the commands to re-run", "d": "Block mode, uncommitted changes, and no fresh entry for the required check: the reason lists the exact commands, or asks Claude to say plainly what was not verified.", "do": [["db.read", "tree", "files", "now"], ["cache.get", "receipt", "test"], ["reply", "stop", "claude", "block: run 100x verified --name test"]], "ev": ["s-mode", "s-clean", "s-eval", "s-stale", "s-block"], "code": ["stale = not fresh or a required label missing", "return block(rerun_hint(policy))"]},
+        {"t": "Claude re-runs the check; the new receipt matches the files", "do": [["send", "claude", "verified", "100x verified --name test"], ["send", "verified", "tests", "npm test"], ["reply", "tests", "verified", "exit code zero"], ["db.read", "tree", "files", "after2"], ["cache.set", "receipt", "test", "$after2"]], "ev": ["v-after", "v-sign"], "expect": {"cache": {"receipt": {"test": "v3"}}, "stale": {"receipt": {"test": false}}}},
+        {"t": "The commit now passes", "do": [["send", "claude", "gate", "git commit -am fix"], ["reply", "gate", "claude", "PASSED: test(ok)"], ["send", "claude", "git", "commit"]], "ev": ["g-j-pass"]}
+      ]
+    },
+    {
+      "id": "evasion",
+      "kind": "issue",
+      "severity": "medium",
+      "origin": "in-code",
+      "open": true,
+      "title": "Shortcuts around the gate: each is caught, except code it never sees",
+      "branch": {"from": "happy", "at": 6},
+      "steps": [
+        {"t": "A commit with --no-verify is denied", "d": "That flag skips git's own hooks without a trace; git accepts any unambiguous prefix of it, and so does the check.", "do": [["send", "claude", "gate", "git commit --no-verify -am x"], ["reply", "gate", "claude", "deny: skips git's own hooks"], ["counter", "denied", 1]], "ev": ["g-noverify", "g-j-evasion", "g-hookspath"], "expect": {"counters": {"denied": 1}}},
+        {"t": "An alias hiding the same flag is denied too", "d": "The gate expands git aliases, including one defined earlier in the same line, up to {{max_depth}} deep, and reads the flags of the commit they expand to.", "do": [["send", "claude", "gate", "git ci -am x   (ci = commit -n)"], ["reply", "gate", "claude", "deny: -n skips git's own hooks"], ["counter", "denied", 1]], "ev": ["g-alias", "g-commitflags", "g-maxdepth"], "expect": {"counters": {"denied": 2}}},
+        {"t": "An edit and a commit in one command line are denied", "d": "The gate judges before the line runs, so anything earlier in it that could change files would ship content the gate never saw.", "do": [["send", "claude", "gate", "echo z >> f.txt && git commit -am x"], ["reply", "gate", "claude", "deny: an earlier part can change files"], ["counter", "denied", 1]], "ev": ["g-dirty", "g-j-after", "k-rule7"], "expect": {"counters": {"denied": 3}, "store": {"tree": {"files": "v2"}}}},
+        {"t": "A commit and a push in one line: the push is denied", "d": "When the gate judges, that commit has not happened, so the tree the push would send cannot be checked.", "do": [["send", "claude", "gate", "git commit -am x && git push"], ["reply", "gate", "claude", "deny: commit, then push separately"], ["counter", "denied", 1]], "ev": ["g-push-prior"], "expect": {"counters": {"denied": 4}}},
+        {"t": "A commit that switches the policy off is denied", "d": "The policy file is left out of the fingerprint, so the receipt stays fresh. That is why the gate enforces the committed copy, and a commit that changes the policy needs a receipt recorded with the new policy in place.", "do": [["db.write", "policy", "mode", "off"], ["send", "claude", "gate", "git commit -am 'gate off'"], ["reply", "gate", "claude", "deny: receipt not recorded with that policy"], ["counter", "denied", 1]], "ev": ["f-exclude", "r-committed", "g-pp-stale", "g-j-policyprob"], "expect": {"stale": {"receipt": {"test": false}}, "counters": {"denied": 5}}},
+        {"t": "The open way out asks you; a script file slips past unread", "d": "With [skip-verify] in the message, you are asked to approve, and the bypass is in the transcript. But the gate does not open script files: a commit inside one is never seen. This class is documented, not fixed.", "do": [["send", "claude", "gate", "git commit -am 'wip [skip-verify]'"], ["send", "gate", "you", "approve shipping without verification?"], ["send", "claude", "gate", "bash ship.sh"], ["reply", "gate", "claude", "no decision"], ["send", "claude", "git", "commit, from inside ship.sh"], ["note", "the receipt was never checked for this commit"]], "ev": ["g-j-ask", "k-skip", "g-scriptfile", "safety-script", "k-gaps"]}
+      ]
+    },
+    {
+      "id": "forge",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the receipt were plain, unsigned JSON?",
+      "branch": {"from": "happy", "at": 2},
+      "fixed_by": ["fix-sign"],
+      "steps": [
+        {"t": "Claude skips the check and writes a passing receipt by hand", "d": "The code's own threat model says an audit found this was enough to pass the first, unsigned version.", "do": [["cache.set", "receipt", "test", "pass, hand-written"]], "ev": ["r-threat-hand"]},
+        {"t": "The gate sees a receipt that says pass", "do": [["send", "claude", "gate", "git commit -am fix"], ["cache.get", "receipt", "test"], ["reply", "gate", "claude", "passed"]], "tag": "inferred", "expect": {"hit": "hit"}},
+        {"t": "Code that was never tested is committed", "do": [["send", "claude", "git", "commit"], ["note", "no test ever ran on these files"]], "tag": "inferred"}
+      ]
+    },
+    {
+      "id": "fix-sign",
+      "kind": "fix",
+      "title": "Fix: every entry is signed with a key only the receipt writer uses",
+      "branch": {"from": "forge", "at": 2},
+      "steps": [
+        {"t": "Claude writes a receipt by hand anyway", "d": "The skill forbids it; the signature makes the rule mechanical.", "do": [["cache.set", "receipt", "test", "pass, hand-written"]], "ev": ["k-rule3"]},
+        {"t": "The gate recomputes the signature with your key, and it does not match", "d": "One forged entry spoils the whole receipt: a receipt containing a forgery is not evidence of anything.", "do": [["send", "claude", "gate", "git commit -am fix"], ["cache.get", "receipt", "test"], ["db.read", "key", "secret", "k"], ["reply", "gate", "claude", "deny: failed signature verification"], ["counter", "denied", 1]], "ev": ["r-compare", "r-label", "r-forged"], "expect": {"counters": {"denied": 1}}, "code": ["ok = compare_digest(entry.sig, hmac_sha256(key, entry + label))", "if not ok: deny(\"forged, edited by hand, or another key\")"]},
+        {"t": "Only the receipt writer, which runs the real command, produces a receipt that passes", "do": [["send", "claude", "verified", "100x verified --name test"], ["send", "verified", "tests", "npm test"], ["reply", "tests", "verified", "exit code zero"], ["db.read", "tree", "files", "after"], ["cache.set", "receipt", "test", "$after"], ["send", "claude", "gate", "git commit -am fix"], ["reply", "gate", "claude", "PASSED: test(ok)"]], "ev": ["v-key", "v-sign", "g-j-pass"], "expect": {"cache": {"receipt": {"test": "v2"}}}},
+        {"t": "Still open by design: an agent that reads the key file can sign anything", "d": "The key sits in your home folder and Claude runs as you. Closing that takes an operating-system boundary: a permission deny rule on the key's folder, or a sandbox.", "do": [["note", "deny Read, Edit and Bash on ~/.config/100x to close it"]], "ev": ["r-threat-key", "safety-key"]}
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {"id": "receipt", "label": "A signed receipt bound to file content, read by hooks at commit and at stop", "fit": "pass", "pros": ["An edit after the check is caught, whatever the clock says", "A hand-written receipt is denied", "Commit then push needs no second run"], "cons": ["Stops a confused agent, not one that reads the key", "Code run from a script file is never seen"]},
+      {"id": "prose", "label": "An instruction: verify before saying done", "fit": "fail", "pros": ["Nothing to build"], "cons": ["Prose is what the model talks itself past at the moment it wants to finish"]},
+      {"id": "timed", "label": "Record only that the tests passed recently", "fit": "fail", "pros": ["Simple to check"], "cons": ["An edit a minute after the tests still passes, which is the exact failure to catch"]},
+      {"id": "in-hook", "label": "Run the whole suite inside the commit hook", "fit": "fail", "pros": ["Nothing to forge"], "cons": ["The hook has {{gate_timeout}} to answer", "A slow gate on every commit gets switched off, which is worse than none"]}
+    ],
+    "chosen": "receipt",
+    "deciding_factor": "The failure is a passing test followed by an edit, so the proof must be tied to the exact content, and cheap enough to check on every commit.",
+    "revisit_when": "Claude Code ships an operating-system boundary that keeps the key out of the agent's reach, or the parser learns to read script files.",
+    "source": "skills/verification-gate/SKILL.md (The problem this solves; Failure modes); hooks/receipts.py threat model; SOURCE: original"
+  },
+  "checks": [
+    {"scenario": "happy", "step": 10, "q": "Claude committed after verifying. Must the check run again before the push?", "answer": "No. Committing moves no content and the fingerprint ignores HEAD, so the same receipt covers the push, provided each pushed branch is the checked-out commit."},
+    {"scenario": "stale", "step": 7, "q": "Claude changed one line after the tests passed. The receipt is still signed. What does the gate do?", "answer": "Deny. The fingerprint of the files now differs from the one in the receipt, so the receipt describes other code."},
+    {"scenario": "evasion", "step": 10, "q": "Editing the policy file does not change the fingerprint. Can Claude switch the gate off and commit on the old receipt?", "answer": "No. The committed policy is enforced, and a commit that changes it needs a receipt recorded with the new policy in place."},
+    {"scenario": "fix-sign", "step": 3, "q": "The hand-written receipt says the test passed. Why is it refused?", "answer": "Its signature does not match one made with your key over that entry and label, so it was not written by the receipt writer."}
+  ],
+  "compare": ["forge", "fix-sign"],
+  "reference": [
+    {
+      "path": "scripts/verified.py",
+      "symbols": ["runner_env_set", "resolve_executable", "check_executable", "parse", "main", "_policy_sha"],
+      "notes": {
+        "parse": "Splits the arguments into a label, default verify, and the command after the double dash.",
+        "main": "The command: loads policy and key, refuses a command that differs from the bound one, a runner variable or a shadowed program, fingerprints before and after the run, signs the entry, keeps only signed entries still fresh, writes the receipt, and exits with the check's own code.",
+        "_policy_sha": "Hash of the working copy of the policy file, or absent; stored in each entry so the gate can tell which policy a check ran under."
+      }
+    },
+    {
+      "path": "hooks/receipts.py",
+      "symbols": ["load_key", "_canonical", "sign", "signature_ok", "_read_policy_text", "load_policy", "receipt_path", "read_receipt", "evaluate", "rerun_hint"],
+      "notes": {
+        "_canonical": "The bytes that get signed: the entry without its signature, plus its label, as sorted compact JSON.",
+        "sign": "HMAC-SHA256 of the canonical entry with the key, as hex.",
+        "signature_ok": "Recomputes the signature and compares it in constant time.",
+        "_read_policy_text": "Returns the committed policy instead of the working copy whenever the two differ, with a note saying so.",
+        "read_receipt": "Opens the receipt without following a symlink: missing means none, unreadable or malformed raises with a re-run hint.",
+        "rerun_hint": "The exact receipt-writer commands to run, one line per required label."
+      }
+    },
+    {
+      "path": "hooks/verify_fingerprint.py",
+      "symbols": ["repo_root", "snapshot", "_digest", "tree_fingerprint", "fingerprint"],
+      "notes": {
+        "repo_root": "The top folder of the git repository, or None outside one.",
+        "_digest": "A sha256 over the path, mode and blob id of every entry, in path order.",
+        "fingerprint": "The snapshot's fingerprint alone, or None outside a repository."
+      }
+    },
+    {
+      "path": "hooks/require_verification.py",
+      "symbols": ["main", "decide", "parse_command", "_segment", "_is_read_only", "parse_git", "_resolve_alias", "_git_subcommand", "_commit_flags", "_is_no_verify", "_shell_invocation", "_fallback_actions", "judge", "_policy_problems", "_push_problems", "deny", "ask", "note"],
+      "notes": {
+        "main": "Reads the hook input, ignores anything but Bash, decides, and on a non-blocking result adds the advisory writing and scope warnings.",
+        "decide": "Parses the command into actions, judges each once, and returns the worst: a deny or ask wins outright, otherwise the pass and note messages are joined.",
+        "_segment": "One simple command: tracks variables, exports and cd, parses the rest, and remembers the first earlier part that could change files.",
+        "_is_read_only": "True for commands that cannot change files, such as cd, ls, git status or git diff without an output file; a redirect or git -c makes it false.",
+        "parse_git": "Reads git's own options such as -C, -c, git dir and work tree, expands aliases including ones set earlier in the line, then hands the subcommand on.",
+        "_resolve_alias": "Looks up the alias from -c values first, then config files named in the environment, then the repository's git config.",
+        "_git_subcommand": "Turns a git subcommand into a gated action: commit with its flags, push with the refs it sends, tag, merge, plumbing; also records git add and alias definitions.",
+        "_is_no_verify": "True for --no-verify or any unambiguous prefix of it, as git itself accepts.",
+        "deny": "Hook output that refuses the command, with the reason.",
+        "ask": "Hook output that asks a human to approve, with the reason.",
+        "note": "Hook output that adds a message for Claude and decides nothing."
+      }
+    },
+    {
+      "path": "hooks/stop_gate.py",
+      "notes": {
+        "main": "Lets the stop through when already blocked once, outside a repo, without a block-mode policy or with nothing uncommitted; otherwise blocks once when no fresh entry covers every required check."
+      }
+    }
+  ]
+}

@@ -1,0 +1,1675 @@
+{
+  "schema": 1,
+  "tier": "heavy",
+  "title": "How the explain engine works",
+  "subject": {
+    "kind": "concept",
+    "repo": "gauravprwl14/100x-engineer",
+    "lede": "Part of the 100x plugin overview (explain/100x-plugin). Think of a newspaper with a fact-checking desk. The reporter (Claude) files the story only as structured data, scenario.json. The fact-checker (flow check) calls every source: it opens each cited line in git, re-runs each search that claims something is missing, and replays the timeline step by step. Only a story with no findings goes to the printing press (flow build), which sets the real code beside each claim. The reader's copy (the player in the browser) replays the timeline itself, and a test keeps its copy of the rules identical to the checker's."
+  },
+  "tldr": {
+    "what": "Turns a structured description of a flow into an animated page whose every claim was checked against the code before the page was built.",
+    "how": "Claude writes only scenario.json; flow check replays it and resolves each citation with git; flow build adds the real code and writes the page.",
+    "watch_out": "Build checks citations only when you pass it the clone: without it the page still builds, with pseudocode and no proof."
+  },
+  "context": {
+    "purpose": "When you ask Claude to explain a PR or a part of this plugin, you get a page you can step through where every line it cites, every absence it claims and every function it lists was checked against the code, instead of a confident summary nobody verified.",
+    "why_now": "Part pages now end in a code reference, so the checker reads the files behind a page as well as the lines it cites.",
+    "in_scope": [
+      "The one file Claude writes, and why it writes nothing else",
+      "flow check: its checks in the order they run, and what each one rejects",
+      "The reducer: how steps are replayed and compared with what each step expects",
+      "How citations, absences and the code reference are resolved with git and the parse tree",
+      "flow build: real code beside each claim, the page and the markdown export",
+      "The player's own reducer, and the test that pins it to the checker's",
+      "Every checker and builder function in the Code reference"
+    ],
+    "out_of_scope": [
+      "How to research a page (the research recipe)",
+      "How the player draws and animates (layout, themes, the compare tab)",
+      "The mermaid checker's internals (the diagramming skill)"
+    ],
+    "entry_points": [
+      {
+        "label": "flow check <scenario.json> --tier --repo",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "run-checks"
+      },
+      {
+        "label": "flow build <scenario.json> --tier --out --repo",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "build-repo-flag"
+      },
+      {
+        "label": "flow reduce <scenario.json> --json",
+        "kind": "command",
+        "note": "prints the state after every step; the golden states file is its output",
+        "ev": "golden-py"
+      },
+      {
+        "label": "code_ref build <file> --md",
+        "kind": "command",
+        "note": "the same function list flow build puts on a page, for any Python file",
+        "ev": "coderef-parse"
+      },
+      {
+        "label": "explain skill (\"walk me through this PR\")",
+        "kind": "command",
+        "scenario": "happy",
+        "ev": "skill-fire"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term": "evidence",
+      "means": "The proof behind one claim: a file and line plus a word that must be on it, or a search with the number of hits it must return.",
+      "example": "scripts/flow.py at the line of run_checks, anchor def run_checks"
+    },
+    {
+      "term": "anchor",
+      "means": "The word that must appear on the cited line, or within {{anchor_window}} of it. If the code moved, the word is no longer there and check says so."
+    },
+    {
+      "term": "absence",
+      "means": "A claim that something is not in the code, written as a git grep with its expected hit count, so it is counted rather than asserted."
+    },
+    {
+      "term": "reducer",
+      "means": "A small function that replays a scenario's steps in order and works out the state after each: which job a worker holds, what a store contains."
+    },
+    {
+      "term": "expect",
+      "means": "What a step says the state will be afterwards. Check compares it with the reducer's answer and reports any difference."
+    },
+    {
+      "term": "finding",
+      "means": "One problem flow check reports, with where it sits in the file. Any finding fails the check and makes build refuse."
+    },
+    {
+      "term": "bare number",
+      "means": "A digit typed straight into prose. It must be a named placeholder in double braces, backed by a number with a source, so no figure is made up."
+    },
+    {
+      "term": "jargon rule",
+      "means": "A step title or TL;DR line may not hold a code-shaped word (camelCase, snake_case, a dotted call) unless a term or a box on the map explains it."
+    },
+    {
+      "term": "code reference",
+      "means": "The table of functions at the bottom of a part page, read from the code at the page's revision, never typed by hand."
+    },
+    {
+      "term": "parse tree",
+      "means": "Python's own reading of a file into functions and classes (the ast module), so the list cannot skip or invent one."
+    },
+    {
+      "term": "golden states",
+      "means": "The saved replay output for a set of test scenarios. The checker's reducer and the player's reducer must both reproduce it exactly."
+    },
+    {
+      "term": "tier",
+      "means": "light (static step cards, small budgets) or heavy (animated player, more boxes, scenarios and steps)."
+    }
+  ],
+  "outline": [
+    {
+      "title": "flow check: prepare, then run_checks, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "doc = load(path); ctx = validate(doc, f)      # shape: keys, nodes, actions, ids",
+          "steps": [
+            3
+          ],
+          "ev": "prepare-validate"
+        },
+        {
+          "code": "structural = bool(f.items)",
+          "steps": [
+            3
+          ],
+          "ev": "structural-flag"
+        },
+        {
+          "code": "if not structural:",
+          "ev": "reduce-all"
+        },
+        {
+          "code": "states = reduce_all(ctx, f)                  # replay every scenario",
+          "indent": 1,
+          "steps": [
+            4
+          ],
+          "ev": "reduce-all"
+        },
+        {
+          "code": "check_expectations(ctx, states, f)",
+          "indent": 1,
+          "steps": [
+            4
+          ],
+          "ev": "run-expect"
+        },
+        {
+          "code": "check_prose(doc, numbers, f)                 # bare numbers, unknown {{name}}",
+          "steps": [
+            5
+          ],
+          "ev": "rc-prose"
+        },
+        {
+          "code": "check_jargon(doc, ctx, f)",
+          "steps": [
+            5
+          ],
+          "ev": "rc-jargon"
+        },
+        {
+          "code": "check_budget(ctx, states, tier, f)",
+          "steps": [
+            6
+          ],
+          "ev": "rc-budget"
+        },
+        {
+          "code": "if repo is not None and not structural:",
+          "steps": [
+            7
+          ],
+          "ev": "structural-skip"
+        },
+        {
+          "code": "check_evidence(ctx, repo, rev, f)          # git show, git grep",
+          "indent": 1,
+          "steps": [
+            7
+          ],
+          "ev": "rc-evidence"
+        },
+        {
+          "code": "collect_reference(doc, repo, rev, f)       # code_ref at the revision",
+          "indent": 1,
+          "steps": [
+            8
+          ],
+          "ev": "rc-ref"
+        },
+        {
+          "code": "return 1 if f.items else 0",
+          "steps": [
+            9
+          ],
+          "ev": "check-exit"
+        }
+      ]
+    },
+    {
+      "title": "flow build: run_build, as pseudocode",
+      "scenario": "happy",
+      "lines": [
+        {
+          "code": "states = run_checks(doc, ctx, f, tier, repo)  # repo is None unless --repo",
+          "steps": [
+            10
+          ],
+          "ev": "build-runs-checks"
+        },
+        {
+          "code": "if f.items: refuse, exit 1",
+          "steps": [
+            10
+          ],
+          "ev": "build-refuse"
+        },
+        {
+          "code": "snippets = collect_snippets(doc, repo)        # real lines around each citation",
+          "steps": [
+            10
+          ],
+          "ev": "build-snippets"
+        },
+        {
+          "code": "reference = collect_reference(doc, repo)",
+          "steps": [
+            10
+          ],
+          "ev": "build-reference"
+        },
+        {
+          "code": "build(): shell + player JS + CSS + data -> index.html",
+          "steps": [
+            10
+          ],
+          "ev": "build-write"
+        },
+        {
+          "code": "write explain.md = render_markdown(doc, ctx, states, tier, reference)",
+          "steps": [
+            10
+          ],
+          "ev": "md-write"
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "id": "parts",
+      "title": "What the explain engine is made of",
+      "kind": "mindmap",
+      "source": "mindmap\n  %% level: 2\n  root((explain engine))\n    Claude writes\n      scenario.json only\n    flow check\n      shape and replay\n      numbers and jargon\n      budgets\n      git anchors and absences\n      code reference\n    flow build\n      real code beside claims\n      index.html and explain.md\n    Player\n      its own reducer\n      pinned to golden states",
+      "caption": "Read outward from the centre: one file goes in, a checker and a builder work on it, and the page replays it with its own copy of the rules.",
+      "ev": [
+        "skill-only",
+        "run-checks",
+        "run-build",
+        "player-reducer",
+        "golden-test"
+      ]
+    },
+    {
+      "id": "check-order",
+      "title": "The order flow check runs its checks",
+      "kind": "flowchart",
+      "source": "flowchart TD\n  S[read scenario.json] --> V{any shape finding?}\n  V -- yes --> P[numbers, jargon, budget only: replay and git wait]\n  V -- no --> R[replay every scenario, compare each expect]\n  R --> N[numbers, jargon, budget]\n  N --> E[git show each anchor, git grep each absence]\n  E --> C[code_ref each reference file]\n  C --> X{any finding?}\n  P --> X\n  X -- yes --> F[exit 1, findings listed, build refuses]\n  X -- no --> O[exit 0, ready to build]",
+      "caption": "A shape mistake anywhere holds back the replay and every git lookup, so a wrong citation can hide behind a typo until the typo is fixed.",
+      "scenario": "happy",
+      "ev": [
+        "structural-flag",
+        "reduce-all",
+        "structural-skip",
+        "check-exit"
+      ]
+    },
+    {
+      "id": "check-build-calls",
+      "title": "Check, build and open, call by call",
+      "kind": "sequence",
+      "source": "sequenceDiagram\n  %% level: 2\n  actor You\n  participant Claude\n  participant Check as flow check\n  participant Git as git\n  participant CodeRef as code_ref\n  participant Build as flow build\n  participant Player\n  Claude->>Check: check scenario.json with the clone\n  Check->>Git: show each cited file, grep each absence\n  Git-->>Check: lines and hit counts\n  Check->>CodeRef: list functions in each reference file\n  CodeRef-->>Check: symbols or no such symbol\n  Check-->>Claude: findings, or none\n  Claude->>Build: build with the clone\n  Build->>Git: lines around each cited line\n  Build-->>Claude: index.html and explain.md\n  You->>Player: open index.html\n  Player->>Player: replay every scenario with its own reducer",
+      "caption": "Top to bottom: check reads git and the parse tree, build reads git again for the real code, and the page needs neither once it is written.",
+      "scenario": "happy",
+      "ev": [
+        "git-show",
+        "git-grep",
+        "ref-build",
+        "build-snippets",
+        "build-write",
+        "player-boot"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "you",
+      "role": "client",
+      "label": "You"
+    },
+    {
+      "id": "agent",
+      "role": "service",
+      "label": "Claude with the explain skill",
+      "ref": "skills/explain/SKILL.md",
+      "ev": "skill-only"
+    },
+    {
+      "id": "scenario",
+      "role": "store",
+      "label": "scenario.json (the one hand-written file)",
+      "ev": "skill-rule1"
+    },
+    {
+      "id": "checks",
+      "role": "queue",
+      "label": "Checks, in the order flow check runs them",
+      "ref": "scripts/flow.py:1398",
+      "ev": "run-checks"
+    },
+    {
+      "id": "checker",
+      "role": "worker",
+      "label": "flow check",
+      "slots": 1,
+      "ref": "scripts/flow.py:1418",
+      "ev": "run-check"
+    },
+    {
+      "id": "reducer",
+      "role": "service",
+      "label": "Reducer (replays the steps)",
+      "ref": "scripts/flow.py:1186",
+      "ev": "reduce-scenario"
+    },
+    {
+      "id": "git",
+      "role": "external",
+      "label": "git, at the page's revision",
+      "ev": "git-show"
+    },
+    {
+      "id": "coderef",
+      "role": "service",
+      "label": "code_ref (reads the parse tree)",
+      "ref": "scripts/code_ref.py:92",
+      "ev": "coderef-parse"
+    },
+    {
+      "id": "build",
+      "role": "service",
+      "label": "flow build",
+      "ref": "scripts/flow.py:1857",
+      "ev": "run-build"
+    },
+    {
+      "id": "page",
+      "role": "store",
+      "label": "index.html and explain.md",
+      "ev": "build-write"
+    },
+    {
+      "id": "player",
+      "role": "client",
+      "label": "Player in the browser",
+      "ref": "skills/explain/assets/flow-player.js",
+      "ev": "player-reducer"
+    },
+    {
+      "id": "golden",
+      "role": "store",
+      "label": "Golden states file (tests/flow/states.json)",
+      "ev": "golden-test"
+    }
+  ],
+  "numbers": {
+    "anchor_window": {
+      "v": 2,
+      "unit": "lines",
+      "tag": "verified",
+      "ev": "anchor-window"
+    },
+    "heavy_nodes": {
+      "v": 12,
+      "unit": "boxes",
+      "tag": "verified",
+      "ev": "budgets"
+    },
+    "heavy_scenarios": {
+      "v": 5,
+      "unit": "scenarios",
+      "tag": "verified",
+      "ev": "budgets"
+    },
+    "heavy_steps": {
+      "v": 12,
+      "unit": "steps",
+      "tag": "verified",
+      "ev": "budgets"
+    },
+    "max_ref_files": {
+      "v": 8,
+      "unit": "files",
+      "tag": "verified",
+      "ev": "max-ref-files"
+    },
+    "snippet_before": {
+      "v": 3,
+      "unit": "lines",
+      "tag": "verified",
+      "ev": "snippet-window"
+    },
+    "snippet_after": {
+      "v": 5,
+      "unit": "lines",
+      "tag": "verified",
+      "ev": "snippet-window"
+    },
+    "flow_tests": {
+      "v": 345,
+      "unit": "passing checks",
+      "tag": "measured",
+      "source": "bash tests/test_flow.sh at 4bdb47e: 'flow: 345 passed, 0 failed', with the node parity test run"
+    }
+  },
+  "evidence": {
+    "skill-fire": {
+      "at": "skills/explain/SKILL.md:42",
+      "anchor": "Fire when"
+    },
+    "skill-only": {
+      "at": "skills/explain/SKILL.md:25",
+      "anchor": "The agent writes **only**"
+    },
+    "skill-rule1": {
+      "at": "skills/explain/SKILL.md:122",
+      "anchor": "Write only `scenario.json`"
+    },
+    "skill-reread": {
+      "at": "skills/explain/SKILL.md:90",
+      "anchor": "re-read the line"
+    },
+    "skill-limits": {
+      "at": "skills/explain/SKILL.md:226",
+      "anchor": "Honest limitations"
+    },
+    "validate": {
+      "at": "scripts/flow.py:227",
+      "anchor": "def validate(doc, f)"
+    },
+    "did-you-mean": {
+      "at": "scripts/flow.py:172",
+      "anchor": "did you mean"
+    },
+    "prepare-validate": {
+      "at": "scripts/flow.py:1394",
+      "anchor": "ctx = validate(doc, f)"
+    },
+    "run-checks": {
+      "at": "scripts/flow.py:1398",
+      "anchor": "def run_checks"
+    },
+    "structural-flag": {
+      "at": "scripts/flow.py:1405",
+      "anchor": "structural = bool(f.items)"
+    },
+    "reduce-all": {
+      "at": "scripts/flow.py:1407",
+      "anchor": "states = reduce_all(ctx, f)"
+    },
+    "run-expect": {
+      "at": "scripts/flow.py:1408",
+      "anchor": "check_expectations(ctx, states, f)"
+    },
+    "rc-prose": {
+      "at": "scripts/flow.py:1409",
+      "anchor": "check_prose(doc"
+    },
+    "rc-jargon": {
+      "at": "scripts/flow.py:1410",
+      "anchor": "check_jargon(doc, ctx, f)"
+    },
+    "rc-budget": {
+      "at": "scripts/flow.py:1411",
+      "anchor": "check_budget(ctx, states, tier, f)"
+    },
+    "structural-skip": {
+      "at": "scripts/flow.py:1412",
+      "anchor": "if repo is not None and not structural"
+    },
+    "rc-evidence": {
+      "at": "scripts/flow.py:1413",
+      "anchor": "check_evidence(ctx, repo, rev, f)"
+    },
+    "rc-ref": {
+      "at": "scripts/flow.py:1414",
+      "anchor": "collect_reference(doc, repo, rev, f)"
+    },
+    "run-check": {
+      "at": "scripts/flow.py:1418",
+      "anchor": "def run_check"
+    },
+    "check-exit": {
+      "at": "scripts/flow.py:1435",
+      "anchor": "return 1 if f.items else 0"
+    },
+    "reduce-scenario": {
+      "at": "scripts/flow.py:1186",
+      "anchor": "def reduce_scenario"
+    },
+    "effective-steps": {
+      "at": "scripts/flow.py:1070",
+      "anchor": "parent[:br[\"at\"]] + own"
+    },
+    "pickup-fifo": {
+      "at": "scripts/flow.py:1113",
+      "anchor": "q.pop(0)"
+    },
+    "free-error": {
+      "at": "scripts/flow.py:1118",
+      "anchor": "holds no job"
+    },
+    "expect-mismatch": {
+      "at": "scripts/flow.py:1242",
+      "anchor": "expect contradicts reducer"
+    },
+    "bare": {
+      "at": "scripts/flow.py:983",
+      "anchor": "def bare_numbers"
+    },
+    "repo-words": {
+      "at": "scripts/flow.py:1001",
+      "anchor": "re.split"
+    },
+    "jargon": {
+      "at": "scripts/flow.py:1047",
+      "anchor": "jargon in {where}"
+    },
+    "budgets": {
+      "at": "scripts/flow.py:51",
+      "anchor": "\"heavy\": {\"nodes\": 12"
+    },
+    "anchor-window": {
+      "at": "scripts/flow.py:54",
+      "anchor": "ANCHOR_WINDOW = 2"
+    },
+    "max-ref-files": {
+      "at": "scripts/flow.py:121",
+      "anchor": "MAX_REFERENCE_FILES = 8"
+    },
+    "git-show": {
+      "at": "scripts/flow.py:1362",
+      "anchor": "git(repo, \"show\""
+    },
+    "line-past": {
+      "at": "scripts/flow.py:1368",
+      "anchor": "cited line"
+    },
+    "anchor-miss": {
+      "at": "scripts/flow.py:1372",
+      "anchor": "not within"
+    },
+    "git-grep": {
+      "at": "scripts/flow.py:1343",
+      "anchor": "\"grep\", \"-n\", \"-E\""
+    },
+    "absence-contra": {
+      "at": "scripts/flow.py:1349",
+      "anchor": "absence contradicted"
+    },
+    "ref-build": {
+      "at": "scripts/flow.py:832",
+      "anchor": "code_ref.build"
+    },
+    "ref-missing": {
+      "at": "scripts/flow.py:844",
+      "anchor": "no symbol"
+    },
+    "run-build": {
+      "at": "scripts/flow.py:1857",
+      "anchor": "def run_build"
+    },
+    "build-runs-checks": {
+      "at": "scripts/flow.py:1860",
+      "anchor": "run_checks(doc, ctx, f, tier, repo, None)"
+    },
+    "build-refuse": {
+      "at": "scripts/flow.py:1864",
+      "anchor": "flow build: refused"
+    },
+    "build-snippets": {
+      "at": "scripts/flow.py:1866",
+      "anchor": "collect_snippets(doc, repo)"
+    },
+    "snippet-git": {
+      "at": "scripts/flow.py:1505",
+      "anchor": "git(repo, \"show\""
+    },
+    "snippet-window": {
+      "at": "scripts/flow.py:70",
+      "anchor": "SNIPPET_BEFORE, SNIPPET_AFTER = 3, 5"
+    },
+    "snippet-note": {
+      "at": "scripts/flow.py:1870",
+      "anchor": "real code for"
+    },
+    "build-reference": {
+      "at": "scripts/flow.py:1872",
+      "anchor": "collect_reference(doc, repo, None)"
+    },
+    "no-repo-note": {
+      "at": "scripts/flow.py:1874",
+      "anchor": "no --repo given, so the page has no code reference"
+    },
+    "payload-escape": {
+      "at": "scripts/flow.py:1533",
+      "anchor": "ensure_ascii=False).replace"
+    },
+    "build-write": {
+      "at": "scripts/flow.py:1541",
+      "anchor": "target.write_text(page"
+    },
+    "md-write": {
+      "at": "scripts/flow.py:1877",
+      "anchor": "render_markdown(doc, ctx, states, tier, reference)"
+    },
+    "check-repo-default": {
+      "at": "scripts/flow.py:1930",
+      "anchor": "default=\".\""
+    },
+    "build-repo-flag": {
+      "at": "scripts/flow.py:1938",
+      "anchor": "also check evidence against this clone"
+    },
+    "coderef-pyonly": {
+      "at": "scripts/code_ref.py:40",
+      "anchor": "only Python"
+    },
+    "coderef-symbols": {
+      "at": "scripts/code_ref.py:80",
+      "anchor": "def symbols_of"
+    },
+    "coderef-parse": {
+      "at": "scripts/code_ref.py:97",
+      "anchor": "ast.parse"
+    },
+    "coderef-usedby": {
+      "at": "scripts/code_ref.py:114",
+      "anchor": "used_by"
+    },
+    "coderef-stale": {
+      "at": "scripts/code_ref.py:128",
+      "anchor": "sha256"
+    },
+    "player-reducer": {
+      "at": "skills/explain/assets/flow-player.js:8",
+      "anchor": "mirrors scripts/flow.py reduce_scenario"
+    },
+    "player-boot": {
+      "at": "skills/explain/assets/flow-player.js:2649",
+      "anchor": "renderHeavy : renderLight"
+    },
+    "player-ok": {
+      "at": "skills/explain/assets/flow-player.js:2657",
+      "anchor": "data-flow-ok"
+    },
+    "golden-test": {
+      "at": "tests/flow/reduce.test.mjs:22",
+      "anchor": "assert.deepEqual(reduceScenario(doc, sid), states)"
+    },
+    "golden-py": {
+      "at": "tests/test_flow.sh:387",
+      "anchor": "states.json matches the reducer"
+    },
+    "no-network-check": {
+      "absent": "a network call (urllib, http.client, socket, requests) in the checker and builder",
+      "git_grep": "urllib|http\\.client|socket|requests",
+      "path": "scripts/flow.py",
+      "hits": 0
+    },
+    "no-network-player": {
+      "absent": "a fetch, XMLHttpRequest or WebSocket call in the player script",
+      "git_grep": "fetch\\(|XMLHttpRequest|WebSocket",
+      "path": "skills/explain/assets/flow-player.js",
+      "hits": 0
+    }
+  },
+  "initial": {
+    "stores": {
+      "golden": {
+        "cases": "flow.py output"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "happy",
+      "kind": "happy",
+      "title": "From a request to a checked, animated page",
+      "steps": [
+        {
+          "t": "You ask Claude to walk you through a part of the plugin",
+          "d": "That is one of the skill's triggers; Claude loads the explain rules and researches the code first.",
+          "do": [
+            [
+              "send",
+              "you",
+              "agent",
+              "explain how this part works"
+            ]
+          ],
+          "ev": [
+            "skill-fire"
+          ]
+        },
+        {
+          "t": "Claude writes scenario.json and nothing else",
+          "d": "Boxes, steps, citations and numbers, all as data. The page and the markdown are build output, never edited by hand.",
+          "do": [
+            [
+              "db.write",
+              "scenario",
+              "file",
+              "written"
+            ]
+          ],
+          "ev": [
+            "skill-only",
+            "skill-rule1"
+          ],
+          "expect": {
+            "store": {
+              "scenario": {
+                "file": "written"
+              }
+            }
+          }
+        },
+        {
+          "t": "Claude runs flow check; the checks line up in a fixed order",
+          "d": "Check and build share one function, so given the same clone, build never accepts what check rejects at the same tier.",
+          "do": [
+            [
+              "send",
+              "agent",
+              "checker",
+              "flow check --tier heavy --repo ."
+            ],
+            [
+              "enqueue",
+              "checks",
+              "shape"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "replay"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "numbers"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "jargon"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "budget"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "evidence"
+            ],
+            [
+              "enqueue",
+              "checks",
+              "reference"
+            ]
+          ],
+          "ev": [
+            "run-checks",
+            "run-check"
+          ],
+          "expect": {
+            "queues": {
+              "checks": 7
+            }
+          },
+          "code": [
+            "doc = load(path); ctx = validate(doc, f)",
+            "run_checks(doc, ctx, f, tier, repo, rev)"
+          ]
+        },
+        {
+          "t": "Shape: every key, box, action and evidence id must exist",
+          "d": "An unknown key gets a did-you-mean. A shape finding also holds back the replay and every git lookup, so fix shape first.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "db.read",
+              "scenario",
+              "file",
+              "doc"
+            ],
+            [
+              "free",
+              "checker",
+              "shape"
+            ]
+          ],
+          "ev": [
+            "validate",
+            "did-you-mean",
+            "structural-flag"
+          ],
+          "expect": {
+            "vars": {
+              "doc": "written"
+            }
+          }
+        },
+        {
+          "t": "Replay: the reducer runs every scenario and compares each expect",
+          "d": "Jobs leave a queue first in, first out; freeing a job the worker does not hold is an error. A step whose expect differs from the replay is a finding.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "send",
+              "checker",
+              "reducer",
+              "replay every scenario"
+            ],
+            [
+              "reply",
+              "reducer",
+              "checker",
+              "state after each step"
+            ],
+            [
+              "free",
+              "checker",
+              "replay"
+            ]
+          ],
+          "ev": [
+            "reduce-all",
+            "reduce-scenario",
+            "pickup-fifo",
+            "free-error",
+            "expect-mismatch"
+          ],
+          "code": [
+            "states = reduce_all(ctx, f)",
+            "check_expectations(ctx, states, f)"
+          ]
+        },
+        {
+          "t": "Numbers and jargon: no bare digit in prose, no unexplained code word in a title",
+          "d": "Every figure is a placeholder with a tagged source. A word of the repo name, such as 100x, is allowed; a code-shaped word in a step title must be a term or a box label.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "free",
+              "checker",
+              "numbers"
+            ],
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "free",
+              "checker",
+              "jargon"
+            ]
+          ],
+          "ev": [
+            "bare",
+            "repo-words",
+            "jargon"
+          ]
+        },
+        {
+          "t": "Budget: a heavy page stays within its limits",
+          "d": "At most {{heavy_nodes}}, {{heavy_scenarios}} and {{heavy_steps}} in each scenario, inherited steps included.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "free",
+              "checker",
+              "budget"
+            ]
+          ],
+          "ev": [
+            "budgets",
+            "rc-budget"
+          ]
+        },
+        {
+          "t": "Evidence: git opens each cited line and re-runs each absence search",
+          "d": "The anchor word must sit within {{anchor_window}} of the cited line at the page's revision; an absence's hit count must equal what git grep finds now.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "send",
+              "checker",
+              "git",
+              "show each cited file, grep each absence"
+            ],
+            [
+              "reply",
+              "git",
+              "checker",
+              "anchors found, hit counts match"
+            ],
+            [
+              "free",
+              "checker",
+              "evidence"
+            ]
+          ],
+          "ev": [
+            "git-show",
+            "anchor-miss",
+            "git-grep",
+            "absence-contra"
+          ],
+          "code": [
+            "lines = git show <rev>:<path>",
+            "anchor in lines[line-2 .. line+2]",
+            "hits = count(git grep -n -E <pattern> <rev> -- <path>)"
+          ]
+        },
+        {
+          "t": "Reference: code_ref lists the functions in each named file",
+          "d": "It parses the file at the same revision, so a named function or a note on a function the file does not hold is a finding, with a did-you-mean.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "send",
+              "checker",
+              "coderef",
+              "list functions in each reference file"
+            ],
+            [
+              "send",
+              "coderef",
+              "git",
+              "read the file at the revision"
+            ],
+            [
+              "reply",
+              "coderef",
+              "checker",
+              "every named symbol exists"
+            ],
+            [
+              "free",
+              "checker",
+              "reference"
+            ]
+          ],
+          "ev": [
+            "ref-build",
+            "ref-missing",
+            "coderef-parse",
+            "coderef-symbols"
+          ],
+          "expect": {
+            "queues": {
+              "checks": 0
+            }
+          }
+        },
+        {
+          "t": "Check reports no findings and exits clean",
+          "do": [
+            [
+              "reply",
+              "checker",
+              "agent",
+              "no findings, no hazards"
+            ]
+          ],
+          "ev": [
+            "check-exit"
+          ]
+        },
+        {
+          "t": "flow build adds the real code and writes the page",
+          "d": "Build re-runs every check, then reads {{snippet_before}} above and {{snippet_after}} below each cited line from git, and inlines the player, styles and data into one file next to the markdown export.",
+          "do": [
+            [
+              "send",
+              "agent",
+              "build",
+              "flow build --repo . --out dir"
+            ],
+            [
+              "send",
+              "build",
+              "git",
+              "lines around each cited line"
+            ],
+            [
+              "db.write",
+              "page",
+              "index",
+              "written"
+            ],
+            [
+              "reply",
+              "build",
+              "agent",
+              "wrote index.html and explain.md"
+            ]
+          ],
+          "ev": [
+            "build-runs-checks",
+            "build-snippets",
+            "snippet-git",
+            "build-write",
+            "md-write"
+          ],
+          "expect": {
+            "store": {
+              "page": {
+                "index": "written"
+              }
+            }
+          }
+        },
+        {
+          "t": "You open the page; the player replays every scenario itself",
+          "d": "The player carries its own reducer and needs no network for it. When it has drawn, it marks the page ready.",
+          "do": [
+            [
+              "send",
+              "you",
+              "player",
+              "open index.html"
+            ],
+            [
+              "db.read",
+              "page",
+              "index",
+              "html"
+            ],
+            [
+              "reply",
+              "player",
+              "you",
+              "animated walkthrough"
+            ]
+          ],
+          "ev": [
+            "player-reducer",
+            "player-boot",
+            "player-ok",
+            "no-network-player"
+          ],
+          "expect": {
+            "vars": {
+              "html": "written"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "caught",
+      "kind": "failure",
+      "title": "Three wrong claims, and how check catches each",
+      "branch": {
+        "from": "happy",
+        "at": 7
+      },
+      "steps": [
+        {
+          "t": "A cited line moved: the anchor word is no longer near it",
+          "d": "Someone added lines above the function since the page was written. Git shows the file at the revision and the word is not within {{anchor_window}}.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "send",
+              "checker",
+              "git",
+              "show the cited file"
+            ],
+            [
+              "reply",
+              "git",
+              "checker",
+              "anchor not near the cited line"
+            ],
+            [
+              "counter",
+              "findings",
+              1
+            ]
+          ],
+          "ev": [
+            "git-show",
+            "anchor-miss",
+            "line-past"
+          ],
+          "expect": {
+            "counters": {
+              "findings": 1
+            }
+          }
+        },
+        {
+          "t": "An absence the page asserts, but git grep finds hits",
+          "d": "The page says there is no lock; the search it wrote down finds some. Check believes the count, not the sentence.",
+          "do": [
+            [
+              "send",
+              "checker",
+              "git",
+              "grep the absence pattern"
+            ],
+            [
+              "reply",
+              "git",
+              "checker",
+              "hits found, page says none"
+            ],
+            [
+              "counter",
+              "findings",
+              1
+            ],
+            [
+              "free",
+              "checker",
+              "evidence"
+            ]
+          ],
+          "ev": [
+            "git-grep",
+            "absence-contra"
+          ],
+          "expect": {
+            "counters": {
+              "findings": 2
+            }
+          }
+        },
+        {
+          "t": "The reference names a function the file does not have",
+          "d": "code_ref reads the real function list from the parse tree, so an invented or renamed function is a finding with the nearest real name.",
+          "do": [
+            [
+              "pickup",
+              "checks",
+              "checker"
+            ],
+            [
+              "send",
+              "checker",
+              "coderef",
+              "list functions"
+            ],
+            [
+              "reply",
+              "coderef",
+              "checker",
+              "no such symbol, did you mean another"
+            ],
+            [
+              "counter",
+              "findings",
+              1
+            ],
+            [
+              "free",
+              "checker",
+              "reference"
+            ]
+          ],
+          "ev": [
+            "ref-missing",
+            "coderef-parse"
+          ],
+          "expect": {
+            "counters": {
+              "findings": 3
+            },
+            "queues": {
+              "checks": 0
+            }
+          }
+        },
+        {
+          "t": "Check fails, and build would refuse the same file",
+          "do": [
+            [
+              "reply",
+              "checker",
+              "agent",
+              "three findings, check fails"
+            ],
+            [
+              "note",
+              "flow build: refused"
+            ]
+          ],
+          "ev": [
+            "check-exit",
+            "build-refuse"
+          ]
+        },
+        {
+          "t": "Claude re-reads each line, corrects the claim, and re-runs check until clean",
+          "d": "The rule is to fix what the page says, never to paste in whatever word sits on the line now.",
+          "do": [
+            [
+              "db.write",
+              "scenario",
+              "file",
+              "claims corrected"
+            ],
+            [
+              "counter",
+              "findings",
+              -3
+            ],
+            [
+              "send",
+              "agent",
+              "checker",
+              "flow check again"
+            ],
+            [
+              "reply",
+              "checker",
+              "agent",
+              "no findings"
+            ]
+          ],
+          "ev": [
+            "skill-reread"
+          ],
+          "expect": {
+            "counters": {
+              "findings": 0
+            },
+            "store": {
+              "scenario": {
+                "file": "claims corrected"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "no-repo",
+      "kind": "edge",
+      "title": "Building without the clone: the page builds, unproven",
+      "steps": [
+        {
+          "t": "Claude runs flow build without naming the clone",
+          "d": "Check defaults to the current folder as the clone; build defaults to none.",
+          "do": [
+            [
+              "send",
+              "agent",
+              "build",
+              "flow build --out dir"
+            ]
+          ],
+          "ev": [
+            "build-repo-flag",
+            "check-repo-default"
+          ]
+        },
+        {
+          "t": "Build runs shape, replay, numbers and budget, but skips every git lookup",
+          "d": "With no clone there is nothing to resolve citations or the reference against, so a moved line would pass.",
+          "do": [
+            [
+              "send",
+              "build",
+              "reducer",
+              "replay every scenario"
+            ],
+            [
+              "reply",
+              "reducer",
+              "build",
+              "state after each step"
+            ],
+            [
+              "note",
+              "evidence and reference not checked"
+            ]
+          ],
+          "ev": [
+            "build-runs-checks",
+            "structural-skip"
+          ]
+        },
+        {
+          "t": "The page shows pseudocode only and has no code reference",
+          "d": "Build says so on stderr: real code for none of the cited lines, and no code reference.",
+          "do": [
+            [
+              "db.write",
+              "page",
+              "index",
+              "pseudocode only"
+            ],
+            [
+              "reply",
+              "build",
+              "agent",
+              "wrote the page, with two notes"
+            ]
+          ],
+          "ev": [
+            "snippet-note",
+            "no-repo-note"
+          ],
+          "expect": {
+            "store": {
+              "page": {
+                "index": "pseudocode only"
+              }
+            }
+          }
+        },
+        {
+          "t": "The fix is to run check first, then build with the same clone",
+          "do": [
+            [
+              "send",
+              "agent",
+              "checker",
+              "flow check --repo ."
+            ],
+            [
+              "send",
+              "agent",
+              "build",
+              "flow build --repo . --out dir"
+            ]
+          ],
+          "ev": [
+            "check-repo-default",
+            "build-repo-flag"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "issue-drift",
+      "kind": "issue",
+      "severity": "high",
+      "origin": "what-if",
+      "title": "What if the player's reducer drifted from the checker's?",
+      "fixed_by": [
+        "fix-golden"
+      ],
+      "steps": [
+        {
+          "t": "Someone changes how freeing a worker behaves, in the Python reducer only",
+          "d": "The player is a separate copy of the same rules, written in JavaScript.",
+          "do": [
+            [
+              "note",
+              "Python reducer changed, player unchanged"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "flow check passes the page: its reducer agrees with every expect",
+          "do": [
+            [
+              "send",
+              "agent",
+              "checker",
+              "flow check"
+            ],
+            [
+              "reply",
+              "checker",
+              "agent",
+              "no findings"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "The player replays the same steps and draws a different state",
+          "d": "A worker slot shows busy on the page that the checker computed as free.",
+          "do": [
+            [
+              "send",
+              "you",
+              "player",
+              "step through"
+            ],
+            [
+              "fail",
+              "player",
+              "state differs from the checked one"
+            ]
+          ],
+          "tag": "inferred"
+        },
+        {
+          "t": "You trust a picture the checker never saw",
+          "do": [
+            [
+              "reply",
+              "player",
+              "you",
+              "wrong state, drawn confidently"
+            ]
+          ],
+          "tag": "inferred"
+        }
+      ]
+    },
+    {
+      "id": "fix-golden",
+      "kind": "fix",
+      "title": "Fix: both reducers must reproduce the same golden states",
+      "branch": {
+        "from": "issue-drift",
+        "at": 1
+      },
+      "steps": [
+        {
+          "t": "The golden states file holds the Python reducer's output for every test case",
+          "d": "The flow test suite regenerates the replay and compares it with the saved file; any change shows up as drift.",
+          "do": [
+            [
+              "send",
+              "agent",
+              "golden",
+              "run the flow test suite"
+            ],
+            [
+              "db.read",
+              "golden",
+              "cases",
+              "saved"
+            ]
+          ],
+          "ev": [
+            "golden-py"
+          ],
+          "expect": {
+            "vars": {
+              "saved": "flow.py output"
+            }
+          }
+        },
+        {
+          "t": "A node test runs the player's reducer on the same cases and compares",
+          "do": [
+            [
+              "send",
+              "golden",
+              "player",
+              "replay each case in JavaScript"
+            ],
+            [
+              "reply",
+              "player",
+              "golden",
+              "states differ"
+            ],
+            [
+              "fail",
+              "player",
+              "parity test fails"
+            ]
+          ],
+          "ev": [
+            "golden-test",
+            "player-reducer"
+          ]
+        },
+        {
+          "t": "The change cannot land until both reducers agree again",
+          "d": "On this commit the suite passes {{flow_tests}}, the node parity test among them.",
+          "do": [
+            [
+              "reply",
+              "golden",
+              "agent",
+              "fix the player or the golden file, then re-run"
+            ]
+          ],
+          "ev": [
+            "golden-test",
+            "golden-py"
+          ]
+        }
+      ]
+    }
+  ],
+  "decision": {
+    "options": [
+      {
+        "id": "data-engine",
+        "label": "Claude writes only data; a tested engine checks and renders it",
+        "fit": "pass",
+        "scenario": "happy",
+        "pros": [
+          "Every citation, absence and function name is checked against git before a page exists",
+          "One tested renderer, so every page behaves the same"
+        ],
+        "cons": [
+          "A fixed action vocabulary: a flow it cannot express is told in prose",
+          "Two reducers to keep in step, held together by a test"
+        ]
+      },
+      {
+        "id": "handwritten",
+        "label": "Claude writes the HTML page directly",
+        "fit": "fail",
+        "pros": [
+          "Any layout or animation is possible"
+        ],
+        "cons": [
+          "Nothing can check that a cited line says what the page claims",
+          "Each page is new code to trust"
+        ]
+      },
+      {
+        "id": "prose",
+        "label": "A markdown walkthrough with diagrams, no checker",
+        "fit": "fail",
+        "pros": [
+          "Quick to write, renders on GitHub"
+        ],
+        "cons": [
+          "Claims and numbers go unverified",
+          "No step-by-step state, so races cannot be replayed"
+        ]
+      }
+    ],
+    "chosen": "data-engine",
+    "deciding_factor": "A page is only worth reading if a wrong claim fails a check before anyone sees it, and only data can be checked that way.",
+    "revisit_when": "Pages regularly need flows the action vocabulary cannot express, or the second reducer costs more to maintain than the animation is worth.",
+    "source": "skills/explain/SKILL.md rule 1 and Sources (SOURCE: original)"
+  },
+  "checks": [
+    {
+      "scenario": "happy",
+      "step": 7,
+      "q": "How does check know a cited line still says what the page claims?",
+      "answer": "It reads the file from git at the page's revision and looks for the anchor word within a couple of lines of the cited one. It proves the line exists, not that the sentence about it is true."
+    },
+    {
+      "scenario": "caught",
+      "step": 8,
+      "q": "The page says there are no hits; git grep finds some. Which does check believe?",
+      "answer": "git grep: the stated count must equal the real one, so the claim is wrong, or the search is too wide and must be narrowed."
+    },
+    {
+      "scenario": "fix-golden",
+      "step": 2,
+      "q": "The Python and JavaScript reducers are separate code. What stops them disagreeing?",
+      "answer": "The golden states file: the Python output is saved per test case, and a node test fails when the player's reducer produces anything different."
+    }
+  ],
+  "compare": [
+    "issue-drift",
+    "fix-golden"
+  ],
+  "reference": [
+    {
+      "path": "scripts/flow.py",
+      "symbols": [
+        "validate",
+        "check_keys",
+        "validate_reference",
+        "effective_steps",
+        "apply",
+        "reduce_scenario",
+        "check_expectations",
+        "bare_numbers",
+        "check_prose",
+        "check_jargon",
+        "jargon_in",
+        "check_budget",
+        "check_evidence",
+        "collect_reference",
+        "run_checks",
+        "run_check",
+        "collect_snippets",
+        "build",
+        "render_markdown",
+        "run_build"
+      ],
+      "notes": {
+        "check_keys": "Reports missing required keys and unknown keys for one object, suggesting the nearest real key.",
+        "apply": "Applies one action to the state: messages, queue and worker slots, cache and store values, the clock, counters and failures.",
+        "check_expectations": "Compares each step's expect and declared hazard with the replayed state; inherited steps are checked once, where they are owned.",
+        "check_prose": "Runs the bare-number rule and the unknown-placeholder rule over every prose field, allowing words of the repo name and the PR number.",
+        "jargon_in": "Flags each code-shaped word in one title or TL;DR line that no term, box label or box id explains.",
+        "check_budget": "Enforces the tier's limits on boxes, scenarios, steps, outlines and diagrams, and that outline and check step indexes exist.",
+        "check_evidence": "Resolves each anchor with git show and the window around the cited line, and re-counts each absence with git grep.",
+        "run_check": "The check command: prepares the file, runs every check, prints findings or JSON, and exits with failure on any finding.",
+        "render_markdown": "Writes the explain.md export: TL;DR, lede, contents, context, terms, diagrams, outlines, map, a table per scenario, decision, numbers, code reference.",
+        "run_build": "The build command: runs every check (git ones only with a clone), refuses on any finding, then writes the page and the markdown export."
+      }
+    },
+    {
+      "path": "scripts/code_ref.py",
+      "symbols": [
+        "read_source",
+        "symbols_of",
+        "names_used",
+        "build",
+        "check",
+        "to_markdown"
+      ],
+      "notes": {
+        "read_source": "Reads a Python file from the working tree, or at a revision with git show; anything else is unsupported.",
+        "build": "Parses each file and lists its functions, classes and methods with lines, signature, docstring, branch count and who uses each.",
+        "to_markdown": "Prints the inventory as one table per file: symbol, lines, what it does, used by, branches."
+      }
+    }
+  ]
+}
