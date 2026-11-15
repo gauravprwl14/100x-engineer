@@ -65,7 +65,9 @@ SCOPED_WRITERS = {
     "03_score.py": "research/raw/",
     "04_corpus_doc.py": "research/10-repo-corpus.md",
     "pr_review.py": "the review root it resolves or is given: rendered files, review.json via merge/mark-posted, INDEX.md, and init's CONTEXT.md + _meta/ stubs (never overwritten)",
+    "explain_sync.py": "<explain dir>/.sync.json only (the pin), via pin",
     "pr_snapshot.py": "--dest only (exported trees, diffs, PINS.md); the clone gets only git fetch",
+    "session_alias.py": "the alias store only: ~/.claude/session-aliases.json, or --store",
 }
 
 

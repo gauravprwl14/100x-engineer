@@ -20,10 +20,9 @@ topic by how recently they were touched, so the right one can be resumed with `c
 something ("which session built the tagging module", "find the session for PR 1471", "where did
 we design this", "resume the session on X").
 
-**Do not fire when:** browsing session history chronologically or by alias (use the `sessions`
-skill's `/sessions list` / `/resume-session`, which work on curated `~/.claude/session-data`
-summaries, not raw transcripts); picking up the single most recent session (`claude --resume`
-with no argument, or `/resume-session`, already does that).
+**Do not fire when:** the user named the session earlier (use `session-alias`:
+`100x session_alias resolve <name>`); picking up the single most recent session
+(`claude --continue` already does that).
 
 ## Steps
 
