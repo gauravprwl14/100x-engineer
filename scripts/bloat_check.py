@@ -19,6 +19,9 @@ from _mutation_guard import changed_files, diff_rev, enter_git_root, path_args, 
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs", ".java", ".kt", ".swift"}
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._](test|spec)\.[a-z]+$|_test\.(go|py)$|^test_", re.I)
 DOC_OK = ("docs/", "doc/", ".github/", "research/", "skills/", "agents/", "commands/")
+# A decision record is a deliverable of the pipeline's "record choices" stage: `decide.py new` writes
+# decisions/ADR-NNNN-*.md at the records root, which in this repo is the top level.
+ADR_RX = re.compile(r"^decisions/ADR-\d{4}-.+\.md$")
 # Docs that ARE the deliverable, or are conventional at a repo root, are never bloat.
 DOC_ALLOW_NAMES = {
     "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "LICENSE.md",
@@ -117,6 +120,7 @@ def _is_fixture_or_generated(p):
 def check_new_docs(added, mod, base):
     bad = [p for p in added if p.endswith((".md", ".rst", ".adoc"))
            and not p.startswith(DOC_OK)
+           and not ADR_RX.match(p)
            and os.path.basename(p) not in DOC_ALLOW_NAMES
            and not _is_fixture_or_generated(p)]
     return [(p, "new doc file outside docs/ - was this asked for?") for p in bad]
