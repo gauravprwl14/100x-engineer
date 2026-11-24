@@ -45,6 +45,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
 | `reference` | no | list (1-8) | Python files whose functions and classes the page lists; see [Code reference](#code-reference) |
 | `system` | no | object | the one-picture overview: groups, parts, labelled links, a numbered journey; see [System map](#system-map) |
+| `layout` | no | `classic`\|`readable` | default `classic`: a page without the key builds as it always did. `readable` asks for `outline[].lines[].says` and `system.journey[].why`, one name per thing, and draws the page article-first; see `readable.md` |
 
 Light is the subset without `checks`, `compare` and `ja` text; a light check notes and ignores
 them, so the same file upgrades with `--tier heavy`. A value in state (`initial`, `cache.set`,
@@ -91,6 +92,7 @@ words), `why_now` (Text), `in_scope` (1-8 Text, req), `out_of_scope` (≤ 8 Text
 | `steps` | no | 0-based indexes into the scenario's visible steps, inherited included |
 | `ev` | one of | evidence id |
 | `tag` | one of | `inferred`; a line needs `ev` or `tag: inferred`, as a step does |
+| `says` | readable | Text ≤ 140 characters: the line as one plain sentence; prose for the bare-number and jargon checks. The page shows it first and the code behind **Show the code** |
 
 ## System map
 
@@ -105,7 +107,7 @@ PR, a module, a concept or a process: `system-map.md`.
 | `links` | yes | non-empty list of links |
 | `title`, `caption` | no | Text; the caption says how to read it |
 | `cols` | no | int 1-6: columns at the top level (default up to 3) |
-| `journey` | no | list of `{title, scenario?}`; step `n` is its 1-based position |
+| `journey` | no | list of `{title, why?, scenario?}`; step `n` is its 1-based position. `why` (Text, ≤ 200 characters): what happens and why, in plain words; required when `layout` is `readable` |
 
 **Group** `{id, label, items, sub?, cols?}`: `items` non-empty, nested at most 3 deep, at most 12
 groups. **Part** `{id, label, sub?, kind?, ev?}`: `kind` is `actor` (a person or client), `data`
@@ -299,6 +301,10 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `journey step N has no link` / `step N is past the end of the journey` | `n` on links and the journey agree |
 | `groups nest more than 3 deep` / `a group needs at least one item` | the tree stays readable |
 | `jargon in journey step title` | as a step title |
+| `readable layout: a journey step needs why` / `an outline line needs says` | a `readable` page says every journey step and outline line in a plain sentence |
+| `jargon in journey step` / `jargon in outline sentence` / `N characters, max 200` / `max 140` | `why` and `says` hold no undefined identifier and stay a sentence |
+| `'<label>' is not a name on the system map` | on a `readable` page every scenario node carries the name the map gives that part or group |
+| `layout: must be one of classic, readable` | the two layouts |
 | `step N is past the end of scenario` | outline `steps` and `checks[].step` index the scenario's visible steps |
 | `over budget` | the tier's limits below |
 

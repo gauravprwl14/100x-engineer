@@ -57,5 +57,50 @@
   "name": "fixture large-platform",
   "scenario": "large-platform.json",
   "tier": "heavy"
+ },
+ {
+  "name": "readable pr-stale-cache (classic)",
+  "scenario": "../../../skills/explain/assets/examples/stale-writeback.json",
+  "tier": "heavy",
+  "overlay": "ab/stale-writeback.overlay.json"
+ },
+ {
+  "name": "readable pr-stale-cache (readable)",
+  "scenario": "../../../skills/explain/assets/examples/stale-writeback.json",
+  "tier": "heavy",
+  "overlay": "ab/stale-writeback.readable.overlay.json"
+ },
+ {
+  "name": "readable concept-two-phase-commit (classic)",
+  "scenario": "concept-two-phase-commit.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "readable concept-two-phase-commit (readable)",
+  "scenario": "concept-two-phase-commit.json",
+  "tier": "heavy",
+  "overlay": "ab/concept-two-phase-commit.readable.overlay.json"
+ },
+ {
+  "name": "readable process-expense-approval (classic)",
+  "scenario": "process-expense-approval.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "readable process-expense-approval (readable)",
+  "scenario": "process-expense-approval.json",
+  "tier": "heavy",
+  "overlay": "ab/process-expense-approval.readable.overlay.json"
+ },
+ {
+  "name": "readable module-notes (classic)",
+  "scenario": "module-notes.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "readable module-notes (readable)",
+  "scenario": "module-notes.json",
+  "tier": "heavy",
+  "overlay": "ab/module-notes.readable.overlay.json"
  }
 ]

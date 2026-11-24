@@ -1,0 +1,171 @@
+{
+ "layout": "readable",
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "Employee"
+  }
+ ],
+ "system": {
+  "cols": 3,
+  "items": [
+   {
+    "id": "staff",
+    "label": "Employee side",
+    "items": [
+     {
+      "id": "emp",
+      "label": "Employee",
+      "sub": "files the expense",
+      "kind": "actor"
+     },
+     {
+      "id": "receipt",
+      "label": "Receipt",
+      "sub": "the proof of spend",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "approval",
+    "label": "Approval",
+    "items": [
+     {
+      "id": "mgr",
+      "label": "Manager",
+      "sub": "checks the reason and the amount"
+     },
+     {
+      "id": "policy",
+      "label": "Spending policy",
+      "sub": "the limits a manager applies",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "finance",
+    "label": "Finance",
+    "items": [
+     {
+      "id": "fin",
+      "label": "Finance clerk",
+      "sub": "checks the paperwork"
+     },
+     {
+      "id": "ledger",
+      "label": "Ledger",
+      "sub": "where the cost is booked",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "bank",
+    "label": "Bank",
+    "sub": "moves the money",
+    "kind": "external"
+   }
+  ],
+  "links": [
+   {
+    "from": "emp",
+    "to": "receipt",
+    "label": "attaches",
+    "style": "data",
+    "n": 1,
+    "tag": "inferred"
+   },
+   {
+    "from": "emp",
+    "to": "mgr",
+    "label": "submits",
+    "style": "call",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "policy",
+    "label": "checks against",
+    "style": "watch",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "fin",
+    "label": "approves",
+    "style": "call",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "fin",
+    "to": "ledger",
+    "label": "books the cost",
+    "style": "data",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "fin",
+    "to": "bank",
+    "label": "asks for payment",
+    "style": "async",
+    "n": 6,
+    "tag": "inferred"
+   },
+   {
+    "from": "bank",
+    "to": "emp",
+    "label": "pays back",
+    "style": "async",
+    "n": 7,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "emp",
+    "label": "rejects with a reason",
+    "style": "risk",
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "The employee attaches the receipt",
+    "why": "The employee photographs the receipt and attaches it to a claim."
+   },
+   {
+    "title": "The expense goes to the manager",
+    "why": "The claim goes to the employee's manager, who is the first person to decide."
+   },
+   {
+    "title": "The manager checks it against the policy",
+    "why": "The manager compares the claim with the spending policy: what is allowed, and how much."
+   },
+   {
+    "title": "The manager approves it",
+    "why": "If it fits the policy, the manager approves it."
+   },
+   {
+    "title": "Finance books the cost",
+    "why": "Finance records the cost in the ledger so the books match."
+   },
+   {
+    "title": "Finance asks the bank to pay",
+    "why": "A finance clerk sends the payment request to the bank."
+   },
+   {
+    "title": "The employee is paid back",
+    "why": "The bank pays the employee back."
+   }
+  ]
+ }
+}

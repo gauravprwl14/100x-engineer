@@ -62,7 +62,9 @@ Then:
   segments, or out to the side and back past everything between.
 - Labels are placed on the line where they touch nothing, else beside it. The full list of
   connections is also a table under the picture, and in `explain.md` as a mermaid flowchart.
-- On a phone every group is one column.
+- On a phone every group is one column. On a `readable` page the columns also drop until the text
+  stays at 85% of its size or more at the page's width, choosing the drawing with the least tangle
+  of links; the picture is always as large as its labels, so none is clipped.
 
 ## Proof that it is better, and the limits of that proof
 

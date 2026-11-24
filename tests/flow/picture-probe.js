@@ -76,5 +76,19 @@ setTimeout(function () {
       out.minFontPx = min === null ? null : Math.round(min * 10) / 10;
     }
   } catch (e) { out.problems.push(String(e && e.message || e)); }
+  // What a reader can read with no click: words of explanation, words of code, bare step numbers, and whether
+  // the map has to scroll sideways. Counted from what is rendered, so a hidden panel counts for nothing.
+  try {
+    var shown = function (el) { return el.getClientRects().length > 0; };
+    var words = function (t) { return (t.trim().match(/\S+/g) || []).length; };
+    var sum = function (sel) { var n = 0; document.querySelectorAll(sel).forEach(function (el) { if (shown(el)) n += words(el.innerText || ""); }); return n; };
+    out.explainWords = sum(".sys-jt, .sys-why, .ol-says, .rd-step .d, .rd-step h4, #caption p.d, #caption .cap-head :is(h2, h3, h4)");
+    out.codeWords = sum(".ol-line code");
+    out.stepRefs = Array.prototype.filter.call(document.querySelectorAll(".ol-n"), shown).length;
+    var holder = document.querySelector(".sys-holder");
+    out.mapScrolls = holder ? (holder.scrollWidth > holder.clientWidth + 1 ? 1 : 0) : null;
+    var steps = document.querySelectorAll(".sys-journey > ol > li");
+    out.whyOfSteps = steps.length ? document.querySelectorAll(".sys-why").length + "/" + steps.length : null;
+  } catch (e) { out.problems.push(String(e && e.message || e)); }
   document.documentElement.setAttribute("data-picture", JSON.stringify(out));
 }, 1500);

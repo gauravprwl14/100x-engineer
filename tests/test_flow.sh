@@ -628,6 +628,56 @@ grep -q '^| 4 | It then fills the cache' "$MD" && ok "  the journey table keeps 
 python3 "$F" build "$TMP/pr-stale-cache.json" --repo "$REPO" --out "$TMP/site-system2" >/dev/null 2>&1
 cmp -s "$TMP/site-system/index.html" "$TMP/site-system2/index.html" && cmp -s "$MD" "$TMP/site-system2/explain.md" && ok "  building twice gives the same bytes" || bad "  the build is not deterministic"
 
+echo "--- readable layout: opt-in per page; plain words for the outline and the journey, one vocabulary"
+# the same subject twice: classic (no layout key) and readable (an overlay adds layout, says, why and the map's names)
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.update(json.load(open(sys.argv[2]))); json.dump(d, open(sys.argv[3], "w"))' "$EX" "$SYS/ab/stale-writeback.readable.overlay.json" "$TMP/pr-stale-readable.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.update(json.load(open(sys.argv[2]))); json.dump(d, open(sys.argv[3], "w"))' "$SYS/concept-two-phase-commit.json" "$SYS/ab/concept-two-phase-commit.readable.overlay.json" "$TMP/rd-concept.json"
+run 0 "readable pr-stale-cache passes check" check "$TMP/pr-stale-readable.json" --repo "$REPO"
+has "0 finding(s)"
+run 0 "readable concept passes check" check "$TMP/rd-concept.json" --repo "$REPO"
+has "0 finding(s)"
+# one defect seeded by a python statement acting on `d` (the doc) and `s` (its system)
+expect_rd() {  # <name> <base file> <python> <message>
+  python3 - "$2" "$TMP/rd-$1.json" "$3" <<'E'
+import json, sys
+d = json.load(open(sys.argv[1])); s = d["system"]
+exec(sys.argv[3])
+json.dump(d, open(sys.argv[2], "w"))
+E
+  run 1 "readable/$1" check "$TMP/rd-$1.json" --repo "$REPO"
+  has "$4"; count "FINDING" 1
+}
+expect_rd bad-layout      "$TMP/rd-concept.json"         'd["layout"] = "fancy"'                                          "must be one of classic, readable"
+expect_rd no-why          "$TMP/rd-concept.json"         'del s["journey"][0]["why"]'                                     "readable layout: a journey step needs why"
+expect_rd why-too-long    "$TMP/rd-concept.json"         's["journey"][0]["why"] = "word " * 41'                          "205 characters, max 200"
+expect_rd why-jargon      "$TMP/rd-concept.json"         's["journey"][0]["why"] = "It then calls getNote on the store."' "jargon in journey step: 'getNote'"
+expect_rd why-bare-num    "$TMP/rd-concept.json"         's["journey"][0]["why"] = "It retries 3 times before giving up."' "bare number '3' in prose"
+expect_rd node-not-on-map "$TMP/rd-concept.json"         'd["nodes"][0]["label"] = "Somebody else"'                       "is not a name on the system map"
+expect_rd no-says         "$TMP/pr-stale-readable.json"  'del d["outline"][0]["lines"][0]["says"]'                        "readable layout: an outline line needs says"
+expect_rd says-too-long   "$TMP/pr-stale-readable.json"  'd["outline"][0]["lines"][0]["says"] = "word " * 30'             "150 characters, max 140"
+expect_rd says-jargon     "$TMP/pr-stale-readable.json"  'd["outline"][0]["lines"][0]["says"] = "Call cacheKey and look it up."' "jargon in outline sentence: 'cacheKey'"
+expect_rd says-bare-num   "$TMP/pr-stale-readable.json"  'd["outline"][0]["lines"][0]["says"] = "Keep it for 60 seconds."' "bare number '60' in prose"
+# a page that says nothing about layout is a classic page: no says, no why, no vocabulary rule
+python3 - "$TMP/pr-stale-readable.json" "$TMP/rd-classic-again.json" <<'E'
+import json, sys
+d = json.load(open(sys.argv[1])); del d["layout"]
+for o in d["outline"]:
+    for l in o["lines"]: l.pop("says", None)
+for st in d["system"]["journey"]: st.pop("why", None)
+d["nodes"][2]["label"] = "notes-api"
+json.dump(d, open(sys.argv[2], "w"))
+E
+run 0 "no layout key: a classic page needs no says, no why and no map names" check "$TMP/rd-classic-again.json" --repo "$REPO"
+has "0 finding(s)"
+run 0 "build the readable page" build "$TMP/pr-stale-readable.json" --tier heavy --repo "$REPO" --out "$TMP/site-readable"
+RMD="$TMP/site-readable/explain.md"
+grep -q '^| in plain words | the code | where it plays out |' "$RMD" && ok "  explain.md: the outline is a table of sentences, code and step titles" || bad "  explain.md: no plain-words outline table"
+grep -q 'what happens and why | connections' "$RMD" && ok "  explain.md: the journey table has its what-happens column" || bad "  explain.md: the journey table lacks the why column"
+grep -q '# step [0-9]' "$RMD" && bad "  explain.md: a readable outline still ends lines with # step N" || ok "  explain.md: a readable outline no longer ends lines with # step N"
+run 0 "build the classic page (no layout key)" build "$TMP/rd-classic-again.json" --tier heavy --repo "$REPO" --out "$TMP/site-classic-again"
+grep -q 'in plain words' "$TMP/site-classic-again/explain.md" && bad "  a classic page grew the plain-words table" || ok "  a classic page's explain.md has no plain-words table"
+grep -q '# step 1' "$TMP/site-classic-again/explain.md" && ok "  a classic page keeps its # step N outline" || bad "  a classic page lost its # step N outline"
+
 echo "--- system map: layout, routing and markup (node)"
 if command -v node >/dev/null 2>&1; then
   node --test "$FIX/system.test.mjs" >"$OUT/r.out" 2>&1
@@ -682,6 +732,16 @@ if [ -x "$CHROME" ]; then
     && ok "  smoke heavy #race.4: outline lines and code pane meet the contract" || bad "  smoke heavy #race.4: a page section breaks its contract"
   probe "$TMP/smoke-stale-writeback-light-light/index.html" 1280 "#%E0%A4%A" >"$OUT/r.out"
   grep -q '"ok": *"true"' "$OUT/r.out" && ok "  smoke light: a malformed %-escape in the hash still renders" || bad "  smoke light: a malformed hash breaks the page"
+  # the readable page, driven the way a reader does (tests/flow/readable-probe.js)
+  python3 "$F" build "$TMP/pr-stale-readable.json" --tier heavy --repo "$REPO" --out "$TMP/site-readable" >/dev/null 2>&1
+  python3 -c 'import sys; p=open(sys.argv[1]).read(); open(sys.argv[2], "w").write(p.replace("</body>", "<script>" + open(sys.argv[3]).read() + "</script></body>"))' "$TMP/site-readable/index.html" "$TMP/site-readable/index.rd.html" "$FIX/readable-probe.js"
+  for w in 1280 700; do
+    "$CHROME" "$NO_NET" --headless=new --disable-gpu --no-first-run --window-size="$w",900 --virtual-time-budget=6000 --dump-dom "file://$TMP/site-readable/index.rd.html" 2>/dev/null \
+      | python3 -c 'import html, re, sys; m = re.search(r"data-readable=\"([^\"]*)\"", sys.stdin.read()); print(html.unescape(m.group(1)) if m else "{}")' >"$OUT/rd.json"
+    cp "$OUT/rd.json" "$OUT/r.out"
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d); sys.exit(0 if d.get("facts") and d.get("problems") == [] else 1)' "$OUT/rd.json" >>"$OUT/r.out" 2>&1 \
+      && ok "  readable page at ${w}px: article first, code behind a switch, one sentence per journey step, map fits, every way into the player works" || bad "  readable page at ${w}px: a reader-facing contract breaks"
+  done
   # the benchmark gate: the same subject drawn the old way and with a system map. The new picture must
   # sit higher on the page, label its links, tie them to the journey, and be no smaller or worse than the old one.
   if command -v node >/dev/null 2>&1; then
@@ -700,10 +760,25 @@ for name in sorted(rows):
     for what, ok in checks:
         if not ok:
             bad.append(f"{name[:-7]}: the new picture does not do this: {what} (before {b}, after {a})")
+for name in sorted(rows):
+    if not name.endswith(" (classic)"):
+        continue
+    b, a = rows[name], rows[name[:-10] + " (readable)"]
+    checks = [("shows no less explanation without a click", a["explainWords"] >= b["explainWords"]), ("shows no more code without a click", a["codeWords"] <= b["codeWords"]),
+              ("has no more bare step numbers", a["stepRefs"] <= b["stepRefs"]), ("scrolls the map no more", (a["mapScrolls"] or 0) <= (b["mapScrolls"] or 0)),
+              ("text no smaller", a["minFontPx"] >= b["minFontPx"])]
+    if b["onJourney"]:
+        checks += [("explains at least twice as much without a click", a["explainWords"] >= 2 * b["explainWords"]),
+                   ("gives every journey step its sentence", bool(a["whyOfSteps"]) and a["whyOfSteps"].split("/")[0] == a["whyOfSteps"].split("/")[1])]
+    for what, ok in checks:
+        if not ok:
+            bad.append(f"{name[:-10]}: the readable page does not do this: {what} (classic {b}, readable {a})")
 for name, r in rows.items():
     if "error" in r:
         bad.append(f"{name}: {r['error']}")
         continue
+    if name.endswith("(readable)") and not (r["minFontPx"] and r["minFontPx"] >= 9 and not r["mapScrolls"]):
+        bad.append(f"{name}: a readable page keeps its text at 9px or more and its map inside the column ({r})")
     if r["picture"] != "sysmap":
         continue
     for what, ok in [("no overlapping boxes", r["overlaps"] == 0), ("every part inside its group", r["outsideParent"] == 0),

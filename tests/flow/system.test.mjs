@@ -82,6 +82,43 @@ test("300 random subjects: each route leaves and enters its boxes on the border"
   }
 });
 
+const within = (box, B) => box.x >= B.x - 0.5 && box.y >= B.y - 0.5 && box.x + box.w <= B.x + B.w + 0.5 && box.y + box.h <= B.y + B.h + 0.5;
+test("300 random subjects, wide and narrow: every label and every route point is inside the picture (nothing is clipped)", () => {
+  for (const narrow of [false, true]) for (let seed = 1; seed <= 300; seed++) {
+    const { L, R } = draw(subject(seed), narrow), B = R.bounds, where = `seed ${seed}${narrow ? " narrow" : ""}`;
+    for (const b of Object.values(L.boxes)) assert.ok(within(b, B), `${where}: ${b.id} outside the picture`);
+    for (const t of R.tags) assert.ok(within(t.box, B), `${where}: label "${t.text}" is clipped by the picture`);
+    for (const r of R.routes) for (const p of r.pts) assert.ok(p[0] >= B.x - 0.5 && p[0] <= B.x + B.w + 0.5 && p[1] >= B.y - 0.5 && p[1] <= B.y + B.h + 0.5, `${where}: a route leaves the picture`);
+  }
+});
+
+test("the svg viewBox is the picture's bounds, so what is drawn is what is shown", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const sys = subject(seed), { L, R } = draw(sys), B = R.bounds;
+    assert.ok(SM.svg(sys, L, R, { tx, id: "x" }).includes(`viewBox="${B.x} ${B.y} ${B.w} ${B.h}"`), `seed ${seed}`);
+  }
+});
+
+test("arrange: no width given is the plain layout; a width given picks a picture that fits it, or the narrowest there is", () => {
+  for (let seed = 1; seed <= 150; seed++) {
+    const sys = subject(seed), plain = draw(sys);
+    const same = SM.arrange(sys, { tx });
+    assert.equal(JSON.stringify(same.L), JSON.stringify(plain.L), `seed ${seed}: fit without a width changed the layout`);
+    for (const fitW of [500, 700, 900, 1200]) {
+      const c = SM.arrange(sys, { tx, fitW }), S = SM.stats(c.L, c.R), again = SM.arrange(sys, { tx, fitW });
+      assert.equal(JSON.stringify(c.L), JSON.stringify(again.L), `seed ${seed} fitW ${fitW}: not deterministic`);
+      assert.equal(S.overlaps, 0, `seed ${seed} fitW ${fitW}: overlaps`); assert.equal(S.outside, 0, `seed ${seed} fitW ${fitW}: outside parent`);
+      assert.ok(S.W <= fitW || S.W <= plain.R.bounds.w + 0.5, `seed ${seed} fitW ${fitW}: width ${S.W} neither fits the limit nor is narrower than the plain layout (${plain.R.bounds.w})`);
+    }
+  }
+});
+
+test("arrange never makes the picture wider than the plain layout when the plain layout does not fit", () => {
+  const sys = JSON.parse(readFileSync(join(HERE, "system", "large-platform.json"), "utf8")).system, plain = draw(sys).R.bounds.w;
+  const c = SM.arrange(sys, { tx, fitW: 900 });
+  assert.ok(c.R.bounds.w <= 900 && c.R.bounds.w < plain, `fit gave ${c.R.bounds.w} for a 900 limit (plain ${plain})`);
+});
+
 test("a label that found a free spot never overlaps anything: overlaps only come from the counted fallback", () => {
   for (let seed = 1; seed <= 300; seed++) {
     const { S } = draw(subject(seed));
