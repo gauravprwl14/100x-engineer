@@ -17,6 +17,7 @@ with no `layout` key builds exactly as it always did, so the layout is put back 
 | terms | a chip list; meanings after a click | the meanings open, under the map |
 | map | as wide as its columns; may scroll sideways | redrawn with fewer columns until its text stays at least 9px at the page's width |
 | sections | the same set for every subject | for a concept or plan, **Decision**, **Numbers** and **Reference** start closed |
+| parts | a box with a one-line subtitle | a card per part or group you describe (`about`): click the box on the map, or open the list under the journey; a card can link to a page of its own |
 | names | scenario nodes and the map may name one thing two ways | `flow check` rejects a node the map does not name the same way |
 
 ## Write it
@@ -32,6 +33,34 @@ with no `layout` key builds exactly as it always did, so the layout is put back 
    `says` and `why`, and an identifier that is not a defined term.
 5. Keep what already worked: evidence on every claim (it sits behind the chips and **Show the
    code**), the terms table, the tier budgets.
+
+## Go deeper: part cards and pages behind them
+
+A map box can carry an `about` card; a card can open another explain page that is that part's own
+story. Do this when a reader asks "how does *that* part work": write the part once on the overview,
+then explain it in full on its own page, instead of growing one page without end.
+
+```jsonc
+// overview page, on the group or part
+"about": { "does": "A program that reads video sites and finds the real file behind the player.",
+           "takes": "One link", "gives": "The files on offer, then one finished file",
+           "why": "Every site shows its video differently; this holds that knowledge.",
+           "ev": ["y_loop"],                       // or "tag": "inferred"
+           "open": { "page": "inside-the-extractor", "title": "Inside the extractor" } }
+
+// inside-the-extractor/scenario.json, the deeper page
+"parent": { "page": "omniget", "part": "engine", "title": "How OmniGet works" }
+```
+
+- A page is a folder holding `scenario.json`; `open.page` and `parent.page` are folder names, and
+  the pages sit side by side (`explain/omniget/`, `explain/inside-the-extractor/`).
+- The deeper page is a normal page with its own map and journey, usually one of the overview's
+  parts drawn as the whole picture. Its first line links back to the card it came from.
+- `100x flow links <folder>` checks that every card opens a page that exists and that each deeper
+  page points back at the card that opens it. Run it after building a set of pages.
+- Budget: light 8 cards, heavy 16. Write a card for the parts a reader will ask about, not all of them.
+- `does` and `why` ≤ 160 characters, `takes` and `gives` ≤ 100; each card cites `ev` or is tagged
+  `inferred`; prose rules (no bare numbers, no undefined identifiers) apply.
 
 ## Put it back
 

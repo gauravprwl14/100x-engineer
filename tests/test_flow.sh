@@ -645,7 +645,7 @@ exec(sys.argv[3])
 json.dump(d, open(sys.argv[2], "w"))
 E
   run 1 "readable/$1" check "$TMP/rd-$1.json" --repo "$REPO"
-  has "$4"; count "FINDING" 1
+  has "$4"; count "FINDING" "${5:-1}"
 }
 expect_rd bad-layout      "$TMP/rd-concept.json"         'd["layout"] = "fancy"'                                          "must be one of classic, readable"
 expect_rd no-why          "$TMP/rd-concept.json"         'del s["journey"][0]["why"]'                                     "readable layout: a journey step needs why"
@@ -677,6 +677,56 @@ grep -q '# step [0-9]' "$RMD" && bad "  explain.md: a readable outline still end
 run 0 "build the classic page (no layout key)" build "$TMP/rd-classic-again.json" --tier heavy --repo "$REPO" --out "$TMP/site-classic-again"
 grep -q 'in plain words' "$TMP/site-classic-again/explain.md" && bad "  a classic page grew the plain-words table" || ok "  a classic page's explain.md has no plain-words table"
 grep -q '# step 1' "$TMP/site-classic-again/explain.md" && ok "  a classic page keeps its # step N outline" || bad "  a classic page lost its # step N outline"
+
+echo "--- part cards and deeper pages: a card per part, a page behind a card, a way back"
+TREE="$TMP/tree"; mkdir -p "$TREE/two-phase-commit" "$TREE/inside-the-coordinator"
+python3 - "$TMP/rd-concept.json" "$SYS/module-notes.json" "$TREE" "$SYS/ab/module-notes.readable.overlay.json" <<'E'
+import json, sys
+d = json.load(open(sys.argv[1])); items = {}
+def walk(its):
+    for n in its:
+        items[n["id"]] = n
+        walk(n.get("items", []))
+walk(d["system"]["items"])
+items["coord"]["about"] = {"does": "Runs the whole change: asks everyone, collects the answers and announces the result.",
+    "takes": "A request to change several databases together", "gives": "One decision for everyone: commit or cancel",
+    "why": "Without one place deciding, each database could decide differently.", "tag": "inferred",
+    "open": {"page": "inside-the-coordinator", "title": "Inside the coordinator"}}
+items["clog"]["about"] = {"does": "Writes the decision down before anyone is told, so a crash cannot make the coordinator forget it.", "tag": "inferred"}
+json.dump(d, open(sys.argv[3] + "/two-phase-commit/scenario.json", "w"))
+k = json.load(open(sys.argv[2])); k.update(json.load(open(sys.argv[4])))
+k["title"] = "Inside the coordinator"
+k["parent"] = {"page": "two-phase-commit", "part": "coord", "title": d["title"]}
+json.dump(k, open(sys.argv[3] + "/inside-the-coordinator/scenario.json", "w"))
+E
+run 0 "a readable page with part cards passes check" check "$TREE/two-phase-commit/scenario.json" --repo "$REPO"
+has "0 finding(s)"
+run 0 "the page behind a card passes check" check "$TREE/inside-the-coordinator/scenario.json" --repo "$REPO"
+has "0 finding(s)"
+P="$TREE/two-phase-commit/scenario.json"
+expect_rd about-no-readable "$P" 'del d["layout"]'                                                        "part cards belong to the readable layout" 2
+expect_rd about-no-does     "$P" 'del s["items"][0]["about"]["does"]'                                    "missing required key 'does'"
+expect_rd about-too-long    "$P" 's["items"][0]["about"]["does"] = "word " * 33'                         "165 characters, max 160"
+expect_rd about-jargon      "$P" 's["items"][0]["about"]["does"] = "It calls getNote first."'            "jargon in part card: 'getNote'"
+expect_rd about-bare-num    "$P" 's["items"][0]["about"]["does"] = "It waits 5 seconds."'                "bare number '5' in prose"
+expect_rd about-no-evidence "$P" 'del s["items"][0]["about"]["tag"]'                                     "part card has no evidence: cite ev ids or tag it inferred"
+expect_rd about-bad-page    "$P" 's["items"][0]["about"]["open"]["page"] = "Not A Slug"'                 "must be the folder name of another explain page"
+expect_rd about-unknown-key "$P" 's["items"][0]["about"]["doese"] = "x"'                                 "unknown key 'doese' (did you mean 'does'?)"
+expect_rd parent-bad-page   "$TREE/inside-the-coordinator/scenario.json" 'd["parent"]["page"] = "Bad Page"' "parent.page: must be the folder name"
+run 0 "flow links: the pages open each other and point back" links "$TREE"
+has "0 finding(s)"
+cp -R "$TREE" "$TMP/tree-broken"; python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); del d["parent"]; json.dump(d, open(p, "w"))' "$TMP/tree-broken/inside-the-coordinator/scenario.json"
+run 1 "flow links: a page that does not point back is found" links "$TMP/tree-broken"
+has "but its parent says None:None"
+rm -rf "$TMP/tree-broken/inside-the-coordinator"
+run 1 "flow links: a card that opens a missing page is found" links "$TMP/tree-broken"
+has "which is not a page under"
+run 0 "build the page with cards" build "$P" --tier heavy --repo "$REPO" --out "$TREE/two-phase-commit"
+run 0 "build the page behind the card" build "$TREE/inside-the-coordinator/scenario.json" --tier heavy --repo "$REPO" --out "$TREE/inside-the-coordinator"
+grep -q '^## The parts' "$TREE/two-phase-commit/explain.md" && ok "  explain.md has The parts" || bad "  explain.md has no The parts section"
+grep -q '| \[The parts\](#the-parts) |' "$TREE/two-phase-commit/explain.md" && ok "  the Contents table lists it" || bad "  Contents lacks The parts"
+grep -q '\[Inside the coordinator\](../inside-the-coordinator/explain.md)' "$TREE/two-phase-commit/explain.md" && ok "  a card links to its page in explain.md" || bad "  no link from the card to its page in explain.md"
+grep -q '^\[← ' "$TREE/inside-the-coordinator/explain.md" && ok "  the deeper page links back in explain.md" || bad "  no way back in the deeper page's explain.md"
 
 echo "--- system map: layout, routing and markup (node)"
 if command -v node >/dev/null 2>&1; then
@@ -742,6 +792,17 @@ if [ -x "$CHROME" ]; then
     python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d); sys.exit(0 if d.get("facts") and d.get("problems") == [] else 1)' "$OUT/rd.json" >>"$OUT/r.out" 2>&1 \
       && ok "  readable page at ${w}px: article first, code behind a switch, one sentence per journey step, map fits, every way into the player works" || bad "  readable page at ${w}px: a reader-facing contract breaks"
   done
+  # the page with part cards, and the page behind a card
+  for kid in two-phase-commit inside-the-coordinator; do
+    python3 -c 'import sys; p=open(sys.argv[1]).read(); open(sys.argv[2], "w").write(p.replace("</body>", "<script>" + open(sys.argv[3]).read() + "</script></body>"))' "$TREE/$kid/index.html" "$TREE/$kid/index.rd.html" "$FIX/readable-probe.js"
+    "$CHROME" "$NO_NET" --headless=new --disable-gpu --no-first-run --window-size=1280,900 --virtual-time-budget=6000 --dump-dom "file://$TREE/$kid/index.rd.html" 2>/dev/null \
+      | python3 -c 'import html, re, sys; m = re.search(r"data-readable=\"([^\"]*)\"", sys.stdin.read()); print(html.unescape(m.group(1)) if m else "{}")' >"$OUT/rd.json"
+    cp "$OUT/rd.json" "$OUT/r.out"
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d); sys.exit(0 if d.get("facts") is not None and d.get("problems") == [] else 1)' "$OUT/rd.json" >>"$OUT/r.out" 2>&1 \
+      && ok "  $kid: cards open from the map, each card links to its page, the deeper page links back" || bad "  $kid: a part-card contract breaks"
+  done
+  "$CHROME" "$NO_NET" --headless=new --disable-gpu --no-first-run --virtual-time-budget=6000 --dump-dom "file://$TREE/two-phase-commit/index.html#card-coord" 2>/dev/null >"$OUT/r.out"
+  grep -q '<details class="sys-card" id="card-coord" open' "$OUT/r.out" && ok "  a link to #card-<part> opens that card (the way back from a deeper page)" || bad "  a link to a card does not open it"
   # the benchmark gate: the same subject drawn the old way and with a system map. The new picture must
   # sit higher on the page, label its links, tie them to the journey, and be no smaller or worse than the old one.
   if command -v node >/dev/null 2>&1; then

@@ -45,6 +45,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
 | `reference` | no | list (1-8) | Python files whose functions and classes the page lists; see [Code reference](#code-reference) |
 | `system` | no | object | the one-picture overview: groups, parts, labelled links, a numbered journey; see [System map](#system-map) |
+| `parent` | no | object | on a page opened from another page's part card: `{page, part, title}`, the folder name of that page, the id of the part, and the words for the link back; see `readable.md` |
 | `layout` | no | `classic`\|`readable` | default `classic`: a page without the key builds as it always did. `readable` asks for `outline[].lines[].says` and `system.journey[].why`, one name per thing, and draws the page article-first; see `readable.md` |
 
 Light is the subset without `checks`, `compare` and `ja` text; a light check notes and ignores
@@ -107,6 +108,7 @@ PR, a module, a concept or a process: `system-map.md`.
 | `links` | yes | non-empty list of links |
 | `title`, `caption` | no | Text; the caption says how to read it |
 | `cols` | no | int 1-6: columns at the top level (default up to 3) |
+| `about` (on a group or part) | readable | `{does, takes?, gives?, why?, ev?, tag?, open?}`: a card (`does`, `why` ≤ 160; `takes`, `gives` ≤ 100; `ev` or `tag: inferred`); `open` is `{page, title?}`, the folder name of a deeper page. Light ≤ 8 cards, heavy ≤ 16 |
 | `journey` | no | list of `{title, why?, scenario?}`; step `n` is its 1-based position. `why` (Text, ≤ 200 characters): what happens and why, in plain words; required when `layout` is `readable` |
 
 **Group** `{id, label, items, sub?, cols?}`: `items` non-empty, nested at most 3 deep, at most 12
@@ -305,6 +307,10 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `jargon in journey step` / `jargon in outline sentence` / `N characters, max 200` / `max 140` | `why` and `says` hold no undefined identifier and stay a sentence |
 | `'<label>' is not a name on the system map` | on a `readable` page every scenario node carries the name the map gives that part or group |
 | `layout: must be one of classic, readable` | the two layouts |
+| `part cards belong to the readable layout` | `about` needs `"layout": "readable"` |
+| `part card has no evidence` / `jargon in part card` / `N characters, max 160` | a card is held to the same rules as a link and a sentence |
+| `over budget …: N part cards` | the tier's card limit |
+| `parent.page: must be the folder name …` | `parent` and `open.page` are folder names (lowercase letters, digits, hyphens); `flow links` checks the pair |
 | `step N is past the end of scenario` | outline `steps` and `checks[].step` index the scenario's visible steps |
 | `over budget` | the tier's limits below |
 

@@ -1,6 +1,6 @@
 # Decision index
 
-8 decision(s). Regenerate with `python3 scripts/decide.py index`.
+9 decision(s). Regenerate with `python3 scripts/decide.py index`.
 
 | id | title | status | date | chosen | assumptions | tags | affects |
 |---|---|---|---|---|--:|---|---|
@@ -12,6 +12,7 @@
 | [ADR-0006](ADR-0006-work-record-is-private-plain-files-in-config-100x-work-backed-up-by-the-owner-s-own-setup-the-plugin-never-pushes.md) | Work record is private plain files in ~/.config/100x/work, backed up by the owner's own setup; the plugin never pushes | proposed | 2026-10-30 | plain append-only files in ~/.config/100x/work, backed up by the owner's setup | 3 | safety, work-continuity | `prds/work-continuity/**, scripts/work*.py, hooks/**` |
 | [ADR-0007](ADR-0007-explain-leads-with-a-system-map-the-agent-writes-as-data-and-the-engine-lays-out-an-offline-old-vs-new-picture-bench-gates-it.md) | Explain leads with a system map the agent writes as data and the engine lays out; an offline old-vs-new picture bench gates it | proposed | 2026-11-24 | a tree of groups and parts plus labelled links; the engine lays it out and routes the links | 5 | explain, visualization | `skills/explain/**, scripts/flow.py, tests/flow/**` |
 | [ADR-0008](ADR-0008-explain-pages-say-what-happens-in-plain-sentences-first-an-opt-in-readable-layout-one-name-per-thing-a-map-that-fits-its-column-and-a-one-key-way-back.md) | Explain pages say what happens in plain sentences first: an opt-in readable layout, one name per thing, a map that fits its column, and a one-key way back | proposed | 2026-11-24 | an opt-in `layout: readable` key per page, with the old behaviour as the default | 5 | explain, readability | `skills/explain/**, scripts/flow.py, tests/flow/**` |
+| [ADR-0009](ADR-0009-explain-part-cards-and-pages-behind-them-an-about-card-per-map-part-a-page-per-part-a-reader-asks-about-and-a-checked-way-back.md) | Explain part cards and pages behind them: an about card per map part, a page per part a reader asks about, and a checked way back | proposed | 2026-11-24 | cards on the overview, and a full page per part that is linked both ways and checked | 5 | explain, readability | `skills/explain/**, scripts/flow.py, tests/flow/**` |
 
 ## How to use this
 

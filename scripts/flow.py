@@ -86,6 +86,9 @@ SYSTEM_PART_KINDS = ("actor", "data", "external")
 # "layout": "readable"), so a page that reads worse is put back by deleting that one key.
 LAYOUTS = ("classic", "readable")
 DEFAULT_LAYOUT = "classic"
+ABOUT_BUDGET = {"light": 8, "heavy": 16}   # part cards: each one is a paragraph the reader opens
+ABOUT_TEXT_MAX = 160                       # does, why: one or two short sentences
+ABOUT_SHORT_MAX = 100                      # takes, gives: a phrase
 SAYS_MAX = 140   # one outline line in plain words: a sentence, not a paragraph
 WHY_MAX = 200    # one journey step in plain words: what happens and why, in two short sentences
 # check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
@@ -120,7 +123,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline", "diagrams", "tldr", "reference", "system", "layout"}),
+             "context", "terms", "outline", "diagrams", "tldr", "reference", "system", "layout", "parent"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -143,8 +146,11 @@ KEYS = {
     "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
     "reference": ({"path"}, {"symbols", "notes"}),
     "system": ({"items", "links"}, {"title", "caption", "cols", "journey"}),
-    "sys-group": ({"id", "label", "items"}, {"sub", "cols"}),
-    "sys-part": ({"id", "label"}, {"sub", "kind", "ev"}),
+    "sys-group": ({"id", "label", "items"}, {"sub", "cols", "about"}),
+    "sys-part": ({"id", "label"}, {"sub", "kind", "ev", "about"}),
+    "about": ({"does"}, {"takes", "gives", "why", "ev", "tag", "open"}),
+    "about-open": ({"page"}, {"title"}),
+    "parent": ({"page", "part", "title"}, set()),
     "sys-link": ({"from", "to"}, {"label", "style", "n", "ev", "tag"}),
     "sys-step": ({"title"}, {"scenario", "why"}),
 }
@@ -283,6 +289,7 @@ def validate(doc, f):
     validate_diagrams(doc, ctx, f)
     validate_system(doc, ctx, f)
     validate_readable(doc, ctx, f)
+    validate_parent(doc, ctx, f)
     validate_reference(doc, f)
     return ctx
 
@@ -1026,7 +1033,7 @@ def validate_system(doc, ctx, f):
     for i in range(1, len(steps) + 1):
         if i not in used:
             f.add(f"system.journey[{i - 1}]", f"journey step {i} has no link: give a link n: {i}")
-    ctx["system"] = {"parts": counts["parts"], "groups": counts["groups"],
+    ctx["system"] = {"parts": counts["parts"], "groups": counts["groups"], "about": counts.get("about", 0),
                      "links": len(links), "journey": len(steps), "ids": ids}
 
 
@@ -1070,8 +1077,8 @@ def validate_evidence_refs(loc, node, what, ctx, f):
             f.add(loc + ".ev", f"unknown evidence id '{eid}'")
     if "tag" in node and node["tag"] != "inferred":
         f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
-    elif what == "link" and not ev and node.get("tag") != "inferred":
-        f.add(loc, "link has no evidence: cite ev ids or tag it inferred")
+    elif what in ("link", "about") and not ev and node.get("tag") != "inferred":
+        f.add(loc, f"{'link' if what == 'link' else 'part card'} has no evidence: cite ev ids or tag it inferred")
 
 
 def system_contains(parent, outer, inner):
@@ -1105,6 +1112,9 @@ def validate_system_items(items, loc, depth, up, ids, parent, counts, ctx, f):
         validate_system_text(here + ".label", n.get("label"), SYSTEM_LABEL_MAX, f)
         if "sub" in n:
             validate_system_text(here + ".sub", n["sub"], SYSTEM_SUB_MAX, f)
+        if "about" in n:
+            counts["about"] = counts.get("about", 0) + 1
+            validate_about(here + ".about", n["about"], ctx, f)
         if group:
             counts["groups"] += 1
             if depth >= MAX_SYSTEM_DEPTH:
@@ -1121,11 +1131,47 @@ def validate_system_items(items, loc, depth, up, ids, parent, counts, ctx, f):
             validate_evidence_refs(here, n, "part", ctx, f)
 
 
+def validate_about(loc, a, ctx, f):
+    """A part card: what the part does, what goes in and out, why it exists, and where to read more."""
+    if ctx.get("layout") != "readable":
+        f.add(loc, "part cards belong to the readable layout: set \"layout\": \"readable\"")
+    if not check_keys(a, "about", loc, f):
+        return
+    for k, most in (("does", ABOUT_TEXT_MAX), ("why", ABOUT_TEXT_MAX), ("takes", ABOUT_SHORT_MAX), ("gives", ABOUT_SHORT_MAX)):
+        if k in a:
+            validate_system_text(f"{loc}.{k}", a[k], most, f)
+    if "open" in a:
+        o = a["open"]
+        if check_keys(o, "about-open", loc + ".open", f):
+            if not (isinstance(o.get("page"), str) and SLUG_RX.match(o["page"])):
+                f.add(loc + ".open.page", "must be the folder name of another explain page: lowercase letters, digits, hyphens")
+            if "title" in o:
+                validate_system_text(loc + ".open.title", o["title"], SYSTEM_LABEL_MAX * 2, f)
+    validate_evidence_refs(loc, a, "about", ctx, f)
+
+
+def validate_parent(doc, ctx, f):
+    """A page opened from another page's part card says where it came from, so the reader can go back."""
+    p = doc.get("parent")
+    if p is None:
+        return
+    if not check_keys(p, "parent", "parent", f):
+        return
+    if not (isinstance(p.get("page"), str) and SLUG_RX.match(p["page"])):
+        f.add("parent.page", "must be the folder name of the page this one opens from")
+    if not (isinstance(p.get("part"), str) and ID_RX.match(p["part"])):
+        f.add("parent.part", "must be the id of the part or group on that page")
+    validate_system_text("parent.title", p.get("title"), SYSTEM_LABEL_MAX * 2, f)
+
+
 def check_system_budget(ctx, tier, f):
     sysm = ctx.get("system")
     if not sysm:
         return
     b = SYSTEM_BUDGET[tier]
+    if sysm.get("about", 0) > ABOUT_BUDGET[tier]:
+        f.add("system", f"over budget ({tier}): {sysm['about']} part cards, max {ABOUT_BUDGET[tier]}"
+              + ("; keep cards for the parts a reader opens, or use --tier heavy" if tier == "light" else ""))
     for k, label in (("parts", "parts"), ("links", "links"), ("journey", "journey steps")):
         if sysm[k] > b[k]:
             f.add("system", f"over budget ({tier}): {sysm[k]} {label}, max {b[k]}"
@@ -1217,6 +1263,12 @@ def prose_fields(doc):
     for loc, n in system_nodes(system.get("items")):
         yield loc + ".label", n.get("label"), False
         yield loc + ".sub", n.get("sub"), False
+    for loc, n in system_nodes(system.get("items")):
+        a = obj(n.get("about"))
+        for k in ("does", "takes", "gives", "why"):
+            yield f"{loc}.about.{k}", a.get(k), False
+        yield f"{loc}.about.open.title", obj(a.get("open")).get("title"), False
+    yield "parent.title", obj(doc.get("parent")).get("title"), False
     for i, ln in enumerate(seq(system.get("links"))):
         yield f"system.links[{i}].label", obj(ln).get("label"), False
     for i, st in enumerate(seq(system.get("journey"))):
@@ -1290,6 +1342,10 @@ def check_jargon(doc, ctx, f):
     for i, st in enumerate(seq(system.get("journey"))):
         jargon_in(f"system.journey[{i}].title", obj(st).get("title"), "journey step title", plain, f)
         jargon_in(f"system.journey[{i}].why", obj(st).get("why"), "journey step", plain, f)
+    for loc, n in system_nodes(system.get("items")):
+        a = obj(n.get("about"))
+        for k in ("does", "takes", "gives", "why"):
+            jargon_in(f"{loc}.about.{k}", a.get(k), "part card", plain, f)
     for i, o in enumerate(seq(doc.get("outline"))):
         for j, ln in enumerate(seq(obj(o).get("lines"))):
             jargon_in(f"outline[{i}].lines[{j}].says", obj(ln).get("says"), "outline sentence", plain, f)
@@ -1963,6 +2019,7 @@ MD_SECTION_ANSWERS = {
     "Before you watch": "what the change does for a user, what it covers and where it starts",
     "Terms": "the words a reader outside the module needs",
     "System map": "how the parts group and connect, and the journey through them in order",
+    "The parts": "what each part does, what goes in and out, why it exists and where to read more",
     "Diagrams": "the flow at a glance, as diagrams",
     "Workflow outline": "the code path as pseudocode, each line linked to its step",
     "Map": "which boxes the scenarios use, their role and where they live in the code",
@@ -2065,6 +2122,36 @@ def render_system_md(doc, numbers):
     return out
 
 
+def has_about(doc):
+    return any(isinstance(n.get("about"), dict) for _, n in system_nodes(obj(doc.get("system")).get("items")))
+
+
+def render_parts_md(doc, numbers):
+    """One entry per part or group that has a card: what it does, what goes in and out, why, evidence, and the page that opens it."""
+    if not has_about(doc):
+        return []
+    out = ["", "## The parts", ""]
+    for _, n in system_nodes(doc["system"].get("items")):
+        a = n.get("about")
+        if not isinstance(a, dict):
+            continue
+        out += [f"### {md_text(n.get('label'), numbers)}", ""]
+        if n.get("sub"):
+            out += [f"*{md_text(n['sub'], numbers)}*", ""]
+        out += [f"- **What it does:** {md_text(a.get('does'), numbers)}"]
+        for key, head in (("takes", "Takes in"), ("gives", "Hands on"), ("why", "Why it exists")):
+            if a.get(key):
+                out.append(f"- **{head}:** {md_text(a[key], numbers)}")
+        ev = ", ".join(describe_evidence_md(e, doc) for e in a.get("ev") or []) or "*inferred*"
+        out.append(f"- **Evidence:** {ev}")
+        if a.get("open"):
+            o = a["open"]
+            title = md_text(o["title"], numbers) if o.get("title") else o["page"]
+            out.append(f"- **Go deeper:** [{title}](../{o['page']}/explain.md)")
+        out.append("")
+    return out[:-1] if out[-1] == "" else out
+
+
 def render_outline_md(doc, ctx, numbers):
     if not doc.get("outline"):
         return []
@@ -2099,13 +2186,15 @@ def render_markdown(doc, ctx, states, tier, reference=None):
     numbers = ctx["numbers"]
     sub = doc.get("subject") or {}
     meta = [sub.get("kind", "")] + [f"{k} `{sub[k]}`" for k in ("repo", "sha", "base", "pr") if k in sub]
-    lines = [f"# {md_text(doc.get('title'), numbers)}", ""] + render_tldr_md(doc, numbers) + [
+    parent = doc.get("parent")
+    crumb = [f"[← {md_text(parent['title'], numbers)}](../{parent['page']}/explain.md)", ""] if isinstance(parent, dict) else []
+    lines = [f"# {md_text(doc.get('title'), numbers)}", ""] + crumb + render_tldr_md(doc, numbers) + [
              md_text(sub.get("lede"), numbers), "",
              "| | |", "|---|---|", f"| subject | {' · '.join(meta)} |", f"| tier | {tier} |",
              "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |"]
     top, lines = lines, []
     lines += render_context_md(doc, ctx, numbers) + render_terms_md(doc, numbers) \
-        + render_system_md(doc, numbers) + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
+        + render_system_md(doc, numbers) + render_parts_md(doc, numbers) + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
     lines += ["", "## Map", "", "| node | role | code |", "|---|---|---|"]
     for nid, n in ctx["nodes"].items():
         ref = f"`{n['ref']}`" if n.get("ref") else ""
@@ -2191,7 +2280,7 @@ def contents_answers(doc, ctx, reference=None):
     """What each `##` section of explain.md answers, in the order render_markdown writes them."""
     answers = [MD_SECTION_ANSWERS[k] for k, present in (
         ("Before you watch", doc.get("context")), ("Terms", doc.get("terms")),
-        ("System map", doc.get("system")), ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
+        ("System map", doc.get("system")), ("The parts", has_about(doc)), ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
         if present]
     answers += [f"{s.get('kind')} scenario `{sid}`: each step, what it changes and its evidence"
                 for sid, s in ctx["scenarios"].items()]
@@ -2266,6 +2355,49 @@ def run_new(slug, out, force):
     return 0
 
 
+def run_links(root):
+    """Pages opened from part cards must exist, and must point back. `root` holds one folder per page."""
+    root = pathlib.Path(root)
+    if not root.is_dir():
+        raise Unreadable(f"{root} is not a folder")
+    pages = {}
+    for d in sorted(root.iterdir()):
+        sc = d / "scenario.json"
+        if d.is_dir() and sc.is_file():
+            try:
+                pages[d.name] = json.loads(sc.read_text())
+            except ValueError:
+                raise Unreadable(f"{sc} is not valid JSON")
+    found = []
+    for slug, doc in pages.items():
+        for _, n in system_nodes(obj(doc.get("system")).get("items")):
+            o = obj(obj(n.get("about")).get("open"))
+            if not o.get("page"):
+                continue
+            kid = pages.get(o["page"])
+            if kid is None:
+                found.append(f"{slug}: part '{n.get('id')}' opens '{o['page']}', which is not a page under {root}")
+                continue
+            back = obj(kid.get("parent"))
+            if back.get("page") != slug or back.get("part") != n.get("id"):
+                found.append(f"{o['page']}: opened from {slug}:{n.get('id')} but its parent says "
+                             f"{back.get('page')}:{back.get('part')}: add \"parent\": {{\"page\": \"{slug}\", \"part\": \"{n.get('id')}\", \"title\": …}}")
+        par = doc.get("parent")
+        if isinstance(par, dict):
+            up = pages.get(par.get("page"))
+            ids = {x.get("id"): x for _, x in system_nodes(obj(up and up.get("system")).get("items"))} if up else {}
+            if up is None:
+                found.append(f"{slug}: parent page '{par.get('page')}' is not a page under {root}")
+            elif par.get("part") not in ids:
+                found.append(f"{slug}: parent part '{par.get('part')}' is not on {par.get('page')}'s map")
+            elif obj(obj(ids[par["part"]].get("about")).get("open")).get("page") != slug:
+                found.append(f"{slug}: {par.get('page')}:{par.get('part')} has no card that opens '{slug}'")
+    for line in found:
+        print("  FINDING " + line)
+    print(f"flow links: {len(pages)} page(s), {len(found)} finding(s)")
+    return 1 if found else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="flow", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2276,6 +2408,8 @@ def main(argv=None):
     p.add_argument("--repo", default=".", help="git clone the evidence cites (default: .)")
     p.add_argument("--rev", help="revision for unpinned evidence when subject.sha is absent (default HEAD)")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("links", help="check that pages opened from part cards exist and point back")
+    p.add_argument("root", help="the folder holding one folder per explain page")
     p = sub.add_parser("reduce", help="print the state after every step")
     p.add_argument("file"); p.add_argument("--scenario"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("build", help="inline the engine and the scenario into one HTML file")
@@ -2288,6 +2422,8 @@ def main(argv=None):
             return run_new(a.slug, a.out, a.force)
         if a.cmd == "check":
             return run_check(a.file, a.tier, a.repo, a.rev, a.json)
+        if a.cmd == "links":
+            return run_links(a.root)
         if a.cmd == "reduce":
             return run_reduce(a.file, a.scenario, a.json)
         return run_build(a.file, a.tier, a.out, a.assets, a.repo)

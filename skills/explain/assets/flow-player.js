@@ -402,7 +402,8 @@ const UI = {
     rd: { outlineTitle: "What the code does, in plain words", outlineAnswer: "Each step of the code as a sentence; the code itself is one click away",
           showCode: "Show the code", hideCode: "Hide the code", readTab: "Read it", watchTab: "Watch it animate",
           readHint: "Every step in words, with its evidence. Switch to Watch to see it animate.", playsIn: "Plays out in", watchStep: "Watch this step",
-          termsTitle: "Words used on this page" },
+          termsTitle: "Words used on this page", partsTitle: "The parts, one by one", takes: "Takes in", gives: "Hands on", why: "Why it exists",
+          deeper: "Go deeper", backTo: "Back to", clickHint: "Click a part on the map to read about it." },
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "Concept", plan: "Plan" },
     tldr: "In short", tldrWhat: "What it does", tldrHow: "How it works", tldrWatch: "Watch out",
     glance: "At a glance", tileChanges: "Changes", tileRisks: "Risks", tileDecision: "Decision", tileConfidence: "Confidence",
@@ -516,7 +517,8 @@ const UI = {
     rd: { outlineTitle: "コードがすることを、ふつうの言葉で", outlineAnswer: "コードの各ステップを一文で。コード本体はワンクリックで表示",
           showCode: "コードを表示", hideCode: "コードを隠す", readTab: "読む", watchTab: "アニメーションで見る",
           readHint: "各ステップを文章と根拠で。「アニメーションで見る」に切り替えると動きます。", playsIn: "このステップで動く場面", watchStep: "このステップを見る",
-          termsTitle: "このページで使う言葉" },
+          termsTitle: "このページで使う言葉", partsTitle: "部品ごとの説明", takes: "受け取るもの", gives: "渡すもの", why: "なぜ必要か",
+          deeper: "さらに詳しく", backTo: "戻る", clickHint: "図の部品をクリックすると説明が開きます。" },
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "概念", plan: "計画" },
     tldr: "要約", tldrWhat: "何をするか", tldrHow: "どう動くか", tldrWatch: "注意点",
     glance: "ひと目で", tileChanges: "変更", tileRisks: "リスク", tileDecision: "判断", tileConfidence: "確からしさ",
@@ -1180,7 +1182,10 @@ function hero() {
   const watch = w && w.text ? prose(w.text) : issue ? h("p", null, tx(issue.title)) : null;
   const cards = [card("what", prose(sum.what)), card("how", prose(sum.how)),
     card("watch", watch, issue ? h("p", { class: "chips" }, h("span", { class: "sev s-" + issue.severity }, ui("severity." + issue.severity)), whatIfChip(issue)) : null)].filter(Boolean);
+  const up = P.doc.parent;
+  const crumb = up ? h("p", { class: "crumb" }, h("a", { href: "../" + up.page + "/index.html#card-" + up.part }, "← ", ui("rd.backTo"), " ", tx(up.title))) : null;
   return h("header", { class: "hero" },
+    crumb,
     h("div", { class: "hero-top" }, kicker, headTools()),
     h("h1", null, tx(P.doc.title)),
     sum.purpose ? h("p", { class: "purpose-lead" }, txNode(sum.purpose, { terms: true })) : null,
@@ -1567,7 +1572,8 @@ function systemPanel(onShow) {
   const holder = h("div", { class: "sys-holder", tabindex: "0", role: "region", "aria-label": ui("systemMap") });
   const SYS_MIN_SCALE = 0.7; // a wide map scrolls sideways before its labels shrink below this share of their size
   const svgOpts = { tx, id: "sm" + (++sysSeq), title: ui("sysSummary", { parts: nParts, groups: nGroups, links: sys.links.length }) };
-  const draw = (L2, R2) => { holder.innerHTML = SystemMap.svg(sys, L2, R2, svgOpts); holder.firstElementChild.style.minWidth = Math.round(R2.bounds.w * SYS_MIN_SCALE) + "px"; };
+  const draw = (L2, R2) => { holder.innerHTML = SystemMap.svg(sys, L2, R2, svgOpts); holder.firstElementChild.style.minWidth = Math.round(R2.bounds.w * SYS_MIN_SCALE) + "px"; if (P.sysMark) P.sysMark(); };
+  P.sysMark = null;
   draw(L, R);
   // Readable pages redraw once the column's real width is known: the columns drop until the text stays above 90% of its size.
   if (P.readable && !narrow) P.sysRefit = () => {
@@ -1596,6 +1602,8 @@ function systemPanel(onShow) {
           h("ul", { class: "sys-hops" }, sys.links.filter(l => l.n === n).map(l =>
             h("li", null, `${names[l.from]} → ${names[l.to]}`, l.label ? [" · ", h("span", { class: "muted" }, tx(l.label))] : null)))));
     }))) : null;
+  const cards = partCards(sys, holder);
+  if (P.sysMark) P.sysMark();
   const table = h("details", { class: "sys-all" }, h("summary", null, ui("sysConnections", { n: sys.links.length })),
     h("div", { class: "tbl" }, h("table", null,
       h("thead", null, h("tr", null, ["sysFrom", "sysTo", "sysWhat", "sysStyleCol", "sysEv"].map(k => h("th", null, ui(k))))),
@@ -1604,7 +1612,38 @@ function systemPanel(onShow) {
         h("td", null, ui("sysStyle." + (l.style || "call"))),
         h("td", null, (l.ev || []).length ? h("span", { class: "chips" }, evShort(l.ev)) : h("span", { class: "tagchip t-inferred" }, ui("tag.inferred")))))))));
   const cap = sys.caption ? h("p", { class: "muted sys-cap" }, txNode(sys.caption, { terms: true })) : null;
-  return fold("system", ui("systemMap"), [sys.title ? h("h3", { class: "sys-title" }, tx(sys.title)) : null, cap, holder, legend, journey, table], "panel sys");
+  return fold("system", ui("systemMap"), [sys.title ? h("h3", { class: "sys-title" }, tx(sys.title)) : null, cap, cards ? h("p", { class: "muted sys-hint" }, ui("rd.clickHint")) : null, holder, legend, journey, cards, table], "panel sys");
+}
+
+// Part cards (readable pages): a card for every part or group that has `about`. Clicking the same box on the map opens it.
+function partCards(sys, holder) {
+  const nodes = [];
+  (function walk(items) { for (const n of items) { if (n.about) nodes.push(n); if (Array.isArray(n.items)) walk(n.items); } })(sys.items);
+  if (!P.readable || !nodes.length) return null;
+  const ids = new Set(nodes.map(n => n.id));
+  holder.addEventListener("click", e => {
+    const g = e.target.closest && e.target.closest("g.sys-part, g.sys-group");
+    const id = g && (g.dataset.part || g.dataset.group), card = id && ids.has(id) && document.getElementById("card-" + id);
+    if (!card) return;
+    openTo(card);
+    card.scrollIntoView({ block: "nearest" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1600);
+  });
+  P.sysMark = () => holder.querySelectorAll("g.sys-part, g.sys-group").forEach(g => { if (ids.has(g.dataset.part || g.dataset.group)) g.classList.add("has-card"); });
+  const card = n => {
+    const a = n.about, rows = [["rd.takes", a.takes], ["rd.gives", a.gives], ["rd.why", a.why]].filter(r => r[1]);
+    const ev = (a.ev || []).length ? h("span", { class: "chips" }, evShort(a.ev)) : h("span", { class: "tagchip t-inferred" }, ui("tag.inferred"));
+    return h("details", { class: "sys-card", id: "card-" + n.id },
+      h("summary", null, h("span", { class: "sys-card-n" }, tx(n.label)), " ", h("span", { class: "sys-card-d" }, tx(a.does))),
+      h("div", { class: "sys-card-b" },
+        n.sub ? h("p", { class: "muted" }, tx(n.sub)) : null,
+        h("p", { class: "sys-card-does" }, txNode(a.does, { terms: true })),
+        rows.length ? h("dl", null, rows.map(r => h("div", null, h("dt", null, ui(r[0])), h("dd", null, txNode(r[1], { terms: true }))))) : null,
+        h("p", { class: "chips" }, ev),
+        a.open ? h("p", null, h("a", { class: "btn sm", href: "../" + a.open.page + "/index.html" }, "→ ", a.open.title ? tx(a.open.title) : ui("rd.deeper"))) : null));
+  };
+  return h("div", { class: "sys-parts" }, h("h3", null, ui("rd.partsTitle")), nodes.map(card));
 }
 
 /* ============ before you watch: purpose, scope, entry points, terms ============ */
@@ -2494,8 +2533,9 @@ function renderHeavy(app) {
   if (m && m[1] === "compare" && $("tab-compare")) { if (P.readable) setMode("watch"); selectTab("compare"); }
   else if (m && P.scen[m[1]]) { if (P.readable) setMode("watch"); selectTab(m[1], m[2] != null ? +m[2] : 0, false); }
   else {
+    const wanted = P.readable ? hashId() : null; // selecting a tab rewrites the hash: a readable page keeps the link it was opened with (a card, a section)
     selectTab(tabsIds[0] || P.order[0], 0, !reduced() && !P.readable);
-    const id = hashId(), target = id && $(id);
+    const id = wanted || hashId(), target = id && $(id);
     if (target) { openTo(target); target.scrollIntoView({ block: "start" }); }
   }
   fillDiagram();

@@ -46,6 +46,25 @@ setTimeout(function () {
     }
     var go = document.querySelector(".ol-go");
     if (go) { go.click(); if (!shown(watch)) P("an outline link did not open the player"); if (back) back.click(); }
+    var payload = {};
+    try { payload = JSON.parse(document.getElementById("flow-data").textContent).scenario || {}; } catch (e) { P("flow-data is not JSON"); }
+    var cardEls = document.querySelectorAll(".sys-card");
+    out.facts.cards = cardEls.length;
+    if (cardEls.length) {
+      var marked = document.querySelector("svg.sysmap .has-card");
+      if (!marked) P("no part on the map is marked as having a card");
+      else {
+        marked.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        var card = document.getElementById("card-" + (marked.dataset.part || marked.dataset.group));
+        if (!card || !card.open) P("clicking a part on the map did not open its card");
+      }
+      var deeper = document.querySelector(".sys-card a.btn");
+      if (!deeper || !/^\.\.\/[a-z0-9-]+\/index\.html$/.test(deeper.getAttribute("href"))) P("a card has no link to its own page");
+    }
+    if (payload.parent) {
+      var crumb = document.querySelector(".crumb a");
+      if (!crumb || crumb.getAttribute("href").indexOf("../" + payload.parent.page + "/index.html#card-") !== 0) P("the deeper page has no way back to its parent");
+    }
     var watchBtn = document.querySelector(".sys-journey .btn");
     if (watchBtn) { watchBtn.click(); if (!shown(watch)) P("a journey Watch button did not open the player"); if (back) back.click(); }
   } catch (e) { P("probe threw: " + (e && e.message || e)); }
