@@ -1,0 +1,169 @@
+{
+ "schema": 1,
+ "tier": "light",
+ "title": "The notes module, file by file",
+ "subject": {
+  "kind": "concept",
+  "lede": "Three files make a small notes service: routes take requests, one module holds the logic, one script is a proposed guard."
+ },
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "The subject"
+  }
+ ],
+ "evidence": {
+  "e-route-get": {
+   "at": "src/routes.js:4",
+   "anchor": "router.get('/notes/:id'"
+  },
+  "e-route-patch": {
+   "at": "src/routes.js:5",
+   "anchor": "router.patch('/notes/:id'"
+  },
+  "e-cache-get": {
+   "at": "src/notes.js:7",
+   "anchor": "cache.get(cacheKey(id))"
+  },
+  "e-cache-set": {
+   "at": "src/notes.js:10",
+   "anchor": "cache.set(cacheKey(id), note"
+  },
+  "e-db-write": {
+   "at": "src/notes.js:15",
+   "anchor": "UPDATE notes SET body"
+  },
+  "e-cache-del": {
+   "at": "src/notes.js:16",
+   "anchor": "cache.del(cacheKey(id))"
+  },
+  "e-fill-if-fresh": {
+   "at": "fix/fill-if-fresh.lua:5",
+   "anchor": "if cached > tonumber(ARGV[2]) then return 0"
+  },
+  "e-ttl": {
+   "at": "src/notes.js:2",
+   "anchor": "CACHE_TTL_SECONDS = 300"
+  }
+ },
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "The main path",
+   "steps": [
+    {
+     "t": "The parts do their work in order",
+     "do": [
+      [
+       "note",
+       "see the system map above"
+      ]
+     ],
+     "tag": "inferred"
+    }
+   ]
+  }
+ ],
+ "system": {
+  "cols": 2,
+  "items": [
+   {
+    "id": "code",
+    "label": "Source files",
+    "items": [
+     {
+      "id": "routes",
+      "label": "routes.js",
+      "sub": "mounts the two endpoints",
+      "ev": [
+       "e-route-get"
+      ]
+     },
+     {
+      "id": "notes",
+      "label": "notes.js",
+      "sub": "the read and save logic",
+      "ev": [
+       "e-cache-get"
+      ]
+     },
+     {
+      "id": "guard",
+      "label": "fill-if-fresh.lua",
+      "sub": "proposed guard for the cache fill",
+      "kind": "external",
+      "ev": [
+       "e-fill-if-fresh"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "runtime",
+    "label": "Used at run time",
+    "items": [
+     {
+      "id": "cache",
+      "label": "Cache",
+      "sub": "a note key with a time to live",
+      "kind": "data",
+      "ev": [
+       "e-ttl"
+      ]
+     },
+     {
+      "id": "db",
+      "label": "Database",
+      "sub": "the notes table",
+      "kind": "data",
+      "ev": [
+       "e-db-write"
+      ]
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "routes",
+    "to": "notes",
+    "label": "reads and saves",
+    "style": "call",
+    "ev": [
+     "e-route-patch"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "cache",
+    "label": "get, set and delete",
+    "style": "data",
+    "ev": [
+     "e-cache-set"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "db",
+    "label": "query and update",
+    "style": "data",
+    "ev": [
+     "e-db-write"
+    ]
+   },
+   {
+    "from": "guard",
+    "to": "cache",
+    "label": "would guard the fill",
+    "style": "watch",
+    "ev": [
+     "e-fill-if-fresh"
+    ]
+   }
+  ]
+ }
+}

@@ -1,0 +1,459 @@
+{
+ "schema": 1,
+ "tier": "heavy",
+ "title": "An agent platform, end to end",
+ "subject": {
+  "kind": "concept",
+  "lede": "People give a task to a control plane, which runs a team of agents on different engines and opens a pull request."
+ },
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "The subject"
+  }
+ ],
+ "evidence": {},
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "The main path",
+   "steps": [
+    {
+     "t": "The parts do their work in order",
+     "do": [
+      [
+       "note",
+       "see the system map above"
+      ]
+     ],
+     "tag": "inferred"
+    }
+   ]
+  }
+ ],
+ "system": {
+  "title": "Everything the platform touches",
+  "cols": 2,
+  "items": [
+   {
+    "id": "ins",
+    "label": "Where work comes from",
+    "items": [
+     {
+      "id": "you",
+      "label": "You",
+      "sub": "desktop, phone, browser",
+      "kind": "actor"
+     },
+     {
+      "id": "feeds",
+      "label": "Work sources",
+      "sub": "tickets, chat, inbox",
+      "kind": "actor"
+     },
+     {
+      "id": "bot",
+      "label": "Dispatcher bot",
+      "sub": "its own cloud computer",
+      "kind": "external"
+     }
+    ],
+    "cols": 3
+   },
+   {
+    "id": "cp",
+    "label": "Control plane",
+    "items": [
+     {
+      "id": "server",
+      "label": "Server",
+      "sub": "one URL for all environments"
+     },
+     {
+      "id": "team",
+      "label": "Agent team",
+      "items": [
+       {
+        "id": "lead",
+        "label": "Lead",
+        "sub": "plans and waits for your OK"
+       },
+       {
+        "id": "fan",
+        "label": "Build in parallel",
+        "items": [
+         {
+          "id": "ba",
+          "label": "Builder A",
+          "sub": "own worktree"
+         },
+         {
+          "id": "bb",
+          "label": "Builder B",
+          "sub": "own worktree"
+         },
+         {
+          "id": "join",
+          "label": "Integration branch",
+          "sub": "merge in order",
+          "kind": "data"
+         }
+        ],
+        "cols": 3
+       },
+       {
+        "id": "loop",
+        "label": "Review loop",
+        "items": [
+         {
+          "id": "test",
+          "label": "Playtester",
+          "sub": "read only, writes a bug list"
+         },
+         {
+          "id": "fix",
+          "label": "Fixer",
+          "sub": "failing test first"
+         }
+        ],
+        "cols": 2
+       },
+       {
+        "id": "writer",
+        "label": "Copywriter",
+        "sub": "docs and translations only"
+       },
+       {
+        "id": "pr",
+        "label": "Pull request",
+        "sub": "draft until you approve",
+        "kind": "data"
+       }
+      ],
+      "cols": 2
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "eng",
+    "label": "Engines, your logins",
+    "items": [
+     {
+      "id": "e1",
+      "label": "Engine one",
+      "sub": "claude login"
+     },
+     {
+      "id": "e2",
+      "label": "Engine two",
+      "sub": "codex login"
+     },
+     {
+      "id": "e3",
+      "label": "Engine three",
+      "sub": "google sign-in"
+     },
+     {
+      "id": "e4",
+      "label": "Engine four",
+      "sub": "extra seats",
+      "kind": "external"
+     }
+    ],
+    "cols": 2
+   },
+   {
+    "id": "tools",
+    "label": "Tools each thread can call",
+    "items": [
+     {
+      "id": "t1",
+      "label": "Git host",
+      "kind": "external"
+     },
+     {
+      "id": "t2",
+      "label": "Test runner",
+      "kind": "external"
+     },
+     {
+      "id": "t3",
+      "label": "Tool servers",
+      "kind": "external"
+     },
+     {
+      "id": "t4",
+      "label": "Browser",
+      "kind": "external"
+     },
+     {
+      "id": "t5",
+      "label": "Scheduler",
+      "kind": "external"
+     }
+    ],
+    "cols": 2
+   },
+   {
+    "id": "rt",
+    "label": "Where it runs",
+    "items": [
+     {
+      "id": "desk",
+      "label": "Desktop app"
+     },
+     {
+      "id": "svc",
+      "label": "Always-on service"
+     },
+     {
+      "id": "phone",
+      "label": "Phone app"
+     }
+    ],
+    "cols": 3
+   },
+   {
+    "id": "obs",
+    "label": "Watching it",
+    "items": [
+     {
+      "id": "panel",
+      "label": "Agents panel"
+     },
+     {
+      "id": "inbox",
+      "label": "Inbox"
+     },
+     {
+      "id": "usage",
+      "label": "Usage"
+     }
+    ],
+    "cols": 3
+   }
+  ],
+  "links": [
+   {
+    "from": "you",
+    "to": "server",
+    "label": "prompt and approve",
+    "style": "call",
+    "n": 1,
+    "tag": "inferred"
+   },
+   {
+    "from": "feeds",
+    "to": "bot",
+    "label": "watch",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "bot",
+    "to": "server",
+    "label": "supervised launch",
+    "style": "async",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "server",
+    "to": "lead",
+    "label": "start a team",
+    "style": "call",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "lead",
+    "to": "ba",
+    "label": "brief",
+    "style": "call",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "lead",
+    "to": "bb",
+    "label": "brief",
+    "style": "call",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "ba",
+    "to": "join",
+    "label": "merge",
+    "style": "data",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "bb",
+    "to": "join",
+    "label": "merge",
+    "style": "data",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "join",
+    "to": "test",
+    "label": "diff",
+    "style": "call",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "test",
+    "to": "fix",
+    "label": "bugs",
+    "style": "risk",
+    "n": 6,
+    "tag": "inferred"
+   },
+   {
+    "from": "fix",
+    "to": "test",
+    "label": "re-test",
+    "style": "call",
+    "n": 6,
+    "tag": "inferred"
+   },
+   {
+    "from": "test",
+    "to": "writer",
+    "label": "when clean",
+    "style": "call",
+    "n": 7,
+    "tag": "inferred"
+   },
+   {
+    "from": "writer",
+    "to": "pr",
+    "label": "commit and push",
+    "style": "call",
+    "n": 8,
+    "tag": "inferred"
+   },
+   {
+    "from": "pr",
+    "to": "you",
+    "label": "phone approval",
+    "style": "call",
+    "n": 9,
+    "tag": "inferred"
+   },
+   {
+    "from": "lead",
+    "to": "e1",
+    "label": "runs on",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "test",
+    "to": "e2",
+    "label": "runs on",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "writer",
+    "to": "e3",
+    "label": "runs on",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "fix",
+    "to": "t2",
+    "label": "runs",
+    "style": "data",
+    "tag": "inferred"
+   },
+   {
+    "from": "pr",
+    "to": "t1",
+    "label": "push",
+    "style": "data",
+    "tag": "inferred"
+   },
+   {
+    "from": "server",
+    "to": "t3",
+    "label": "serves",
+    "style": "data",
+    "tag": "inferred"
+   },
+   {
+    "from": "lead",
+    "to": "t5",
+    "label": "scheduled by",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "desk",
+    "to": "server",
+    "label": "hosts",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "svc",
+    "to": "server",
+    "label": "hosts",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "phone",
+    "to": "server",
+    "label": "talks to",
+    "style": "watch",
+    "tag": "inferred"
+   },
+   {
+    "from": "server",
+    "to": "panel",
+    "label": "reports to",
+    "style": "async",
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "You give the task"
+   },
+   {
+    "title": "The dispatcher can start one too"
+   },
+   {
+    "title": "The lead plans and briefs the builders"
+   },
+   {
+    "title": "Builders work in parallel and merge"
+   },
+   {
+    "title": "A tester reads the result"
+   },
+   {
+    "title": "Bugs go back until it is clean"
+   },
+   {
+    "title": "Only docs are left for the copywriter"
+   },
+   {
+    "title": "A draft pull request is opened"
+   },
+   {
+    "title": "You approve from anywhere"
+   }
+  ]
+ }
+}

@@ -1,0 +1,252 @@
+{
+ "system": {
+  "title": "Who does what between a request and a commit",
+  "cols": 2,
+  "items": [
+   {
+    "id": "front",
+    "label": "Front door",
+    "items": [
+     {
+      "id": "you",
+      "label": "You",
+      "sub": "types a request",
+      "kind": "actor"
+     },
+     {
+      "id": "router",
+      "label": "Router skill",
+      "sub": "picks the workflow",
+      "ev": [
+       "router-classify"
+      ]
+     },
+     {
+      "id": "skills",
+      "label": "Skills",
+      "sub": "rulebooks for each task",
+      "ev": [
+       "router-build"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "work",
+    "label": "Work",
+    "items": [
+     {
+      "id": "tasks",
+      "label": "Task graph",
+      "sub": "the plan, one task per agent",
+      "kind": "data",
+      "ev": [
+       "plan-collide"
+      ]
+     },
+     {
+      "id": "agents",
+      "label": "Specialist agents",
+      "sub": "one per task, own copy of the files",
+      "ev": [
+       "agent-skills"
+      ]
+     },
+     {
+      "id": "worktree",
+      "label": "Your files",
+      "sub": "what ends up committed",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "proof",
+    "label": "Proof",
+    "items": [
+     {
+      "id": "verifier",
+      "label": "Independent verifier",
+      "sub": "re-runs every check",
+      "ev": [
+       "verifier-rerun"
+      ]
+     },
+     {
+      "id": "cli",
+      "label": "Tools",
+      "sub": "one command line for all checks",
+      "ev": [
+       "bin-entry"
+      ]
+     },
+     {
+      "id": "receipt",
+      "label": "Signed receipt",
+      "sub": "proof the checks passed",
+      "kind": "data",
+      "ev": [
+       "receipt-sign"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "guard",
+    "label": "Guards",
+    "items": [
+     {
+      "id": "hooks",
+      "label": "Hooks",
+      "sub": "watch commits and stops",
+      "ev": [
+       "hooks-events"
+      ]
+     },
+     {
+      "id": "git",
+      "label": "git and GitHub",
+      "sub": "where work leaves",
+      "kind": "external"
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "you",
+    "to": "router",
+    "label": "request",
+    "style": "call",
+    "n": 1,
+    "tag": "inferred"
+   },
+   {
+    "from": "router",
+    "to": "skills",
+    "label": "load the rulebooks",
+    "style": "call",
+    "n": 2,
+    "ev": [
+     "router-build"
+    ]
+   },
+   {
+    "from": "router",
+    "to": "tasks",
+    "label": "write the plan",
+    "style": "call",
+    "n": 3,
+    "ev": [
+     "router-orch"
+    ]
+   },
+   {
+    "from": "tasks",
+    "to": "agents",
+    "label": "one task each",
+    "style": "call",
+    "n": 4,
+    "ev": [
+     "plan-overlap"
+    ]
+   },
+   {
+    "from": "agents",
+    "to": "worktree",
+    "label": "edit files",
+    "style": "data",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "agents",
+    "to": "verifier",
+    "label": "report done",
+    "style": "call",
+    "n": 5,
+    "ev": [
+     "report-claim"
+    ]
+   },
+   {
+    "from": "verifier",
+    "to": "cli",
+    "label": "re-run the checks",
+    "style": "call",
+    "n": 6,
+    "ev": [
+     "verifier-rerun"
+    ]
+   },
+   {
+    "from": "cli",
+    "to": "receipt",
+    "label": "sign the result",
+    "style": "data",
+    "n": 6,
+    "ev": [
+     "verified-receipt"
+    ]
+   },
+   {
+    "from": "hooks",
+    "to": "receipt",
+    "label": "is it fresh?",
+    "style": "watch",
+    "n": 7,
+    "ev": [
+     "gate-fresh"
+    ]
+   },
+   {
+    "from": "hooks",
+    "to": "git",
+    "label": "block or allow",
+    "style": "risk",
+    "n": 8,
+    "ev": [
+     "gate-passed"
+    ]
+   },
+   {
+    "from": "worktree",
+    "to": "git",
+    "label": "commit",
+    "style": "call",
+    "n": 8,
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "You describe what you want"
+   },
+   {
+    "title": "The router loads the right rulebooks"
+   },
+   {
+    "title": "It writes a plan with one task per agent"
+   },
+   {
+    "title": "Agents do their tasks in separate copies"
+   },
+   {
+    "title": "An agent reports what it did"
+   },
+   {
+    "title": "A separate verifier re-runs the checks"
+   },
+   {
+    "title": "The guards ask for a fresh receipt"
+   },
+   {
+    "title": "Only then can work leave through git"
+   }
+  ]
+ }
+}

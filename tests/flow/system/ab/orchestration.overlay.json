@@ -1,0 +1,232 @@
+{
+ "system": {
+  "title": "How one plan becomes merged work",
+  "cols": 3,
+  "items": [
+   {
+    "id": "planning",
+    "label": "Plan",
+    "items": [
+     {
+      "id": "main",
+      "label": "Main session",
+      "sub": "the orchestrator",
+      "ev": [
+       "skill-three"
+      ]
+     },
+     {
+      "id": "spec",
+      "label": "Approved spec",
+      "sub": "what was agreed",
+      "kind": "data"
+     },
+     {
+      "id": "plan",
+      "label": "Plan file",
+      "sub": "tasks and who owns which file",
+      "kind": "data",
+      "ev": [
+       "skill-stamp"
+      ]
+     },
+     {
+      "id": "plandag",
+      "label": "plan checker",
+      "sub": "rejects overlap and cycles",
+      "ev": [
+       "pd-overlap"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "run",
+    "label": "Run",
+    "items": [
+     {
+      "id": "ready",
+      "label": "Ready tasks",
+      "sub": "this wave",
+      "kind": "data",
+      "ev": [
+       "pd-next-ready"
+      ]
+     },
+     {
+      "id": "agents",
+      "label": "Specialist agents",
+      "sub": "one per task",
+      "ev": [
+       "skill-dispatch"
+      ]
+     },
+     {
+      "id": "worktrees",
+      "label": "Task worktrees",
+      "sub": "a private copy each",
+      "kind": "data",
+      "ev": [
+       "skill-worktree"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "check",
+    "label": "Check and merge",
+    "items": [
+     {
+      "id": "agentrep",
+      "label": "report checker",
+      "sub": "replays what the agent claims",
+      "ev": [
+       "om-replay-plan"
+      ]
+     },
+     {
+      "id": "verifier",
+      "label": "Independent verifier",
+      "sub": "read only",
+      "ev": [
+       "skill-merge"
+      ]
+     },
+     {
+      "id": "merged",
+      "label": "Merged branch",
+      "sub": "the result",
+      "kind": "data",
+      "ev": [
+       "skill-mainmerge"
+      ]
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "spec",
+    "to": "plan",
+    "label": "split into tasks",
+    "style": "call",
+    "n": 1,
+    "ev": [
+     "skill-contract"
+    ]
+   },
+   {
+    "from": "plan",
+    "to": "plandag",
+    "label": "lint",
+    "style": "call",
+    "n": 2,
+    "ev": [
+     "pd-lint-exit"
+    ]
+   },
+   {
+    "from": "plandag",
+    "to": "ready",
+    "label": "waves of ready tasks",
+    "style": "data",
+    "n": 3,
+    "ev": [
+     "pd-waves-print"
+    ]
+   },
+   {
+    "from": "ready",
+    "to": "agents",
+    "label": "dispatch",
+    "style": "call",
+    "n": 4,
+    "ev": [
+     "skill-dispatch"
+    ]
+   },
+   {
+    "from": "agents",
+    "to": "worktrees",
+    "label": "work in",
+    "style": "data",
+    "n": 4,
+    "ev": [
+     "skill-worktree"
+    ]
+   },
+   {
+    "from": "agents",
+    "to": "agentrep",
+    "label": "report",
+    "style": "call",
+    "n": 5,
+    "ev": [
+     "om-protocol"
+    ]
+   },
+   {
+    "from": "agentrep",
+    "to": "verifier",
+    "label": "only replayed claims pass",
+    "style": "call",
+    "n": 6,
+    "ev": [
+     "om-replay-plan"
+    ]
+   },
+   {
+    "from": "verifier",
+    "to": "merged",
+    "label": "merge in order",
+    "style": "call",
+    "n": 7,
+    "ev": [
+     "skill-mainmerge"
+    ]
+   },
+   {
+    "from": "plandag",
+    "to": "agents",
+    "label": "blocks shared files",
+    "style": "risk",
+    "ev": [
+     "pd-overlap"
+    ]
+   },
+   {
+    "from": "main",
+    "to": "plan",
+    "label": "owns",
+    "style": "watch",
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "The approved spec is split into tasks"
+   },
+   {
+    "title": "The plan is checked before anyone starts"
+   },
+   {
+    "title": "Tasks that can run together form a wave"
+   },
+   {
+    "title": "Each task goes to an agent in its own copy"
+   },
+   {
+    "title": "The agent reports what it did"
+   },
+   {
+    "title": "Claims are replayed, not trusted"
+   },
+   {
+    "title": "Verified work is merged in order"
+   }
+  ]
+ }
+}

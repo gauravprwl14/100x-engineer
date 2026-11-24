@@ -1,3 +1,5 @@
+[← INDEX](INDEX.md)
+
 # Actions and the reducer, v1 (frozen)
 
 A step's `do` is a list of `[action, …args]`. State after step *i* is a pure reduce over every

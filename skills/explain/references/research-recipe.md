@@ -1,3 +1,5 @@
+[← INDEX](INDEX.md)
+
 # Research recipe
 
 How the agent gathers the facts a `scenario.json` states. Every fact ends as an evidence entry
@@ -18,6 +20,7 @@ flowchart LR
   O --> G[10 diagrams]
   G --> L[11 TL;DR<br/>written last]
   L --> R[12 reference<br/>code behind it]
+  R --> M[13 system map<br/>groups, parts, links]
 ```
 
 ## 0. Context first
@@ -292,6 +295,14 @@ the page animates; `100x code_ref build <file> --md` shows what is there. Write 
 where the docstring is missing or misleading, after reading the function. Names, lines and
 who-uses-what come from the parse tree, so the list cannot skip or invent a function. Keep one
 output dir per page under `<root>/explain/` and list every page in that folder's `INDEX.md`.
+
+## 13. The system map
+
+The first picture on the page, written from the facts above, after the nodes and before the
+scenarios are fixed: the groups are the subject's own boundaries, the parts are the nouns you
+already found in §3, each link is a call or hand-off you cited in §2, and the journey is §6's
+happy path in plain sentences. Which view leads for which question, how to build it for code, a
+concept or a business process, and the budgets: `system-map.md`.
 
 ## Numbers
 
