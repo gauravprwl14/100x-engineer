@@ -583,3 +583,50 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---- system map: one picture of how the parts group and connect (system-map.js draws it) ---- */
+.sys { display: block; }
+.sys-title { margin: 0 0 var(--s2); font-size: var(--t-md); }
+.sys-cap { margin: 0 0 var(--s3); max-width: 95ch; }
+.sys-holder { overflow: auto; padding: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.sys-holder svg.sysmap { display: block; width: 100%; height: auto; margin-inline: auto; font-family: var(--font-body); }
+.sysmap .sys-group rect { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; }
+.sysmap .sys-group.d1 rect { fill: color-mix(in srgb, var(--accent) 5%, var(--surface)); stroke-dasharray: 5 4; }
+.sysmap .sys-group.d2 rect { fill: color-mix(in srgb, var(--accent) 9%, var(--surface)); stroke-dasharray: 5 4; }
+.sysmap .sys-group.d3 rect { fill: color-mix(in srgb, var(--accent) 13%, var(--surface)); stroke-dasharray: 5 4; }
+.sysmap .sys-gl { font: 700 12px var(--font-body); fill: var(--fg); }
+.sysmap .sys-gs { font: 400 10.5px var(--font-body); fill: var(--muted); }
+.sysmap .sys-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+.sysmap .k-actor .sys-box { fill: var(--accent-soft); stroke: var(--accent); }
+.sysmap .k-data .sys-box { fill: var(--goodsoft); stroke: var(--good); }
+.sysmap .k-external .sys-box { fill: var(--surface-2); stroke-dasharray: 4 3; }
+.sysmap .sys-lbl-p { font: 600 12.5px var(--font-body); fill: var(--fg); }
+.sysmap .sys-sub { font: 400 10.5px var(--font-body); fill: var(--muted); }
+.sysmap .sys-link, .sys-key .sys-link { fill: none; stroke: var(--c); stroke-width: 1.7; }
+.sys-link.st-call { --c: var(--accent); } .sys-link.st-data { --c: var(--res); } .sys-link.st-async { --c: var(--job); stroke-dasharray: 6 4; }
+.sys-link.st-watch { --c: var(--muted); stroke-dasharray: 2 4; } .sys-link.st-risk { --c: var(--bad); stroke-width: 2.2; }
+.sys-link.inferred { stroke-opacity: 0.5; }
+.sys-ah { fill: var(--muted); } .sys-ah.ah-call { fill: var(--accent); } .sys-ah.ah-data { fill: var(--res); } .sys-ah.ah-async { fill: var(--job); } .sys-ah.ah-risk { fill: var(--bad); }
+.sysmap .sys-lbl rect { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.sysmap .sys-lbl circle { fill: var(--accent); }
+.sysmap .sys-lbl .sys-n { font: 700 10px var(--font-mono); fill: var(--surface); }
+.sysmap .sys-lbl-t { font: 500 10.5px var(--font-body); fill: var(--fg); }
+.sysmap a.sys-jump { cursor: pointer; }
+.sysmap a.sys-jump:focus-visible .sys-lbl rect { stroke: var(--focus); stroke-width: 2; }
+.sys-legend { list-style: none; margin: var(--s3) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px var(--s4); font-size: 13px; color: var(--muted); }
+.sys-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sys-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line-strong); background: var(--surface); }
+.sys-swatch.k-actor { background: var(--accent-soft); border-color: var(--accent); }
+.sys-swatch.k-data { background: var(--goodsoft); border-color: var(--good); }
+.sys-swatch.k-external { border-style: dashed; background: var(--surface-2); }
+.sys-journey { margin-top: var(--s4); }
+.sys-journey h3 { margin: 0 0 var(--s2); font-size: var(--t-md); }
+.sys-journey ol { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.sys-journey li { scroll-margin-top: 16px; }
+.sys-journey > ol > li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--s2); align-items: start; }
+.sys-journey .sys-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--surface); font: 700 12px var(--font-mono); }
+.sys-jt { margin: 0; font-weight: 600; }
+.sys-hops { list-style: none; margin: 2px 0 0; padding: 0; font-size: 13px; color: var(--muted); }
+.sys-all { margin-top: var(--s3); }
+.sys-all summary { cursor: pointer; font-weight: 600; }
+@media (forced-colors: active) { .sysmap .sys-box, .sysmap .sys-group rect { stroke: CanvasText; } .sys-link { stroke: LinkText; } }

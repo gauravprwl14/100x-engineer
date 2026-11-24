@@ -1,0 +1,190 @@
+{
+ "schema": 1,
+ "tier": "light",
+ "title": "How an expense gets approved",
+ "subject": {
+  "kind": "concept",
+  "lede": "An employee files an expense, a manager approves it, finance pays it, and the bank settles it."
+ },
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "The subject"
+  }
+ ],
+ "evidence": {},
+ "scenarios": [
+  {
+   "id": "happy",
+   "kind": "happy",
+   "title": "The main path",
+   "steps": [
+    {
+     "t": "The parts do their work in order",
+     "do": [
+      [
+       "note",
+       "see the system map above"
+      ]
+     ],
+     "tag": "inferred"
+    }
+   ]
+  }
+ ],
+ "system": {
+  "cols": 3,
+  "items": [
+   {
+    "id": "staff",
+    "label": "Employee side",
+    "items": [
+     {
+      "id": "emp",
+      "label": "Employee",
+      "sub": "files the expense",
+      "kind": "actor"
+     },
+     {
+      "id": "receipt",
+      "label": "Receipt",
+      "sub": "the proof of spend",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "approval",
+    "label": "Approval",
+    "items": [
+     {
+      "id": "mgr",
+      "label": "Manager",
+      "sub": "checks the reason and the amount"
+     },
+     {
+      "id": "policy",
+      "label": "Spending policy",
+      "sub": "the limits a manager applies",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "finance",
+    "label": "Finance",
+    "items": [
+     {
+      "id": "fin",
+      "label": "Finance clerk",
+      "sub": "checks the paperwork"
+     },
+     {
+      "id": "ledger",
+      "label": "Ledger",
+      "sub": "where the cost is booked",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "bank",
+    "label": "Bank",
+    "sub": "moves the money",
+    "kind": "external"
+   }
+  ],
+  "links": [
+   {
+    "from": "emp",
+    "to": "receipt",
+    "label": "attaches",
+    "style": "data",
+    "n": 1,
+    "tag": "inferred"
+   },
+   {
+    "from": "emp",
+    "to": "mgr",
+    "label": "submits",
+    "style": "call",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "policy",
+    "label": "checks against",
+    "style": "watch",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "fin",
+    "label": "approves",
+    "style": "call",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "fin",
+    "to": "ledger",
+    "label": "books the cost",
+    "style": "data",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "fin",
+    "to": "bank",
+    "label": "asks for payment",
+    "style": "async",
+    "n": 6,
+    "tag": "inferred"
+   },
+   {
+    "from": "bank",
+    "to": "emp",
+    "label": "pays back",
+    "style": "async",
+    "n": 7,
+    "tag": "inferred"
+   },
+   {
+    "from": "mgr",
+    "to": "emp",
+    "label": "rejects with a reason",
+    "style": "risk",
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "The employee attaches the receipt"
+   },
+   {
+    "title": "The expense goes to the manager"
+   },
+   {
+    "title": "The manager checks it against the policy"
+   },
+   {
+    "title": "The manager approves it"
+   },
+   {
+    "title": "Finance books the cost"
+   },
+   {
+    "title": "Finance asks the bank to pay"
+   },
+   {
+    "title": "The employee is paid back"
+   }
+  ]
+ }
+}

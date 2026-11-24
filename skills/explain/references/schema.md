@@ -1,3 +1,5 @@
+[← INDEX](INDEX.md)
+
 # scenario.json, schema 1
 
 The one file the agent writes. `100x flow check` validates it, `100x flow reduce` replays it,
@@ -11,6 +13,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 |---|---|---|
 | [Top level](#top-level) | which keys exist, which are required, which are heavy-only | ~25 lines |
 | [Context, vocabulary, outline](#context-vocabulary-outline) | how the page answers in three lines (`tldr`), says what the PR does, defines its words and sketches the code | ~45 lines |
+| [System map](#system-map) | how groups, parts, labelled links and a numbered journey are written, and what the page draws from them | ~45 lines |
 | [Diagrams](#diagrams) | how a mermaid diagram, mind map included, is written, cited and checked | ~25 lines |
 | [Code reference](#code-reference) | how a page lists every function in the files behind it, read from the code | ~20 lines |
 | [Nodes, numbers, evidence](#nodes-numbers-evidence) | how boxes, tagged numbers and checkable evidence are written | ~45 lines |
@@ -41,6 +44,7 @@ did-you-mean); "Text" is a string or `{"en": "…", "ja"?: "…"}`.
 | `outline` | no | list (light ≤ 1, heavy ≤ 3) | pseudocode of the workflow, lines linked to steps |
 | `diagrams` | no | list (light ≤ 2, heavy ≤ 4) | mermaid diagrams drawn beside the outline |
 | `reference` | no | list (1-8) | Python files whose functions and classes the page lists; see [Code reference](#code-reference) |
+| `system` | no | object | the one-picture overview: groups, parts, labelled links, a numbered journey; see [System map](#system-map) |
 
 Light is the subset without `checks`, `compare` and `ja` text; a light check notes and ignores
 them, so the same file upgrades with `--tier heavy`. A value in state (`initial`, `cache.set`,
@@ -87,6 +91,38 @@ words), `why_now` (Text), `in_scope` (1-8 Text, req), `out_of_scope` (≤ 8 Text
 | `steps` | no | 0-based indexes into the scenario's visible steps, inherited included |
 | `ev` | one of | evidence id |
 | `tag` | one of | `inferred`; a line needs `ev` or `tag: inferred`, as a step does |
+
+## System map
+
+**`system`** — the first picture on the page: boxes inside boxes, labelled links, a numbered
+journey. The agent writes a tree and the links; the engine lays it out (`assets/system-map.js`)
+and also writes it to `explain.md` as a mermaid flowchart with subgraphs. How to build one from a
+PR, a module, a concept or a process: `system-map.md`.
+
+| key | req | notes |
+|---|---|---|
+| `items` | yes | non-empty list of groups and parts: the top level |
+| `links` | yes | non-empty list of links |
+| `title`, `caption` | no | Text; the caption says how to read it |
+| `cols` | no | int 1-6: columns at the top level (default up to 3) |
+| `journey` | no | list of `{title, scenario?}`; step `n` is its 1-based position |
+
+**Group** `{id, label, items, sub?, cols?}`: `items` non-empty, nested at most 3 deep, at most 12
+groups. **Part** `{id, label, sub?, kind?, ev?}`: `kind` is `actor` (a person or client), `data`
+(held at rest) or `external` (outside the boundary, drawn dashed). `id` is `[a-z][a-z0-9_-]*` and
+unique across groups and parts together. `label` ≤ 28 characters and `sub` ≤ 60, in every
+language: the box is sized from the text and the check refuses what cannot fit.
+
+**Link** `{from, to, label?, style?, n?, ev?, tag?}`: `from` and `to` name a part or a group, not
+the same one and not a group and something inside it. `label` ≤ 28 characters. `style` is `call`
+(default), `data`, `async` (dashed), `watch` (dotted) or `risk` (red). `n` ties the link to
+journey step `n`: the picture shows the number, the list below it shows the step, and every step
+needs at least one link. Like a step, a link has `ev` (evidence ids) or `tag: inferred`; an
+inferred link is drawn faded. The same pair may repeat with different labels, never with the same.
+
+Budgets: light 20 parts, 24 links, 8 journey steps; heavy 36, 48, 12 (`over budget` finding).
+Every `label`, `sub`, journey title, `title` and `caption` is prose for the bare-number check, and
+a journey title for the jargon check (a word of a part or group `label` or `id` passes).
 
 ## Diagrams
 
@@ -257,6 +293,12 @@ and asks `q`. **`compare`** (heavy): ≥ 2 distinct scenario ids, drawn on one c
 | `diagram '<id>': <problem>` | a problem `scripts/check_diagrams.py` reports in the source (undeclared sequence participant, unrecognised arrow, unquoted parentheses in a flowchart label, placeholder text, a declared level's node budget, a level-3 diagram with no shown branch, a mind map with no root, more than one root, inconsistent or mixed indentation, no recognisable diagram type); its level-3 step-table rule does not apply |
 | `kind '<kind>' does not match the source` | `kind` names the diagram type check_diagrams reads from the source |
 | `duplicate diagram id` | diagram ids are unique |
+| `system …: unknown part or group` / `duplicate id` / `are nested` / `duplicate link` | links join two different, existing, non-nested boxes once; ids are unique across groups and parts |
+| `system …: N characters, max 28` / `max 60` | a label or subtitle fits its box, in every language |
+| `link has no evidence` | each link has `ev` or `tag: inferred` |
+| `journey step N has no link` / `step N is past the end of the journey` | `n` on links and the journey agree |
+| `groups nest more than 3 deep` / `a group needs at least one item` | the tree stays readable |
+| `jargon in journey step title` | as a step title |
 | `step N is past the end of scenario` | outline `steps` and `checks[].step` index the scenario's visible steps |
 | `over budget` | the tier's limits below |
 

@@ -1,0 +1,205 @@
+{
+ "system": {
+  "title": "Why a commit needs a fresh receipt",
+  "cols": 3,
+  "items": [
+   {
+    "id": "author",
+    "label": "Author side",
+    "items": [
+     {
+      "id": "you",
+      "label": "You",
+      "kind": "actor"
+     },
+     {
+      "id": "claude",
+      "label": "Claude",
+      "sub": "the agent that wants to commit",
+      "kind": "actor"
+     },
+     {
+      "id": "tests",
+      "label": "Your check command",
+      "sub": "tests or lint",
+      "kind": "external"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "proof",
+    "label": "Proof",
+    "items": [
+     {
+      "id": "verified",
+      "label": "Receipt writer",
+      "sub": "runs the check and signs",
+      "ev": [
+       "v-sign"
+      ]
+     },
+     {
+      "id": "key",
+      "label": "Signing key",
+      "sub": "stays in your home folder",
+      "kind": "data",
+      "ev": [
+       "v-key"
+      ]
+     },
+     {
+      "id": "receipt",
+      "label": "Receipt",
+      "sub": "signed, bound to the files",
+      "kind": "data",
+      "ev": [
+       "v-bound"
+      ]
+     },
+     {
+      "id": "tree",
+      "label": "Working tree",
+      "sub": "the files git would commit",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "gates",
+    "label": "Gates",
+    "items": [
+     {
+      "id": "gate",
+      "label": "Commit gate",
+      "sub": "runs before git commit and push",
+      "ev": [
+       "r-fresh"
+      ]
+     },
+     {
+      "id": "stop",
+      "label": "Stop gate",
+      "sub": "runs when the agent stops"
+     },
+     {
+      "id": "git",
+      "label": "git and GitHub",
+      "sub": "where work leaves",
+      "kind": "external"
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "claude",
+    "to": "verified",
+    "label": "run the check",
+    "style": "call",
+    "n": 1,
+    "ev": [
+     "v-policy"
+    ]
+   },
+   {
+    "from": "verified",
+    "to": "tests",
+    "label": "run",
+    "style": "call",
+    "n": 2,
+    "ev": [
+     "v-exe"
+    ]
+   },
+   {
+    "from": "verified",
+    "to": "tree",
+    "label": "fingerprint the files",
+    "style": "data",
+    "n": 3,
+    "ev": [
+     "v-bound"
+    ]
+   },
+   {
+    "from": "verified",
+    "to": "key",
+    "label": "sign with",
+    "style": "data",
+    "n": 4,
+    "ev": [
+     "v-sign"
+    ]
+   },
+   {
+    "from": "verified",
+    "to": "receipt",
+    "label": "write",
+    "style": "data",
+    "n": 4,
+    "ev": [
+     "v-write"
+    ]
+   },
+   {
+    "from": "claude",
+    "to": "gate",
+    "label": "commit",
+    "style": "call",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "gate",
+    "to": "receipt",
+    "label": "is it signed and fresh?",
+    "style": "watch",
+    "n": 6,
+    "ev": [
+     "r-fresh"
+    ]
+   },
+   {
+    "from": "gate",
+    "to": "git",
+    "label": "allow or deny",
+    "style": "risk",
+    "n": 7,
+    "tag": "inferred"
+   },
+   {
+    "from": "stop",
+    "to": "receipt",
+    "label": "same check at stop",
+    "style": "watch",
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "Claude asks for the check to be run"
+   },
+   {
+    "title": "The check command really runs"
+   },
+   {
+    "title": "The files are fingerprinted"
+   },
+   {
+    "title": "The result is signed and written down"
+   },
+   {
+    "title": "Claude then tries to commit"
+   },
+   {
+    "title": "The gate checks the receipt is signed and fresh"
+   },
+   {
+    "title": "Without a fresh receipt the commit is denied"
+   }
+  ]
+ }
+}

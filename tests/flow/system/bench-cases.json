@@ -1,0 +1,61 @@
+[
+ {
+  "name": "100x-plugin before",
+  "scenario": "../../../explain/100x-plugin/scenario.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "100x-plugin after",
+  "scenario": "../../../explain/100x-plugin/scenario.json",
+  "overlay": "ab/100x-plugin.overlay.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "orchestration before",
+  "scenario": "../../../explain/orchestration/scenario.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "orchestration after",
+  "scenario": "../../../explain/orchestration/scenario.json",
+  "overlay": "ab/orchestration.overlay.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "verification-gate before",
+  "scenario": "../../../explain/verification-gate/scenario.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "verification-gate after",
+  "scenario": "../../../explain/verification-gate/scenario.json",
+  "overlay": "ab/verification-gate.overlay.json",
+  "tier": "heavy"
+ },
+ {
+  "name": "fixture pr-stale-cache",
+  "scenario": "../../../skills/explain/assets/examples/stale-writeback.json",
+  "tier": "heavy",
+  "overlay": "ab/stale-writeback.overlay.json"
+ },
+ {
+  "name": "fixture module-notes",
+  "scenario": "module-notes.json",
+  "tier": "light"
+ },
+ {
+  "name": "fixture concept-two-phase-commit",
+  "scenario": "concept-two-phase-commit.json",
+  "tier": "light"
+ },
+ {
+  "name": "fixture process-expense-approval",
+  "scenario": "process-expense-approval.json",
+  "tier": "light"
+ },
+ {
+  "name": "fixture large-platform",
+  "scenario": "large-platform.json",
+  "tier": "heavy"
+ }
+]

@@ -556,6 +556,86 @@ print("escape ok")
 PY5
 [ $? -eq 0 ] && ok "  </script and <!-- inside a snippet line stay escaped and round-trip" || bad "  snippet escaping"
 
+echo "--- system map: the one picture of how the parts group and connect"
+SYS="$FIX/system"
+# the code-change subject is the stale-writeback example plus a system block (an overlay), not a copy of it
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.update(json.load(open(sys.argv[2]))); json.dump(d, open(sys.argv[3], "w"))' "$EX" "$SYS/ab/stale-writeback.overlay.json" "$TMP/pr-stale-cache.json"
+for f in pr-stale-cache module-notes concept-two-phase-commit process-expense-approval large-platform; do
+  file="$SYS/$f.json"; [ "$f" = pr-stale-cache ] && file="$TMP/pr-stale-cache.json"
+  run 0 "system/$f passes check" check "$file" --repo "$REPO"
+  has "0 finding(s)"
+done
+# a clean fixture with one defect seeded by a python statement acting on `d` (the doc) and `s` (its system)
+expect_sys() {  # <name> <python> <message>; the base is module-notes (light, two groups, four links)
+  python3 - "$SYS/module-notes.json" "$TMP/sys-$1.json" "$2" <<'E'
+import json, sys
+d = json.load(open(sys.argv[1])); s = d["system"]
+exec(sys.argv[3])
+json.dump(d, open(sys.argv[2], "w"))
+E
+  run 1 "system/$1" check "$TMP/sys-$1.json" --repo "$REPO"
+  has "$3"; count "FINDING" 1
+}
+expect_sys unknown-endpoint   's["links"][0]["to"] = "nots"'                                   'unknown part or group "nots"'
+expect_sys duplicate-id       's["items"][1]["items"].append({"id": "routes", "label": "Again"})' "duplicate id 'routes'"
+expect_sys link-no-evidence   'del s["links"][0]["ev"]'                                        "link has no evidence: cite ev ids or tag it inferred"
+expect_sys link-unknown-ev    's["links"][0]["ev"] = ["nope"]'                                 "unknown evidence id 'nope'"
+expect_sys label-too-long     's["items"][0]["items"][0]["label"] = "x" * 29'                  "29 characters, max 28: it must fit its box"
+expect_sys label-too-long-ja  's["items"][0]["items"][0]["label"] = {"en": "ok", "ja": "長" * 29}' "label.ja: 29 characters, max 28"
+expect_sys unknown-style      's["links"][0]["style"] = "fast"'                                'must be one of call, data, async, watch, risk'
+expect_sys unknown-key        's["links"][0]["lable"] = "x"'                                   "unknown key 'lable' (did you mean 'label'?)"
+expect_sys nested-link        's["links"][0] = {"from": "code", "to": "routes", "tag": "inferred"}' "are nested, so the link has nowhere to go"
+expect_sys duplicate-link     's["links"].append(dict(s["links"][0]))'                         "duplicate link routes -> notes"
+expect_sys no-links           's["links"] = []'                                                "a map with no connection shows no flow"
+expect_sys empty-group        's["items"].append({"id": "emp", "label": "Empty", "items": []})' "a group needs at least one item"
+expect_sys too-deep           's["items"] = [{"id": "g1", "label": "A", "items": [{"id": "g2", "label": "B", "items": [{"id": "g3", "label": "C", "items": [{"id": "g4", "label": "D", "items": [{"id": "deep", "label": "Deep"}]}]}]}]}, {"id": "q", "label": "Q"}]; s["links"] = [{"from": "deep", "to": "q", "tag": "inferred"}]' "groups nest more than 3 deep"
+expect_sys journey-past-end   's["journey"] = [{"title": "One step"}]; s["links"][0]["n"] = 1; s["links"][1]["n"] = 2' "step 2 is past the end of the journey (1 step(s))"
+expect_sys journey-no-link    's["journey"] = [{"title": "One"}, {"title": "Two"}]; s["links"][0]["n"] = 1' "journey step 2 has no link: give a link n: 2"
+expect_sys journey-bad-scene  's["journey"] = [{"title": "One", "scenario": "nope"}]; s["links"][0]["n"] = 1' 'unknown scenario "nope"'
+expect_sys journey-bare-num   's["journey"] = [{"title": "It retries 3 times"}]; s["links"][0]["n"] = 1' "bare number '3' in prose"
+expect_sys journey-jargon     's["journey"] = [{"title": "It calls getNote first"}]; s["links"][0]["n"] = 1' "jargon in journey step title: 'getNote'"
+expect_sys over-budget-light  's["items"] = [{"id": "p%d" % i, "label": chr(97 + i) * 3} for i in range(21)]; s["links"] = [{"from": "p0", "to": "p1", "tag": "inferred"}]' "over budget (light): 21 parts, max 20"
+python3 - "$SYS/module-notes.json" "$TMP/sys-no-system-asset.json" <<'E'
+import json, sys
+d = json.load(open(sys.argv[1])); d["system"]["items"][0]["items"][0]["label"] = {"en": "Routes", "ja": "ルート"}; json.dump(d, open(sys.argv[2], "w"))
+E
+run 0 "system: a label with both languages passes" check "$TMP/sys-no-system-asset.json" --repo "$REPO"
+
+echo "--- system map: build, the markdown export, and pages without a map stay as they were"
+run 0 "build a page with a system map" build "$TMP/pr-stale-cache.json" --repo "$REPO" --out "$TMP/site-system"
+grep -q 'const SystemMap' "$TMP/site-system/index.html" && ok "  the page carries the layout code" || bad "  no layout code in a page with a system map"
+run 0 "build a page without one" build "$EX" --repo "$REPO" --out "$TMP/site-nosystem"
+grep -q 'const SystemMap' "$TMP/site-nosystem/index.html" && bad "  a page with no system map carries the layout code (every page grows)" || ok "  a page without a system map carries none of it"
+run 1 "build refuses a system map that check rejects" build "$TMP/sys-no-links.json" --repo "$REPO" --out "$TMP/site-refused"
+MD="$TMP/site-system/explain.md"
+grep -q '^## System map' "$MD" && ok "  explain.md has a System map section" || bad "  explain.md has no System map section"
+grep -q '| \[System map\](#system-map) |' "$MD" && ok "  the Contents table lists it" || bad "  Contents lacks System map"
+python3 - "$MD" <<'E' && ok "  the mermaid export is balanced: every subgraph has its end, every link its two ends" || bad "  the mermaid export is unbalanced"
+import re, sys
+t = open(sys.argv[1]).read()
+src = t.split("```mermaid", 1)[1].split("```", 1)[0].strip().splitlines()
+assert src[0].strip() == "flowchart LR"
+opens = sum(1 for l in src if l.strip().startswith("subgraph ")); ends = sum(1 for l in src if l.strip() == "end")
+assert opens == ends >= 1, (opens, ends)
+ids = set(re.findall(r"^\s*(?:subgraph )?(n_\w+)\[", "\n".join(src), re.M))
+for l in src:
+    m = re.match(r"^\s*(n_\w+) [-=.>]+(?:\|[^|]*\|)? (n_\w+)$", l)
+    if m: assert m.group(1) in ids and m.group(2) in ids, l
+assert any("|" in l for l in src)
+E
+grep -q '^| 4 | It then fills the cache' "$MD" && ok "  the journey table keeps its order and numbers" || bad "  journey table lost its numbers"
+# the same input builds the same page twice
+python3 "$F" build "$TMP/pr-stale-cache.json" --repo "$REPO" --out "$TMP/site-system2" >/dev/null 2>&1
+cmp -s "$TMP/site-system/index.html" "$TMP/site-system2/index.html" && cmp -s "$MD" "$TMP/site-system2/explain.md" && ok "  building twice gives the same bytes" || bad "  the build is not deterministic"
+
+echo "--- system map: layout, routing and markup (node)"
+if command -v node >/dev/null 2>&1; then
+  node --test "$FIX/system.test.mjs" >"$OUT/r.out" 2>&1
+  [ $? -eq 0 ] && ok "layout holds on 300 random subjects, the committed fixtures, and the edge cases (node --test)" || bad "system-map.js: a property or edge case fails"
+else
+  echo "  SKIP system map layout tests: node not installed"
+fi
+
 echo "--- optional: the engine renders in headless Chrome (never required)"
 CHROME="${FLOW_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 # no network in tests: mermaid never loads, so every run exercises the diagram fallback
@@ -602,6 +682,41 @@ if [ -x "$CHROME" ]; then
     && ok "  smoke heavy #race.4: outline lines and code pane meet the contract" || bad "  smoke heavy #race.4: a page section breaks its contract"
   probe "$TMP/smoke-stale-writeback-light-light/index.html" 1280 "#%E0%A4%A" >"$OUT/r.out"
   grep -q '"ok": *"true"' "$OUT/r.out" && ok "  smoke light: a malformed %-escape in the hash still renders" || bad "  smoke light: a malformed hash breaks the page"
+  # the benchmark gate: the same subject drawn the old way and with a system map. The new picture must
+  # sit higher on the page, label its links, tie them to the journey, and be no smaller or worse than the old one.
+  if command -v node >/dev/null 2>&1; then
+    FLOW_CHROME="$CHROME" node "$FIX/bench-picture.mjs" --cases "$SYS/bench-cases.json" --json --out "$TMP/bench" >"$OUT/bench.json" 2>"$OUT/r.out"
+    python3 - "$OUT/bench.json" >>"$OUT/r.out" 2>&1 <<'E' && ok "  bench: after is better than before on every pair, and every fixture draws clean" || bad "  bench: a picture got worse, or a fixture draws badly"
+import json, sys
+rows = {r["name"]: r for r in json.load(open(sys.argv[1]))}
+bad = []
+for name in sorted(rows):
+    if not name.endswith(" before"):
+        continue
+    b, a = rows[name], rows[name[:-7] + " after"]
+    checks = [("sits higher on the page", a["topPx"] < b["topPx"]), ("labels more links", a["labelled"] > b["labelled"]),
+              ("ties links to the journey", a["onJourney"] > b["onJourney"]), ("subtitles no fewer boxes", a["withSub"] >= b["withSub"]),
+              ("text no smaller", a["minFontPx"] >= b["minFontPx"]), ("no more links through boxes", a["through"] <= b["through"])]
+    for what, ok in checks:
+        if not ok:
+            bad.append(f"{name[:-7]}: the new picture does not do this: {what} (before {b}, after {a})")
+for name, r in rows.items():
+    if "error" in r:
+        bad.append(f"{name}: {r['error']}")
+        continue
+    if r["picture"] != "sysmap":
+        continue
+    for what, ok in [("no overlapping boxes", r["overlaps"] == 0), ("every part inside its group", r["outsideParent"] == 0),
+                     ("no label on a label or a box", r["tagOverlaps"] == 0), ("few links through boxes", r["through"] <= max(1, int(0.15 * r["links"]))),
+                     ("text at least 7px", r["minFontPx"] is not None and r["minFontPx"] >= 7), ("in the first screens", r["topPx"] < 1200)]:
+        if not ok:
+            bad.append(f"{name}: {what} ({r})")
+print("\n".join(bad))
+sys.exit(1 if bad else 0)
+E
+  else
+    echo "  SKIP bench gate: node not installed"
+  fi
 else
   echo "  SKIP headless smoke: Google Chrome not found (set FLOW_CHROME to a Chrome binary)"
 fi

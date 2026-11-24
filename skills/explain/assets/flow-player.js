@@ -368,6 +368,7 @@ const UI = {
     contents: "Contents", expandAll: "Expand all", collapseAll: "Collapse all",
     walkthrough: "Walkthrough", stepCards: "Step cards", diagrams: "Diagrams", evidenceTitle: "Evidence",
     answers: {
+      system: "How the parts group, which connects to which, and the journey through them in order",
       before: "What this change is for, what is in and out of scope, and the words you need",
       outline: "What the code does, in order, as short pseudocode",
       diagrams: "The shape of the flow at a glance, drawn as a diagram",
@@ -380,6 +381,7 @@ const UI = {
       reference: "What each function and class in these files does, and who uses it",
     },
     count: {
+      sysParts: a => plural(a.n, "part", "parts"), sysLinks: a => plural(a.n, "connection", "connections"),
       entryPoints: a => plural(a.n, "entry point", "entry points"), terms: a => plural(a.n, "term", "terms"),
       inScope: a => `${fmtInt(a.n)} in scope`, diagrams: a => plural(a.n, "diagram", "diagrams"),
       lines: a => plural(a.n, "line", "lines"), scenarios: a => plural(a.n, "scenario", "scenarios"),
@@ -391,6 +393,12 @@ const UI = {
     dgKind: { sequence: "sequence diagram", flowchart: "flowchart", state: "state diagram", er: "ER diagram", class: "class diagram", mindmap: "Mind map" },
     dgLoading: "Drawing the diagram…", dgOffline: "Diagram needs the network to draw; its source is shown.",
     dgFailed: "This diagram could not be drawn; its source is shown.", dgWatch: "Watch it animated", dgWalk: "See it step by step", dgWide: "Full width", dgEv: "cited lines",
+    systemMap: "How it fits together", sysLegend: "Connection styles", sysJourney: "The journey, in order",
+    sysSummary: a => `System map: ${a.parts} parts in ${a.groups} groups, ${a.links} connections.`,
+    sysStyle: { call: "call or request", data: "data read or write", async: "async or queued", watch: "watches or polls", risk: "risk path" },
+    sysKind: { actor: "person or client", data: "data at rest", external: "outside the boundary" },
+    sysInferred: "Faded: inferred, not read in code",
+    sysConnections: a => `All connections (${a.n})`, sysFrom: "From", sysTo: "To", sysWhat: "What", sysStyleCol: "Style", sysEv: "Evidence",
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "Concept", plan: "Plan" },
     tldr: "In short", tldrWhat: "What it does", tldrHow: "How it works", tldrWatch: "Watch out",
     glance: "At a glance", tileChanges: "Changes", tileRisks: "Risks", tileDecision: "Decision", tileConfidence: "Confidence",
@@ -474,6 +482,7 @@ const UI = {
     contents: "目次", expandAll: "すべて開く", collapseAll: "すべて閉じる",
     walkthrough: "ウォークスルー", stepCards: "ステップカード", diagrams: "図", evidenceTitle: "根拠",
     answers: {
+      system: "部品がどうまとまり、何が何につながるか、その順番",
       before: "この変更の目的、範囲に入るものと入らないもの、必要な用語",
       outline: "コードが何をどの順でするかを短い疑似コードで",
       diagrams: "流れの全体像を図でひと目で",
@@ -485,6 +494,7 @@ const UI = {
       evidence: "各主張を裏づけるコードの行",
     },
     count: {
+      sysParts: a => `部品 ${fmtInt(a.n)} 個`, sysLinks: a => `接続 ${fmtInt(a.n)} 本`,
       entryPoints: a => `入口 ${fmtInt(a.n)} 件`, terms: a => `用語 ${fmtInt(a.n)} 件`, inScope: a => `範囲内 ${fmtInt(a.n)} 件`,
       diagrams: a => `図 ${fmtInt(a.n)} 件`, lines: a => `${fmtInt(a.n)} 行`, scenarios: a => `シナリオ ${fmtInt(a.n)} 件`,
       steps: a => `ステップ ${fmtInt(a.n)} 件`, issues: a => `問題 ${fmtInt(a.n)} 件`, options: a => `案 ${fmtInt(a.n)} 件`,
@@ -493,6 +503,12 @@ const UI = {
     dgKind: { sequence: "シーケンス図", flowchart: "フローチャート", state: "状態遷移図", er: "ER 図", class: "クラス図", mindmap: "マインドマップ" },
     dgLoading: "図を描画中…", dgOffline: "図の描画にはネットワークが必要。図のソースを表示している。",
     dgFailed: "この図は描画できなかった。図のソースを表示している。", dgWatch: "アニメーションで見る", dgWalk: "ステップごとに見る", dgWide: "全幅で表示", dgEv: "件の引用行",
+    systemMap: "全体のつながり", sysLegend: "接続の種類", sysJourney: "流れ(順番)",
+    sysSummary: a => `システムマップ: ${a.groups} グループ、部品 ${a.parts} 個、接続 ${a.links} 本。`,
+    sysStyle: { call: "呼び出し・リクエスト", data: "データの読み書き", async: "非同期・キュー経由", watch: "監視・ポーリング", risk: "リスクのある経路" },
+    sysKind: { actor: "人・クライアント", data: "保存されたデータ", external: "境界の外" },
+    sysInferred: "薄い線: 推測(コードで未確認)",
+    sysConnections: a => `すべての接続 (${a.n})`, sysFrom: "送信元", sysTo: "送信先", sysWhat: "内容", sysStyleCol: "種類", sysEv: "根拠",
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "概念", plan: "計画" },
     tldr: "要約", tldrWhat: "何をするか", tldrHow: "どう動くか", tldrWatch: "注意点",
     glance: "ひと目で", tileChanges: "変更", tileRisks: "リスク", tileDecision: "判断", tileConfidence: "確からしさ",
@@ -1263,7 +1279,7 @@ function mapLegend() {
 /* ============ sections: each one after Contents folds; a link opens what it points into ============ */
 
 const CLOSED_BY_DEFAULT = ["evidence"];
-const SECTION_TITLE = { before: "beforeWatch", outline: "outline", diagrams: "diagrams", walk: "walkthrough", steps: "stepCards",
+const SECTION_TITLE = { system: "systemMap", before: "beforeWatch", outline: "outline", diagrams: "diagrams", walk: "walkthrough", steps: "stepCards",
                         issues: "issues", decision: "decision", numbers: "numbers", evidence: "evidenceTitle",
                         reference: "reference" };
 // A section the reader folds stays folded when the page redraws (language, narrow/wide).
@@ -1290,7 +1306,10 @@ function sectionCount(key) {
   const n = (k, v) => ui("count." + k, { n: v }), c = P.doc.context || {};
   const steps = P.doc.scenarios.reduce((a, s) => a + (s.steps || []).length, 0);
   const ev = Object.values(P.doc.evidence || {}), absent = ev.filter(e => own(e, "absent")).length;
+  const sys = P.doc.system || {}, sysCount = { parts: 0, links: (sys.links || []).length };
+  (function walk(items) { for (const x of items || []) { if (Array.isArray(x.items)) walk(x.items); else sysCount.parts++; } })(sys.items);
   const parts = {
+    system: [n("sysParts", sysCount.parts), n("sysLinks", sysCount.links)],
     before: [(c.entry_points || []).length && n("entryPoints", c.entry_points.length), P.terms.length && n("terms", P.terms.length)],
     outline: [n("lines", P.outline.reduce((a, o) => a + o.lines.length, 0))],
     diagrams: [n("diagrams", P.diagrams.length)],
@@ -1517,6 +1536,49 @@ function outlineAndDiagrams(jump, onShow) {
   const kids = [outlinePanel(jump), diagramsPanel(onShow)].filter(Boolean);
   if (kids.length < 2) return kids[0] || null;
   return h("div", { class: "pair" }, kids);
+}
+
+/* ============ system map: one picture of how the parts group and connect ============ */
+let sysSeq = 0;
+function systemPanel(onShow) {
+  const sys = P.doc.system;
+  if (!sys || typeof SystemMap === "undefined") return null;
+  const names = {}, kinds = new Set();
+  let nParts = 0, nGroups = 0;
+  (function walk(items) { for (const n of items) { names[n.id] = tx(n.label); if (Array.isArray(n.items)) { nGroups++; walk(n.items); } else { nParts++; if (n.kind) kinds.add(n.kind); } } })(sys.items);
+  const L = SystemMap.layout(sys, { tx, narrow: innerWidth < NARROW_PX }), R = SystemMap.route(sys, L, { tx });
+  const holder = h("div", { class: "sys-holder", tabindex: "0", role: "region", "aria-label": ui("systemMap") });
+  const SYS_MIN_SCALE = 0.7; // a wide map scrolls sideways before its labels shrink below this share of their size
+  holder.innerHTML = SystemMap.svg(sys, L, R, { tx, id: "sm" + (++sysSeq), title: ui("sysSummary", { parts: nParts, groups: nGroups, links: sys.links.length }) });
+  holder.firstElementChild.style.minWidth = Math.round(L.W * SYS_MIN_SCALE) + "px";
+  const styles = SystemMap.STYLES.filter(k => sys.links.some(l => (l.style || "call") === k));
+  const key = (cls) => { const k = sv("svg", { class: "sys-key", viewBox: "0 0 30 10", width: 30, height: 10, "aria-hidden": "true" }); sv("path", { class: "sys-link " + cls, d: "M1 5 L29 5" }, k); return k; };
+  const inferred = sys.links.some(l => l.tag === "inferred" || !(l.ev || []).length);
+  const legend = h("ul", { class: "sys-legend", "aria-label": ui("sysLegend") },
+    styles.map(k => h("li", null, key("st-" + k), h("span", null, ui("sysStyle." + k)))),
+    inferred ? h("li", null, key("st-call inferred"), h("span", null, ui("sysInferred"))) : null,
+    [...kinds].map(k => h("li", null, h("span", { class: "sys-swatch k-" + k, "aria-hidden": "true" }), h("span", null, ui("sysKind." + k)))));
+  const journey = (sys.journey || []).length ? h("div", { class: "sys-journey" }, h("h3", null, ui("sysJourney")),
+    h("ol", null, sys.journey.map((st, i) => {
+      const n = i + 1, sid = st.scenario && P.scen[st.scenario] ? st.scenario : null;
+      const watch = !sid ? null : onShow
+        ? h("button", { type: "button", class: "btn sm", onclick: () => onShow(sid) }, h("span", { "aria-hidden": "true" }, "▶ "), ui("dgWatch"))
+        : h("a", { href: "#sc-" + sid }, ui("dgWalk"));
+      return h("li", { id: "sys-j" + n },
+        h("span", { class: "sys-n", "aria-hidden": "true" }, String(n)),
+        h("div", null, h("p", { class: "sys-jt" }, txNode(st.title, { terms: true }), " ", watch),
+          h("ul", { class: "sys-hops" }, sys.links.filter(l => l.n === n).map(l =>
+            h("li", null, `${names[l.from]} → ${names[l.to]}`, l.label ? [" · ", h("span", { class: "muted" }, tx(l.label))] : null)))));
+    }))) : null;
+  const table = h("details", { class: "sys-all" }, h("summary", null, ui("sysConnections", { n: sys.links.length })),
+    h("div", { class: "tbl" }, h("table", null,
+      h("thead", null, h("tr", null, ["sysFrom", "sysTo", "sysWhat", "sysStyleCol", "sysEv"].map(k => h("th", null, ui(k))))),
+      h("tbody", null, sys.links.map(l => h("tr", null,
+        h("td", null, names[l.from]), h("td", null, names[l.to]), h("td", null, l.label ? tx(l.label) : ""),
+        h("td", null, ui("sysStyle." + (l.style || "call"))),
+        h("td", null, (l.ev || []).length ? h("span", { class: "chips" }, evShort(l.ev)) : h("span", { class: "tagchip t-inferred" }, ui("tag.inferred")))))))));
+  const cap = sys.caption ? h("p", { class: "muted sys-cap" }, txNode(sys.caption, { terms: true })) : null;
+  return fold("system", ui("systemMap"), [sys.title ? h("h3", { class: "sys-title" }, tx(sys.title)) : null, cap, holder, legend, journey, table], "panel sys");
 }
 
 /* ============ before you watch: purpose, scope, entry points, terms ============ */
@@ -1859,7 +1921,7 @@ function stepChips(step) {
 function renderLight(app) {
   const narrow = innerWidth < NARROW_PX;
   app.replaceChildren(hero());
-  for (const x of [beforeWatch(null), outlineAndDiagrams((sid, i) => showLightTarget(`${sid}.${i}`), null)]) if (x) app.append(x);
+  for (const x of [systemPanel(null), beforeWatch(null), outlineAndDiagrams((sid, i) => showLightTarget(`${sid}.${i}`), null)]) if (x) app.append(x);
   const mapHost = h("figure", { class: "mapfig" });
   const overview = h("section", { class: "panel", id: "flow-main", tabindex: "-1" }, h("h2", null, ui("map")), mapHost, mapLegend());
   app.append(fold("steps", ui("stepCards"), [overview, P.order.map(sid => lightScenario(sid, narrow))], "bare"));
@@ -2319,7 +2381,7 @@ function renderHeavy(app) {
   };
   const jump = (id, i) => { openWalk(); selectTab(id, i, false); $("stage").scrollIntoView({ block: "nearest" }); };
   const walk = fold("walk", ui("walkthrough"), [bar, fixbar, main, compare], "bare walk");
-  app.replaceChildren(hero(), ...[beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
+  app.replaceChildren(hero(), ...[systemPanel(showScenario), beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
     issuesPanel(show), decisionPanel(show), numbersPanel(), evidencePanel(), referencePanel()].filter(Boolean), footer());
   layoutDoc(app);
   PL.M = buildMap($("svgbox"), { narrow: innerWidth < NARROW_PX });

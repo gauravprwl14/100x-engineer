@@ -1,9 +1,9 @@
 ---
 name: explain
 description: >
-  Visual walkthrough of a PR or concept, step by step: what can go wrong (race, failure, load),
-  each fix replayed before/after, trade-off, evidence per claim. Not for docs (→ learn:guide), one
-  diagram (→ diagramming), PR comments (→ pr-review), architecture notes (→ codebase-comprehension).
+  Visual walkthrough of a PR, system or concept: one map of how the parts group and connect, then
+  step by step what can go wrong, each fix replayed before/after, evidence per claim. Not for docs
+  (→ learn:guide), one diagram (→ diagramming), PR comments (→ pr-review), notes (→ codebase-comprehension).
 argument-hint: "<pr-url | owner/repo#n | path[:symbol] | \"concept\"> [--heavy] [--out <dir>]"
 ---
 
@@ -15,7 +15,7 @@ answers six questions, each claim pinned to a line or a measured absence:
 
 | # | question | where the page answers it |
 |---|---|---|
-| Q1 | where does it live | the map: one box per node, columns by role |
+| Q1 | where does it live | the system map (groups, parts, labelled links, a numbered journey), then the role map |
 | Q2 | what happens, step by step | one flow, one card per step, state after each step |
 | Q3 | what can go wrong | edge, failure, race and load scenarios, hazards flagged by the reducer |
 | Q4 | what fixes it | each fix is its own scenario branched from the issue: before vs after |
@@ -40,9 +40,9 @@ flowchart LR
 ## Trigger
 
 **Fire when:** the user asks to explain, walk through or step through a PR, a change, a file, a
-symbol or a concept visually; "show me what happens when…", "what can go wrong and what fixes
-it", "before and after the fix", "compare plan A vs plan B step by step"; or `/explain`. On
-demand only: no pipeline runs it, and `comprehension-mapper` uses it only for a walkthrough.
+symbol, a system or a concept visually; "how does X fit together", "show me what happens when…",
+"what can go wrong and what fixes it", "before and after the fix", "compare plan A vs plan B";
+or `/explain`. On demand only: no pipeline runs it; `comprehension-mapper` uses it for a walkthrough.
 
 **Do not fire when:** the output is long reading material from a doc or talk (`learn:guide`);
 one diagram for a spec or PR (`diagramming`); comments to post on GitHub (`pr-review`); a durable
@@ -51,20 +51,11 @@ architecture note for the repo (`codebase-comprehension`); reviewing your own di
 
 ## Project rules
 
-The skill holds no knowledge of any project. Before research, read the target project's
-`CLAUDE.md` / `AGENTS.md` (repo root, then any nested file on the touched paths; for a PR, from
-the head snapshot) for what they say about these, and use the default when they say nothing:
-
-| setting | default |
-|---|---|
-| folders to ignore | gitignored, generated and vendored files (`100x repo_map` marks them) |
-| glossary (terms the page must use) | none; names come from the code |
-| language | `en`; `ja` adds `title.ja` and step text in both |
-| default tier | `light` |
-| output dir | PR: `<CR>/<feature>/PR-<n>__…/explain/`, `CR` from `100x pr_review paths --url <pr-url> --json`; else `<root>/explain/<slug>/` |
-
-`<root>` is the records root (`docs/OPERATING-MODEL.md` §8). The report says which settings came
-from the project and which are defaults; on a conflict the project's file wins.
+The skill holds no knowledge of any project. Before research read the target's `CLAUDE.md` /
+`AGENTS.md` (repo root, nested files on the touched paths; for a PR, from the head snapshot) for
+folders to ignore, a glossary, language, default tier and output dir, and use the defaults when
+they say nothing: `references/project-rules.md`. The report says which came from the project;
+on a conflict the project's file wins.
 
 ## Steps
 
@@ -78,8 +69,10 @@ from the project and which are defaults; on a conflict the project's file wins.
 
    Tier is `light` unless `--heavy` or the project says otherwise. Ask **at most two** questions,
    only when the request does not answer them: the focus ("which part worries you?") and, for
-   heavy, which options to compare. Otherwise pick and say what you picked.
-2. **Research** with `references/research-recipe.md`: context first (a pr-review run's
+   heavy, which options to compare. Otherwise pick and say what you picked. Pick what leads the
+   page from the reader's question with the table in `references/system-map.md`.
+2. **Research** with `references/research-recipe.md` and, for the `system` map, `references/system-map.md` (groups,
+   parts and links come from the subject's own structure): context first (a pr-review run's
    `1-context.md` when present), nodes from changed symbols and one hop, absences by `git grep`,
    scenarios (happy, the focus, the riskiest), a fix per issue, the outline, diagrams, the decision.
 3. **Write** `scenario.json` in the output dir (`100x flow new <slug>` writes a starter):
@@ -192,11 +185,21 @@ Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy
     identifier unless it is a term.
     *Enforced by:* `100x flow check <dir>/scenario.json` (length, jargon); review (plainness)
 
+20. A page whose parts a reader must place has a `system`: groups, parts and labelled links named
+    from the subject (never from this skill), each link citing `ev` or tagged `inferred`, journey
+    numbers matching its links, labels that fit their boxes, inside the tier's budget.
+    *Enforced by:* `100x flow check <dir>/scenario.json` (shape, cites, budgets); review (grouping)
+
+21. A change to the system map's layout or routing keeps the old-vs-new picture bench passing.
+    *Enforced by:* `bash tests/test_flow.sh` (node and headless Chrome; skipped when absent)
+
 ## Verify
 
 ```bash
 # content vs code: anchors, absences, numbers, fixes, budgets, diagrams (~1s); --repo = cited clone
 100x flow check <dir>/scenario.json --tier light --repo <clone>
+# the system map: 300 random subjects, borders, determinism, escaping, then old vs new in Chrome
+node --test tests/flow/system.test.mjs && node tests/flow/bench-picture.mjs --cases tests/flow/system/bench-cases.json
 # render: one HTML (offline, except diagrams, which fall back to their source) + the .md (~1s)
 100x flow build <dir>/scenario.json --tier light --out <dir>
 # the engine: reducer, golden states, seeded bad scenarios (~5s; node/Chrome smoke SKIP if absent)
@@ -208,43 +211,40 @@ bash tests/test_flow.sh
 This skill rejects:
 
 - **A step citing a line that moved** (`src/cache.py:42@ab12cd3` is blank): `flow check` names it.
-- **"There is no lock" with nothing behind it**, or with a `git grep` that finds 3 hits:
-  absences are counted, not asserted.
-- **"Retries 3 times, 200ms apart" as bare prose.** Each number needs `{{retries}}` and a tag;
-  an `estimated` number never reads as `measured`.
-- **An issue with no way out**: a race scenario with neither `fixed_by` nor `open: true`.
-- **A fix shown as prose only.** The fix is a scenario branched from the issue where it diverges.
+- **"There is no lock" with nothing behind it**, or with a `git grep` that finds 3 hits: absences are counted.
+- **"Retries 3 times, 200ms apart" as bare prose.** Each number needs `{{retries}}` and a tag.
+- **An issue with no way out** (neither `fixed_by` nor `open: true`), or a fix shown as prose only.
 - **`expect: "hit"` on a step whose key was deleted two steps earlier**: the reducer says miss.
 - **A light page with 14 steps and 4 scenarios**: over budget; split it or pass `--heavy`.
 - **A diagram whose source is not its `kind`**, or uses an undeclared participant: `flow check` names it.
+- **A system map with a label that overflows its box**, a link between a group and its own child,
+  a journey step no link carries, or a link to a missing part: `flow check` names it.
 - **A PR page a newcomer cannot place**: no purpose, a TL;DR that needs the glossary, one of eight
   routes animated without saying so, `applyDiff` in a step title with no term, or a what-if race
   that reads as a real bug.
 - **Project knowledge baked into the skill**: a folder name, a glossary term or a team's tier
   default written here instead of read from that project's `CLAUDE.md`.
 
-**Honest limitations:** the checker proves that cited lines and counted absences exist and that
-the timeline is consistent; not that a step's sentence describes what the line does, or that a
-purpose or TL;DR reads plainly (rules 8, 14, 19: review). Hazard detection covers only
-`stale-writeback` in v1; other races are scenarios the agent writes and the reader judges.
+**Honest limitations:** the checker proves cited lines and counted absences exist and the timeline
+is consistent; not that a sentence describes what its line does or reads plainly (rules 8, 14, 19:
+review). Hazard detection covers only `stale-writeback`; other races are scenarios the reader judges.
 
 ## Scale
 
-`solo`: replay your fix against the bug's timeline before you push. `small-team`: a risky PR's
-review artifact, read in two minutes. `org`: the onboarding page for a flow everyone touches and
-nobody drew. `high-blast-radius`: where an outage would start.
+`solo`: replay your fix against the bug's timeline. `small-team`: a risky PR's review artifact,
+read in two minutes. `org`: the onboarding page for a flow nobody drew. `high-blast-radius`:
+where an outage would start.
 
 ## Sources
 
 - The six questions, the scenario/fix/decision model, tiers, evidence tags, the "agent writes only
   data, a tested engine renders it" split, context, terms, origin, outline, diagrams, `tldr`, the
-  summary and `flow check`'s rules: `SOURCE: original` (2026-10-22; context, code panes, diagrams
-  2026-10-24; `tldr`, summary, mindmap 2026-10-31).
+  summary and `flow check`'s rules: `SOURCE: original` (2026-10-22 to 2026-10-31).
 - The engine's structure (plans as data, state as a pure reduce over each step's actions, a player
-  over it): a user-supplied local page, not published; `SOURCE: original`.
+  over it): a user-supplied local page, not published; `SOURCE: original`. The system map, its
+  layout, routing and bench (2026-11-24): `SOURCE: original`, after a user-supplied architecture picture.
 - `verified` / `inferred` labels, a `file:line` per `verified` claim: `reviewers/_evidence-labels.md`;
   `skills/codebase-comprehension/SKILL.md` rule 3. Diagram type and level: `skills/diagramming/`.
 - `gh` only in pr-review's steps: `decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`.
-- The pr-review run folder (`PINS.md`, `review.json`, `CR` resolution): `skills/pr-review/SKILL.md`,
-  `skills/pr-review/references/workflow.md` steps 0b, 0d, 2.
+  The pr-review run folder (`PINS.md`, `review.json`, `CR`): `skills/pr-review/SKILL.md`, `references/workflow.md` 0b, 0d, 2.
 - Records root, output outside the reviewed repo: `docs/OPERATING-MODEL.md` §8; `skills/pr-review/SKILL.md` "Where output goes".

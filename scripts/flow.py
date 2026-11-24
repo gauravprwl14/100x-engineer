@@ -15,9 +15,12 @@ check   structure, action arity and node refs, evidence anchors at their SHA (`g
         counted absences (`git grep`), bare numbers in prose, tier budgets, every issue
         fixed or open, each step's `expect` and `hazard` against the reducer, context on a PR,
         an origin on every issue, outline lines cited, no unexplained identifier in a step title,
-        each diagram's mermaid source through scripts/check_diagrams.py and its `kind`.
+        each diagram's mermaid source through scripts/check_diagrams.py and its `kind`, and the
+        `system` map: unique ids, links between existing non-nested boxes, labels that fit their
+        boxes, `ev` or `inferred` on every link, a journey every step of which has a link, budgets.
 reduce  the state after every step; `--json` is the golden format tests/flow/states.json.
-build   inlines skills/explain/assets/{shell.html,flow-player.js,flow-player.css} and the
+build   inlines skills/explain/assets/{shell.html,flow-player.js,flow-player.css} (and system-map.js
+        for a page that has a `system`) and the
         scenario into <out>/index.html, and writes the <out>/explain.md export; refuses
         what check rejects at the same tier (evidence only when --repo is given). With --repo,
         the lines around each cited line are read from git into the page as real code.
@@ -34,6 +37,9 @@ from _mutation_guard import safe_record_name
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "skills" / "explain" / "assets"
 ASSET_FILES = ("shell.html", "flow-player.js", "flow-player.css")
+# the system map's layout code is prepended to the player only for a page that has a `system`,
+# so every other page stays byte-for-byte what it was
+SYSTEM_ASSET = "system-map.js"
 SHELL_TOKEN_RX = re.compile(r"\{\{(flow_[a-z]+)\}\}")
 REQUIRED_SHELL_TOKENS = ("flow_css", "flow_js", "flow_data")
 
@@ -63,6 +69,18 @@ MAX_OUTLINE_INDENT = 6
 MAX_STEP_CODE_LINES = 8
 DIAGRAM_KINDS = ("sequence", "flowchart", "state", "er", "class", "mindmap")
 DIAGRAM_BUDGET = {"light": 2, "heavy": 4}
+# The system map: one picture of how the parts group and connect. Budgets are what stays legible when
+# the picture is scaled into a page column; a label of 28 characters is about 205px, inside the 240px
+# a box may grow to (skills/explain/assets/system-map.js), and a subtitle wraps into two lines of it.
+SYSTEM_BUDGET = {"light": {"parts": 20, "links": 24, "journey": 8},
+                 "heavy": {"parts": 36, "links": 48, "journey": 12}}
+MAX_SYSTEM_GROUPS = 12
+MAX_SYSTEM_DEPTH = 3
+MAX_SYSTEM_COLS = 6
+SYSTEM_LABEL_MAX = 28
+SYSTEM_SUB_MAX = 60
+SYSTEM_LINK_STYLES = ("call", "data", "async", "watch", "risk")
+SYSTEM_PART_KINDS = ("actor", "data", "external")
 # check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
 # own step cards, so that one obligation is dropped here and every other problem is kept.
 DIAGRAM_STEP_TABLE_PROBLEM = "level 3 requires a numbered step table"
@@ -95,7 +113,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline", "diagrams", "tldr", "reference"}),
+             "context", "terms", "outline", "diagrams", "tldr", "reference", "system"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -117,6 +135,11 @@ KEYS = {
     "outline-line": ({"code"}, {"indent", "steps", "ev", "tag"}),
     "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
     "reference": ({"path"}, {"symbols", "notes"}),
+    "system": ({"items", "links"}, {"title", "caption", "cols", "journey"}),
+    "sys-group": ({"id", "label", "items"}, {"sub", "cols"}),
+    "sys-part": ({"id", "label"}, {"sub", "kind", "ev"}),
+    "sys-link": ({"from", "to"}, {"label", "style", "n", "ev", "tag"}),
+    "sys-step": ({"title"}, {"scenario"}),
 }
 MAX_REFERENCE_FILES = 8
 
@@ -247,6 +270,7 @@ def validate(doc, f):
     validate_terms(doc, f)
     validate_outline(doc, ctx, f)
     validate_diagrams(doc, ctx, f)
+    validate_system(doc, ctx, f)
     validate_reference(doc, f)
     return ctx
 
@@ -895,6 +919,183 @@ def validate_diagrams(doc, ctx, f):
         check_mermaid(loc, kind, src, f)
 
 
+def system_nodes(items, loc="system.items"):
+    """(location, node) for every group and part of a system tree, parents first."""
+    for i, n in enumerate(seq(items)):
+        if not isinstance(n, dict):
+            continue
+        here = f"{loc}[{i}]"
+        yield here, n
+        if "items" in n:
+            yield from system_nodes(n["items"], here + ".items")
+
+
+def validate_system(doc, ctx, f):
+    """The system map: a tree of groups and parts, labelled links between them, and a numbered
+    journey. Shape and budgets here; evidence is resolved with the rest of the evidence."""
+    system = doc.get("system")
+    if system is None:
+        return
+    if not check_keys(system, "system", "system", f):
+        return
+    for k in ("title", "caption"):
+        if k in system and not is_text(system[k]):
+            f.add(f"system.{k}", "must be text")
+    validate_cols(system.get("cols"), "system.cols", f)
+    ids, parent, counts = {}, {}, {"parts": 0, "groups": 0}
+    items = system.get("items")
+    if not (isinstance(items, list) and items):
+        f.add("system.items", "must be a non-empty list of groups and parts")
+    else:
+        validate_system_items(items, "system.items", 0, None, ids, parent, counts, ctx, f)
+    if counts["groups"] > MAX_SYSTEM_GROUPS:
+        f.add("system.items", f"{counts['groups']} groups, max {MAX_SYSTEM_GROUPS}")
+    links = system.get("links")
+    journey = system.get("journey")
+    steps = journey if isinstance(journey, list) else []
+    if journey is not None and not (isinstance(journey, list) and journey):
+        f.add("system.journey", "must be a non-empty list of steps, or leave it out")
+    for i, st in enumerate(steps):
+        loc = f"system.journey[{i}]"
+        if not check_keys(st, "sys-step", loc, f):
+            continue
+        if not is_text(st.get("title")):
+            f.add(loc + ".title", "must be text")
+        if "scenario" in st and not known(st["scenario"], ctx["scenarios"]):
+            f.add(loc + ".scenario", f"unknown scenario {json.dumps(st['scenario'])}")
+    used = set()
+    if not (isinstance(links, list) and links):
+        f.add("system.links", "must be a non-empty list: a map with no connection shows no flow")
+        links = []
+    seen = set()
+    for i, ln in enumerate(links):
+        loc = f"system.links[{i}]"
+        if not check_keys(ln, "sys-link", loc, f):
+            continue
+        ends = []
+        for k in ("from", "to"):
+            v = ln.get(k)
+            if not (isinstance(v, str) and v in ids):
+                f.add(f"{loc}.{k}", f"unknown part or group {json.dumps(v)}")
+            else:
+                ends.append(v)
+        if len(ends) == 2:
+            a, b = ends
+            if a == b:
+                f.add(loc, f"'{a}' links to itself")
+            elif system_contains(parent, a, b) or system_contains(parent, b, a):
+                f.add(loc, f"'{a}' and '{b}' are nested, so the link has nowhere to go")
+            key = (a, b, text_en(ln.get("label")) if is_text(ln.get("label")) else "")
+            if key in seen:
+                f.add(loc, f"duplicate link {a} -> {b}" + (f" '{key[2]}'" if key[2] else ""))
+            seen.add(key)
+        if "label" in ln:
+            validate_system_text(loc + ".label", ln["label"], SYSTEM_LABEL_MAX, f)
+        if "style" in ln and ln["style"] not in SYSTEM_LINK_STYLES:
+            f.add(loc + ".style", f"must be one of {', '.join(SYSTEM_LINK_STYLES)}")
+        if "n" in ln:
+            n = ln["n"]
+            if not (is_int(n) and n >= 1):
+                f.add(loc + ".n", "must be a journey step number, 1 or more")
+            elif n > len(steps):
+                f.add(loc + ".n", f"step {n} is past the end of the journey ({len(steps)} step(s))" if steps
+                      else f"step {n}, but the system has no journey")
+            else:
+                used.add(n)
+        validate_evidence_refs(loc, ln, "link", ctx, f)
+    for i in range(1, len(steps) + 1):
+        if i not in used:
+            f.add(f"system.journey[{i - 1}]", f"journey step {i} has no link: give a link n: {i}")
+    ctx["system"] = {"parts": counts["parts"], "groups": counts["groups"],
+                     "links": len(links), "journey": len(steps), "ids": ids}
+
+
+def validate_cols(v, loc, f):
+    if v is not None and not (is_int(v) and 1 <= v <= MAX_SYSTEM_COLS):
+        f.add(loc, f"must be an integer from 1 to {MAX_SYSTEM_COLS}")
+
+
+def validate_system_text(loc, v, most, f):
+    if not is_text(v):
+        f.add(loc, "must be text")
+        return
+    for suffix, s in text_variants(v):
+        if len(s) > most:
+            f.add(loc + suffix, f"{len(s)} characters, max {most}: it must fit its box; shorten it")
+
+
+def validate_evidence_refs(loc, node, what, ctx, f):
+    ev = node.get("ev", [])
+    if not (isinstance(ev, list) and all(isinstance(x, str) for x in ev)):
+        f.add(loc + ".ev", "must be a list of evidence ids")
+        ev = []
+    for eid in ev:
+        if eid not in ctx["evidence"]:
+            f.add(loc + ".ev", f"unknown evidence id '{eid}'")
+    if "tag" in node and node["tag"] != "inferred":
+        f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
+    elif what == "link" and not ev and node.get("tag") != "inferred":
+        f.add(loc, "link has no evidence: cite ev ids or tag it inferred")
+
+
+def system_contains(parent, outer, inner):
+    """True when `outer` is a group holding `inner` at any depth (parent: id -> parent id)."""
+    node = parent.get(inner)
+    while node is not None:
+        if node == outer:
+            return True
+        node = parent.get(node)
+    return False
+
+
+def validate_system_items(items, loc, depth, up, ids, parent, counts, ctx, f):
+    for i, n in enumerate(items):
+        here = f"{loc}[{i}]"
+        if not isinstance(n, dict):
+            f.add(here, "must be an object")
+            continue
+        group = "items" in n
+        if not check_keys(n, "sys-group" if group else "sys-part", here, f):
+            continue
+        nid = n.get("id")
+        if not (isinstance(nid, str) and ID_RX.match(nid)):
+            f.add(here + ".id", "must match [a-z][a-z0-9_-]*")
+        elif nid in ids:
+            f.add(here + ".id", f"duplicate id '{nid}'")
+        else:
+            ids[nid] = "group" if group else "part"
+            parent[nid] = up
+            here = f"system '{nid}'"
+        validate_system_text(here + ".label", n.get("label"), SYSTEM_LABEL_MAX, f)
+        if "sub" in n:
+            validate_system_text(here + ".sub", n["sub"], SYSTEM_SUB_MAX, f)
+        if group:
+            counts["groups"] += 1
+            if depth >= MAX_SYSTEM_DEPTH:
+                f.add(here, f"groups nest more than {MAX_SYSTEM_DEPTH} deep: flatten it")
+            validate_cols(n.get("cols"), here + ".cols", f)
+            if not (isinstance(n["items"], list) and n["items"]):
+                f.add(here + ".items", "a group needs at least one item")
+            else:
+                validate_system_items(n["items"], here + ".items", depth + 1, nid, ids, parent, counts, ctx, f)
+        else:
+            counts["parts"] += 1
+            if "kind" in n and n["kind"] not in SYSTEM_PART_KINDS:
+                f.add(here + ".kind", f"must be one of {', '.join(SYSTEM_PART_KINDS)}")
+            validate_evidence_refs(here, n, "part", ctx, f)
+
+
+def check_system_budget(ctx, tier, f):
+    sysm = ctx.get("system")
+    if not sysm:
+        return
+    b = SYSTEM_BUDGET[tier]
+    for k, label in (("parts", "parts"), ("links", "links"), ("journey", "journey steps")):
+        if sysm[k] > b[k]:
+            f.add("system", f"over budget ({tier}): {sysm[k]} {label}, max {b[k]}"
+                  + ("; split it or use --tier heavy" if tier == "light" else ""))
+
+
 def check_mermaid(loc, kind, src, f):
     """scripts/check_diagrams.py's checks on one source, every ERROR a finding, plus the
     detected diagram type against the declared kind."""
@@ -972,6 +1173,16 @@ def prose_fields(doc):
     for i, r in enumerate(seq(doc.get("reference"))):
         for name, text in obj(obj(r).get("notes")).items():
             yield f"reference[{i}].notes.{name}", text, False
+    system = obj(doc.get("system"))
+    for k in ("title", "caption"):
+        yield f"system.{k}", system.get(k), False
+    for loc, n in system_nodes(system.get("items")):
+        yield loc + ".label", n.get("label"), False
+        yield loc + ".sub", n.get("sub"), False
+    for i, ln in enumerate(seq(system.get("links"))):
+        yield f"system.links[{i}].label", obj(ln).get("label"), False
+    for i, st in enumerate(seq(system.get("journey"))):
+        yield f"system.journey[{i}].title", obj(st).get("title"), False
 
 
 def tldr_fields(doc):
@@ -1034,6 +1245,11 @@ def check_jargon(doc, ctx, f):
         for j, st in enumerate(seq(s.get("steps"))):
             title = st.get("t") if isinstance(st, dict) else None
             jargon_in(f"scenario {s.get('id')} step {j}.t", title, "step title", plain, f)
+    system = obj(doc.get("system"))
+    for _, n in system_nodes(system.get("items")):
+        plain |= {str(n.get("id", "")).lower()} | words_of(n.get("label"))
+    for i, st in enumerate(seq(system.get("journey"))):
+        jargon_in(f"system.journey[{i}].title", obj(st).get("title"), "journey step title", plain, f)
     for loc, value, _ in tldr_fields(doc):
         jargon_in(loc, value, "tldr", plain, f)
 
@@ -1295,6 +1511,7 @@ def check_budget(ctx, states, tier, f):
                 if is_int(k) and k >= n:
                     f.add(f"outline[{i}].lines[{j}].steps",
                           f"step {k} is past the end of scenario {o['scenario']} ({n} visible step(s), 0-based)")
+    check_system_budget(ctx, tier, f)
     diagrams = seq(ctx["doc"].get("diagrams"))
     if len(diagrams) > DIAGRAM_BUDGET[tier]:
         f.add("diagrams", f"over budget ({tier}): {len(diagrams)} diagrams, max {DIAGRAM_BUDGET[tier]}")
@@ -1525,6 +1742,11 @@ def build(scenario, tier, out_dir, assets_dir=ASSETS, snippets=None, reference=N
     if missing:
         raise Unreadable(f"engine assets not found in {assets_dir}: {', '.join(missing)}")
     shell, js, css = ((assets_dir / n).read_text(encoding="utf-8") for n in ASSET_FILES)
+    if scenario.get("system"):
+        sysmap = assets_dir / SYSTEM_ASSET
+        if not sysmap.is_file():
+            raise Unreadable(f"engine assets not found in {assets_dir}: {SYSTEM_ASSET}")
+        js = sysmap.read_text(encoding="utf-8") + "\n" + js
     absent = [t for t in REQUIRED_SHELL_TOKENS if "{{" + t + "}}" not in shell]
     if absent:
         raise Unreadable(f"shell.html lacks {', '.join('{{' + t + '}}' for t in absent)}")
@@ -1694,6 +1916,7 @@ def render_diagrams_md(doc, numbers):
 MD_SECTION_ANSWERS = {
     "Before you watch": "what the change does for a user, what it covers and where it starts",
     "Terms": "the words a reader outside the module needs",
+    "System map": "how the parts group and connect, and the journey through them in order",
     "Diagrams": "the flow at a glance, as diagrams",
     "Workflow outline": "the code path as pseudocode, each line linked to its step",
     "Map": "which boxes the scenarios use, their role and where they live in the code",
@@ -1735,6 +1958,64 @@ def render_contents_md(head, body, answers):
     return rows
 
 
+MD_LINK_ARROWS = {"call": "-->", "data": "==>", "async": "-.->", "watch": "-.->", "risk": "==>"}
+
+
+def system_mermaid(system, numbers):
+    """The system map as a mermaid flowchart: groups are subgraphs, links keep their journey
+    number and label. This is the page's no-JavaScript, paste-into-a-PR form of the picture."""
+    def mid(i):
+        return "n_" + re.sub(r"[^A-Za-z0-9_]", "_", i)
+
+    def lab(v):
+        return md_text(v, numbers).replace('"', "'")
+    out = ["flowchart LR"]
+
+    def emit(items, ind):
+        for n in seq(items):
+            if "items" in n:
+                out.append(f'{ind}subgraph {mid(n["id"])}["{lab(n.get("label"))}"]')
+                emit(n["items"], ind + "  ")
+                out.append(ind + "end")
+            else:
+                out.append(f'{ind}{mid(n["id"])}["{lab(n.get("label"))}"]')
+    emit(system.get("items"), "  ")
+    for ln in seq(system.get("links")):
+        text = " ".join(x for x in ((f"{ln['n']}." if ln.get("n") else ""), lab(ln.get("label")) if ln.get("label") else "") if x)
+        arrow = MD_LINK_ARROWS.get(ln.get("style") or "call", "-->")
+        out.append(f'  {mid(ln["from"])} {arrow}{"|" + chr(34) + text + chr(34) + "|" if text else ""} {mid(ln["to"])}')
+    return out
+
+
+def render_system_md(doc, numbers):
+    system = doc.get("system")
+    if not system:
+        return []
+    src = system_mermaid(system, numbers)
+    labels = {n["id"]: md_text(n.get("label"), numbers) for _, n in system_nodes(system.get("items"))}
+    out = ["", "## System map"]
+    if system.get("title"):
+        out += ["", f"**{md_text(system['title'], numbers)}**"]
+    if system.get("caption"):
+        out += ["", md_text(system["caption"], numbers)]
+    out += ["", "```mermaid"] + src + ["```"]
+    journey = seq(system.get("journey"))
+    if journey:
+        out += ["", "| # | step | connections | animated in |", "|---|---|---|---|"]
+        for i, st in enumerate(journey, 1):
+            hops = "; ".join(f"{labels.get(ln['from'])} → {labels.get(ln['to'])}"
+                             + (f" ({md_text(ln['label'], numbers)})" if ln.get("label") else "")
+                             for ln in seq(system.get("links")) if ln.get("n") == i)
+            where = f"`{st['scenario']}`" if st.get("scenario") else ""
+            out.append(f"| {i} | {md_text(st.get('title'), numbers)} | {hops} | {where} |")
+    out += ["", "| from | to | what | style | evidence |", "|---|---|---|---|---|"]
+    for ln in seq(system.get("links")):
+        ev = ", ".join(describe_evidence_md(e, doc) for e in ln.get("ev") or []) or "*inferred*"
+        out.append(f"| {labels.get(ln['from'])} | {labels.get(ln['to'])} | "
+                   f"{md_text(ln.get('label'), numbers) if ln.get('label') else ''} | {ln.get('style') or 'call'} | {ev} |")
+    return out
+
+
 def render_outline_md(doc, ctx, numbers):
     if not doc.get("outline"):
         return []
@@ -1759,7 +2040,7 @@ def render_markdown(doc, ctx, states, tier, reference=None):
              "| generated | `100x flow build` from `scenario.json`; regenerate it, do not edit |"]
     top, lines = lines, []
     lines += render_context_md(doc, ctx, numbers) + render_terms_md(doc, numbers) \
-        + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
+        + render_system_md(doc, numbers) + render_diagrams_md(doc, numbers) + render_outline_md(doc, ctx, numbers)
     lines += ["", "## Map", "", "| node | role | code |", "|---|---|---|"]
     for nid, n in ctx["nodes"].items():
         ref = f"`{n['ref']}`" if n.get("ref") else ""
@@ -1845,7 +2126,7 @@ def contents_answers(doc, ctx, reference=None):
     """What each `##` section of explain.md answers, in the order render_markdown writes them."""
     answers = [MD_SECTION_ANSWERS[k] for k, present in (
         ("Before you watch", doc.get("context")), ("Terms", doc.get("terms")),
-        ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
+        ("System map", doc.get("system")), ("Diagrams", doc.get("diagrams")), ("Workflow outline", doc.get("outline")), ("Map", True))
         if present]
     answers += [f"{s.get('kind')} scenario `{sid}`: each step, what it changes and its evidence"
                 for sid, s in ctx["scenarios"].items()]

@@ -44,7 +44,7 @@
 | 4 when broken | [bug-fix](bug-fix/SKILL.md) | Fix a bug, crash, regression, wrong output or failing test: reproduce first, commit the failing test, fix the narrowest thing, grep for sibling bugs.  | 173 |
 | 4 when broken | [root-cause-analysis](root-cause-analysis/SKILL.md) | Incident, outage, postmortem, production broken after a deploy, flaky or CI-only failure — find the cause: timeline, hypotheses, five whys, root cause | 196 |
 | 5 understanding | [codebase-comprehension](codebase-comprehension/SKILL.md) | How does this code work: explain, map or onboard to an unfamiliar repo, module or flow — entry points, data flow, boundaries, the hot file, an archite | 210 |
-| 5 understanding | [explain](explain/SKILL.md) | Visual walkthrough of a PR or concept, step by step: what can go wrong (race, failure, load), each fix replayed before/after, trade-off, evidence per  | 250 |
+| 5 understanding | [explain](explain/SKILL.md) | Visual walkthrough of a PR, system or concept: one map of how the parts group and connect, then step by step what can go wrong, each fix replayed befo | 250 |
 | 5 understanding | [explain-sync](explain-sync/SKILL.md) | Sync the docs after merges to main: explain pages, counts, term and skill indexes. Starts from the last synced merge (explain/.sync.json), updates onl | 107 |
 | 6 meta | [agent-instructions](agent-instructions/SKILL.md) | AGENTS.md, CLAUDE.md, .cursorrules, copilot-instructions: write your own repository's agent instruction file — which rules change behaviour, CLAUDE.md | 159 |
 | 6 meta | [project-learning](project-learning/SKILL.md) | Gotcha, surprise, discovered convention, recurring failure mode: remember it as a git-tracked team lesson, recall lessons before editing a file, promo | 179 |
