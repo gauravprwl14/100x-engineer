@@ -76,6 +76,12 @@ rm INDEX_GEN.md
 printf '# Examples of usage\n' > examples.md
 expect 1 "a top-level doc merely named examples.md is still flagged" --only new-docs
 rm examples.md
+mkdir -p decisions && printf '# ADR-0001: a choice\n' > decisions/ADR-0001-a-choice.md
+expect 0 "a decision record decisions/ADR-NNNN-*.md is allowed" --only new-docs
+rm decisions/ADR-0001-a-choice.md
+printf '# Musings\n' > decisions/musings.md
+expect 1 "another doc in decisions/ is still flagged" --only new-docs
+rm -r decisions
 
 # --- focused / silently-skipped tests ---
 git add -A >/dev/null 2>&1; git commit -qm wip2 >/dev/null 2>&1
