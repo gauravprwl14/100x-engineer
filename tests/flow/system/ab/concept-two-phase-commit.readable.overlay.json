@@ -1,0 +1,186 @@
+{
+ "layout": "readable",
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "Coordinator"
+  }
+ ],
+ "system": {
+  "title": "A coordinator and three participants",
+  "cols": 2,
+  "items": [
+   {
+    "id": "coord",
+    "label": "Coordinator",
+    "items": [
+     {
+      "id": "tm",
+      "label": "Transaction manager",
+      "sub": "decides commit or abort"
+     },
+     {
+      "id": "clog",
+      "label": "Decision log",
+      "sub": "written before any answer goes out",
+      "kind": "data"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "parts",
+    "label": "Participants",
+    "items": [
+     {
+      "id": "a",
+      "label": "Participant A",
+      "sub": "holds part of the change"
+     },
+     {
+      "id": "b",
+      "label": "Participant B",
+      "sub": "holds part of the change"
+     },
+     {
+      "id": "c",
+      "label": "Participant C",
+      "sub": "holds part of the change"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "client",
+    "label": "Client",
+    "sub": "starts the transaction",
+    "kind": "actor"
+   }
+  ],
+  "links": [
+   {
+    "from": "client",
+    "to": "tm",
+    "label": "begin",
+    "style": "call",
+    "n": 1,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "a",
+    "label": "prepare?",
+    "style": "call",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "b",
+    "label": "prepare?",
+    "style": "call",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "c",
+    "label": "prepare?",
+    "style": "call",
+    "n": 2,
+    "tag": "inferred"
+   },
+   {
+    "from": "a",
+    "to": "tm",
+    "label": "vote yes",
+    "style": "async",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "b",
+    "to": "tm",
+    "label": "vote yes",
+    "style": "async",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "c",
+    "to": "tm",
+    "label": "vote yes",
+    "style": "async",
+    "n": 3,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "clog",
+    "label": "record the decision",
+    "style": "data",
+    "n": 4,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "a",
+    "label": "commit",
+    "style": "call",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "b",
+    "label": "commit",
+    "style": "call",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "c",
+    "label": "commit",
+    "style": "call",
+    "n": 5,
+    "tag": "inferred"
+   },
+   {
+    "from": "tm",
+    "to": "c",
+    "label": "if it is down: wait",
+    "style": "risk",
+    "n": 6,
+    "tag": "inferred"
+   }
+  ],
+  "journey": [
+   {
+    "title": "The client starts a transaction",
+    "why": "A client wants several databases to change together, so it asks one coordinator to run the change."
+   },
+   {
+    "title": "The coordinator asks each participant to get ready",
+    "why": "The coordinator asks every participant whether it can do its part, without doing it yet."
+   },
+   {
+    "title": "Each participant votes",
+    "why": "Each participant checks that it can, promises to keep the change ready, and answers yes or no."
+   },
+   {
+    "title": "The coordinator writes down its decision",
+    "why": "If everyone said yes, the coordinator writes the decision in a log first, so a crash cannot make it forget."
+   },
+   {
+    "title": "It tells everyone to commit",
+    "why": "Only then does it tell everyone to make the change real."
+   },
+   {
+    "title": "A participant that is down blocks the rest",
+    "why": "A participant that promised and then goes quiet leaves the others waiting, which is the weakness of the method."
+   }
+  ]
+ }
+}

@@ -22,10 +22,9 @@ answers six questions, each claim pinned to a line or a measured absence:
 | Q5 | which trade-off, and why | the decision card: options, fit, the deciding factor, when to revisit |
 | Q6 | how sure are we | an evidence tag on every step and every number |
 
-The agent writes **only** `scenario.json`. A fixed, tested engine (`100x flow`) checks it against
-the code and renders it, so a page cannot claim a line that is not there. The JSON shape is
-`references/schema.md`; the action vocabulary is `references/actions.md`; how to gather the facts
-is `references/research-recipe.md`.
+The agent writes **only** `scenario.json`; a tested engine (`100x flow`) checks it against the code
+and renders it, so a page cannot claim a line that is not there. Shape: `references/schema.md`;
+actions: `references/actions.md`; gathering facts: `references/research-recipe.md`.
 
 ```mermaid
 flowchart LR
@@ -40,53 +39,51 @@ flowchart LR
 ## Trigger
 
 **Fire when:** the user asks to explain, walk through or step through a PR, a change, a file, a
-symbol, a system or a concept visually; "how does X fit together", "show me what happens when…",
-"what can go wrong and what fixes it", "before and after the fix", "compare plan A vs plan B";
-or `/explain`. On demand only: no pipeline runs it; `comprehension-mapper` uses it for a walkthrough.
+symbol, a system or a concept visually; "how does X fit together", "what happens when…", "what can go
+wrong and what fixes it", "before and after the fix", "compare plan A vs plan B"; or `/explain`. On
+demand only: no pipeline runs it; `comprehension-mapper` uses it for a walkthrough.
 
-**Do not fire when:** the output is long reading material from a doc or talk (`learn:guide`);
-one diagram for a spec or PR (`diagramming`); comments to post on GitHub (`pr-review`); a durable
-architecture note for the repo (`codebase-comprehension`); reviewing your own diff before pushing
-(`diff-review`); or the code is one function with no branch and no shared state. Read it aloud.
+**Do not fire when:** the output is long reading from a doc or talk (`learn:guide`); one diagram
+(`diagramming`); comments to post on GitHub (`pr-review`); a durable architecture note
+(`codebase-comprehension`); your own diff before pushing (`diff-review`); or one function with no
+branch and no shared state.
 
 ## Project rules
 
 The skill holds no knowledge of any project. Before research read the target's `CLAUDE.md` /
-`AGENTS.md` (repo root, nested files on the touched paths; for a PR, from the head snapshot) for
-folders to ignore, a glossary, language, default tier and output dir, and use the defaults when
-they say nothing: `references/project-rules.md`. The report says which came from the project;
-on a conflict the project's file wins.
+`AGENTS.md` (repo root, nested files on the touched paths; for a PR, the head snapshot) for folders
+to ignore, a glossary, language, tier and output dir (`references/project-rules.md`). The report
+says which came from the project; on a conflict the project's file wins.
 
 ## Steps
 
 1. **Intake.** Resolve the target:
-   - **PR** (URL or `#n`): `100x pr_review find "$CR" <pr-url>`. A hit gives the run folder:
-     `PINS.md` for base and head SHA, `review.json` for findings and the threads they link. No
-     hit: `100x pr_snapshot --repo <clone> --url <pr-url> --pr <n> --dest <scratch>/snap`, and say
-     review threads are unavailable. Never call `gh` (rule 10).
+   - **PR** (URL or `#n`): `100x pr_review find "$CR" <pr-url>`; a hit gives the run folder (`PINS.md`
+     SHAs, `review.json` findings). No hit: `100x pr_snapshot --repo <clone> --url <pr-url> --pr <n>
+     --dest <scratch>/snap`, and say review threads are unavailable. Never call `gh` (rule 10).
    - **path[:symbol]**: the file at `git rev-parse HEAD`, the symbol via `100x repo_map --symbol`.
    - **"concept"**: a plan or idea with no code yet; evidence is ADRs, specs and measured numbers.
 
    Tier is `light` unless `--heavy` or the project says otherwise. Ask **at most two** questions,
-   only when the request does not answer them: the focus ("which part worries you?") and, for
-   heavy, which options to compare. Otherwise pick and say what you picked. Pick what leads the
-   page from the reader's question with the table in `references/system-map.md`.
-2. **Research** with `references/research-recipe.md` and, for the `system` map, `references/system-map.md` (groups,
-   parts and links come from the subject's own structure): context first (a pr-review run's
-   `1-context.md` when present), nodes from changed symbols and one hop, absences by `git grep`,
-   scenarios (happy, the focus, the riskiest), a fix per issue, the outline, diagrams, the decision.
+   only when the request does not answer them: the focus and, for heavy, which options to compare;
+   otherwise pick and say what you picked. What leads the page: the table in `references/system-map.md`.
+2. **Research** with `references/research-recipe.md` and, for the `system` map, `references/system-map.md`
+   (groups, parts and links come from the subject's own structure): context first (a pr-review run's
+   `1-context.md`), nodes from changed symbols and one hop, absences by `git grep`, scenarios (happy,
+   the focus, the riskiest), a fix per issue, the outline, diagrams, the decision.
 3. **Write** `scenario.json` in the output dir (`100x flow new <slug>` writes a starter):
    `context`, `terms` and `outline` first, `tldr` last. Prose numbers go through `{{name}}`; every
    step and outline line lists its evidence ids; `reference` lists the code behind it (recipe §12).
-4. **Check.** `100x flow check <dir>/scenario.json --tier <tier> --repo <clone>` until exit 0;
-   `--repo` (the cited clone, default `.`) is required when the output dir is outside it, always
-   for a PR. A failing anchor means the claim is wrong or the line moved: re-read the line, never
-   swap in whatever token is there now.
+   Set `"layout": "readable"` on every new page (`references/readable.md`): the outline and journey
+   in plain sentences, the steps as an article, the code and animation one click away.
+4. **Check.** `100x flow check <dir>/scenario.json --tier <tier> --repo <clone>` until exit 0
+   (`--repo`, default `.`, is needed when the output dir is outside the clone, always for a PR). A
+   failing anchor means the claim is wrong or the line moved: re-read it, never swap in another token.
 5. **Build.** `100x flow build <dir>/scenario.json --tier <tier> --out <dir>` writes the HTML
    (self-contained except the diagram renderer) and the `.md` export (tables for a PR comment).
-6. **Open and report.** Open the HTML (`open` / `xdg-open`). Report in ≤ 10 lines: the target and
-   SHA, tier, scenarios with their worst hazard, issues and their fix or `open`, the decision, the
-   count of `inferred` steps, the paths. Leave everything uncommitted.
+6. **Open and report.** Open the HTML. Report in ≤ 10 lines: target and SHA, tier, scenarios with
+   their worst hazard, issues and their fix or `open`, the decision, the count of `inferred` steps,
+   the paths. Leave everything uncommitted.
 
 ## Light vs heavy
 
@@ -175,10 +172,9 @@ Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy
     tagged `inferred`; a step's `code` is the few pseudocode lines that make that step happen.
     *Enforced by:* `100x flow check <dir>/scenario.json`
 
-18. Add one or two `diagrams` where they help (light ≤ 2, heavy ≤ 4): a sequence of the main entry
-    point's calls, a flowchart for gate or branch logic, a state diagram for a lifecycle, an er
-    diagram for the data model, a mindmap for a concept or module overview (the parts and how they
-    group); each lists `ev` or is tagged `inferred`.
+18. Add one or two `diagrams` where they help (light ≤ 2, heavy ≤ 4): a sequence of the entry
+    point's calls, a flowchart for branch logic, a state diagram for a lifecycle, an er diagram for
+    the data model, a mindmap for a concept's parts; each lists `ev` or is tagged `inferred`.
     *Enforced by:* `100x flow check <dir>/scenario.json` (shape, cites, mermaid via `check_diagrams`)
 
 19. A PR page has `tldr`: `what`, `how` and `watch_out`, one plain sentence each, with no
@@ -186,21 +182,26 @@ Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy
     *Enforced by:* `100x flow check <dir>/scenario.json` (length, jargon); review (plainness)
 
 20. A page whose parts a reader must place has a `system`: groups, parts and labelled links named
-    from the subject (never from this skill), each link citing `ev` or tagged `inferred`, journey
-    numbers matching its links, labels that fit their boxes, inside the tier's budget.
+    from the subject (never this skill), each link citing `ev` or tagged `inferred`, journey numbers
+    matching its links, labels that fit their boxes, inside the tier's budget.
     *Enforced by:* `100x flow check <dir>/scenario.json` (shape, cites, budgets); review (grouping)
 
-21. A change to the system map's layout or routing keeps the old-vs-new picture bench passing.
+21. A change to the map's layout or routing, or to the readable layout, keeps both benches passing
+    (old vs new map; classic vs readable) and a page without `layout` building as it always did.
     *Enforced by:* `bash tests/test_flow.sh` (node and headless Chrome; skipped when absent)
+
+22. A readable page gives every outline line a `says` and every journey step a `why`: one plain
+    sentence, no identifier that is not a term, no bare number; its scenario nodes carry the map's names.
+    *Enforced by:* `100x flow check <dir>/scenario.json` (`says`, `why`, `is not a name on the system map`)
 
 ## Verify
 
 ```bash
-# content vs code: anchors, absences, numbers, fixes, budgets, diagrams (~1s); --repo = cited clone
+# content vs code: anchors, absences, numbers, fixes, budgets, diagrams, plain words (~1s)
 100x flow check <dir>/scenario.json --tier light --repo <clone>
-# the system map: 300 random subjects, borders, determinism, escaping, then old vs new in Chrome
+# the map and the readable layout: 300 random subjects, then classic vs readable in Chrome
 node --test tests/flow/system.test.mjs && node tests/flow/bench-picture.mjs --cases tests/flow/system/bench-cases.json
-# render: one HTML (offline, except diagrams, which fall back to their source) + the .md (~1s)
+# render: one HTML (offline, except diagrams, which fall back to their source) + the .md
 100x flow build <dir>/scenario.json --tier light --out <dir>
 # the engine: reducer, golden states, seeded bad scenarios (~5s; node/Chrome smoke SKIP if absent)
 bash tests/test_flow.sh
@@ -215,34 +216,33 @@ This skill rejects:
 - **"Retries 3 times, 200ms apart" as bare prose.** Each number needs `{{retries}}` and a tag.
 - **An issue with no way out** (neither `fixed_by` nor `open: true`), or a fix shown as prose only.
 - **`expect: "hit"` on a step whose key was deleted two steps earlier**: the reducer says miss.
-- **A light page with 14 steps and 4 scenarios**: over budget; split it or pass `--heavy`.
-- **A diagram whose source is not its `kind`**, or uses an undeclared participant: `flow check` names it.
+- **A light page with 14 steps and 4 scenarios** (over budget), or **a diagram whose source is not its `kind`**.
 - **A system map with a label that overflows its box**, a link between a group and its own child,
   a journey step no link carries, or a link to a missing part: `flow check` names it.
+- **A readable page that is still code and `# step N`**: no sentence on an outline line or journey
+  step, or one thing named two ways on the map and in the scenarios: `flow check` names it.
 - **A PR page a newcomer cannot place**: no purpose, a TL;DR that needs the glossary, one of eight
-  routes animated without saying so, `applyDiff` in a step title with no term, or a what-if race
-  that reads as a real bug.
-- **Project knowledge baked into the skill**: a folder name, a glossary term or a team's tier
-  default written here instead of read from that project's `CLAUDE.md`.
+  routes animated without saying so, `applyDiff` in a step title with no term, or a what-if read as a bug.
+- **Project knowledge baked into the skill**: a folder name, glossary term or tier default written here.
 
 **Honest limitations:** the checker proves cited lines and counted absences exist and the timeline
-is consistent; not that a sentence describes what its line does or reads plainly (rules 8, 14, 19:
-review). Hazard detection covers only `stale-writeback`; other races are scenarios the reader judges.
+is consistent; not that a sentence describes its line or reads plainly (rules 8, 14, 19, 22: review).
+Hazard detection covers only `stale-writeback`; other races are scenarios the reader judges.
 
 ## Scale
 
-`solo`: replay your fix against the bug's timeline. `small-team`: a risky PR's review artifact,
-read in two minutes. `org`: the onboarding page for a flow nobody drew. `high-blast-radius`:
-where an outage would start.
+`solo`: replay your fix against the bug's timeline. `small-team`: a risky PR's review artifact.
+`org`: the onboarding page for a flow nobody drew. `high-blast-radius`: where an outage would start.
 
 ## Sources
 
-- The six questions, the scenario/fix/decision model, tiers, evidence tags, the "agent writes only
-  data, a tested engine renders it" split, context, terms, origin, outline, diagrams, `tldr`, the
-  summary and `flow check`'s rules: `SOURCE: original` (2026-10-22 to 2026-10-31).
-- The engine's structure (plans as data, state as a pure reduce over each step's actions, a player
-  over it): a user-supplied local page, not published; `SOURCE: original`. The system map, its
-  layout, routing and bench (2026-11-24): `SOURCE: original`, after a user-supplied architecture picture.
+- The six questions, the scenario/fix/decision model, tiers, evidence tags, the data-only split,
+  context, terms, origin, outline, diagrams, `tldr`, the summary and `flow check`: `SOURCE: original`
+  (2026-10-22 to 2026-10-31). The engine's structure (plans as data, a pure reduce, a player): a
+  user-supplied local page, `SOURCE: original`.
+- The system map, its layout, routing and bench (2026-11-24), and the readable layout (plain
+  sentences, article-first walkthrough; `decisions/ADR-0008-*`): `SOURCE: original`, after the user's
+  reading of real pages and their session history.
 - `verified` / `inferred` labels, a `file:line` per `verified` claim: `reviewers/_evidence-labels.md`;
   `skills/codebase-comprehension/SKILL.md` rule 3. Diagram type and level: `skills/diagramming/`.
 - `gh` only in pr-review's steps: `decisions/ADR-0002-gh-cli-for-pr-review-confined-to-skill-steps.md`.

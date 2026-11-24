@@ -630,3 +630,24 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
 .sys-all { margin-top: var(--s3); }
 .sys-all summary { cursor: pointer; font-weight: 600; }
 @media (forced-colors: active) { .sysmap .sys-box, .sysmap .sys-group rect { stroke: CanvasText; } .sys-link { stroke: LinkText; } }
+
+/* ---- readable layout (a page that sets "layout": "readable"); nothing above changes for any other page ---- */
+.sys-why { margin: 2px 0 0; color: var(--fg); font-size: 14.5px; line-height: 1.5; max-width: 70ch; }
+.ol-tools { margin: 0 0 var(--s2); }
+.ol-sc { font: 500 13px var(--font-body); color: var(--muted); }
+.ol-line.ol-plain { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; justify-content: stretch; font: 15px/1.5 var(--font-body); padding-block: var(--s2); }
+.ol-plain .ol-says { margin: 0; font-weight: 600; max-width: 70ch; }
+.ol-plain .ol-code { font: 12.5px/1.5 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ol-hide-code .ol-code { display: none; }
+.ol-go { justify-self: start; font-size: 13px; text-align: start; }
+.modebar { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s3); }
+.modebar .btn[aria-pressed="true"] { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.rd-hint { margin: 0 0 var(--s3); }
+.rd-sc + .rd-sc { margin-top: var(--s5); }
+.rd-steps { list-style: none; margin: var(--s3) 0 0; padding: 0; display: grid; gap: var(--s3); }
+.rd-step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s3) var(--s4); display: grid; gap: var(--s2); scroll-margin-top: var(--s4); min-width: 0; }
+.rd-step.inferred { border-style: dashed; border-color: var(--line-strong); }
+.rd-step .card-head { display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap; }
+.rd-step h4 { margin: 0; font-size: var(--t-md); }
+.rd-step .d { margin: 0; max-width: 70ch; line-height: 1.6; }
+.rd-step p { margin: 0; }

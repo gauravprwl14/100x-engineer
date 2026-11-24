@@ -54,7 +54,9 @@ const isGroup = n => Array.isArray(n.items);
 const idOf = n => n.id;
 
 /* ---- layout: a grid per group, each child centred in its cell ---- */
-function layout(sys, opts) {
+function layout(sys, opts) { return layoutOnce(sys, opts, Infinity, Infinity); }
+// The same subject drawn with fewer columns: capTop limits the columns of the top level, capInner those of every group.
+function layoutOnce(sys, opts, capTop, capInner) {
   const tx = (opts && opts.tx) || String, narrow = !!(opts && opts.narrow);
   const boxes = {}, order = [];
   // A link between two cells of a group draws its label in the gap between them, so that gap is as
@@ -79,7 +81,7 @@ function layout(sys, opts) {
       return { n, kind: "part", depth, w: Math.ceil(w), h: K.partBase + K.lineH * subLines.length, subLines };
     }
     const kids = n.items.map(c => measure(c, depth + 1));
-    const cols = narrow ? 1 : Math.max(1, Math.min(n.cols || Math.min(kids.length, K.topCols), kids.length));
+    const cols = narrow ? 1 : Math.max(1, Math.min(n.cols || Math.min(kids.length, K.topCols), kids.length, capInner));
     const g = grid(kids, cols, gapOf(n.id));
     const head = textW(tx(n.label), K.groupPx) + 2 * K.groupPad;
     const w = Math.ceil(Math.max(g.w + 2 * K.groupPad, head));
@@ -111,7 +113,7 @@ function layout(sys, opts) {
     });
   }
   const top = sys.items.map(n => measure(n, 0));
-  const cols = narrow ? 1 : Math.max(1, Math.min(sys.cols || Math.min(top.length, K.topCols), top.length));
+  const cols = narrow ? 1 : Math.max(1, Math.min(sys.cols || Math.min(top.length, K.topCols), top.length, capTop));
   const g = grid(top, cols, gapOf(null));
   let cy = K.outer;
   g.rows.forEach((row, r) => {
@@ -227,7 +229,33 @@ function route(sys, L, opts) {
     routes.push({ link: l, from: l.from, to: l.to, pts: best.pts, through: best.through, d: roundPath(best.pts, K.corner) });
   }
   const tags = placeTags(routes, parts, tx);
-  return { routes, tags: tags.tags, crowded: tags.crowded };
+  return { routes, tags: tags.tags, crowded: tags.crowded, bounds: boundsOf(L, routes, tags.tags) };
+}
+// Everything drawn: the boxes, every route and every label. A label beside a line on the outside of the
+// picture may hang past the boxes' canvas, so the viewBox is this and not the canvas.
+function boundsOf(L, routes, tags) {
+  let x0 = 0, y0 = 0, x1 = L.W, y1 = L.H;
+  for (const r of routes) for (const p of r.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  for (const t of tags) { x0 = Math.min(x0, t.box.x); y0 = Math.min(y0, t.box.y); x1 = Math.max(x1, t.box.x + t.box.w); y1 = Math.max(y1, t.box.y + t.box.h); }
+  x0 = Math.floor(x0 - (x0 < 0 ? 4 : 0)); y0 = Math.floor(y0 - (y0 < 0 ? 4 : 0)); x1 = Math.ceil(x1 + (x1 > L.W ? 4 : 0)); y1 = Math.ceil(y1 + (y1 > L.H ? 4 : 0));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+// How untidy a drawing is: links through parts they do not join, then the total length of every link and its bends.
+const cost = c => c.R.routes.reduce((a, r) => a + r.through * K.through + (r.pts.length - 2) * K.bend + lengthOf(r.pts), 0);
+// Draw the subject in the way that fits `fitW` (the widest picture whose text stays readable at the page's width)
+// with the least tangle of links; if none fits, the narrowest one.
+function arrange(sys, opts) {
+  const tx = (opts && opts.tx) || String, fitW = opts && opts.fitW, narrow = !!(opts && opts.narrow);
+  const draw = (a, b) => { const L = layoutOnce(sys, opts, a, b); return { L, R: route(sys, L, { tx }) }; };
+  let best = draw(Infinity, Infinity);
+  if (!fitW || narrow || best.R.bounds.w <= fitW) return best;
+  let ok = null, narrowest = best;
+  for (const a of [Infinity, 3, 2, 1]) for (const b of [Infinity, 2, 1]) {
+    const c = draw(a, b), w = c.R.bounds.w;
+    if (w < narrowest.R.bounds.w) narrowest = c;
+    if (w <= fitW && (!ok || cost(c) < cost(ok))) ok = c;
+  }
+  return ok || narrowest;
 }
 function roundPath(pts, r) {
   const f = n => Math.round(n * 10) / 10;
@@ -299,7 +327,7 @@ function stats(L, R) {
   }
   return { tagOverlaps, parts: bs.filter(b => b.kind === "part").length, groups: bs.filter(b => b.kind === "group").length,
            overlaps, outside, through: R.routes.reduce((a, r) => a + r.through, 0), crowded: R.crowded,
-           links: R.routes.length, W: L.W, H: L.H, minFont: Math.min(K.subPx, K.tagPx, K.labelPx, K.groupPx) };
+           links: R.routes.length, W: R.bounds.w, H: R.bounds.h, minFont: Math.min(K.subPx, K.tagPx, K.labelPx, K.groupPx) };
 }
 
 /* ---- markup ---- */
@@ -312,7 +340,8 @@ function svg(sys, L, R, opts) {
   const kinds = {};
   (function walk(items) { for (const n of items) { kinds[n.id] = n; if (isGroup(n)) walk(n.items); } })(sys.items);
   const out = [];
-  out.push(`<svg class="sysmap${L.narrow ? " narrow" : ""}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.W} ${L.H}" role="img" aria-labelledby="${id}-t" style="max-width:${L.W}px">`);
+  const B = R.bounds || { x: 0, y: 0, w: L.W, h: L.H };
+  out.push(`<svg class="sysmap${L.narrow ? " narrow" : ""}" xmlns="http://www.w3.org/2000/svg" viewBox="${B.x} ${B.y} ${B.w} ${B.h}" role="img" aria-labelledby="${id}-t" style="max-width:${B.w}px">`);
   out.push(`<title id="${id}-t">${esc(title)}</title><defs>`);
   for (const s of STYLES) out.push(`<marker id="${id}-ah-${s}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="sys-ah ah-${s}"/></marker>`);
   out.push("</defs>");
@@ -354,6 +383,6 @@ function svg(sys, L, R, opts) {
   return out.join("");
 }
 
-return { layout, route, svg, stats, textW, wrap, STYLES, K, candidates };
+return { layout, route, arrange, svg, stats, textW, wrap, STYLES, K, candidates };
 })();
 if (typeof module === "object" && module.exports) module.exports = SystemMap;

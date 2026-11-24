@@ -399,6 +399,10 @@ const UI = {
     sysKind: { actor: "person or client", data: "data at rest", external: "outside the boundary" },
     sysInferred: "Faded: inferred, not read in code",
     sysConnections: a => `All connections (${a.n})`, sysFrom: "From", sysTo: "To", sysWhat: "What", sysStyleCol: "Style", sysEv: "Evidence",
+    rd: { outlineTitle: "What the code does, in plain words", outlineAnswer: "Each step of the code as a sentence; the code itself is one click away",
+          showCode: "Show the code", hideCode: "Hide the code", readTab: "Read it", watchTab: "Watch it animate",
+          readHint: "Every step in words, with its evidence. Switch to Watch to see it animate.", playsIn: "Plays out in", watchStep: "Watch this step",
+          termsTitle: "Words used on this page" },
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "Concept", plan: "Plan" },
     tldr: "In short", tldrWhat: "What it does", tldrHow: "How it works", tldrWatch: "Watch out",
     glance: "At a glance", tileChanges: "Changes", tileRisks: "Risks", tileDecision: "Decision", tileConfidence: "Confidence",
@@ -509,6 +513,10 @@ const UI = {
     sysKind: { actor: "人・クライアント", data: "保存されたデータ", external: "境界の外" },
     sysInferred: "薄い線: 推測(コードで未確認)",
     sysConnections: a => `すべての接続 (${a.n})`, sysFrom: "送信元", sysTo: "送信先", sysWhat: "内容", sysStyleCol: "種類", sysEv: "根拠",
+    rd: { outlineTitle: "コードがすることを、ふつうの言葉で", outlineAnswer: "コードの各ステップを一文で。コード本体はワンクリックで表示",
+          showCode: "コードを表示", hideCode: "コードを隠す", readTab: "読む", watchTab: "アニメーションで見る",
+          readHint: "各ステップを文章と根拠で。「アニメーションで見る」に切り替えると動きます。", playsIn: "このステップで動く場面", watchStep: "このステップを見る",
+          termsTitle: "このページで使う言葉" },
     subjectKind: { pr: a => (a.n ? `PR #${a.n}` : "PR"), concept: "概念", plan: "計画" },
     tldr: "要約", tldrWhat: "何をするか", tldrHow: "どう動くか", tldrWatch: "注意点",
     glance: "ひと目で", tileChanges: "変更", tileRisks: "リスク", tileDecision: "判断", tileConfidence: "確からしさ",
@@ -1279,12 +1287,15 @@ function mapLegend() {
 /* ============ sections: each one after Contents folds; a link opens what it points into ============ */
 
 const CLOSED_BY_DEFAULT = ["evidence"];
+// A readable page about a concept or plan leads with how it works; the supporting sections wait to be opened.
+const READABLE_CLOSED = ["decision", "numbers", "reference"];
+const closedByDefault = key => CLOSED_BY_DEFAULT.includes(key) || (P.readable && (P.doc.subject || {}).kind !== "pr" && READABLE_CLOSED.includes(key));
 const SECTION_TITLE = { system: "systemMap", before: "beforeWatch", outline: "outline", diagrams: "diagrams", walk: "walkthrough", steps: "stepCards",
                         issues: "issues", decision: "decision", numbers: "numbers", evidence: "evidenceTitle",
                         reference: "reference" };
 // A section the reader folds stays folded when the page redraws (language, narrow/wide).
 function fold(key, title, kids, cls) {
-  const open = own(P.folds, key) ? P.folds[key] : !CLOSED_BY_DEFAULT.includes(key);
+  const open = own(P.folds, key) ? P.folds[key] : !closedByDefault(key);
   const d = h("details", { class: "fold " + (cls || ""), id: "sec-" + key, "data-sec": key, open },
     h("summary", null, h("h2", { id: key + "-h" }, title)), h("div", { class: "fold-body" }, kids));
   d.addEventListener("toggle", () => {
@@ -1302,6 +1313,9 @@ function hashId() {
   try { return location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : null; } catch (e) { return null; } // fail-open: a malformed %-escape links nowhere
 }
 
+const plainOutline = () => P.readable && P.outline.some(o => o.lines.some(l => l.says));
+const secTitle = k => (k === "outline" && plainOutline() ? ui("rd.outlineTitle") : ui(SECTION_TITLE[k]));
+const secAnswer = k => (k === "outline" && plainOutline() ? ui("rd.outlineAnswer") : ui("answers." + k));
 function sectionCount(key) {
   const n = (k, v) => ui("count." + k, { n: v }), c = P.doc.context || {};
   const steps = P.doc.scenarios.reduce((a, s) => a + (s.steps || []).length, 0);
@@ -1344,8 +1358,8 @@ function contentsCard(root) {
       h("button", { type: "button", class: "btn sm", id: "expand-all", onclick: () => setAll(true) }, ui("expandAll")),
       h("button", { type: "button", class: "btn sm", id: "collapse-all", onclick: () => setAll(false) }, ui("collapseAll"))),
     h("ol", { class: "toc", id: "toc-list" }, keys.map(k => h("li", null, h("a", { href: "#sec-" + k },
-      h("span", { class: "toc-t" }, ui(SECTION_TITLE[k])), h("span", { class: "toc-lead", "aria-hidden": "true" }),
-      h("span", { class: "toc-n" }, sectionCount(k)), h("span", { class: "toc-w" }, ui("answers." + k)))))));
+      h("span", { class: "toc-t" }, secTitle(k)), h("span", { class: "toc-lead", "aria-hidden": "true" }),
+      h("span", { class: "toc-n" }, sectionCount(k)), h("span", { class: "toc-w" }, secAnswer(k)))))));
   return nav;
 }
 // Everything after the hero moves into one column beside (or under) the Contents nav.
@@ -1540,17 +1554,28 @@ function outlineAndDiagrams(jump, onShow) {
 
 /* ============ system map: one picture of how the parts group and connect ============ */
 let sysSeq = 0;
+const SYS_READABLE_SCALE = 0.85; // share of its drawn size the smallest text keeps on a readable page (10.5px text stays near 9px)
 function systemPanel(onShow) {
   const sys = P.doc.system;
+  P.sysRefit = null;
   if (!sys || typeof SystemMap === "undefined") return null;
   const names = {}, kinds = new Set();
   let nParts = 0, nGroups = 0;
   (function walk(items) { for (const n of items) { names[n.id] = tx(n.label); if (Array.isArray(n.items)) { nGroups++; walk(n.items); } else { nParts++; if (n.kind) kinds.add(n.kind); } } })(sys.items);
-  const L = SystemMap.layout(sys, { tx, narrow: innerWidth < NARROW_PX }), R = SystemMap.route(sys, L, { tx });
+  const narrow = innerWidth < NARROW_PX;
+  const L = SystemMap.layout(sys, { tx, narrow }), R = SystemMap.route(sys, L, { tx });
   const holder = h("div", { class: "sys-holder", tabindex: "0", role: "region", "aria-label": ui("systemMap") });
   const SYS_MIN_SCALE = 0.7; // a wide map scrolls sideways before its labels shrink below this share of their size
-  holder.innerHTML = SystemMap.svg(sys, L, R, { tx, id: "sm" + (++sysSeq), title: ui("sysSummary", { parts: nParts, groups: nGroups, links: sys.links.length }) });
-  holder.firstElementChild.style.minWidth = Math.round(L.W * SYS_MIN_SCALE) + "px";
+  const svgOpts = { tx, id: "sm" + (++sysSeq), title: ui("sysSummary", { parts: nParts, groups: nGroups, links: sys.links.length }) };
+  const draw = (L2, R2) => { holder.innerHTML = SystemMap.svg(sys, L2, R2, svgOpts); holder.firstElementChild.style.minWidth = Math.round(R2.bounds.w * SYS_MIN_SCALE) + "px"; };
+  draw(L, R);
+  // Readable pages redraw once the column's real width is known: the columns drop until the text stays above 90% of its size.
+  if (P.readable && !narrow) P.sysRefit = () => {
+    const w = holder.clientWidth;
+    if (!w) return;
+    const c = SystemMap.arrange(sys, { tx, narrow, fitW: Math.round(w / SYS_READABLE_SCALE) });
+    if (c.R.bounds.w !== R.bounds.w || c.R.bounds.h !== R.bounds.h) draw(c.L, c.R);
+  };
   const styles = SystemMap.STYLES.filter(k => sys.links.some(l => (l.style || "call") === k));
   const key = (cls) => { const k = sv("svg", { class: "sys-key", viewBox: "0 0 30 10", width: 30, height: 10, "aria-hidden": "true" }); sv("path", { class: "sys-link " + cls, d: "M1 5 L29 5" }, k); return k; };
   const inferred = sys.links.some(l => l.tag === "inferred" || !(l.ev || []).length);
@@ -1567,6 +1592,7 @@ function systemPanel(onShow) {
       return h("li", { id: "sys-j" + n },
         h("span", { class: "sys-n", "aria-hidden": "true" }, String(n)),
         h("div", null, h("p", { class: "sys-jt" }, txNode(st.title, { terms: true }), " ", watch),
+          st.why ? h("p", { class: "sys-why" }, txNode(st.why, { terms: true })) : null,
           h("ul", { class: "sys-hops" }, sys.links.filter(l => l.n === n).map(l =>
             h("li", null, `${names[l.from]} → ${names[l.to]}`, l.label ? [" · ", h("span", { class: "muted" }, tx(l.label))] : null)))));
     }))) : null;
@@ -1624,16 +1650,16 @@ function showAll(holder, keep, label) {
 }
 // Terms as chips that show their meaning in the shared popup; the full list is one toggle away.
 function termCloud() {
-  const termList = h("dl", { id: "terms-list", hidden: true }, P.terms.map((t, i) => h("div", null,
+  const termList = h("dl", { id: "terms-list", hidden: !P.readable }, P.terms.map((t, i) => h("div", null,
     h("dt", null, t.term), h("dd", { id: "term-def-" + i }, txNode(t.means), t.example ? [" ", h("code", null, tx(t.example))] : null))));
-  const button = h("button", { type: "button", class: "btn sm terms-toggle", "aria-expanded": "false", "aria-controls": "terms-list" }, ui("listTerms"));
+  const button = h("button", { type: "button", class: "btn sm terms-toggle", "aria-expanded": String(!!P.readable), "aria-controls": "terms-list" }, ui(P.readable ? "hideTerms" : "listTerms"));
   button.addEventListener("click", () => {
     const open = button.getAttribute("aria-expanded") !== "true";
     button.setAttribute("aria-expanded", String(open));
     button.textContent = ui(open ? "hideTerms" : "listTerms");
     termList.hidden = !open;
   });
-  return h("div", { class: "terms" }, h("h3", null, ui("terms")),
+  return h("div", { class: "terms" }, h("h3", null, P.readable ? ui("rd.termsTitle") : ui("terms")),
     h("ul", { class: "term-cloud" }, P.terms.map((t, i) => h("li", null,
       h("button", { type: "button", class: "term chip-term", "data-term": String(i), "aria-describedby": "term-def-" + i }, t.term)))),
     button, termList);
@@ -1729,9 +1755,33 @@ const whatIfChip = s => (isWhatIfIssue(s) ? h("span", { class: "wi" }, ui("whatI
 // jump(scenarioId, step) shows that step: the player in heavy, the card in light.
 function outlinePanel(jump) {
   if (!P.outline.length) return null;
-  return fold("outline", ui("outline"),
-    P.outline.map((o, oi) => h("div", { class: "ol" }, h("h3", null, h("code", null, tx(o.title))),
-      h("ol", { class: "ol-lines" }, (o.lines || []).map((ln, li) => h("li", null, outlineLine(o, oi, ln, li, jump)))))), "panel outline");
+  const plain = plainOutline();
+  const blocks = P.outline.map((o, oi) => h("div", { class: "ol" },
+    h("h3", null, h("code", null, tx(o.title)), plain && P.scen[o.scenario] ? h("span", { class: "ol-sc" }, " · ", tx(P.scen[o.scenario].title)) : null),
+    h("ol", { class: "ol-lines" }, (o.lines || []).map((ln, li) => h("li", null, plain && ln.says ? outlineSays(o, oi, ln, li, jump) : outlineLine(o, oi, ln, li, jump))))));
+  if (!plain) return fold("outline", ui("outline"), blocks, "panel outline");
+  const body = h("div", { class: "ol-body ol-hide-code" }, blocks);
+  const toggle = h("button", { type: "button", class: "btn sm", "aria-pressed": "false" }, ui("rd.showCode"));
+  toggle.addEventListener("click", () => {
+    const on = body.classList.toggle("ol-hide-code") === false;
+    toggle.setAttribute("aria-pressed", String(on));
+    toggle.textContent = ui(on ? "rd.hideCode" : "rd.showCode");
+  });
+  return fold("outline", ui("rd.outlineTitle"), [h("p", { class: "ol-tools" }, toggle), body], "panel outline plain");
+}
+// One outline line in plain words: the sentence, the code under it, and a link to the step that plays it out, named by its title.
+function outlineSays(o, oi, ln, li, jump) {
+  const theirs = P.entries[o.scenario] || [];
+  const steps = (ln.steps || []).filter(j => Number.isInteger(j) && theirs[j]);
+  const inferred = ln.tag === "inferred" || !ln.ev;
+  const to = steps.length ? `${o.scenario}.${steps[0]}` : null;
+  const name = steps.length ? "→ " + tx(theirs[steps[0]].step.t) + (steps.length > 1 ? ` +${steps.length - 1}` : "") : null;
+  const link = !steps.length ? null : P.tier === "heavy"
+    ? h("button", { type: "button", class: "link ol-go", onclick: () => jump(o.scenario, steps[0]) }, name)
+    : h("a", { class: "ol-go", href: "#" + to, onclick: () => jump(o.scenario, steps[0]) }, name);
+  return h("div", { class: "ol-line ol-plain" + (inferred ? " inferred" : ""), "data-ol": oi + "." + li, style: "--ind:" + clamp(+ln.indent || 0, 0, 6),
+                    title: ln.ev ? evidenceLabel(ln.ev) : ui("tag.inferred") },
+    h("p", { class: "ol-says" }, txNode(ln.says, { terms: true })), h("code", { class: "ol-code" }, ln.code), link);
 }
 function outlineLine(o, oi, ln, li, jump) {
   const theirs = P.entries[o.scenario] || [];
@@ -1929,6 +1979,7 @@ function renderLight(app) {
   renderMap(M0, P.init, {});
   for (const x of [issuesPanel(null), decisionPanel(null), numbersPanel(), evidencePanel(), referencePanel(), footer()]) if (x) app.append(x);
   layoutDoc(app);
+  if (P.sysRefit) P.sysRefit();
   fillDiagram();
   // Cards are drawn after they are in the document: arrow labels need path lengths.
   for (const job of P.pendingCards.splice(0)) job();
@@ -1979,6 +2030,39 @@ function lightScenario(sid, narrow) {
     sts.forEach((st, i) => ol.append(lightCard(sid, i, narrow)));
   }
   sec.append(ol);
+  return sec;
+}
+
+// Readable pages: every scenario's steps as an article, no click needed. The animated player is one switch away.
+function readPanel(jump) {
+  const sec = h("div", { class: "rd", id: "rd-panel" }, h("p", { class: "muted rd-hint" }, ui("rd.readHint")));
+  for (const sid of P.order) {
+    const s = P.scen[sid], sts = P.states[sid];
+    const badges = [h("span", { class: "kind" }, ui("kind." + s.kind))];
+    if (s.severity) badges.push(h("span", { class: "sev s-" + s.severity }, ui("severity." + s.severity)));
+    badges.push(whatIfChip(s));
+    const part = h("section", { class: "rd-sc", id: "rd-" + sid, "aria-labelledby": "rdh-" + sid },
+      h("div", { class: "sc-head" }, h("h3", { id: "rdh-" + sid }, tx(s.title)), badges));
+    const ob = originBanner(s);
+    if (ob) part.append(ob);
+    if (!Array.isArray(sts)) { part.append(errorBox(ui("scenarioError"), sts && sts.error)); sec.append(part); continue; }
+    const same = sts.filter(x => x.inherited).length;
+    if (same) part.append(h("p", { class: "muted" }, ui("sameSteps", { n: same, title: tx(P.scen[s.branch.from].title) })));
+    const ol = h("ol", { class: "rd-steps" });
+    sts.forEach((st, i) => {
+      if (st.inherited) return;
+      const entry = P.entries[sid][i], step = entry.step, prev = i ? sts[i - 1] : P.init, ch = changes(prev, st);
+      ol.append(h("li", { class: "rd-step" + (stepTag(step) === "inferred" ? " inferred" : ""), id: `rd-${sid}.${i}` },
+        h("div", { class: "card-head" }, h("span", { class: "num" }, pad2(i + 1)), h("h4", null, termed(tx(step.t))), step.time ? h("span", { class: "time" }, tx(step.time)) : null),
+        step.d ? h("p", { class: "d" }, txNode(step.d, { terms: true })) : null,
+        stepChips(step), banners(st),
+        ch.length ? h("div", { class: "after" }, h("span", { class: "after-k" }, ui("afterStep")), h("ul", null, ch.map(c => h("li", null, h("code", null, c))))) : null,
+        cardCode(sid, i),
+        P.tier === "heavy" ? h("p", null, h("button", { type: "button", class: "btn sm", onclick: () => jump(sid, i) }, h("span", { "aria-hidden": "true" }, "▶ "), ui("rd.watchStep"))) : null));
+    });
+    part.append(ol);
+    sec.append(part);
+  }
   return sec;
 }
 
@@ -2335,6 +2419,7 @@ function tabScenarios() {
 }
 function issueOf(fixId) { return P.doc.scenarios.find(s => (s.fixed_by || []).includes(fixId)) || null; }
 
+let setMode = () => {}; // set by renderHeavy on a readable page: "read" shows the article, "watch" the animated player
 function renderHeavy(app) {
   const tabsIds = tabScenarios();
   const tabs = h("div", { class: "tabs", role: "tablist", "aria-label": ui("scenarios") });
@@ -2372,25 +2457,44 @@ function renderHeavy(app) {
   const main = h("div", { class: "main" + (P.wideMap ? " wide-map" : "") + (P.hasCode ? " has-code" : ""), id: "flow-main", tabindex: "-1" },
     stage, P.hasCode ? codePane() : null, side);
   const compare = h("section", { class: "panel compare", id: "compare-panel", role: "tabpanel", "aria-labelledby": "tab-compare", hidden: true });
-  const show = id => { openWalk(); selectTab(id); };
+  // Readable pages open the walkthrough as an article; every route into the player switches to it first.
+  const toWatch = () => { if (P.readable) setMode("watch"); };
+  const show = id => { openWalk(); toWatch(); selectTab(id); };
   const showScenario = id => {
-    openWalk();
+    openWalk(); toWatch();
     selectTab(id, 0, !reduced());
     const tab = document.querySelector('[role=tab][aria-selected="true"]');
     if (tab) tab.focus();
   };
-  const jump = (id, i) => { openWalk(); selectTab(id, i, false); $("stage").scrollIntoView({ block: "nearest" }); };
-  const walk = fold("walk", ui("walkthrough"), [bar, fixbar, main, compare], "bare walk");
+  const jump = (id, i) => { openWalk(); toWatch(); selectTab(id, i, false); $("stage").scrollIntoView({ block: "nearest" }); };
+  let walkKids = [bar, fixbar, main, compare];
+  if (P.readable) {
+    const watchWrap = h("div", { class: "watch-wrap", id: "watch-wrap" }, ...walkKids);
+    const readEl = readPanel(jump);
+    const modeBar = h("div", { class: "modebar", role: "group", "aria-label": ui("walkthrough") },
+      ["read", "watch"].map(m => h("button", { type: "button", class: "btn", "data-mode": m, "aria-pressed": "false", onclick: () => setMode(m) }, ui(m === "read" ? "rd.readTab" : "rd.watchTab"))));
+    setMode = m => {
+      P.mode = m;
+      const watch = m === "watch";
+      readEl.hidden = watch; watchWrap.hidden = !watch;
+      modeBar.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "watch") === watch)));
+      if (!watch) cancel();
+    };
+    walkKids = [modeBar, readEl, watchWrap];
+  }
+  const walk = fold("walk", ui("walkthrough"), walkKids, "bare walk");
   app.replaceChildren(hero(), ...[systemPanel(showScenario), beforeWatch(showScenario), outlineAndDiagrams(jump, showScenario), walk,
     issuesPanel(show), decisionPanel(show), numbersPanel(), evidencePanel(), referencePanel()].filter(Boolean), footer());
   layoutDoc(app);
+  if (P.sysRefit) P.sysRefit();
   PL.M = buildMap($("svgbox"), { narrow: innerWidth < NARROW_PX });
+  if (P.readable) setMode(P.mode || "read");
   document.addEventListener("keydown", onKey);
   const m = STEP_HASH.exec(location.hash);
-  if (m && m[1] === "compare" && $("tab-compare")) selectTab("compare");
-  else if (m && P.scen[m[1]]) selectTab(m[1], m[2] != null ? +m[2] : 0, false);
+  if (m && m[1] === "compare" && $("tab-compare")) { if (P.readable) setMode("watch"); selectTab("compare"); }
+  else if (m && P.scen[m[1]]) { if (P.readable) setMode("watch"); selectTab(m[1], m[2] != null ? +m[2] : 0, false); }
   else {
-    selectTab(tabsIds[0] || P.order[0], 0, !reduced());
+    selectTab(tabsIds[0] || P.order[0], 0, !reduced() && !P.readable);
     const id = hashId(), target = id && $(id);
     if (target) { openTo(target); target.scrollIntoView({ block: "start" }); }
   }
@@ -2410,7 +2514,7 @@ function onNext() {
 }
 const pendingCheckShown = () => !!$("reveal");
 function onKey(e) {
-  if (e.altKey || e.ctrlKey || e.metaKey || PL.compare || !($("sec-walk") || {}).open) return;
+  if (e.altKey || e.ctrlKey || e.metaKey || PL.compare || !($("sec-walk") || {}).open || ($("watch-wrap") || {}).hidden) return;
   const t = e.target, tag = t && t.tagName;
   if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA" || (t && t.getAttribute && t.getAttribute("role") === "tab")) return;
   if (e.key === "ArrowRight") { e.preventDefault(); onNext(); }
@@ -2678,6 +2782,7 @@ function makeContext(data) {
   P.diagrams = Array.isArray(doc.diagrams) ? doc.diagrams.filter(d => d && typeof d.source === "string" && d.source.trim()) : [];
   P.dgCur = 0;
   P.folds = {};
+  P.readable = doc.layout === "readable"; // opt-in per page; every other page draws exactly as before
   const lang = readPref("lang");
   if (P.hasJa && lang === "ja") P.lang = "ja";
   P.theme = ["light", "dark"].includes(readPref("theme")) ? readPref("theme") : "auto";

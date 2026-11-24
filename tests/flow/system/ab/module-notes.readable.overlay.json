@@ -1,0 +1,110 @@
+{
+ "layout": "readable",
+ "nodes": [
+  {
+   "id": "subject",
+   "role": "service",
+   "label": "Source files"
+  }
+ ],
+ "system": {
+  "cols": 2,
+  "items": [
+   {
+    "id": "code",
+    "label": "Source files",
+    "items": [
+     {
+      "id": "routes",
+      "label": "routes.js",
+      "sub": "mounts the two endpoints",
+      "ev": [
+       "e-route-get"
+      ]
+     },
+     {
+      "id": "notes",
+      "label": "notes.js",
+      "sub": "the read and save logic",
+      "ev": [
+       "e-cache-get"
+      ]
+     },
+     {
+      "id": "guard",
+      "label": "fill-if-fresh.lua",
+      "sub": "proposed guard for the cache fill",
+      "kind": "external",
+      "ev": [
+       "e-fill-if-fresh"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "runtime",
+    "label": "Used at run time",
+    "items": [
+     {
+      "id": "cache",
+      "label": "Cache",
+      "sub": "a note key with a time to live",
+      "kind": "data",
+      "ev": [
+       "e-ttl"
+      ]
+     },
+     {
+      "id": "db",
+      "label": "Database",
+      "sub": "the notes table",
+      "kind": "data",
+      "ev": [
+       "e-db-write"
+      ]
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "routes",
+    "to": "notes",
+    "label": "reads and saves",
+    "style": "call",
+    "ev": [
+     "e-route-patch"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "cache",
+    "label": "get, set and delete",
+    "style": "data",
+    "ev": [
+     "e-cache-set"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "db",
+    "label": "query and update",
+    "style": "data",
+    "ev": [
+     "e-db-write"
+    ]
+   },
+   {
+    "from": "guard",
+    "to": "cache",
+    "label": "would guard the fill",
+    "style": "watch",
+    "ev": [
+     "e-fill-if-fresh"
+    ]
+   }
+  ]
+ }
+}

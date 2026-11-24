@@ -77,7 +77,8 @@ if (asJson) { console.log(JSON.stringify(rows, null, 2)); process.exit(rows.some
 const cols = [["case", r => r.name], ["picture", r => r.picture], ["boxes", r => r.boxes], ["w/ subtitle", r => r.withSub],
   ["groups", r => r.groups], ["links", r => r.links], ["labelled", r => r.labelled], ["on journey", r => r.onJourney],
   ["through box", r => r.through], ["label clashes", r => r.tagOverlaps], ["overlaps", r => r.overlaps], ["outside parent", r => r.outsideParent],
-  ["min font px", r => r.minFontPx], ["top px", r => r.topPx], ["page KB", r => r.htmlKB]];
+  ["min font px", r => r.minFontPx], ["map scrolls", r => r.mapScrolls], ["words explaining", r => r.explainWords], ["words of code", r => r.codeWords],
+  ["bare step #", r => r.stepRefs], ["why/steps", r => r.whyOfSteps], ["top px", r => r.topPx], ["page KB", r => r.htmlKB]];
 const cell = (v) => v === null || v === undefined ? "-" : String(v);
 const table = rows.filter(r => !r.error).map(r => cols.map(([, f]) => cell(f(r))));
 const widths = cols.map(([h], i) => Math.max(h.length, ...table.map(t => t[i].length)));

@@ -1,0 +1,295 @@
+{
+ "layout": "readable",
+ "nodes": [
+  {
+   "id": "reader",
+   "role": "client",
+   "label": "Reader"
+  },
+  {
+   "id": "editor",
+   "role": "client",
+   "label": "Editor"
+  },
+  {
+   "id": "api",
+   "role": "service",
+   "label": "Notes service",
+   "ref": "src/routes.js:4",
+   "ev": "e-route-get"
+  },
+  {
+   "id": "cache",
+   "role": "cache",
+   "label": "Cache",
+   "ref": "src/notes.js:7",
+   "ev": "e-cache-get"
+  },
+  {
+   "id": "db",
+   "role": "store",
+   "label": "Database",
+   "ref": "src/notes.js:9",
+   "ev": "e-db-read"
+  }
+ ],
+ "outline": [
+  {
+   "title": "getNote(db, cache, id)",
+   "scenario": "race",
+   "lines": [
+    {
+     "code": "cached = cache.get(cacheKey(id))",
+     "steps": [
+      0
+     ],
+     "ev": "e-cache-get",
+     "says": "Look in the cache first for a saved copy of the note."
+    },
+    {
+     "code": "if cached: return cached",
+     "indent": 0,
+     "steps": [
+      6
+     ],
+     "ev": "e-cache-hit",
+     "says": "If a copy is there, hand it back at once."
+    },
+    {
+     "code": "note = db.query('SELECT body FROM notes WHERE id = $1')",
+     "steps": [
+      1
+     ],
+     "ev": "e-db-read",
+     "says": "Otherwise read the note from the database."
+    },
+    {
+     "code": "cache.set(cacheKey(id), note, ttl = CACHE_TTL_SECONDS)",
+     "steps": [
+      4
+     ],
+     "ev": "e-cache-set",
+     "says": "Keep that copy in the cache for a while, so the next reader is quick."
+    },
+    {
+     "code": "return note",
+     "steps": [
+      5
+     ],
+     "ev": "e-return-note",
+     "says": "Hand the note to the reader."
+    }
+   ]
+  },
+  {
+   "title": "patchNote(db, cache, id, body)",
+   "scenario": "race",
+   "lines": [
+    {
+     "code": "db.query('UPDATE notes SET body = $2 WHERE id = $1')",
+     "steps": [
+      2
+     ],
+     "ev": "e-db-write",
+     "says": "An editor's save changes the note in the database."
+    },
+    {
+     "code": "cache.del(cacheKey(id))",
+     "steps": [
+      3
+     ],
+     "ev": "e-cache-del",
+     "says": "Then the cached copy is thrown away, so nobody keeps reading the old text."
+    }
+   ]
+  }
+ ],
+ "system": {
+  "title": "Who talks to whom when a note is read and saved",
+  "caption": "Read the numbers in order: they are the journey. The red link is where the stale copy can appear.",
+  "cols": 3,
+  "items": [
+   {
+    "id": "people",
+    "label": "People",
+    "items": [
+     {
+      "id": "reader",
+      "label": "Reader",
+      "sub": "opens a note",
+      "kind": "actor"
+     },
+     {
+      "id": "editor",
+      "label": "Editor",
+      "sub": "saves a change",
+      "kind": "actor"
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "service",
+    "label": "Notes service",
+    "items": [
+     {
+      "id": "routes",
+      "label": "Routes",
+      "sub": "one read and one save endpoint",
+      "ev": [
+       "e-route-get"
+      ]
+     },
+     {
+      "id": "notes",
+      "label": "Notes module",
+      "sub": "reads through the cache, saves then clears it",
+      "ev": [
+       "e-cache-get"
+      ]
+     }
+    ],
+    "cols": 1
+   },
+   {
+    "id": "storage",
+    "label": "Storage",
+    "items": [
+     {
+      "id": "cache",
+      "label": "Cache",
+      "sub": "keeps a note for a while",
+      "kind": "data",
+      "ev": [
+       "e-ttl"
+      ]
+     },
+     {
+      "id": "db",
+      "label": "Database",
+      "sub": "the source of truth",
+      "kind": "data",
+      "ev": [
+       "e-db-read"
+      ]
+     }
+    ],
+    "cols": 1
+   }
+  ],
+  "links": [
+   {
+    "from": "reader",
+    "to": "routes",
+    "label": "open a note",
+    "style": "call",
+    "n": 1,
+    "ev": [
+     "e-route-get"
+    ]
+   },
+   {
+    "from": "routes",
+    "to": "notes",
+    "label": "read",
+    "style": "call",
+    "n": 1,
+    "ev": [
+     "e-route-get"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "cache",
+    "label": "look up",
+    "style": "data",
+    "n": 2,
+    "ev": [
+     "e-cache-get"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "db",
+    "label": "read on a miss",
+    "style": "data",
+    "n": 3,
+    "ev": [
+     "e-db-read"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "cache",
+    "label": "fill, can go stale",
+    "style": "risk",
+    "n": 4,
+    "ev": [
+     "e-cache-set"
+    ]
+   },
+   {
+    "from": "editor",
+    "to": "routes",
+    "label": "save",
+    "style": "call",
+    "n": 5,
+    "ev": [
+     "e-route-patch"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "db",
+    "label": "write",
+    "style": "data",
+    "n": 5,
+    "ev": [
+     "e-db-write"
+    ]
+   },
+   {
+    "from": "notes",
+    "to": "cache",
+    "label": "delete the key",
+    "style": "async",
+    "n": 6,
+    "ev": [
+     "e-cache-del"
+    ]
+   }
+  ],
+  "journey": [
+   {
+    "title": "A reader opens a note",
+    "scenario": "happy",
+    "why": "Someone asks the service for a note by its id."
+   },
+   {
+    "title": "The service looks in the cache first",
+    "scenario": "happy",
+    "why": "The service looks in the cache first: a fast store of copies, so most reads cost almost nothing."
+   },
+   {
+    "title": "On a miss it reads the database",
+    "scenario": "happy",
+    "why": "With no copy it has to ask the database, the one place that is always right."
+   },
+   {
+    "title": "It then fills the cache, which is where a stale copy can start",
+    "scenario": "race",
+    "why": "It then keeps the answer in the cache for a while. A copy that outlives a change is how stale text starts."
+   },
+   {
+    "title": "An editor saves a change",
+    "scenario": "race",
+    "why": "Another person edits the note and saves it, so the database holds the new text."
+   },
+   {
+    "title": "The save clears the cached copy",
+    "scenario": "race",
+    "why": "The service throws away the cached copy, so the next read fetches the new text."
+   }
+  ]
+ }
+}

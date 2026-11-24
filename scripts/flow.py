@@ -81,6 +81,13 @@ SYSTEM_LABEL_MAX = 28
 SYSTEM_SUB_MAX = 60
 SYSTEM_LINK_STYLES = ("call", "data", "async", "watch", "risk")
 SYSTEM_PART_KINDS = ("actor", "data", "external")
+# Layouts. "classic" is every page written before the readable layout and is what a page gets when
+# it says nothing: same output, byte for byte. "readable" is opt-in per page (a page sets
+# "layout": "readable"), so a page that reads worse is put back by deleting that one key.
+LAYOUTS = ("classic", "readable")
+DEFAULT_LAYOUT = "classic"
+SAYS_MAX = 140   # one outline line in plain words: a sentence, not a paragraph
+WHY_MAX = 200    # one journey step in plain words: what happens and why, in two short sentences
 # check_diagrams wants a numbered step table under a level-3 diagram; an explain page has its
 # own step cards, so that one obligation is dropped here and every other problem is kept.
 DIAGRAM_STEP_TABLE_PROBLEM = "level 3 requires a numbered step table"
@@ -113,7 +120,7 @@ JARGON_RX = re.compile(r"[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*|\w+_\w+|\w{2,}\.\
 KEYS = {
     "top": ({"schema", "title", "subject", "nodes", "scenarios"},
             {"tier", "numbers", "evidence", "initial", "decision", "checks", "compare",
-             "context", "terms", "outline", "diagrams", "tldr", "reference", "system"}),
+             "context", "terms", "outline", "diagrams", "tldr", "reference", "system", "layout"}),
     "subject": ({"kind", "lede"}, {"repo", "sha", "base", "pr"}),
     "node": ({"id", "role", "label"}, {"ref", "ev", "outside_diff", "slots"}),
     "number": ({"v", "unit", "tag"}, {"ev", "source", "basis"}),
@@ -132,14 +139,14 @@ KEYS = {
     "entry-point": ({"label"}, {"kind", "scenario", "note", "ev"}),
     "term": ({"term", "means"}, {"example"}),
     "outline": ({"title", "scenario", "lines"}, set()),
-    "outline-line": ({"code"}, {"indent", "steps", "ev", "tag"}),
+    "outline-line": ({"code"}, {"indent", "steps", "ev", "tag", "says"}),
     "diagram": ({"id", "title", "kind", "source"}, {"caption", "ev", "tag", "scenario"}),
     "reference": ({"path"}, {"symbols", "notes"}),
     "system": ({"items", "links"}, {"title", "caption", "cols", "journey"}),
     "sys-group": ({"id", "label", "items"}, {"sub", "cols"}),
     "sys-part": ({"id", "label"}, {"sub", "kind", "ev"}),
     "sys-link": ({"from", "to"}, {"label", "style", "n", "ev", "tag"}),
-    "sys-step": ({"title"}, {"scenario"}),
+    "sys-step": ({"title"}, {"scenario", "why"}),
 }
 MAX_REFERENCE_FILES = 8
 
@@ -255,12 +262,16 @@ def validate(doc, f):
         f.add("tier", f"must be one of {', '.join(TIERS)}")
     if not is_text(doc.get("title")):
         f.add("title", "must be text: a string or {\"en\": …, \"ja\"?: …}")
+    layout = doc.get("layout", DEFAULT_LAYOUT)
+    if layout not in LAYOUTS:
+        f.add("layout", f"must be one of {', '.join(LAYOUTS)}")
+        layout = DEFAULT_LAYOUT
     validate_subject(doc, f)
     evidence = validate_evidence(doc, f)
     numbers = validate_numbers(doc, evidence, f)
     nodes = validate_nodes(doc, evidence, f)
     ctx = {"doc": doc, "nodes": nodes, "numbers": numbers, "evidence": evidence,
-           "initial": validate_initial(doc, nodes, f), "scenarios": index_scenarios(doc, f)}
+           "initial": validate_initial(doc, nodes, f), "scenarios": index_scenarios(doc, f), "layout": layout}
     for sid, scenario in ctx["scenarios"].items():
         validate_scenario(sid, scenario, ctx, f)
     validate_extras(doc, ctx, f)
@@ -271,6 +282,7 @@ def validate(doc, f):
     validate_outline(doc, ctx, f)
     validate_diagrams(doc, ctx, f)
     validate_system(doc, ctx, f)
+    validate_readable(doc, ctx, f)
     validate_reference(doc, f)
     return ctx
 
@@ -788,6 +800,10 @@ def validate_outline_line(loc, ln, ctx, f):
         f.add(loc + ".steps", "must be a list of step indexes")
     if "tag" in ln and ln["tag"] != "inferred":
         f.add(loc + ".tag", "must be 'inferred' (or leave it out and cite ev)")
+    if "says" in ln:
+        validate_system_text(loc + ".says", ln["says"], SAYS_MAX, f)
+    elif ctx.get("layout") == "readable":
+        f.add(loc, "readable layout: an outline line needs says, what it does in one plain sentence")
     if "ev" in ln and not known(ln["ev"], ctx["evidence"]):
         f.add(loc + ".ev", f"unknown evidence id {json.dumps(ln['ev'])}")
     elif "ev" not in ln and ln.get("tag") != "inferred":
@@ -963,6 +979,10 @@ def validate_system(doc, ctx, f):
             f.add(loc + ".title", "must be text")
         if "scenario" in st and not known(st["scenario"], ctx["scenarios"]):
             f.add(loc + ".scenario", f"unknown scenario {json.dumps(st['scenario'])}")
+        if "why" in st:
+            validate_system_text(loc + ".why", st["why"], WHY_MAX, f)
+        elif ctx.get("layout") == "readable":
+            f.add(loc, "readable layout: a journey step needs why, what happens and why it matters in plain words")
     used = set()
     if not (isinstance(links, list) and links):
         f.add("system.links", "must be a non-empty list: a map with no connection shows no flow")
@@ -1022,6 +1042,22 @@ def validate_system_text(loc, v, most, f):
     for suffix, s in text_variants(v):
         if len(s) > most:
             f.add(loc + suffix, f"{len(s)} characters, max {most}: it must fit its box; shorten it")
+
+
+def validate_readable(doc, ctx, f):
+    """The readable layout draws one picture and names things once: every scenario node must carry
+    the name the system map gives that part, or the page shows two maps with two vocabularies."""
+    system = doc.get("system")
+    if ctx.get("layout") != "readable" or not isinstance(system, dict):
+        return
+    names = {}
+    for _, n in system_nodes(system.get("items")):
+        if is_text(n.get("label")):
+            names[text_en(n["label"]).strip().lower()] = text_en(n["label"])
+    for nid, n in ctx["nodes"].items():
+        if is_text(n.get("label")) and text_en(n["label"]).strip().lower() not in names:
+            f.add(f"nodes.{nid}.label", f"'{text_en(n['label'])}' is not a name on the system map: "
+                                         "use the map's name for it, so the page has one vocabulary")
 
 
 def validate_evidence_refs(loc, node, what, ctx, f):
@@ -1166,6 +1202,8 @@ def prose_fields(doc):
     for i, o in enumerate(seq(doc.get("outline"))):
         if isinstance(o, dict):
             yield f"outline[{i}].title", o.get("title"), False
+            for j, ln in enumerate(seq(o.get("lines"))):
+                yield f"outline[{i}].lines[{j}].says", obj(ln).get("says"), False
     for i, dg in enumerate(seq(doc.get("diagrams"))):
         if isinstance(dg, dict):
             yield f"diagrams[{i}].title", dg.get("title"), False
@@ -1183,6 +1221,7 @@ def prose_fields(doc):
         yield f"system.links[{i}].label", obj(ln).get("label"), False
     for i, st in enumerate(seq(system.get("journey"))):
         yield f"system.journey[{i}].title", obj(st).get("title"), False
+        yield f"system.journey[{i}].why", obj(st).get("why"), False
 
 
 def tldr_fields(doc):
@@ -1250,6 +1289,10 @@ def check_jargon(doc, ctx, f):
         plain |= {str(n.get("id", "")).lower()} | words_of(n.get("label"))
     for i, st in enumerate(seq(system.get("journey"))):
         jargon_in(f"system.journey[{i}].title", obj(st).get("title"), "journey step title", plain, f)
+        jargon_in(f"system.journey[{i}].why", obj(st).get("why"), "journey step", plain, f)
+    for i, o in enumerate(seq(doc.get("outline"))):
+        for j, ln in enumerate(seq(obj(o).get("lines"))):
+            jargon_in(f"outline[{i}].lines[{j}].says", obj(ln).get("says"), "outline sentence", plain, f)
     for loc, value, _ in tldr_fields(doc):
         jargon_in(loc, value, "tldr", plain, f)
 
@@ -1864,7 +1907,10 @@ def render_context_md(doc, ctx, numbers):
     out = ["", "## Before you watch", "", f"**{md_text(c.get('purpose'), numbers)}**"]
     if c.get("why_now"):
         out += ["", f"Why now: {md_text(c['why_now'], numbers)}"]
-    for k, head in (("in_scope", "In this PR"), ("out_of_scope", "Not in this PR")):
+    heads = (("in_scope", "In this PR"), ("out_of_scope", "Not in this PR"))
+    if ctx.get("layout") == "readable" and (doc.get("subject") or {}).get("kind") != "pr":
+        heads = (("in_scope", "Covered here"), ("out_of_scope", "Left out"))
+    for k, head in heads:
         if c.get(k):
             out += ["", f"{head}:", ""] + [f"- {md_text(x, numbers)}" for x in c[k]]
     if c.get("entry_points"):
@@ -2001,13 +2047,16 @@ def render_system_md(doc, numbers):
     out += ["", "```mermaid"] + src + ["```"]
     journey = seq(system.get("journey"))
     if journey:
-        out += ["", "| # | step | connections | animated in |", "|---|---|---|---|"]
+        why = any(st.get("why") for st in journey)
+        out += ["", "| # | step | " + ("what happens and why | " if why else "") + "connections | animated in |",
+                "|---|---|" + ("---|" if why else "") + "---|---|"]
         for i, st in enumerate(journey, 1):
             hops = "; ".join(f"{labels.get(ln['from'])} → {labels.get(ln['to'])}"
                              + (f" ({md_text(ln['label'], numbers)})" if ln.get("label") else "")
                              for ln in seq(system.get("links")) if ln.get("n") == i)
             where = f"`{st['scenario']}`" if st.get("scenario") else ""
-            out.append(f"| {i} | {md_text(st.get('title'), numbers)} | {hops} | {where} |")
+            says = f"{md_text(st['why'], numbers)} | " if why and st.get("why") else ("| " if why else "")
+            out.append(f"| {i} | {md_text(st.get('title'), numbers)} | {says}{hops} | {where} |")
     out += ["", "| from | to | what | style | evidence |", "|---|---|---|---|---|"]
     for ln in seq(system.get("links")):
         ev = ", ".join(describe_evidence_md(e, doc) for e in ln.get("ev") or []) or "*inferred*"
@@ -2021,12 +2070,28 @@ def render_outline_md(doc, ctx, numbers):
         return []
     out = ["", "## Workflow outline"]
     for o in doc["outline"]:
+        if any(ln.get("says") for ln in o.get("lines") or []):
+            out += render_outline_plain_md(o, ctx, numbers)
+            continue
         out += ["", f"`{md_text(o.get('title'), numbers)}`, animated in `{o.get('scenario')}`:", "", "```"]
         for ln in o.get("lines") or []:
             notes = [f"step {', '.join(str(k + 1) for k in ln['steps'])}"] if ln.get("steps") else []
             notes += ["inferred"] if ln.get("tag") == "inferred" else []
             out.append("  " * ln.get("indent", 0) + ln["code"] + (f"  # {' · '.join(notes)}" if notes else ""))
         out.append("```")
+    return out
+
+
+def render_outline_plain_md(o, ctx, numbers):
+    """An outline whose lines say what they do: the sentence first, the code beside it, and the
+    step it belongs to by its title (a bare step number means a different thing in every scenario)."""
+    steps = [st for st, _, _ in effective_steps(o["scenario"], ctx["scenarios"])]
+    out = ["", f"`{md_text(o.get('title'), numbers)}`, animated in `{o.get('scenario')}`:", "",
+           "| in plain words | the code | where it plays out |", "|---|---|---|"]
+    for ln in o.get("lines") or []:
+        where = "; ".join(md_text(steps[k].get("t"), numbers) for k in ln.get("steps") or [] if k < len(steps))
+        code = ("`" + ln["code"].replace("|", "\\|").replace("`", "'") + "`") + (" *(inferred)*" if ln.get("tag") == "inferred" else "")
+        out.append(f"| {md_text(ln.get('says'), numbers) if ln.get('says') else ''} | {code} | {where} |")
     return out
 
 
