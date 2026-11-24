@@ -54,6 +54,11 @@ Then:
 6. **Set `cols` where the default is wrong.** Default is up to three columns per group. A group
    whose parts are a pipeline reads best as one column.
 
+## A card per part, and pages behind them
+
+On a `readable` page a group or part may carry `about` (what it does, what goes in and out, why it
+exists) and may open a page of its own. How to write them and `flow links`: `readable.md`.
+
 ## Why it adapts to the subject
 
 - Boxes are sized from their own text; a group is as wide as its children need.

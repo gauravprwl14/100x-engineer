@@ -190,9 +190,10 @@ Heavy extends light's `scenario.json`; the same file upgrades with `--tier heavy
     (old vs new map; classic vs readable) and a page without `layout` building as it always did.
     *Enforced by:* `bash tests/test_flow.sh` (node and headless Chrome; skipped when absent)
 
-22. A readable page gives every outline line a `says` and every journey step a `why`: one plain
-    sentence, no identifier that is not a term, no bare number; its scenario nodes carry the map's names.
-    *Enforced by:* `100x flow check <dir>/scenario.json` (`says`, `why`, `is not a name on the system map`)
+22. A readable page gives every outline line a `says`, every journey step a `why` and, where a reader
+    will ask "how does that work", the part an `about` card (a page of its own via `open`/`parent`): plain
+    sentences, no undefined identifier or bare number; scenario nodes carry the map's names.
+    *Enforced by:* `100x flow check` (`says`, `why`, `about`); `100x flow links <folder>` (pages open and point back)
 
 ## Verify
 
@@ -219,8 +220,7 @@ This skill rejects:
 - **A light page with 14 steps and 4 scenarios** (over budget), or **a diagram whose source is not its `kind`**.
 - **A system map with a label that overflows its box**, a link between a group and its own child,
   a journey step no link carries, or a link to a missing part: `flow check` names it.
-- **A readable page that is still code and `# step N`**: no sentence on an outline line or journey
-  step, or one thing named two ways on the map and in the scenarios: `flow check` names it.
+- **A readable page that is still code and `# step N`**, or names one thing two ways: `flow check` names it.
 - **A PR page a newcomer cannot place**: no purpose, a TL;DR that needs the glossary, one of eight
   routes animated without saying so, `applyDiff` in a step title with no term, or a what-if read as a bug.
 - **Project knowledge baked into the skill**: a folder name, glossary term or tier default written here.

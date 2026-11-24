@@ -651,3 +651,25 @@ button.ol-line:hover, a.ol-line:hover { background: var(--surface-2); }
 .rd-step h4 { margin: 0; font-size: var(--t-md); }
 .rd-step .d { margin: 0; max-width: 70ch; line-height: 1.6; }
 .rd-step p { margin: 0; }
+
+/* ---- part cards and the way back to a parent page (readable layout) ---- */
+.crumb { margin: 0 0 var(--s2); font-size: 14px; }
+.sys-hint { margin: 0 0 var(--s2); font-size: 14px; }
+.sys-holder .has-card { cursor: pointer; }
+.sys-holder g.sys-part.has-card:hover > rect.sys-box { stroke: var(--accent); stroke-width: 2; }
+.sys-holder g.sys-group.has-card:hover > rect { stroke: var(--accent); }
+.sys-parts { margin-top: var(--s5); }
+.sys-parts h3 { margin: 0 0 var(--s2); font-size: var(--t-md); }
+.sys-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); margin-bottom: var(--s2); scroll-margin-top: var(--s4); }
+.sys-card summary { cursor: pointer; padding: var(--s2) var(--s3); display: flex; flex-wrap: wrap; gap: 2px var(--s2); align-items: baseline; min-height: 24px; }
+.sys-card-n { font-weight: 700; }
+.sys-card-d { color: var(--muted); font-size: 14px; }
+.sys-card[open] .sys-card-d { display: none; }
+.sys-card-b { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.sys-card-b p { margin: 0; max-width: 70ch; }
+.sys-card-does { font-weight: 600; }
+.sys-card dl { margin: 0; display: grid; gap: var(--s2); }
+.sys-card dt { font: 700 11.5px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.sys-card dd { margin: 0; max-width: 70ch; }
+.sys-card.flash { outline: 3px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: no-preference) { .sys-card { transition: outline-color 0.4s; } }
