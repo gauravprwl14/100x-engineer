@@ -99,7 +99,10 @@ grep -q "prose_check: 0 finding" "$OUT/pc.out" && ok "clean: docs/WRITING.md pas
 echo "--- thresholds scale with the diff"
 run --kind pr --diff-lines 400 "$FX/bad/pr-over-budget.md"
 grep -q "\[body-budget\]" "$OUT/pc.out" && bad "body-budget fired for a 400-line diff" \
-  || ok "body-budget: 853 chars is within budget for a 400-line diff"
+  || ok "body-budget: 2,500+ chars is within budget for a 400-line diff"
+run --kind pr --diff-lines 40 "$FX/bad/pr-images-budget.md"
+grep -q "\[body-budget\]" "$OUT/pc.out" && bad "body-budget counted image lines" \
+  || ok "body-budget: image lines are not counted (3,000+ chars, mostly images, 40-line diff)"
 run --kind pr --diff-lines 250 "$FX/bad/history.md"
 grep -q "\[history-section\]" "$OUT/pc.out" && bad "history-section fired for a 250-line diff" \
   || ok "history-section: allowed when the diff is 200+ lines"
