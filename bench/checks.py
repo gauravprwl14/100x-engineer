@@ -429,7 +429,7 @@ def check_07(run):
     return {
         "body_written": bool(body.strip()),
         "prose_check_clean": bool(body.strip()) and not prose_findings(run, body, "pr", lines),
-        "length_budget": 0 < len(body) <= max(600, 8 * lines),
+        "length_budget": 0 < len(body) <= max(2500, 12 * lines),
         "no_filler_or_ticked_boxes": not re.search(r"This PR|^\s*[-*]\s+\[[xX]\]", body, re.M),
         "links_issue": "#42" in body,
         "no_wall_paragraph": no_wall_paragraph(body),

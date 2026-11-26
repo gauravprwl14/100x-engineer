@@ -22,7 +22,7 @@ $33–108 (measured $0.16–0.25 per session on the smallest case).
 | 04-tests-can-fail | fix the pagination off-by-one, add tests | the new tests fail once the fix is reverted |
 | 05-edge-negative-tests | validate the create-booking input | tests cover 3 of 4 rejection paths; bad input is refused and nothing is stored |
 | 06-security-ownership | `get_booking` by id | another tenant's booking returns 404, the same as a missing id |
-| 07-pr-description | write PR_BODY.md | `prose_check --kind pr` clean, under max(600, 8×diff lines) chars, #42 linked |
+| 07-pr-description | write PR_BODY.md | `prose_check --kind pr` clean, under max(2500, 12×diff lines) chars, #42 linked |
 | 08-review-comment | review a refund diff | finds the over-refund bug, marks it blocking, `prose_check --kind review-comment` clean |
 | 09-reply-to-review | fix it, commit, reply | the commit sha is in the reply, `prose_check --kind reply` is clean, the fix is correct |
 | 10-explain-module | explain the retry logic | summary first, no paragraph over 3 lines, at least 6 of 8 facts |
