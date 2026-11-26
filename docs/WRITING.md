@@ -32,18 +32,19 @@ and a body that says what and why (google/eng-practices@master:review/developer/
 **PR description.** The repo's own PR template wins on headings; fill its sections with this
 content. PR text is always English. Do not tick a test box you did not run.
 
-Skip a section with nothing to say. Under 100 diff lines use at most 4 headings: fold Root
-cause into Summary and drop empty sections.
+The Summary opens with the reason, then says what changed. Under 100 diff lines keep to the
+Summary and the last two sections below (plus Before / after for a visible UI change), with
+no diagram. Skip any section with nothing to say.
 
 ```text
 Refs #<issue>                        (or: Closes #<issue>; stacked: "Merge after #<PR>")
 ## Summary
-<what this does and why, 3 sentences at most>
+<the reason first: the problem or root cause; then what this does. 3 sentences at most>
 | Part | Change |                    (Adds, Changes, Removes, Does not touch: 2 to 5 rows)
 ## Root cause
 <fixes and refactors: what was wrong and why, 1 to 3 sentences>
 ## How it works
-<one mermaid diagram when logic, flow or structure changes>
+<100+ diff lines only: one mermaid diagram when logic, flow or structure changes>
 ## What changed
 | Area | Change |                    (or at most 6 bullets of behaviour)
 ## Before / after

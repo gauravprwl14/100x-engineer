@@ -34,7 +34,7 @@
 | 2 while writing | [ui-baseline](ui-baseline/SKILL.md) | Page, screen, form, dashboard, table or layout: responsive to 320px, looks good on mobile, loading/empty/error states, touch targets, design tokens, f | 198 |
 | 2 while writing | [web-vitals](web-vitals/SKILL.md) | Core Web Vitals — LCP, INP, CLS: hero images, web fonts, client JS and hydration, use client boundaries, lab vs field data. Not for backend latency (→ | 209 |
 | 3 before shipping | [diff-review](diff-review/SKILL.md) | Review a diff, PR or pull request — your own changes before you push, or a teammate's or agent's before you approve: authz gaps, races, speculative ab | 192 |
-| 3 before shipping | [pr-description](pr-description/SKILL.md) | PR description, pull request body, commit message or review reply: summary table, root cause, a diagram when logic changes, before/after images for UI | 142 |
+| 3 before shipping | [pr-description](pr-description/SKILL.md) | PR description, pull request body, commit message or review reply: summary table, root cause, a diagram when logic changes, before/after images for UI | 159 |
 | 3 before shipping | [pr-review](pr-review/SKILL.md) | PR comments to post on GitHub or GitHub Enterprise: a PR URL becomes SHA-pinned, paste-ready comments and questions you adjust, then post as a draft o | 199 |
 | 3 before shipping | [recheck](recheck/SKILL.md) | Re-check, double-check or "are you sure" on Claude's own just-given answer or edit in this session: assume a mistake, name 3 likely faults, verify eac | 138 |
 | 3 before shipping | [release-rollout](release-rollout/SKILL.md) | Production deploy, rollout or release: feature flags, kill switches, canary, roll out gradually, rollback plan and triggers, migration ordering, smoke | 156 |
