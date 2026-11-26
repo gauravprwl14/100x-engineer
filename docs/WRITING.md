@@ -13,14 +13,14 @@ for 107. `SOURCE: original (private-repo PR communication survey: 120 human PRs,
 | # | rule | enforced by |
 |---|---|---|
 | 1 | Lead with the answer: the first lines say what changed or what is true | `summary-first`, review |
-| 2 | Size fits the change: a PR body is at most max(600, 8 × diff lines) chars | `body-budget` |
+| 2 | Size fits the change: a PR body is at most max(2500, 12 × diff lines) chars, image lines not counted | `body-budget` |
 | 3 | A paragraph is at most 3 lines and 300 chars; past that, use bullets | `long-paragraph` |
 | 4 | Why is 1 sentence with a link to the issue or decision | `missing-issue-link`, review |
 | 5 | What is bullets of behaviour, including what is NOT done; a bullet is ≤ 160 chars | `long-bullet` |
 | 6 | "verified/tested/confirmed/passed" only next to a command and its output, a sha, a link or a file:line | `claim-without-evidence` |
 | 7 | No self-ticked boxes, no "This PR…" or "Successfully" filler | `self-ticked-box`, `filler-phrase` |
-| 8 | No history or timeline narration and no restating the diff; link the decision | `history-section`, `heading-overload`, review |
-| 9 | A table only to compare 3+ items across 2+ attributes | review |
+| 8 | No history, timeline or process notes (audit rounds, shas, warning counts) and no restating the diff; link the decision | `history-section`, `heading-overload`, review |
+| 9 | Show structure: a table for 3+ items across 2+ attributes, a diagram for a flow or state | review |
 | 10 | Links over prose: point at the issue, file:line or doc instead of retelling it | review |
 
 Rules 2 and 8 come from the survey: history sections appeared in 24% of the worst bodies and 0%
@@ -32,17 +32,27 @@ and a body that says what and why (google/eng-practices@master:review/developer/
 **PR description.** The repo's own PR template wins on headings; fill its sections with this
 content. PR text is always English. Do not tick a test box you did not run.
 
+The Summary opens with the reason, then says what changed. Under 100 diff lines keep to the
+Summary and the last two sections below (plus Before / after for a visible UI change), with
+no diagram. Skip any section with nothing to say.
+
 ```text
-closes #<issue>                      (or: part of #<epic>)
-## Why
-<one sentence: the problem and a link to the decision>
-## What
-- <behaviour change>
-- <scope limit: "does not X">
+Refs #<issue>                        (or: Closes #<issue>; stacked: "Merge after #<PR>")
+## Summary
+<the reason first: the problem or root cause; then what this does. 3 sentences at most>
+| Part | Change |                    (Adds, Changes, Removes, Does not touch: 2 to 5 rows)
+## Root cause
+<fixes and refactors: what was wrong and why, 1 to 3 sentences>
+## How it works
+<100+ diff lines only: one mermaid diagram when logic, flow or structure changes>
+## What changed
+| Area | Change |                    (or at most 6 bullets of behaviour)
+## Before / after
+| | Before | After |                 (UI changes: images dragged into the box; else "No UI change")
 ## Verified
-<env>: `<command>` → <result line>
-## Out of scope
-- <deferred item> → #<issue>
+<env>: `<command>` → <result line>. Real app: yes / no
+## Not verified / follow-ups
+- <real gap or deferred item> → #<issue>
 ```
 
 **Review comment.** One comment, one ask. Tag severity first, show what breaks, then the fix.

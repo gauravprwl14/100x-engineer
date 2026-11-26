@@ -30,7 +30,8 @@ KINDS = ("doc", "pr", "commit", "review-comment", "reply", "code-comment", "chat
 PARA_LINES, PARA_CHARS = 3, 300
 BULLET_CHARS = 160
 HISTORY_DIFF, HEADING_DIFF, MAX_HEADINGS = 200, 100, 4
-BUDGET_FLOOR, BUDGET_PER_LINE = 600, 8
+BUDGET_FLOOR, BUDGET_PER_LINE = 2500, 12   # diagrams and tables need room; see docs/WRITING.md
+IMAGE_LINE_RX = re.compile(r"<img\b|!\[[^\]]*\]\(")   # image lines carry long URLs, not prose
 HEADING_WALL = 3        # headings stacked before any text
 ISSUE_LINK_LINES = 3    # where a reader looks for what the PR closes
 MAX_ASK_BULLETS = 3
@@ -168,12 +169,14 @@ def find_next_content(doc, i):
 def check_budget(doc):
     if doc.diff_lines is None:
         return []
-    body = re.sub(r"<!--.*?-->", "", doc.text, flags=re.S).strip()
+    body = re.sub(r"<!--.*?-->", "", doc.text, flags=re.S)
+    body = "\n".join(l for l in body.splitlines() if not IMAGE_LINE_RX.search(l)).strip()
     limit = max(BUDGET_FLOOR, BUDGET_PER_LINE * doc.diff_lines)
     if len(body) <= limit:
         return []
     return [flag("body-budget", 1, f"body is {len(body)} chars; a {doc.diff_lines}-line diff gets "
-                 f"at most {limit} (max(600, 8 x diff lines)); cut history and diff restating")]
+                 f"at most {limit} (max({BUDGET_FLOOR}, {BUDGET_PER_LINE} x diff lines), image "
+                 "lines not counted); cut process notes, history and diff restating")]
 
 
 def check_paragraphs(doc):
