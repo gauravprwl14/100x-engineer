@@ -249,6 +249,7 @@ done
 for dim in "Approach & structure" "Naming, placement, readability"; do
   grep -q "$dim" "$SP/references/rubric.md" && ok "rubric §5 lists: $dim" || { echo "FAIL" >"$OUT/r.out"; bad "rubric §5 lacks: $dim"; }
 done
+grep -q "Single source of truth" "$SP/references/structure-pass.md" && ok "the shape table has a single-source-of-truth row" || { echo "FAIL" >"$OUT/r.out"; bad "no single-source-of-truth row"; }
 grep -q '"structure_pass": false' "$SP/references/structure-pass.md" && ok "the off switch is documented" || { echo "FAIL" >"$OUT/r.out"; bad "off switch not documented"; }
 L6="$TMP/lens-str"; lens "$L6"
 edit "$L6" 'i = dict(r["items"][3]); i.update(id="9999-STR-01", kind="suggestion", blocks="none", severity="minor", status="open", title="Two writers for one fact", why="The next metric change must touch two files.", change={"type": "pseudo", "body": "count once in the store", "checked": "not checked — pseudo"}); r["items"].append(i); r["coverage"] += [{"dimension": "Approach & structure", "checked": "closest analog", "result": "Nothing else found"}, {"dimension": "Naming, placement, readability", "checked": "names", "result": "Nothing found"}]'
