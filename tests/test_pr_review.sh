@@ -241,6 +241,20 @@ run 0 "re-render the feature README" pr_review feature "$NOTE"
 grep -q "same point as \"" "$NOTE/$PRD/2-comments-to-post.md" && ok "  note shows the item's title" || bad "  note does not show the title"
 run 0 "gate passes: no ID leak, status is an editable field" pr_review_gate "$NOTE" --no-render-mermaid
 
+echo "== structure pass"
+SP="$ROOT/skills/pr-review"
+for f in SKILL.md references/reviewer-prompt.md references/workflow.md; do
+  grep -q "structure-pass.md" "$SP/$f" && ok "$f points at structure-pass.md" || { echo "FAIL" >"$OUT/r.out"; bad "$f does not point at structure-pass.md"; }
+done
+for dim in "Approach & structure" "Naming, placement, readability"; do
+  grep -q "$dim" "$SP/references/rubric.md" && ok "rubric §5 lists: $dim" || { echo "FAIL" >"$OUT/r.out"; bad "rubric §5 lacks: $dim"; }
+done
+grep -q '"structure_pass": false' "$SP/references/structure-pass.md" && ok "the off switch is documented" || { echo "FAIL" >"$OUT/r.out"; bad "off switch not documented"; }
+L6="$TMP/lens-str"; lens "$L6"
+edit "$L6" 'i = dict(r["items"][3]); i.update(id="9999-STR-01", kind="suggestion", blocks="none", severity="minor", status="open", title="Two writers for one fact", why="The next metric change must touch two files.", change={"type": "pseudo", "body": "count once in the store", "checked": "not checked — pseudo"}); r["items"].append(i); r["coverage"] += [{"dimension": "Approach & structure", "checked": "closest analog", "result": "Nothing else found"}, {"dimension": "Naming, placement, readability", "checked": "names", "result": "Nothing found"}]'
+run 0 "  render with a STR item" pr_review render "$L6"
+run 0 "  gate accepts a STR item and the two coverage rows" pr_review_gate "$L6" --no-render-mermaid
+
 echo "== gate"
 run 0 "golden run passes" pr_review_gate "$FIX" --no-render-mermaid
 has "PASS  rules"; has "PASS  mermaid"; has "WARN  mermaid render skipped"

@@ -58,9 +58,11 @@ from the folders above the clone, below the repo's own files.
 older than ~30 days, or the default branch moved a lot since it was written; then
 `100x pr_review context --refresh <CR>` rewrites only its `<!-- auto:start/end -->` section.
 
-Plus `references/focus-generic.md` and the `reviewers/<stack>.md` that `stack-reviewer` routes to.
-`<CR>/_meta/settings.json` may name `typecheck`, `links` and `lang` for step 9, and `post_mode`
-(`draft`/`submit`) and `body_max` for `post`.
+Plus `references/focus-generic.md`, `references/structure-pass.md` (approach, naming, placement,
+readability; skipped when `settings.json` has `"structure_pass": false`) and the
+`reviewers/<stack>.md` that `stack-reviewer` routes to.
+`<CR>/_meta/settings.json` may name `typecheck`, `links` and `lang` for step 9, `structure_pass`
+(`false` turns the structure pass off), and `post_mode` (`draft`/`submit`) and `body_max` for `post`.
 
 ```mermaid
 flowchart LR

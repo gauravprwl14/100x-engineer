@@ -16,6 +16,7 @@ Rules: `rubric.md` only.
 | `META` · `PROFILE` | `<CR>/_meta/` (`focus.md`, `decisions.md` — whichever exist) · `~/.config/pr-review/profile.md` if it exists, else "none" (both from `100x pr_review paths --json`) |
 | `PARENT_RULES` | `parent_rules` from `100x pr_review paths --json` (instruction files in folders above the clone, nearest first), else "none" |
 | `PRIOR` | re-review: previous `review.json` + `recheck_of` SHA; else "none" |
+| `STRUCTURE` | `on`, or `off` when `<CR>/_meta/settings.json` has `"structure_pass": false` |
 | `FOCUS` | matching blocks of `focus-generic.md` + `META/focus.md` lines + the stack reviewer file(s) + PR hints |
 
 ---
@@ -45,6 +46,7 @@ blast-radius order, cite the convention before blocking). Shape to copy (facts a
 |---|---|---|
 | 1 | Read PR body, issue/spec, `--stat`, log, **existing comments**; state the author's intent in one line | notes; `run.existing_comments` |
 | 2 | Read every changed file fully; grep callers of changed shared symbols; walk the spec | notes |
+| 2b | When `{{STRUCTURE}}` is `on`: run `{{PLUGIN}}/skills/pr-review/references/structure-pass.md` (how this repo would build it, closest analog, the shape table); when `off`, skip it | notes; `STR` items in step 4 |
 | 3 | One `coverage` row per rubric §5 dimension (what you checked → result or "Nothing found") | `coverage[]` |
 | 4 | One item per point (rubric §3). `why` for {{USER}} in plain words with the failure scenario; `comment` for the author in `{{LANG}}`, no IDs; `where.in_diff` from the diff hunks; `change` only from lines you opened at `{{HEAD_SHA}}`; already raised → `dup_of_existing_comment` | `items[]` |
 | 5 | Things that look wrong but are fine (author's decisions, accepted gaps) | `not_to_raise[]` |

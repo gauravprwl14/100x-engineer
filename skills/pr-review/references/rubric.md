@@ -139,7 +139,7 @@ downgrade it.
 
 | PR type | Dimensions (one `coverage` row each) |
 |---|---|
-| Code | Product / spec · Correctness · Security / data · Conventions · Tests · Performance · Impact · Prior findings · Existing PR comments |
+| Code | Product / spec · Correctness · Security / data · Conventions · Approach & structure · Naming, placement, readability · Tests · Performance · Impact · Prior findings · Existing PR comments |
 | Spec | Completeness · Internal consistency · Ambiguity & testability · Technical feasibility · Spec vs implementation · Prior findings |
 | Cross-PR (≥ 2 PRs) | Coverage matrix · Consistency · Stack & merge risks · Shared-code duplication · Product gaps |
 
