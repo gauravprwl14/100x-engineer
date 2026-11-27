@@ -1,6 +1,6 @@
 # Decision index
 
-9 decision(s). Regenerate with `python3 scripts/decide.py index`.
+10 decision(s). Regenerate with `python3 scripts/decide.py index`.
 
 | id | title | status | date | chosen | assumptions | tags | affects |
 |---|---|---|---|---|--:|---|---|
@@ -13,6 +13,7 @@
 | [ADR-0007](ADR-0007-explain-leads-with-a-system-map-the-agent-writes-as-data-and-the-engine-lays-out-an-offline-old-vs-new-picture-bench-gates-it.md) | Explain leads with a system map the agent writes as data and the engine lays out; an offline old-vs-new picture bench gates it | proposed | 2026-11-24 | a tree of groups and parts plus labelled links; the engine lays it out and routes the links | 5 | explain, visualization | `skills/explain/**, scripts/flow.py, tests/flow/**` |
 | [ADR-0008](ADR-0008-explain-pages-say-what-happens-in-plain-sentences-first-an-opt-in-readable-layout-one-name-per-thing-a-map-that-fits-its-column-and-a-one-key-way-back.md) | Explain pages say what happens in plain sentences first: an opt-in readable layout, one name per thing, a map that fits its column, and a one-key way back | proposed | 2026-11-24 | an opt-in `layout: readable` key per page, with the old behaviour as the default | 5 | explain, readability | `skills/explain/**, scripts/flow.py, tests/flow/**` |
 | [ADR-0009](ADR-0009-explain-part-cards-and-pages-behind-them-an-about-card-per-map-part-a-page-per-part-a-reader-asks-about-and-a-checked-way-back.md) | Explain part cards and pages behind them: an about card per map part, a page per part a reader asks about, and a checked way back | proposed | 2026-11-24 | cards on the overview, and a full page per part that is linked both ways and checked | 5 | explain, readability | `skills/explain/**, scripts/flow.py, tests/flow/**` |
+| [ADR-0010](ADR-0010-pr-review-runs-a-structure-pass-inside-the-pr-reviewer-switchable-per-repo.md) | pr-review runs a structure pass inside the PR reviewer, switchable per repo | accepted | 2026-11-27 | Structure pass inside the PR reviewer, off switch in settings.json | 3 | pr-review | `skills/pr-review/**` |
 
 ## How to use this
 
