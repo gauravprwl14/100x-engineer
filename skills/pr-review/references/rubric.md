@@ -22,7 +22,7 @@ own: the record format, the rendering and the gate.
 | 4 | **Whole PR + impact.** Cumulative diff `<base>...<head>`, `git log` for reverts; grep callers of every changed shared symbol. |
 | 5 | **Conventions win over taste.** Read `<CR>/CONTEXT.md` first; cite the repo's CLAUDE.md / AGENTS.md / docs, then `<CR>/_meta/focus.md` and `decisions.md`, then the reviewer profile (load order in `../SKILL.md`). |
 | 6 | **Honest evidence.** `ran` = you executed it; `read` = you opened it at the pinned SHA; `inferred` = one link unseen; `assumption` = unchecked. Label the weakest link. `inferred`/`assumption` → `confirm_by` (G2). |
-| 7 | **Example with every claim.** `comment` has a real value: code span, number or quoted text (G2). Words like "validate", "handle", "consider" are not a fix — show what the code becomes. |
+| 7 | **Example with every claim.** `comment` has a real value: code span, number or quoted text (G2). Words like "validate", "handle", "consider" are not a fix — show what the code becomes. A structure item's failure scenario is a future change: who edits this next and what they must touch. |
 | 8 | **Existing comments first.** Read PR comments, review threads and bot reviews before writing items; a point already raised → `dup_of_existing_comment` = its URL (renders as "reply / +1"). Record `run.existing_comments` (G4). |
 | 9 | **Review, adjust, post — in that order.** A review run never posts. The user reads it, changes it with `adjust` (their decisions live in each item's `user` block and win over the reviewer's wording, also across re-reviews), then `post` sends only open, not-skipped, not-yet-posted items (G14). |
 
@@ -100,7 +100,7 @@ table in `$(100x root)/docs/WRITING.md` ("One vocabulary map"), which also holds
 writing rules; the length and wording limits G2/G3 enforce stay in the tables above.
 
 A `blocks: merge` item with no failure scenario in `why` is a preference (`diff-review` rule 10):
-downgrade it.
+downgrade it. A structure (`STR`) item is `blocks: none` unless it breaks a convention the repo states.
 
 ## 4. Rendering rules and the gate
 
